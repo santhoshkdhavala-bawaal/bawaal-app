@@ -1,165 +1,102 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  ScrollView,
-  SafeAreaView,
-  Image,
-} from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaStorage } from 'react-native';
 
-export default function FanRegistration({ onBack, onSubmit }) {
-  const [fullName, setFullName] = useState('');
-  const [favoriteSport, setFavoriteSport] = useState('');
-  const [handle, setHandle] = useState('');
+export default function FanRegistration({ navigation }) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleComplete = () => {
-    if (!fullName) {
-      alert('Please enter your full name or fan handle!');
+  const handleRegister = async () => {
+    if (!name || !email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-    onSubmit();
+
+    try {
+      const response = await fetch('https://bawaal-app.onrender.com/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name,
+          email: email,
+          password: password,
+          role: 'fan'
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        Alert.alert('Success', 'Fan account created successfully!');
+        navigation.navigate('VideoFeed', { user: data.user });
+      } else {
+        Alert.alert('Error', data.error || 'Registration failed');
+      }
+    } catch (error) {
+      console.error('Registration Error:', error);
+      Alert.alert('Error', 'Network error. Please try again.');
+    }
   };
 
   return (
-    <SafeAreaView style={styles.outerWrapper}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-            <Text style={styles.backBtnText}>← BACK</Text>
-          </TouchableOpacity>
-          <Image 
-            source={require('./assets/gold b solo.png')} 
-            style={styles.headerLogo} 
-            resizeMode="contain" 
-          />
-        </View>
+    <View style={styles.container}>
+      <Text style={styles.title}>Fan Registration</Text>
+      <Text style={styles.subText}>Join the community to follow global sports content.</Text>
 
-        {/* Title Badge */}
-        <View style={styles.titleCard}>
-          <View style={styles.roleTag}>
-            <Text style={styles.roleTagText}>ARENA SUPPORTER ACCESS</Text>
-          </View>
-          <Text style={styles.titleText}>Join the BAWAAL Tribe</Text>
-          <Text style={styles.subText}>
-            Hype local fighters, discover raw talent, and follow high-stakes combat sports live.
-          </Text>
-        </View>
+      <Text style={styles.inputLabel}>FULL NAME</Text>
+      <TextInput
+        style={styles.textInput}
+        placeholder="Enter your name"
+        placeholderTextColor="#666"
+        value={name}
+        onChangeText={setName}
+      />
 
-        {/* Form Inputs */}
-        <View style={styles.formSection}>
-          <Text style={styles.inputLabel}>FULL NAME / ALIAS</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="e.g. Vikram 'The Fanatic' Roy"
-            placeholderTextColor="#475569"
-            value={fullName}
-            onChangeText={setFullName}
-          />
+      <Text style={styles.inputLabel}>EMAIL</Text>
+      <TextInput
+        style={styles.textInput}
+        placeholder="Enter your email"
+        placeholderTextColor="#666"
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+      />
 
-          <Text style={styles.inputLabel}>FAN HANDLE / USERNAME</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="e.g. @fight_fanatic_mumbai"
-            placeholderTextColor="#475569"
-            value={handle}
-            onChangeText={setHandle}
-          />
+      <Text style={styles.inputLabel}>PASSWORD</Text>
+      <TextInput
+        style={styles.textInput}
+        placeholder="Enter your password"
+        placeholderTextColor="#666"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
 
-          <Text style={styles.inputLabel}>FAVORITE SPORTS & DISCIPLINES</Text>
-          <TextInput
-            style={styles.textInput}
-            placeholder="e.g. Boxing, MMA, Wrestling, Parkour"
-            placeholderTextColor="#475569"
-            value={favoriteSport}
-            onChangeText={setFavoriteSport}
-          />
-        </View>
-
-        {/* Submit Action Button */}
-        <TouchableOpacity style={styles.submitBtn} onPress={handleComplete} activeOpacity={0.85}>
-          <Text style={styles.submitBtnText}>ENTER THE ARENA FEED →</Text>
-        </TouchableOpacity>
-
-      </ScrollView>
-    </SafeAreaView>
+      <TouchableOpacity style={styles.submitBtn} onPress={handleRegister}>
+        <Text style={styles.submitBtnText}>Register as Fan</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  outerWrapper: {
-    flex: 1,
-    backgroundColor: '#0a0f1d',
-  },
   container: {
-    paddingHorizontal: 20,
-    paddingTop: 15,
-    paddingBottom: 40,
+    flex: 1,
+    backgroundColor: '#0b0f19',
+    padding: 24,
+    justifyContent: 'center',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  backBtn: {
-    backgroundColor: '#1e293b',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  backBtnText: {
-    color: '#38bdf8',
+  title: {
+    fontSize: 28,
     fontWeight: 'bold',
-    fontSize: 11,
-  },
-  headerLogo: {
-    width: 40,
-    height: 40,
-  },
-  titleCard: {
-    backgroundColor: '#111827',
-    borderWidth: 1,
-    borderColor: '#38bdf8',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 25,
-  },
-  roleTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(56, 189, 248, 0.15)',
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#38bdf8',
-    marginBottom: 10,
-  },
-  roleTagText: {
-    color: '#38bdf8',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  titleText: {
-    color: '#f8fafc',
-    fontSize: 22,
-    fontWeight: '900',
+    color: '#fff',
+    marginBottom: 8,
   },
   subText: {
     color: '#94a3b8',
     fontSize: 13,
-    marginTop: 6,
+    marginBottom: 24,
     lineHeight: 18,
-  },
-  formSection: {
-    marginBottom: 20,
   },
   inputLabel: {
     color: '#38bdf8',
@@ -180,16 +117,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   submitBtn: {
-    backgroundColor: '#38bdf8',
-    borderRadius: 12,
-    paddingVertical: 16,
+    backgroundColor: '#3b82f6',
+    borderRadius: 10,
+    paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 15,
+    marginTop: 24,
   },
   submitBtnText: {
-    color: '#0f172a',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
