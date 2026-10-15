@@ -1,90 +1,134 @@
 const express = require('express');
-const cors = require('cors');
 const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 
 // Middleware
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// 🗄️ MongoDB Atlas Cloud Connection
-const MONGO_URI = 'mongodb+srv://kingatharvan_db_user:Bawaal2026@cluster0.kczk9gc.mongodb.net/bawaal_db?retryWrites=true&w=majority';
+// MongoDB Connection
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://bawaalapp:bawaalapp123@cluster0.mongodb.net/bawaal?retryWrites=true&w=majority";
 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('⚡ Connected to BAWAAL MongoDB Atlas Database!'))
-  .catch((err) => console.error('❌ MongoDB Connection Error:', err.message));
+mongoose.connect(MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('🔥 Connected to BAWAAL MongoDB Atlas Database!'))
+.catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// 📝 User Schema Definition
+// 1. User Schema & Model
 const userSchema = new mongoose.Schema({
-  role: { type: String, required: true, enum: ['athlete', 'scout', 'fan'] },
-  fullName: { type: String, required: true },
-  handle: { type: String },
-  sport: { type: String },
-  organization: { type: String },
-  medicalInfo: {
-    bloodGroup: String,
-    emergencyContact: String,
-    allergies: String,
-    clearanceStatus: String
-  },
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['fan', 'scout', 'athlete'], default: 'fan' },
+  specializedSport: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model('User', userSchema);
 
-// 1. Health Check Route
-app.get('/', (req, res) => {
-  res.send('⚡ BAWAAL Cyber-Arena Engine & Database Connected!');
+// 2. Post / Video Schema & Model (for Feed)
+const postSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  sport: { type: String, required: true }, // e.g., 'Cricket', 'Boxing', 'Football'
+  videoUrl: { type: String, required: true },
+  athleteName: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
 });
 
-// 2. Registration API Route (Saves to MongoDB Atlas)
+const Post = mongoose.model('Post', postSchema);
+
+// --- ROUTES ---
+
+// Root Test Route
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ONLINE', message: 'BAWAAL Backend API is running successfully!' });
+});
+
+// Register Route (Handles Fans, Scouts, and Athletes with Roles & Specializations)
 app.post('/api/register', async (req, res) => {
   try {
-    const { role, fullName, handle, sport, organization, medicalInfo } = req.body;
-
-    if (!fullName || !role) {
-      return res.status(400).json({ error: 'Role and Full Name are required.' });
+    const { name, email, password, role, specializedSport } = req.body;
+    
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, error: 'Email already registered.' });
     }
 
     const newUser = new User({
-      role,
-      fullName,
-      handle,
-      sport,
-      organization,
-      medicalInfo
+      name,
+      email,
+      password,
+      role: role || 'fan',
+      specializedSport: specializedSport || null
     });
 
     await newUser.save();
-    console.log('✅ New User Saved to MongoDB Atlas:', newUser);
-
+    
     res.status(201).json({
-      message: 'User registered and saved to database successfully!',
-      user: newUser
+      success: true,
+      message: 'User registered successfully!',
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        specializedSport: newUser.specializedSport
+      }
     });
   } catch (error) {
     console.error('❌ DB Save Error:', error);
-    res.status(500).json({ error: 'Failed to save user profile.' });
+    res.status(500).json({ success: false, error: 'Failed to save user profile.' });
   }
 });
 
-// 3. Get All Athletes API
+// Feed Route (Returns Global Feed for Fans, or Sport-Filtered Feed for Scouts)
+app.get('/api/feed', async (req, res) => {
+  try {
+    const { role, specializedSport, view } = req.query;
+    
+    let filter = {};
+
+    // If user is a Scout and hasn't toggled to global view, filter by their specialized sport
+    if (role === 'scout' && specializedSport && view !== 'global') {
+      filter.sport = { $regex: new RegExp(`^${specializedSport}$`, 'i') };
+    }
+
+    const posts = await Post.find(filter).sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      role: role || 'fan',
+      activeFilter: filter.sport ? specializedSport : 'Global',
+      count: posts.length,
+      posts: posts
+    });
+  } catch (error) {
+    console.error('❌ Error fetching feed:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch feed.' });
+  }
+});
+
+// Get All Athletes API
 app.get('/api/athletes', async (req, res) => {
   try {
     const athletes = await User.find({ role: 'athlete' });
     res.status(200).json(athletes);
   } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch athletes.' });
+    res.status(500).json({ success: false, error: 'Failed to fetch athletes.' });
   }
 });
 
-// 4. Emergency SOS Trigger Route
+// Emergency SOS Trigger Route
 app.post('/api/sos', (req, res) => {
   const { athleteId, location } = req.body;
   console.log(`🚨 SOS DISPATCH TRIGGERED FOR ATHLETE: ${athleteId || 'UNKNOWN'}`);
-  
+
   res.status(200).json({
     status: 'DISPATCHED',
     message: 'Emergency command notified successfully.'
