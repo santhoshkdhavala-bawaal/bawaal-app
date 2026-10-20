@@ -57,13 +57,11 @@ export default function MedicalCardModal({ visible, selectedLang = 'English', on
             <TouchableOpacity style={styles.backBtn} onPress={onClose}>
               <Text style={styles.backBtnText}>{t.back}</Text>
             </TouchableOpacity>
-
-            <Image 
-              source={require('./assets/gold b solo.png')} 
-              style={styles.headerLogo} 
-              resizeMode="contain" 
-            />
-          </View>
+<Image
+  source={require('./assets/icon.png')}
+  style={styles.headerLogo}
+  resizeMode="contain"
+/>          </View>
 
           {/* Title Section (No Stethoscope) */}
           <View style={styles.titleSection}>

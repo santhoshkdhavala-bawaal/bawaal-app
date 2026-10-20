@@ -1,10 +1,29 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaStorage } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TextInput, 
+  TouchableOpacity, 
+  Alert, 
+  Image, 
+  ScrollView, 
+  KeyboardAvoidingView, 
+  Platform 
+} from 'react-native';
 
 export default function FanRegistration({ navigation }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  const handleBack = () => {
+    if (navigation && navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('RoleSelection');
+    }
+  };
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
@@ -26,105 +45,162 @@ export default function FanRegistration({ navigation }) {
 
       const data = await response.json();
 
-      if (data.success) {
-        Alert.alert('Success', 'Fan account created successfully!');
-        navigation.navigate('VideoFeed', { user: data.user });
+      if (response.ok) {
+        Alert.alert('Success', 'Fan Registration Successful!');
+        navigation.navigate('RoleSelection');
       } else {
-        Alert.alert('Error', data.error || 'Registration failed');
+        Alert.alert('Registration Failed', data.message || 'Something went wrong.');
       }
     } catch (error) {
-      console.error('Registration Error:', error);
-      Alert.alert('Error', 'Network error. Please try again.');
+      Alert.alert('Network Error', 'Unable to connect to the server.');
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Fan Registration</Text>
-      <Text style={styles.subText}>Join the community to follow global sports content.</Text>
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Bar */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Text style={styles.backText}>← BACK</Text>
+          </TouchableOpacity>
 
-      <Text style={styles.inputLabel}>FULL NAME</Text>
-      <TextInput
-        style={styles.textInput}
-        placeholder="Enter your name"
-        placeholderTextColor="#666"
-        value={name}
-        onChangeText={setName}
-      />
+          <Image 
+            source={require('./assets/icon.png')} 
+            style={styles.headerLogo} 
+          />
+        </View>
 
-      <Text style={styles.inputLabel}>EMAIL</Text>
-      <TextInput
-        style={styles.textInput}
-        placeholder="Enter your email"
-        placeholderTextColor="#666"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-      />
+        <Text style={styles.title}>Fan Registration</Text>
+        <Text style={styles.subtitle}>Join the community to follow global sports content.</Text>
 
-      <Text style={styles.inputLabel}>PASSWORD</Text>
-      <TextInput
-        style={styles.textInput}
-        placeholder="Enter your password"
-        placeholderTextColor="#666"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+        {/* Full Name */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>FULL NAME</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your name"
+            placeholderTextColor="#64748b"
+            value={name}
+            onChangeText={setName}
+          />
+        </View>
 
-      <TouchableOpacity style={styles.submitBtn} onPress={handleRegister}>
-        <Text style={styles.submitBtnText}>Register as Fan</Text>
-      </TouchableOpacity>
-    </View>
+        {/* Email */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>EMAIL</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your email"
+            placeholderTextColor="#64748b"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
+          />
+        </View>
+
+        {/* Password */}
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>PASSWORD</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your password"
+            placeholderTextColor="#64748b"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+        </View>
+
+        {/* Submit Button */}
+        <TouchableOpacity style={styles.registerBtn} onPress={handleRegister}>
+          <Text style={styles.registerBtnText}>Register as Fan</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b0f19',
-    padding: 24,
-    justifyContent: 'center',
+    backgroundColor: '#070b14',
+  },
+  scrollContent: {
+    padding: 20,
+    paddingTop: 45,
+    paddingBottom: 40,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 30,
+  },
+  backButton: {
+    backgroundColor: '#1e293b',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  backText: {
+    color: '#38bdf8',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  headerLogo: {
+    width: 42,
+    height: 42,
+    resizeMode: 'contain',
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#ffffff',
     marginBottom: 8,
   },
-  subText: {
-    color: '#94a3b8',
-    fontSize: 13,
-    marginBottom: 24,
-    lineHeight: 18,
-  },
-  inputLabel: {
-    color: '#38bdf8',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginBottom: 8,
-    marginTop: 14,
-  },
-  textInput: {
-    backgroundColor: '#111827',
-    borderWidth: 1,
-    borderColor: '#1f2937',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#f8fafc',
+  subtitle: {
     fontSize: 14,
+    color: '#94a3b8',
+    marginBottom: 30,
   },
-  submitBtn: {
+  formGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    color: '#38bdf8',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  input: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 10,
+    padding: 14,
+    color: '#ffffff',
+    fontSize: 15,
+  },
+  registerBtn: {
     backgroundColor: '#3b82f6',
     borderRadius: 10,
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 20,
   },
-  submitBtnText: {
-    color: '#fff',
+  registerBtnText: {
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
   },

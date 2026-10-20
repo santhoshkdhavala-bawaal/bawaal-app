@@ -1,33 +1,30 @@
-import React, { createContext, useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 
-export const languages = {
-  en: 'English',
-  hi: 'हिंदी (Hindi)',
-  mr: 'मराठी (Marathi)',
-  ta: 'தமிழ் (Tamil)',
-  te: 'తెలుగు (Telugu)',
-  pa: 'ਪੰਜਾਬੀ (Punjabi)',
-  bn: 'বাংলা (Bengali)'
-};
+export const LANGUAGES = [
+  { code: 'en', label: 'English', flag: '🇬🇧' },
+  { code: 'hi', label: 'हिन्दी', flag: '🇮🇳' },
+  { code: 'es', label: 'Español', flag: '🇪🇸' },
+];
 
-export const LanguageContext = createContext({
-  currentLang: 'en',
-  setLanguage: () => {},
-  languages: languages
-});
+const LanguageContext = createContext();
 
 export const LanguageProvider = ({ children }) => {
-  const [currentLang, setCurrentLang] = useState('en');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
 
-  const setLanguage = (lang) => {
-    if (languages[lang]) {
-      setCurrentLang(lang);
-    }
+  const changeLanguage = (langCode) => {
+    setCurrentLanguage(langCode);
   };
 
   return (
-    <LanguageContext.Provider value={{ currentLang, setLanguage, languages }}>
+    <LanguageContext.Provider value={{ currentLanguage, changeLanguage }}>
       {children}
     </LanguageContext.Provider>
   );
+};
+
+export const useLanguage = () => useContext(LanguageContext);
+
+export const LanguageSelectorModal = ({ visible, onClose }) => {
+  if (!visible) return null;
+  return null;
 };
