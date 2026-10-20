@@ -7,23 +7,23 @@ import { enableScreens } from 'react-native-screens';
 import ArenaFeed from './ArenaFeed';
 import ChallengeScreen from './ChallengeScreen';
 import ProfileScreen from './ProfileScreen';
+import LeaderboardScreen from './LeaderboardScreen';
+import { COLORS } from './theme';
 
 enableScreens(true);
 
 const Stack = createNativeStackNavigator();
-const CANVAS = '#050505';
-
 const navTheme = {
   ...DarkTheme,
   dark: true,
   colors: {
     ...DarkTheme.colors,
-    primary: '#FF6B00',
-    background: CANVAS,
-    card: CANVAS,
-    text: '#ffffff',
-    border: 'rgba(255,255,255,0.08)',
-    notification: '#FF6B00',
+    primary: COLORS.PLATINUM_BASE,
+    background: COLORS.BACKGROUND_OBSIDIAN,
+    card: COLORS.BACKGROUND_OBSIDIAN,
+    text: COLORS.OFF_WHITE,
+    border: COLORS.CARD_BORDER,
+    notification: COLORS.PLATINUM_BASE,
   },
 };
 
@@ -43,7 +43,7 @@ class RootErrorBoundary extends Component {
     if (this.state.error) {
       return (
         <View style={styles.errorRoot}>
-          <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
+          <StatusBar barStyle="light-content" backgroundColor={COLORS.BACKGROUND_OBSIDIAN} />
           <Text style={styles.errorTitle}>BAWAAL failed to start</Text>
           <Text style={styles.errorBody}>{String(this.state.error?.message || this.state.error)}</Text>
         </View>
@@ -56,7 +56,7 @@ class RootErrorBoundary extends Component {
 export default function App() {
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.BACKGROUND_OBSIDIAN} />
       <RootErrorBoundary>
         <SafeAreaProvider style={styles.root}>
           <NavigationContainer theme={navTheme}>
@@ -65,13 +65,14 @@ export default function App() {
               screenOptions={{
                 headerShown: false,
                 animation: 'slide_from_bottom',
-                contentStyle: { backgroundColor: CANVAS, flex: 1 },
+                contentStyle: { backgroundColor: COLORS.BACKGROUND_OBSIDIAN, flex: 1 },
                 freezeOnBlur: true,
               }}
             >
               <Stack.Screen name="Arena" component={ArenaFeed} />
               <Stack.Screen name="Challenge" component={ChallengeScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             </Stack.Navigator>
           </NavigationContainer>
         </SafeAreaProvider>
@@ -83,16 +84,16 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: CANVAS,
+    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
   },
   errorRoot: {
     flex: 1,
-    backgroundColor: CANVAS,
+    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
   errorTitle: {
-    color: '#FF6B00',
+    color: COLORS.PLATINUM_BASE,
     fontSize: 16,
     fontWeight: '900',
     marginBottom: 12,

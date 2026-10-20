@@ -498,9 +498,9 @@ export default function AthleteRegistration({ navigation }) {
               value={email} onChangeText={setEmail} onFocus={() => setFocusedInput(5)} onBlur={() => setFocusedInput(null)}
             />
 
-            <Text style={[styles.label, { color: '#FF9500', fontWeight: '700' }]}>{t.sport}</Text>
+            <Text style={[styles.label, { color: '#E5E4E2', fontWeight: '700' }]}>{t.sport}</Text>
             <TextInput 
-              style={[styles.input, focusedInput === 7 ? styles.inputFocused : { borderColor: '#FF950055' }]} placeholder={t.sportPlaceholder} placeholderTextColor="#8A96B5"
+              style={[styles.input, focusedInput === 7 ? styles.inputFocused : { borderColor: '#E5E4E255' }]} placeholder={t.sportPlaceholder} placeholderTextColor="#8A96B5"
               value={sport} onChangeText={setSport} onFocus={() => setFocusedInput(7)} onBlur={() => setFocusedInput(null)}
             />
 
@@ -510,7 +510,7 @@ export default function AthleteRegistration({ navigation }) {
               </View>
               <Text style={styles.termsText}>
                 {t.terms}
-                <Text style={{ color: '#FF9500', textDecorationLine: 'underline' }} onPress={() => setShowTermsModal(true)}>
+                <Text style={{ color: '#E5E4E2', textDecorationLine: 'underline' }} onPress={() => setShowTermsModal(true)}>
                   {t.termsLink}
                 </Text>
               </Text>
@@ -561,7 +561,7 @@ export default function AthleteRegistration({ navigation }) {
           <View style={[styles.modalCard, { maxHeight: '82%' }]}>
             <Text style={styles.modalTitle}>{t.termsLink}</Text>
             <ScrollView style={{ marginVertical: 12 }} showsVerticalScrollIndicator={true}>
-              <Text style={{ color: '#FF9500', fontWeight: 'bold', fontSize: 13, marginBottom: 10 }}>
+              <Text style={{ color: '#E5E4E2', fontWeight: 'bold', fontSize: 13, marginBottom: 10 }}>
                 {t.termsTitle}
               </Text>
               <Text style={{ color: '#8A96B5', fontSize: 13, lineHeight: 20 }}>
@@ -626,18 +626,18 @@ const styles = StyleSheet.create({
   metaBadge: { backgroundColor: '#111D33', borderWidth: 1, borderColor: '#1E2A4A', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 6 },
   metaText: { fontSize: 11, color: '#8A96B5', fontWeight: '600' },
   headerTitleArea: { alignItems: 'center', marginBottom: 16 },
-  tagline: { fontSize: 10, fontWeight: '700', color: '#FF9500', letterSpacing: 1.5, marginBottom: 4 },
+  tagline: { fontSize: 10, fontWeight: '700', color: '#E5E4E2', letterSpacing: 1.5, marginBottom: 4 },
   title: { fontSize: 22, fontWeight: '800', color: '#FFFFFF', textAlign: 'center' },
   form: { width: '100%' },
   label: { fontSize: 11, color: '#8A96B5', marginBottom: 4, fontWeight: '600', marginTop: 12 },
   input: { backgroundColor: '#111D33', borderWidth: 1, borderColor: '#1E2A4A', borderRadius: 12, padding: 10, color: '#FFFFFF', fontSize: 14 },
-  inputFocused: { borderColor: '#FF9500', shadowColor: '#FF9500', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 5 },
+  inputFocused: { borderColor: '#E5E4E2', shadowColor: '#E5E4E2', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 8, elevation: 5 },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 14, paddingRight: 10 },
   checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 1, borderColor: '#1E2A4A', backgroundColor: '#111D33', marginRight: 10, alignItems: 'center', justifyContent: 'center' },
-  checkboxChecked: { backgroundColor: '#FF9500', borderColor: '#FF9500' },
+  checkboxChecked: { backgroundColor: '#E5E4E2', borderColor: '#E5E4E2' },
   termsText: { fontSize: 12, color: '#8A96B5', flex: 1, lineHeight: 18 },
-  btnPrimary: { backgroundColor: '#FF9500', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 10, width: '100%' },
-  btnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
+  btnPrimary: { backgroundColor: '#E5E4E2', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 10, width: '100%' },
+  btnText: { color: '#05070A', fontSize: 15, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(5, 10, 22, 0.92)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   modalCard: { width: '100%', maxWidth: 380, backgroundColor: '#0E152B', borderRadius: 18, borderWidth: 1, borderColor: '#1E2A4A', padding: 24, alignItems: 'center' },
   modalTitle: { fontSize: 20, fontWeight: '800', color: '#FFFFFF', marginBottom: 4, textAlign: 'center' },
@@ -645,7 +645,7 @@ const styles = StyleSheet.create({
   otpRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 20 },
   otpBox: { width: 44, height: 50, backgroundColor: '#111D33', borderWidth: 1, borderColor: '#1E2A4A', borderRadius: 10, color: '#FFFFFF', fontSize: 20, fontWeight: '700', textAlign: 'center' },
   dropdownCard: { width: '80%', backgroundColor: '#0E152B', borderRadius: 16, borderWidth: 1, borderColor: '#1E2A4A', padding: 16 },
-  dropdownTitle: { fontSize: 14, fontWeight: '700', color: '#FF9500', marginBottom: 12, textAlign: 'center' },
+  dropdownTitle: { fontSize: 14, fontWeight: '700', color: '#E5E4E2', marginBottom: 12, textAlign: 'center' },
   dropdownOption: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#1E2A4A' },
   dropdownOptionText: { color: '#FFFFFF', fontSize: 14, textAlign: 'center' },
 });

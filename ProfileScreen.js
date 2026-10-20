@@ -15,7 +15,7 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 24) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0E14" />
+      <StatusBar barStyle="light-content" backgroundColor="#05070A" />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -111,7 +111,7 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
   },
   header: {
     flexDirection: 'row',
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1A2130',
+    borderBottomColor: '#232630',
   },
   brandRow: {
     flexDirection: 'row',
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   headerAccent: {
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -141,18 +141,18 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   backBtnText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 18,
   },
   scrollContent: {
     padding: 16,
   },
   profileCard: {
-    backgroundColor: '#121824',
+    backgroundColor: '#1C1F26',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   avatarRow: {
     flexDirection: 'row',
@@ -163,12 +163,12 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
-    color: '#0B0E14',
+    color: '#05070A',
     fontSize: 24,
     fontWeight: 'bold',
   },
@@ -197,12 +197,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   handleText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 12,
     marginTop: 2,
   },
   bioText: {
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#1A2130',
+    borderTopColor: '#232630',
   },
   statCol: {
     alignItems: 'center',
@@ -225,7 +225,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statLabel: {
-    color: '#64748B',
+    color: '#A8AFB8',
     fontSize: 10,
     fontWeight: 'bold',
     marginTop: 2,
@@ -233,18 +233,18 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#1A2130',
+    backgroundColor: '#232630',
   },
   metricsCard: {
-    backgroundColor: '#121824',
+    backgroundColor: '#1C1F26',
     borderRadius: 16,
     padding: 16,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   metricsTitle: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 12,
     fontWeight: 'bold',
     marginBottom: 16,
@@ -263,19 +263,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   metricValue: {
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 13,
     fontWeight: 'bold',
   },
   progressBarTrack: {
     height: 8,
-    backgroundColor: '#1A2130',
+    backgroundColor: '#232630',
     borderRadius: 4,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
     borderRadius: 4,
   },
 });

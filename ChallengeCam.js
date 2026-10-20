@@ -10,11 +10,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { COLORS, RADIUS } from './theme';
 
-const ORANGE = '#FF6B00';
-const CANVAS = '#050505';
-const SURFACE = '#0A0A0C';
-const CARD_BORDER = 'rgba(255, 255, 255, 0.12)';
+const CANVAS = COLORS.BACKGROUND_OBSIDIAN;
 const RECORD_SECONDS = 60;
 
 /** Catches native CameraView render crashes (common on Android emulator). */
@@ -42,13 +40,14 @@ class CameraErrorBoundary extends Component {
 }
 
 /**
- * Decaying orange progress ring (Views only — no SVG).
- * progress: 1 = full ring, 0 = empty. Uses tick segments so decay is visible each second.
+ * Decaying countdown ring (Views only — no SVG).
+ * When live/recording, ticks use Electric Crimson (#FF3B30).
  */
-function OrangeCountdownRing({ progress, size = 54, children }) {
+function PlatinumCountdownRing({ progress, size = 54, live = false, children }) {
   const p = Math.max(0, Math.min(1, progress));
   const ticks = 24;
   const lit = Math.round(p * ticks);
+  const activeColor = live ? COLORS.ELECTRIC_CRIMSON : COLORS.PLATINUM_BASE;
 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
@@ -74,7 +73,7 @@ function OrangeCountdownRing({ progress, size = 54, children }) {
                 height: 6,
                 borderRadius: 1.5,
                 marginTop: 1,
-                backgroundColor: active ? ORANGE : 'rgba(255, 107, 0, 0.18)',
+                backgroundColor: active ? activeColor : COLORS.GLASS_OVERLAY,
               }}
             />
           </View>
@@ -103,6 +102,8 @@ function CameraFallbackSurface({ message, isRecording, onRetry }) {
   );
 }
 
+const SPEED_RATES = [0.5, 1, 1.5, 2];
+
 export default function ChallengeCam({
   route,
   navigation,
@@ -110,6 +111,7 @@ export default function ChallengeCam({
   challengeTarget: challengeTargetProp,
   onClose,
   onVideoCaptured,
+  resetToken = 0,
 }) {
   const insets = useSafeAreaInsets();
   const cameraRef = useRef(null);
@@ -130,6 +132,7 @@ export default function ChallengeCam({
   const [cameraKey, setCameraKey] = useState(0);
   const [useFallback, setUseFallback] = useState(false);
   const [frozen, setFrozen] = useState(false);
+  const [speedRate, setSpeedRate] = useState(1);
 
   const challengeTarget =
     challengeTargetProp ||
@@ -327,7 +330,16 @@ export default function ChallengeCam({
     }
   };
 
-  const handleRetake = () => {
+  const resetRecordingSession = useCallback(() => {
+    if (recordWatchdog.current) {
+      clearTimeout(recordWatchdog.current);
+      recordWatchdog.current = null;
+    }
+    try {
+      cameraRef.current?.stopRecording?.();
+    } catch (_) {
+      /* ignore */
+    }
     setRecordedUri(null);
     setIsMockClip(false);
     setIsRecording(false);
@@ -336,22 +348,47 @@ export default function ChallengeCam({
     secondsLeftRef.current = RECORD_SECONDS;
     setSecondsLeft(RECORD_SECONDS);
     stoppingRef.current = false;
-    if (!cameraUnavailable) {
-      setCameraReady(false);
-      setCameraKey((k) => k + 1);
-    }
+    setSpeedRate(1);
+    setCameraReady(false);
+    setCameraKey((k) => k + 1);
+  }, []);
+
+  // Parent bumps resetToken after a successful Arena post so the next session is clean.
+  useEffect(() => {
+    if (!resetToken) return;
+    resetRecordingSession();
+  }, [resetToken, resetRecordingSession]);
+
+  const handleRetake = () => {
+    resetRecordingSession();
   };
 
   const handlePostBattle = () => {
     if (!canPost && !recordedUri) return;
     const uri = recordedUri || `emulator-mock://${Date.now()}.mp4`;
+    const timestamp = Date.now();
+    const payloadMeta = {
+      isMock: isMockClip || uri.startsWith('emulator-mock://'),
+      speedRate,
+      target: challengeTarget,
+      timestamp,
+      opponent: displayHandle,
+      durationSec: Math.max(1, RECORD_SECONDS - (secondsLeftRef.current ?? 0)),
+    };
     try {
       if (onVideoCaptured) {
-        onVideoCaptured(uri, { isMock: isMockClip || uri.startsWith('emulator-mock://') });
+        onVideoCaptured(uri, payloadMeta);
         return;
       }
       if (navigation?.navigate) {
-        navigation.navigate('Arena', { recordedUri: uri });
+        navigation.navigate('Arena', {
+          newArenaPost: {
+            id: `local-${timestamp}`,
+            uri,
+            ...payloadMeta,
+          },
+        });
+        resetRecordingSession();
         return;
       }
       handleClose();
@@ -393,7 +430,7 @@ export default function ChallengeCam({
     return (
       <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
-        <ActivityIndicator color={ORANGE} size="large" />
+        <ActivityIndicator color={COLORS.PLATINUM_BASE} size="large" />
         <Text style={styles.permissionHint}>Checking lens access…</Text>
       </View>
     );
@@ -440,15 +477,15 @@ export default function ChallengeCam({
         <Text style={styles.brandTitle}>BAWAAL</Text>
         <TouchableOpacity
           style={[
-            styles.headerBtn,
-            styles.headerBtnRight,
+            styles.flipBtn,
             (isRecording || cameraUnavailable || frozen) && styles.headerBtnDisabled,
           ]}
           onPress={toggleFacing}
           disabled={isRecording || cameraUnavailable || frozen}
           activeOpacity={0.75}
         >
-          <Text style={styles.headerBtnText}>FLIP</Text>
+          <Text style={styles.flipBtnIcon}>⟳</Text>
+          <Text style={styles.flipBtnText}>FLIP</Text>
         </TouchableOpacity>
       </View>
 
@@ -461,10 +498,10 @@ export default function ChallengeCam({
               <Text style={styles.metaHandle}>{displayHandle}</Text>
             </View>
             <View style={styles.timerBadge}>
-              <OrangeCountdownRing
+              <PlatinumCountdownRing
                 progress={isRecording || timeUp ? progress : 1}
                 size={54}
-                stroke={3}
+                live={isRecording || timeUp}
               >
                 <Text
                   style={[
@@ -475,7 +512,7 @@ export default function ChallengeCam({
                 >
                   {timerLabel}
                 </Text>
-              </OrangeCountdownRing>
+              </PlatinumCountdownRing>
             </View>
           </View>
 
@@ -562,7 +599,7 @@ export default function ChallengeCam({
 
             {!cameraUnavailable && !cameraReady && !mountError && !frozen && (
               <View style={styles.cameraOverlay} pointerEvents="none">
-                <ActivityIndicator color={ORANGE} />
+                <ActivityIndicator color={COLORS.PLATINUM_BASE} />
                 <Text style={styles.overlayText}>STARTING LENS</Text>
               </View>
             )}
@@ -581,8 +618,29 @@ export default function ChallengeCam({
         </View>
       </View>
 
-      {/* Bottom: record ring + POST BATTLE */}
+      {/* Bottom: speed · record ring · POST BATTLE */}
       <View style={styles.bottomControls}>
+        {(frozen || canPost) && (
+          <View style={styles.speedRow}>
+            <Text style={styles.speedLabel}>SPEED</Text>
+            {SPEED_RATES.map((rate) => {
+              const active = speedRate === rate;
+              return (
+                <TouchableOpacity
+                  key={`speed-${rate}`}
+                  style={[styles.speedChip, active && styles.speedChipActive]}
+                  onPress={() => setSpeedRate(rate)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.speedChipText, active && styles.speedChipTextActive]}>
+                    {rate}x
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         <TouchableOpacity
           style={[
             styles.recordRing,
@@ -593,7 +651,7 @@ export default function ChallengeCam({
           disabled={(!cameraUnavailable && !cameraReady) || frozen}
           activeOpacity={0.85}
         >
-          <View style={[styles.recordInner, isRecording && styles.recordInnerStop]} />
+          <View style={[styles.recordInner, isRecording && styles.recordInnerLive]} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -626,14 +684,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   permissionEyebrow: {
-    color: ORANGE,
+    color: COLORS.PLATINUM_BASE,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 2,
     marginBottom: 12,
   },
   permissionTitle: {
-    color: '#ffffff',
+    color: COLORS.OFF_WHITE,
     fontSize: 22,
     fontWeight: '900',
     textAlign: 'center',
@@ -648,16 +706,16 @@ const styles = StyleSheet.create({
     marginBottom: 28,
   },
   permissionBtn: {
-    backgroundColor: ORANGE,
+    backgroundColor: COLORS.PLATINUM_BASE,
     paddingHorizontal: 28,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: RADIUS.cta,
     marginBottom: 14,
     minWidth: 220,
     alignItems: 'center',
   },
   permissionBtnText: {
-    color: CANVAS,
+    color: COLORS.INK,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.6,
@@ -684,20 +742,42 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     minWidth: 84,
   },
-  headerBtnRight: {
-    alignItems: 'flex-end',
-  },
   headerBtnDisabled: {
     opacity: 0.35,
   },
   headerBtnText: {
-    color: 'rgba(255,255,255,0.55)',
+    color: COLORS.TEXT_DIM,
     fontWeight: '700',
     fontSize: 11,
     letterSpacing: 0.4,
   },
+  flipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minWidth: 84,
+    justifyContent: 'center',
+    gap: 6,
+  },
+  flipBtnIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: -1,
+  },
+  flipBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+    letterSpacing: 0.6,
+  },
   brandTitle: {
-    color: '#ffffff',
+    color: COLORS.TEXT_PRIMARY,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2,
@@ -709,11 +789,11 @@ const styles = StyleSheet.create({
   },
   cardHalf: {
     flex: 0.48,
-    backgroundColor: SURFACE,
-    borderRadius: 12,
+    backgroundColor: COLORS.CARD_BOTTOM,
+    borderRadius: RADIUS.card,
     padding: 10,
     borderWidth: 1,
-    borderColor: CARD_BORDER,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     overflow: 'hidden',
   },
   cardHeaderRow: {
@@ -728,32 +808,32 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   metaLabel: {
-    color: 'rgba(255,255,255,0.4)',
+    color: COLORS.TEXT_DIM,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
   metaHandle: {
-    color: ORANGE,
+    color: COLORS.TEXT_PRIMARY,
     fontSize: 11,
     fontWeight: '800',
     marginTop: 2,
   },
   metaStatus: {
-    color: 'rgba(255,255,255,0.45)',
+    color: COLORS.TEXT_DIM,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
   metaStatusLive: {
-    color: ORANGE,
+    color: COLORS.ELECTRIC_CRIMSON,
   },
   timerBadge: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   timerBadgeText: {
-    color: 'rgba(255,255,255,0.55)',
+    color: COLORS.TEXT_MUTED,
     fontSize: 9,
     fontWeight: '800',
     textAlign: 'center',
@@ -761,7 +841,7 @@ const styles = StyleSheet.create({
     maxWidth: 44,
   },
   timerBadgeTextActive: {
-    color: ORANGE,
+    color: COLORS.ELECTRIC_CRIMSON,
   },
   mediaPlaceholder: {
     flex: 1,
@@ -788,11 +868,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   viewportRecording: {
-    borderColor: '#FF0000',
-    borderWidth: 1.5,
+    borderColor: COLORS.ELECTRIC_CRIMSON,
+    borderWidth: 2,
   },
   viewportFrozen: {
-    borderColor: 'rgba(255,107,0,0.55)',
+    borderColor: COLORS.GLASS_BORDER,
     borderWidth: 1.5,
   },
   cameraOverlay: {
@@ -810,7 +890,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   freezeTitle: {
-    color: ORANGE,
+    color: COLORS.PLATINUM_BASE,
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1.4,
@@ -831,7 +911,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#080808',
   },
   overlayText: {
-    color: ORANGE,
+    color: COLORS.PLATINUM_BASE,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -847,7 +927,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   fallbackLive: {
-    color: ORANGE,
+    color: COLORS.ELECTRIC_CRIMSON,
     fontSize: 11,
     fontWeight: '800',
     marginTop: 12,
@@ -856,13 +936,13 @@ const styles = StyleSheet.create({
   retryBtn: {
     marginTop: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,107,0,0.45)',
+    borderColor: COLORS.GLASS_BORDER,
     borderRadius: 8,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   retryBtnText: {
-    color: ORANGE,
+    color: COLORS.PLATINUM_BASE,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.8,
@@ -876,13 +956,15 @@ const styles = StyleSheet.create({
   },
   targetBadge: {
     alignSelf: 'center',
-    backgroundColor: ORANGE,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: RADIUS.pill,
   },
   targetBadgeText: {
-    color: CANVAS,
+    color: COLORS.TEXT_PRIMARY || COLORS.OFF_WHITE,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.3,
@@ -893,17 +975,17 @@ const styles = StyleSheet.create({
     marginVertical: -12,
   },
   vsBadge: {
-    backgroundColor: ORANGE,
+    backgroundColor: COLORS.PLATINUM_BASE,
     width: 30,
     height: 30,
     borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: CANVAS,
+    borderColor: COLORS.BACKGROUND_OBSIDIAN,
   },
   vsBadgeText: {
-    color: CANVAS,
+    color: COLORS.INK,
     fontWeight: '900',
     fontSize: 11,
   },
@@ -913,38 +995,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
   },
+  speedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  speedLabel: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginRight: 4,
+  },
+  speedChip: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  speedChipActive: {
+    borderColor: COLORS.OFF_WHITE,
+    backgroundColor: COLORS.CARD_CHARCOAL,
+  },
+  speedChipText: {
+    color: COLORS.TEXT_MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  speedChipTextActive: {
+    color: COLORS.OFF_WHITE,
+  },
   recordRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    borderWidth: 3,
-    borderColor: ORANGE,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
   },
   recordRingLive: {
-    borderColor: '#FF0000',
+    borderWidth: 3,
+    borderColor: COLORS.PLATINUM_BASE,
+    backgroundColor: 'transparent',
   },
   recordDisabled: {
     opacity: 0.35,
   },
   recordInner: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: ORANGE,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: COLORS.ELECTRIC_CRIMSON,
   },
-  recordInnerStop: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    backgroundColor: '#FF0000',
+  recordInnerLive: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.ELECTRIC_CRIMSON,
   },
   postBattleBtn: {
     width: '100%',
-    backgroundColor: ORANGE,
-    borderRadius: 12,
+    backgroundColor: COLORS.PLATINUM_BASE,
+    borderRadius: RADIUS.cta,
     paddingVertical: 16,
     alignItems: 'center',
   },
@@ -952,7 +1068,7 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   postBattleText: {
-    color: CANVAS,
+    color: COLORS.INK,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.2,
@@ -962,7 +1078,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   retakeLinkText: {
-    color: 'rgba(255,255,255,0.45)',
+    color: COLORS.TEXT_DIM || 'rgba(255,255,255,0.45)',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,

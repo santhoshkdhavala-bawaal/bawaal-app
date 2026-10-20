@@ -552,7 +552,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 2,
-    borderColor: '#E68A00',
+    borderColor: '#E5E4E2',
     backgroundColor: '#070E1E',
   },
   cardHeader: {
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#E68A00',
+    color: '#E5E4E2',
     letterSpacing: 1,
     textAlign: 'center',
   },
@@ -602,8 +602,8 @@ const styles = StyleSheet.create({
     borderColor: '#243452',
   },
   genderBtnActive: {
-    backgroundColor: '#E68A00',
-    borderColor: '#E68A00',
+    backgroundColor: '#1C1F26',
+    borderColor: '#F2F2F5',
   },
   genderText: {
     color: '#8EA0BA',
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   genderTextActive: {
-    color: '#000000',
+    color: '#F2F2F5',
   },
   termsContainer: {
     flexDirection: 'row',
@@ -647,8 +647,8 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   sendOtpBtn: {
-    backgroundColor: '#E68A00',
-    borderRadius: 10,
+    backgroundColor: '#E5E4E2',
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 6,
@@ -658,7 +658,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   sendOtpBtnText: {
-    color: '#000000',
+    color: '#05070A',
     fontWeight: '900',
     fontSize: 15,
   },
@@ -697,7 +697,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   legalHeading: {
-    color: '#E68A00',
+    color: '#E5E4E2',
     fontSize: 13,
     fontWeight: 'bold',
     marginTop: 12,
@@ -732,7 +732,7 @@ const styles = StyleSheet.create({
     width: '88%',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E68A00',
+    borderColor: '#E5E4E2',
   },
   otpLogo: {
     width: 140,
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   enterArenaModalBtn: {
-    backgroundColor: '#E68A00',
+    backgroundColor: '#E5E4E2',
     borderRadius: 10,
     paddingVertical: 14,
     width: '100%',

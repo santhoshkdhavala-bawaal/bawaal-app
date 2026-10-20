@@ -121,7 +121,7 @@ export default function UploadScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 24) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0E14" />
+      <StatusBar barStyle="light-content" backgroundColor="#05070A" />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -153,7 +153,7 @@ export default function UploadScreen({ navigation }) {
             <TextInput
               style={styles.captionInput}
               placeholder="e.g. 100 pushups in 30 secs challenge anyone? 🔥"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#A8AFB8"
               value={caption}
               onChangeText={setCaption}
               multiline
@@ -186,7 +186,7 @@ export default function UploadScreen({ navigation }) {
             <TextInput
               style={styles.metricInput}
               placeholder="e.g. 100 Reps / 30s"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#A8AFB8"
               value={metricTag}
               onChangeText={setMetricTag}
             />
@@ -218,7 +218,7 @@ export default function UploadScreen({ navigation }) {
             disabled={isUploading}
           >
             {isUploading ? (
-              <ActivityIndicator color="#0B0E14" />
+              <ActivityIndicator color="#05070A" />
             ) : (
               <Text style={styles.uploadBtnText}>⚡ THROW CHALLENGE TO ARENA ⚡</Text>
             )}
@@ -290,7 +290,7 @@ export default function UploadScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
   },
   header: {
     flexDirection: 'row',
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#1A2130',
+    borderBottomColor: '#232630',
   },
   brandRow: {
     flexDirection: 'row',
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   headerAccent: {
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -320,7 +320,7 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   closeBtnText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 18,
   },
   previewBox: {
@@ -328,9 +328,9 @@ const styles = StyleSheet.create({
     margin: 16,
     borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#121824',
+    backgroundColor: '#1C1F26',
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   placeholderBox: {
     flex: 1,
@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   placeholderSub: {
-    color: '#64748B',
+    color: '#A8AFB8',
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 18,
@@ -359,20 +359,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   formTitle: {
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 4,
   },
   inputLabel: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 11,
     fontWeight: 'bold',
     letterSpacing: 0.5,
     marginTop: 4,
   },
   captionInput: {
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
     borderRadius: 8,
     padding: 12,
     color: '#FFFFFF',
@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: 'top',
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   categoryRow: {
     flexDirection: 'row',
@@ -388,46 +388,46 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   catChip: {
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   catChipActive: {
-    backgroundColor: '#FF9500',
-    borderColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
+    borderColor: '#E5E4E2',
   },
   catChipText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 11,
     fontWeight: 'bold',
   },
   catChipTextActive: {
-    color: '#0B0E14',
+    color: '#05070A',
   },
   metricInput: {
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
     borderRadius: 8,
     padding: 12,
-    color: '#FF9500',
+    color: '#E5E4E2',
     fontSize: 13,
     fontWeight: 'bold',
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   retakeBtn: {
-    backgroundColor: '#1A2130',
+    backgroundColor: '#232630',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#232630',
     marginTop: 8,
   },
   retakeBtnText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 12,
     fontWeight: 'bold',
   },
@@ -442,24 +442,24 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   durationPill: {
-    backgroundColor: '#121824',
+    backgroundColor: '#1C1F26',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   durationPillActive: {
-    backgroundColor: '#FF9500',
-    borderColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
+    borderColor: '#E5E4E2',
   },
   durationText: {
-    color: '#94A3B8',
+    color: '#A8AFB8',
     fontSize: 12,
     fontWeight: 'bold',
   },
   durationTextActive: {
-    color: '#0B0E14',
+    color: '#05070A',
   },
   controlsRow: {
     flexDirection: 'row',
@@ -470,11 +470,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#121824',
+    backgroundColor: '#1C1F26',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1A2130',
+    borderColor: '#232630',
   },
   galleryIcon: {
     fontSize: 18,
@@ -484,7 +484,7 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     borderWidth: 4,
-    borderColor: '#FF9500',
+    borderColor: '#E5E4E2',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -492,16 +492,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
   },
   uploadBtn: {
-    backgroundColor: '#FF9500',
+    backgroundColor: '#E5E4E2',
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
   },
   uploadBtnText: {
-    color: '#0B0E14',
+    color: '#05070A',
     fontSize: 14,
     fontWeight: 'bold',
   },

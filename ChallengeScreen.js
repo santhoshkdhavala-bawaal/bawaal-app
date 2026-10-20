@@ -9,19 +9,16 @@ import {
   Image,
 } from 'react-native';
 import ChallengeCam from './ChallengeCam';
-
-const ORANGE = '#FF6B00';
-const CANVAS = '#050505';
-const SURFACE = '#0A0A0C';
+import { COLORS, RADIUS } from './theme';
 
 /**
  * Arena challenge route — hosts CameraView via ChallengeCam.
- * Emulator-safe: ChallengeCam falls back if native camera fails.
- * Expects route.params.reel = { creator, statSticker, ... }
+ * On POST TO ARENA, forwards a local post payload to ArenaFeed.
  */
 export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
   const [resultModal, setResultModal] = useState(null);
+  const [camResetToken, setCamResetToken] = useState(0);
 
   const handleClose = useCallback(() => {
     try {
@@ -35,15 +32,33 @@ export default function ChallengeScreen({ route, navigation }) {
     }
   }, [navigation]);
 
+  const buildArenaPost = useCallback(
+    (uri, meta = {}) => {
+      const timestamp = meta.timestamp || Date.now();
+      return {
+        id: `local-${timestamp}`,
+        uri,
+        speedRate: meta.speedRate ?? 1,
+        target: meta.target || reel?.statSticker || '140 KG x 3 Reps',
+        timestamp,
+        isMock: !!meta.isMock,
+        opponent: meta.opponent || `@${reel?.creator || 'Yuki_Lift'}`,
+        durationSec: meta.durationSec || 60,
+        creator: 'You',
+        category: reel?.category || 'GYM',
+        challengeOf: reel?.creator || 'Yuki_Lift',
+      };
+    },
+    [reel]
+  );
+
   const postToArena = useCallback(
-    (uri, isMock) => {
+    (uri, meta = {}) => {
+      const newArenaPost = buildArenaPost(uri, meta);
       try {
+        setCamResetToken((t) => t + 1);
         if (navigation?.navigate) {
-          navigation.navigate('Arena', {
-            recordedUri: uri,
-            reel,
-            isMockClip: isMock,
-          });
+          navigation.navigate('Arena', { newArenaPost });
         } else {
           handleClose();
         }
@@ -52,7 +67,7 @@ export default function ChallengeScreen({ route, navigation }) {
         handleClose();
       }
     },
-    [navigation, reel, handleClose]
+    [navigation, buildArenaPost, handleClose]
   );
 
   const handleVideoCaptured = useCallback((uri, meta = {}) => {
@@ -60,7 +75,11 @@ export default function ChallengeScreen({ route, navigation }) {
       meta?.isMock || (typeof uri === 'string' && uri.startsWith('emulator-mock://'));
     setResultModal({
       uri,
-      isMock,
+      meta: {
+        ...meta,
+        isMock,
+        timestamp: meta.timestamp || Date.now(),
+      },
       title: isMock ? 'FALLBACK CLIP READY' : 'CHALLENGE RECORDED',
       body: isMock
         ? 'Emulator camera was unavailable, so a safe placeholder clip was created. Post it to continue the flow.'
@@ -79,6 +98,7 @@ export default function ChallengeScreen({ route, navigation }) {
         challengeTarget={reel?.statSticker || route?.params?.target || '140 KG x 3 Reps'}
         onClose={handleClose}
         onVideoCaptured={handleVideoCaptured}
+        resetToken={camResetToken}
       />
 
       <Modal
@@ -99,6 +119,11 @@ export default function ChallengeScreen({ route, navigation }) {
             </View>
             <Text style={styles.title}>{resultModal?.title}</Text>
             <Text style={styles.body}>{resultModal?.body}</Text>
+            {!!resultModal?.meta?.speedRate && (
+              <Text style={styles.metaLine}>
+                SPEED {resultModal.meta.speedRate}x · {resultModal.meta.target}
+              </Text>
+            )}
 
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -107,11 +132,11 @@ export default function ChallengeScreen({ route, navigation }) {
                 const payload = resultModal;
                 dismissModal();
                 if (payload?.uri) {
-                  postToArena(payload.uri, payload.isMock);
+                  postToArena(payload.uri, payload.meta || {});
                 }
               }}
             >
-              <Text style={styles.primaryBtnText}>POST TO ARENA</Text>
+              <Text style={styles.primaryBtnText}>POST TO ARENA ⚡</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.stayBtn} activeOpacity={0.7} onPress={dismissModal}>
@@ -127,15 +152,15 @@ export default function ChallengeScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(5, 5, 5, 0.82)',
+    backgroundColor: 'rgba(5, 7, 10, 0.88)',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
   card: {
-    backgroundColor: SURFACE,
-    borderRadius: 14,
+    backgroundColor: COLORS.CARD_CHARCOAL,
+    borderRadius: RADIUS.card,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: COLORS.GLASS_BORDER,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 18,
@@ -153,7 +178,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   title: {
-    color: '#FFFFFF',
+    color: COLORS.OFF_WHITE,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -161,22 +186,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   body: {
-    color: 'rgba(255, 255, 255, 0.55)',
+    color: COLORS.TEXT_MUTED,
     fontSize: 13,
     lineHeight: 20,
-    marginBottom: 22,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  metaLine: {
+    color: COLORS.PLATINUM_BASE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    marginBottom: 18,
     textAlign: 'center',
   },
   primaryBtn: {
     width: '100%',
-    backgroundColor: ORANGE,
-    borderRadius: 12,
+    backgroundColor: COLORS.PLATINUM_BASE,
+    borderRadius: RADIUS.cta,
     paddingVertical: 15,
     alignItems: 'center',
     marginBottom: 10,
   },
   primaryBtnText: {
-    color: CANVAS,
+    color: COLORS.INK,
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -184,13 +217,13 @@ const styles = StyleSheet.create({
   stayBtn: {
     width: '100%',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderRadius: 12,
+    borderColor: COLORS.GLASS_BORDER,
+    borderRadius: RADIUS.cta,
     paddingVertical: 14,
     alignItems: 'center',
   },
   stayBtnText: {
-    color: 'rgba(255, 255, 255, 0.45)',
+    color: COLORS.TEXT_MUTED,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.4,

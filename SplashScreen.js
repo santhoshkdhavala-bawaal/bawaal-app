@@ -26,7 +26,7 @@ export default function SplashScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0E14" hidden={true} />
+      <StatusBar barStyle="light-content" backgroundColor="#05070A" hidden={true} />
       <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
         <Image
           source={require('./assets/BAWAAL_white_full.png')}
@@ -40,7 +40,7 @@ export default function SplashScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0B0E14',
+    backgroundColor: '#05070A',
     justifyContent: 'center',
     alignItems: 'center',
   },
