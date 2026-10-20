@@ -1,24 +1,57 @@
 {
   "expo": {
-    "name": "bawaal-mobile",
+    "name": "BAWAAL",
     "slug": "bawaal-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": true
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-bawaal.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#070a12"
     },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+    "scheme": "bawaal",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.bawaal.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow BAWAAL to access your camera to record battle responses.",
+        "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone to record battle audio."
       }
     },
+    "android": {
+      "package": "com.bawaal.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#070a12"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow BAWAAL to access your camera to record battle responses.",
+          "microphonePermission": "Allow BAWAAL to access your microphone to record battle audio.",
+          "recordAudioAndroid": true,
+          "barcodeScannerEnabled": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a73d9071-005c-46b9-bb23-f52ef215941a"
+      }
+    },
+    "owner": "bawaal"
   }
 }
