@@ -1,15 +1,15 @@
 {
   "expo": {
     "name": "BAWAAL",
-    "slug": "bawaal-mobile",
-    "version": "1.0.0",
+    "slug": "bawaal-mobile-v2",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash-bawaal.png",
+      "image": "./assets/splash_v2.png",
       "resizeMode": "contain",
-      "backgroundColor": "#070a12"
+      "backgroundColor": "#05070A"
     },
     "scheme": "bawaal",
     "ios": {
@@ -24,7 +24,12 @@
       "package": "com.bawaal.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#070a12"
+        "backgroundColor": "#05070A"
+      },
+      "splash": {
+        "image": "./assets/splash_v2.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#05070A"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -45,7 +50,17 @@
           "recordAudioAndroid": true,
           "barcodeScannerEnabled": false
         }
-      ]
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash_v2.png",
+          "backgroundColor": "#05070A",
+          "resizeMode": "contain",
+          "imageWidth": 280
+        }
+      ],
+      "expo-video"
     ],
     "extra": {
       "eas": {

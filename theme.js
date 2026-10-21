@@ -20,7 +20,8 @@ export const COLORS = {
   /** Live battle / recording energy */
   ELECTRIC_CRIMSON: '#FF3B30',
   CRIMSON_RED: '#FF3B30',
-  RECORDING_RED: '#FF3B30',
+  RECORDING_RED: '#DC2626',
+  ACTIVE_RECORDING: '#DC2626',
 };
 
 export const RADIUS = {

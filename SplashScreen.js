@@ -4,9 +4,13 @@ import {
   Image,
   StyleSheet,
   Animated,
-  StatusBar
-} from 'react';
+  StatusBar,
+} from 'react-native';
+import { COLORS } from './theme';
 
+/**
+ * In-app Obsidian splash — mirrors native splash_v2.png / #05070A branding.
+ */
 export default function SplashScreen({ navigation }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -18,7 +22,11 @@ export default function SplashScreen({ navigation }) {
     }).start();
 
     const timer = setTimeout(() => {
-      navigation.replace('AthleteRegistration');
+      if (navigation?.replace) {
+        navigation.replace('AthleteRegistration');
+      } else if (navigation?.navigate) {
+        navigation.navigate('Arena');
+      }
     }, 2200);
 
     return () => clearTimeout(timer);
@@ -26,11 +34,12 @@ export default function SplashScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#05070A" hidden={true} />
+      <StatusBar barStyle="light-content" backgroundColor="#05070A" hidden />
       <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
         <Image
-          source={require('./assets/BAWAAL_white_full.png')}
-          style={styles.splashLogo}
+          source={require('./assets/splash_v2.png')}
+          style={styles.splashImage}
+          resizeMode="contain"
         />
       </Animated.View>
     </View>
@@ -45,12 +54,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   contentContainer: {
+    flex: 1,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 24,
   },
-  splashLogo: {
-    width: 220,
-    height: 140,
-    resizeMode: 'contain',
+  splashImage: {
+    width: '100%',
+    height: '70%',
+    maxWidth: 420,
   },
 });

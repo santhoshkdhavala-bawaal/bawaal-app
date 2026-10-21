@@ -9,6 +9,7 @@ import {
   Image,
 } from 'react-native';
 import ChallengeCam from './ChallengeCam';
+import { setLatestBattleClip } from './battleClipStore';
 import { COLORS, RADIUS } from './theme';
 
 /**
@@ -38,12 +39,19 @@ export default function ChallengeScreen({ route, navigation }) {
       return {
         id: `local-${timestamp}`,
         uri,
+        videoUri: meta.videoUri || uri,
+        recordedVideoUri: meta.recordedVideoUri || uri,
         speedRate: meta.speedRate ?? 1,
         target: meta.target || reel?.statSticker || '140 KG x 3 Reps',
         timestamp,
         isMock: !!meta.isMock,
         opponent: meta.opponent || `@${reel?.creator || 'Yuki_Lift'}`,
         durationSec: meta.durationSec || 60,
+        durationMs: meta.durationMs || (meta.durationSec || 60) * 1000,
+        facing: meta.facing || 'back',
+        videoQuality: meta.videoQuality || '1080p',
+        fps: meta.fps || 30,
+        mimeType: meta.mimeType || 'video/mp4',
         creator: 'You',
         category: reel?.category || 'GYM',
         challengeOf: reel?.creator || 'Yuki_Lift',
@@ -55,10 +63,15 @@ export default function ChallengeScreen({ route, navigation }) {
   const postToArena = useCallback(
     (uri, meta = {}) => {
       const newArenaPost = buildArenaPost(uri, meta);
+      setLatestBattleClip(newArenaPost);
       try {
         setCamResetToken((t) => t + 1);
         if (navigation?.navigate) {
-          navigation.navigate('Arena', { newArenaPost });
+          navigation.navigate('Arena', {
+            newArenaPost,
+            videoUri: newArenaPost.videoUri || uri,
+            recordedVideoUri: newArenaPost.recordedVideoUri || uri,
+          });
         } else {
           handleClose();
         }
@@ -90,12 +103,18 @@ export default function ChallengeScreen({ route, navigation }) {
   const dismissModal = () => setResultModal(null);
 
   return (
-    <>
+    <View style={styles.root}>
       <ChallengeCam
         route={route}
         navigation={navigation}
         targetUser={reel?.creator || route?.params?.handle || 'Yuki_Lift'}
         challengeTarget={reel?.statSticker || route?.params?.target || '140 KG x 3 Reps'}
+        challengeMaxDuration={
+          route?.params?.challengeMaxDuration ||
+          reel?.challengeMaxDuration ||
+          reel?.durationSec ||
+          30
+        }
         onClose={handleClose}
         onVideoCaptured={handleVideoCaptured}
         resetToken={camResetToken}
@@ -145,11 +164,15 @@ export default function ChallengeScreen({ route, navigation }) {
           </Pressable>
         </Pressable>
       </Modal>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#05070A',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(5, 7, 10, 0.88)',

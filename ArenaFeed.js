@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Component } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,91 @@ import {
   PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { COLORS, RADIUS } from './theme';
+import { consumeLatestBattleClip } from './battleClipStore';
+
+class VideoErrorBoundary extends Component {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error) {
+    console.warn('Arena Video failed:', error?.message || error);
+  }
+  render() {
+    if (this.state.failed) return this.props.fallback || null;
+    return this.props.children;
+  }
+}
+
+function isPlayableUri(uri) {
+  if (!uri || typeof uri !== 'string') return false;
+  if (uri.startsWith('emulator-mock://')) return false;
+  return (
+    uri.startsWith('file://') ||
+    uri.startsWith('content://') ||
+    uri.startsWith('http://') ||
+    uri.startsWith('https://') ||
+    uri.startsWith('ph://') ||
+    uri.startsWith('/')
+  );
+}
+
+/** Local battle clip player — maps recordedVideoUri / uri into expo-video. */
+function BattleVideoPlayer({ uri, playing, speed, onEnded }) {
+  const sourceUri = uri;
+  const player = useVideoPlayer(sourceUri, (p) => {
+    p.loop = false;
+    p.muted = false;
+  });
+
+  useEffect(() => {
+    try {
+      player.playbackRate = speed || 1;
+    } catch (_) {
+      /* ignore */
+    }
+  }, [player, speed]);
+
+  useEffect(() => {
+    try {
+      if (playing) {
+        if (player.currentTime >= (player.duration || 0) - 0.05) {
+          player.currentTime = 0;
+        }
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }, [playing, player]);
+
+  useEffect(() => {
+    const sub = player.addListener?.('playToEnd', () => {
+      onEnded?.();
+    });
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player, onEnded]);
+
+  return (
+    <VideoView
+      style={styles.arenaVideo}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+      pointerEvents="none"
+    />
+  );
+}
 
 function PulsingCrimsonDot() {
   const pulse = useRef(new Animated.Value(1)).current;
@@ -76,6 +160,8 @@ const SEED_POSTS = [
     category: 'GYM',
     challengeOf: null,
     isSeed: true,
+    durationSec: 30,
+    challengeMaxDuration: 30,
   },
 ];
 
@@ -205,13 +291,19 @@ function InteractiveScrubBar({ progress, duration, onSeek, onSeekStart, onSeekEn
 }
 
 function LocalChallengeReel({ post, highlighted, onChallenge }) {
-  const duration = Math.max(1, post.durationSec || 60);
+  // Prefer videoUri from recordAsync payload, then legacy keys.
+  const recordedVideoUri = post.videoUri || post.recordedVideoUri || post.uri || null;
+  const duration = Math.max(
+    1,
+    post.durationSec || (post.durationMs ? Math.round(post.durationMs / 1000) : 60)
+  );
   const speed = post.speedRate || 1;
   const [playing, setPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [scrubbing, setScrubbing] = useState(false);
   const tickRef = useRef(null);
   const wasPlayingRef = useRef(false);
+  const canPlayVideo = isPlayableUri(recordedVideoUri);
 
   useEffect(() => {
     if (!playing || scrubbing) {
@@ -241,7 +333,7 @@ function LocalChallengeReel({ post, highlighted, onChallenge }) {
   }, [highlighted, post.id]);
 
   const progress = Math.min(1, position / duration);
-  const isLocalResponse = !!post.uri || post.creator === 'You';
+  const isLocalResponse = !!recordedVideoUri || post.creator === 'You';
 
   const handleSeek = useCallback((seconds) => {
     setPosition(Math.max(0, Math.min(duration, seconds)));
@@ -277,15 +369,39 @@ function LocalChallengeReel({ post, highlighted, onChallenge }) {
         activeOpacity={0.95}
         onPress={() => setPlaying((p) => !p)}
       >
-        <Text style={styles.playerStatus}>
-          {post.isMock
-            ? 'LOCAL FALLBACK CLIP'
-            : post.uri
-              ? 'LOCAL BATTLE RESPONSE'
-              : 'ARENA REEL'}
-        </Text>
-        <View style={styles.playOverlay} pointerEvents="none">
-          <PlayIcon playing={playing} />
+        <View style={styles.videoFrame}>
+          {canPlayVideo ? (
+            <VideoErrorBoundary
+              fallback={
+                <Text style={styles.playerStatus}>VIDEO SURFACE UNAVAILABLE</Text>
+              }
+            >
+              {/* source={{ uri: item.videoUri }} */}
+              <BattleVideoPlayer
+                uri={recordedVideoUri}
+                playing={playing}
+                speed={speed}
+                onEnded={() => {
+                  setPlaying(false);
+                  setPosition(duration);
+                }}
+              />
+            </VideoErrorBoundary>
+          ) : (
+            <View style={styles.videoPlaceholderFill} />
+          )}
+          <Text style={styles.playerStatus} pointerEvents="none">
+            {post.isMock
+              ? 'LOCAL FALLBACK CLIP'
+              : canPlayVideo
+                ? 'LOCAL BATTLE RESPONSE'
+                : recordedVideoUri
+                  ? 'CLIP URI PENDING'
+                  : 'ARENA REEL'}
+          </Text>
+          <View style={styles.playOverlay} pointerEvents="none">
+            <PlayIcon playing={playing} />
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -331,15 +447,32 @@ export default function ArenaFeed({ navigation, route }) {
 
   const ingestArenaPost = useCallback(
     (newArenaPost) => {
-      if (!newArenaPost?.id) return;
-      if (consumedPostId.current === newArenaPost.id) return;
-      consumedPostId.current = newArenaPost.id;
+      if (!newArenaPost) return;
+      const uri =
+        newArenaPost.videoUri ||
+        newArenaPost.recordedVideoUri ||
+        newArenaPost.uri ||
+        null;
+      const normalized = {
+        ...newArenaPost,
+        id: newArenaPost.id || `local-${newArenaPost.timestamp || Date.now()}`,
+        uri,
+        videoUri: uri,
+        recordedVideoUri: uri,
+        durationSec:
+          newArenaPost.durationSec ||
+          (newArenaPost.durationMs ? Math.round(newArenaPost.durationMs / 1000) : 60),
+        creator: newArenaPost.creator || 'You',
+      };
+      if (!normalized.id) return;
+      if (consumedPostId.current === normalized.id) return;
+      consumedPostId.current = normalized.id;
 
       setLocalPosts((prev) => {
-        if (prev.some((p) => p.id === newArenaPost.id)) return prev;
-        return [newArenaPost, ...prev];
+        if (prev.some((p) => p.id === normalized.id)) return prev;
+        return [normalized, ...prev];
       });
-      setHighlightId(newArenaPost.id);
+      setHighlightId(normalized.id);
       setActiveCategory('ALL');
 
       requestAnimationFrame(() => {
@@ -347,7 +480,11 @@ export default function ArenaFeed({ navigation, route }) {
       });
 
       try {
-        navigation?.setParams?.({ newArenaPost: undefined });
+        navigation?.setParams?.({
+          newArenaPost: undefined,
+          recordedVideoUri: undefined,
+          videoUri: undefined,
+        });
       } catch (_) {
         /* ignore */
       }
@@ -357,15 +494,34 @@ export default function ArenaFeed({ navigation, route }) {
 
   useEffect(() => {
     const incoming = route?.params?.newArenaPost;
-    if (incoming) ingestArenaPost(incoming);
+    if (incoming) {
+      ingestArenaPost(incoming);
+      return;
+    }
+    const fromStore = consumeLatestBattleClip();
+    if (fromStore) ingestArenaPost(fromStore);
   }, [route?.params?.newArenaPost, ingestArenaPost]);
 
   const openChallenge = (fromPost) => {
+    const challengeMaxDuration =
+      fromPost?.challengeMaxDuration ||
+      fromPost?.durationSec ||
+      fromPost?.maxDurationSec ||
+      30;
+    const challengerUri =
+      fromPost?.videoUri || fromPost?.recordedVideoUri || fromPost?.uri || null;
     navigation?.navigate('Challenge', {
+      challengeMaxDuration,
+      challengerUri,
+      targetVideoUri: challengerUri,
       reel: {
         creator: fromPost?.creator || 'Yuki_Lift',
         statSticker: fromPost?.target || '140 KG x 3 Reps',
         category: fromPost?.category || 'GYM',
+        durationSec: challengeMaxDuration,
+        challengeMaxDuration,
+        videoUri: challengerUri,
+        uri: challengerUri,
       },
     });
   };
@@ -651,31 +807,53 @@ const styles = StyleSheet.create({
   },
   playerStage: {
     backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
-    borderRadius: 10,
-    minHeight: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.CARD_BORDER,
     zIndex: 1,
     overflow: 'hidden',
   },
+  videoFrame: {
+    width: '100%',
+    height: 280,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Explicit Video dimensions: width 100%, height 280, borderRadius 12
+  arenaVideo: {
+    width: '100%',
+    height: 280,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  videoPlaceholderFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
+  },
   playerStatus: {
     position: 'absolute',
     top: 12,
     left: 12,
+    zIndex: 3,
     color: COLORS.TEXT_DIM,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
   },
   playOverlay: {
-    width: 56,
-    height: 56,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    alignItems: 'center',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 4,
     justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   playTriangle: {
     width: 0,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, Component, useCallback } from 'react';
+import React, { useState, useEffect, useRef, Component, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,15 +7,47 @@ import {
   StatusBar,
   ActivityIndicator,
   Platform,
+  PanResponder,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { COLORS, RADIUS } from './theme';
+import { setLatestBattleClip } from './battleClipStore';
 
-const CANVAS = COLORS.BACKGROUND_OBSIDIAN;
-const RECORD_SECONDS = 60;
+const DURATION_OPTIONS = [5, 15, 30, 60];
+const DEFAULT_DURATION = 30;
 
-/** Catches native CameraView render crashes (common on Android emulator). */
+function snapChallengeDuration(sec) {
+  const n = Number(sec);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_DURATION;
+  let best = DURATION_OPTIONS[0];
+  let bestDiff = Math.abs(best - n);
+  for (let i = 1; i < DURATION_OPTIONS.length; i += 1) {
+    const opt = DURATION_OPTIONS[i];
+    const diff = Math.abs(opt - n);
+    if (diff < bestDiff) {
+      best = opt;
+      bestDiff = diff;
+    }
+  }
+  return best;
+}
+const ACTIVE_REC = COLORS.ACTIVE_RECORDING || '#DC2626';
+const PLATINUM = '#E5E4E2';
+const OBSIDIAN = '#05070A';
+const VIDEO_QUALITY = '1080p';
+const TARGET_FPS = 30;
+
+/** Bundled opponent fallback when Arena does not pass a target URI. */
+const OPPONENT_FALLBACK_ASSET = require('./assets/sample_challenge.mp4');
+const OPPONENT_FALLBACK_REMOTE =
+  'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+
+/**
+ * Reports CameraView render errors without unmounting children.
+ * Replacing CameraView on error detaches Android viewState and crashes record/review.
+ */
 class CameraErrorBoundary extends Component {
   state = { hasError: false, message: null };
 
@@ -32,31 +64,28 @@ class CameraErrorBoundary extends Component {
   }
 
   render() {
-    if (this.state.hasError) {
-      return this.props.fallback || null;
-    }
+    // Always keep children mounted — overlay fallback is handled by parent.
     return this.props.children;
   }
 }
 
 /**
- * Decaying countdown ring (Views only — no SVG).
- * When live/recording, ticks use Electric Crimson (#FF3B30).
+ * Circular progress ring around the shutter — fills as recording approaches the
+ * selected time limit (Views only, no SVG dependency).
  */
-function PlatinumCountdownRing({ progress, size = 54, live = false, children }) {
+function ShutterProgressRing({ progress, size = 92, recording = false, children }) {
   const p = Math.max(0, Math.min(1, progress));
-  const ticks = 24;
+  const ticks = 48;
   const lit = Math.round(p * ticks);
-  const activeColor = live ? COLORS.ELECTRIC_CRIMSON : COLORS.PLATINUM_BASE;
 
   return (
     <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
       {Array.from({ length: ticks }).map((_, i) => {
         const deg = (i / ticks) * 360;
-        const active = i < lit;
+        const active = recording && i < lit;
         return (
           <View
-            key={`tick-${i}`}
+            key={`shutter-tick-${i}`}
             pointerEvents="none"
             style={{
               position: 'absolute',
@@ -70,10 +99,14 @@ function PlatinumCountdownRing({ progress, size = 54, live = false, children }) 
             <View
               style={{
                 width: 3,
-                height: 6,
-                borderRadius: 1.5,
+                height: active ? 9 : 6,
+                borderRadius: 2,
                 marginTop: 1,
-                backgroundColor: active ? activeColor : COLORS.GLASS_OVERLAY,
+                backgroundColor: active
+                  ? ACTIVE_REC
+                  : recording
+                    ? 'rgba(229,228,226,0.18)'
+                    : 'rgba(229,228,226,0.28)',
               }}
             />
           </View>
@@ -102,13 +135,428 @@ function CameraFallbackSurface({ message, isRecording, onRetry }) {
   );
 }
 
-const SPEED_RATES = [0.5, 1, 1.5, 2];
+const SLOW_MO_RATES = [0.25, 0.5, 0.75];
+const MIN_SLOW_MO_SPAN = 0.25;
+
+function isPlayableReviewUri(uri) {
+  if (!uri || typeof uri !== 'string') return false;
+  if (uri.startsWith('emulator-mock://')) return false;
+  return (
+    uri.startsWith('file://') ||
+    uri.startsWith('content://') ||
+    uri.startsWith('http://') ||
+    uri.startsWith('https://') ||
+    uri.startsWith('/')
+  );
+}
+
+function resolveOpponentSource(uri) {
+  if (isPlayableReviewUri(uri)) return { uri };
+  if (OPPONENT_FALLBACK_ASSET != null) return OPPONENT_FALLBACK_ASSET;
+  return { uri: OPPONENT_FALLBACK_REMOTE };
+}
+
+/** TARGET: [Exercise] • [Reps/Sets] • [Duration] */
+function buildTargetMetricsLabel(rawTarget, durationSec, extras = {}) {
+  const dur = `${snapChallengeDuration(durationSec)}s`;
+  const exerciseExtra = extras.exercise || extras.lift || null;
+  const repsExtra = extras.reps || extras.sets || extras.repLabel || null;
+
+  let raw = String(rawTarget || '').trim().replace(/^TARGET:\s*/i, '');
+  if (!raw) raw = 'Challenge';
+
+  let exercise = exerciseExtra;
+  let reps = repsExtra;
+
+  if (raw.includes('•')) {
+    const parts = raw.split('•').map((p) => p.trim()).filter(Boolean);
+    const withoutDur = parts.filter((p) => !/^\d+\s*s$/i.test(p));
+    if (!exercise && withoutDur[0]) exercise = withoutDur[0];
+    if (!reps && withoutDur[1]) reps = withoutDur[1];
+  } else {
+    const xMatch = raw.match(/^(.+?)\s*[x×]\s*(.+)$/i);
+    if (xMatch) {
+      if (!exercise) exercise = xMatch[1].trim();
+      if (!reps) reps = xMatch[2].trim();
+    } else if (!exercise) {
+      exercise = raw;
+    }
+  }
+
+  const segments = [exercise || raw, reps || null, dur].filter(Boolean);
+  return `TARGET: ${segments.join(' • ')}`;
+}
+
+/**
+ * Permanently-mounted review player (expo-video).
+ * - Playhead written to playheadRef (no parent setState thrash)
+ * - playbackRate only changes when crossing into/out of the slow-mo window
+ */
+function ReviewSlowMoPlayer({
+  uri,
+  active = true,
+  slowMoEnabled,
+  slowMoStartSec,
+  slowMoEndSec,
+  slowMoRate,
+  playheadRef,
+  videoRef,
+}) {
+  const player = useVideoPlayer(null, (p) => {
+    p.loop = true;
+    p.muted = false;
+    p.preservesPitch = true;
+    p.timeUpdateEventInterval = 0.05;
+  });
+  const loadedUriRef = useRef(null);
+  const inRangeRef = useRef(null); // null | boolean — null forces re-apply
+  const slowMoCfgRef = useRef({
+    enabled: slowMoEnabled,
+    start: slowMoStartSec,
+    end: slowMoEndSec,
+    rate: slowMoRate,
+  });
+
+  useEffect(() => {
+    slowMoCfgRef.current = {
+      enabled: slowMoEnabled,
+      start: slowMoStartSec,
+      end: slowMoEndSec,
+      rate: slowMoRate,
+    };
+    // Config changed — re-evaluate boundary once (not every tick)
+    inRangeRef.current = null;
+  }, [slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate]);
+
+  useEffect(() => {
+    if (videoRef) videoRef.current = player;
+    return () => {
+      if (videoRef && videoRef.current === player) {
+        videoRef.current = null;
+      }
+    };
+  }, [player, videoRef]);
+
+  const applyRateOnBoundary = useCallback(
+    (currentSec) => {
+      const cfg = slowMoCfgRef.current;
+      const inRange =
+        !!cfg.enabled && currentSec >= cfg.start && currentSec <= cfg.end;
+      if (inRangeRef.current === inRange) return;
+      inRangeRef.current = inRange;
+      const nextRate = inRange ? cfg.rate : 1.0;
+      try {
+        player.preservesPitch = true;
+        player.playbackRate = nextRate;
+      } catch (_) {
+        /* ignore */
+      }
+    },
+    [player]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (isPlayableReviewUri(uri)) {
+          if (loadedUriRef.current !== uri) {
+            await player.replaceAsync({ uri });
+            if (cancelled) return;
+            loadedUriRef.current = uri;
+            inRangeRef.current = null;
+          }
+          player.loop = true;
+          if (active) {
+            player.play();
+          } else {
+            player.pause();
+          }
+        } else {
+          loadedUriRef.current = null;
+          try {
+            player.pause();
+          } catch (_) {
+            /* ignore */
+          }
+        }
+      } catch (_) {
+        /* ignore replace/play races during teardown */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [player, uri, active]);
+
+  useEffect(() => {
+    applyRateOnBoundary(player.currentTime || 0);
+  }, [applyRateOnBoundary, player, slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate]);
+
+  useEffect(() => {
+    const sub = player.addListener?.('timeUpdate', (payload) => {
+      const currentSec =
+        typeof payload?.currentTime === 'number' ? payload.currentTime : 0;
+      if (playheadRef) {
+        playheadRef.current = currentSec;
+      }
+      applyRateOnBoundary(currentSec);
+    });
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player, playheadRef, applyRateOnBoundary]);
+
+  // Pause + clear source before native view tears down (viewState safety)
+  useEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        if (typeof player.replace === 'function') {
+          player.replace(null);
+        } else if (typeof player.replaceAsync === 'function') {
+          player.replaceAsync(null);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player]);
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} collapsable={false}>
+      <VideoView
+        style={StyleSheet.absoluteFillObject}
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+      />
+    </View>
+  );
+}
+
+/** Permanently-mounted opponent clip — stable player, replaceAsync only. */
+function OpponentTargetPlayer({ uri, active = true }) {
+  const player = useVideoPlayer(OPPONENT_FALLBACK_ASSET, (p) => {
+    p.loop = true;
+    p.muted = true;
+    try {
+      p.play();
+    } catch (_) {
+      /* ignore */
+    }
+  });
+  const loadedKeyRef = useRef('asset');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next = resolveOpponentSource(uri);
+      const key =
+        typeof next === 'number'
+          ? `asset:${next}`
+          : next?.uri
+            ? `uri:${next.uri}`
+            : 'asset';
+      try {
+        if (loadedKeyRef.current !== key) {
+          await player.replaceAsync(next);
+          if (cancelled) return;
+          loadedKeyRef.current = key;
+        }
+        player.loop = true;
+        player.muted = true;
+        if (active) {
+          player.play();
+        } else {
+          player.pause();
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [player, uri, active]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        if (typeof player.replace === 'function') {
+          player.replace(null);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player]);
+
+  return (
+    <VideoView
+      style={styles.targetVideo}
+      player={player}
+      contentFit="cover"
+      nativeControls={false}
+    />
+  );
+}
+
+/**
+ * Dual-marker timeline — range handles (start/end) are React state;
+ * playhead cursor reads playheadRef via rAF so playback ticks never re-render the parent.
+ */
+function SlowMoRangeSlider({
+  duration,
+  startSec,
+  endSec,
+  playheadRef,
+  onChangeStart,
+  onChangeEnd,
+}) {
+  const trackRef = useRef(null);
+  const trackWidthRef = useRef(0);
+  const trackPageXRef = useRef(0);
+  const startRef = useRef(startSec);
+  const endRef = useRef(endSec);
+  const durationRef = useRef(duration);
+  const activeThumb = useRef(null);
+  const onChangeStartRef = useRef(onChangeStart);
+  const onChangeEndRef = useRef(onChangeEnd);
+  const [playPct, setPlayPct] = useState(0);
+
+  useEffect(() => {
+    startRef.current = startSec;
+    endRef.current = endSec;
+    durationRef.current = duration;
+  }, [startSec, endSec, duration]);
+
+  useEffect(() => {
+    onChangeStartRef.current = onChangeStart;
+    onChangeEndRef.current = onChangeEnd;
+  }, [onChangeStart, onChangeEnd]);
+
+  // Smooth playhead — independent of range-handle state updates
+  useEffect(() => {
+    let raf = 0;
+    let lastPct = -1;
+    const tick = () => {
+      const dur = Math.max(0.001, durationRef.current || 1);
+      const sec = Math.max(0, Math.min(dur, playheadRef?.current ?? 0));
+      const nextPct = (sec / dur) * 100;
+      if (Math.abs(nextPct - lastPct) >= 0.08) {
+        lastPct = nextPct;
+        setPlayPct(nextPct);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playheadRef]);
+
+  const secFromPageX = useCallback((pageX, trackPageX) => {
+    const w = trackWidthRef.current || 1;
+    const ratio = Math.max(0, Math.min(1, (pageX - trackPageX) / w));
+    return ratio * (durationRef.current || 1);
+  }, []);
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (evt) => {
+          trackRef.current?.measureInWindow?.((x, _y, w) => {
+            trackPageXRef.current = x;
+            if (w) trackWidthRef.current = w;
+          });
+          const sec = secFromPageX(evt.nativeEvent.pageX, trackPageXRef.current);
+          const mid = (startRef.current + endRef.current) / 2;
+          activeThumb.current = sec < mid ? 'start' : 'end';
+          if (activeThumb.current === 'start') {
+            onChangeStartRef.current(
+              Math.min(sec, endRef.current - MIN_SLOW_MO_SPAN)
+            );
+          } else {
+            onChangeEndRef.current(
+              Math.max(sec, startRef.current + MIN_SLOW_MO_SPAN)
+            );
+          }
+        },
+        onPanResponderMove: (evt) => {
+          const sec = secFromPageX(evt.nativeEvent.pageX, trackPageXRef.current);
+          if (activeThumb.current === 'start') {
+            onChangeStartRef.current(
+              Math.max(0, Math.min(sec, endRef.current - MIN_SLOW_MO_SPAN))
+            );
+          } else {
+            onChangeEndRef.current(
+              Math.min(
+                durationRef.current,
+                Math.max(sec, startRef.current + MIN_SLOW_MO_SPAN)
+              )
+            );
+          }
+        },
+        onPanResponderRelease: () => {
+          activeThumb.current = null;
+        },
+      }),
+    [secFromPageX]
+  );
+
+  const dur = Math.max(0.001, duration);
+  const startPct = (startSec / dur) * 100;
+  const endPct = (endSec / dur) * 100;
+  const spanPct = Math.max(0, endPct - startPct);
+
+  return (
+    <View
+      ref={trackRef}
+      style={styles.slowMoTrackHit}
+      onLayout={(e) => {
+        trackWidthRef.current = e.nativeEvent.layout.width;
+        trackRef.current?.measureInWindow?.((x, _y, w) => {
+          trackPageXRef.current = x;
+          if (w) trackWidthRef.current = w;
+        });
+      }}
+      {...pan.panHandlers}
+    >
+      <View style={styles.slowMoTrack}>
+        <View
+          style={[
+            styles.slowMoHighlight,
+            { left: `${startPct}%`, width: `${spanPct}%` },
+          ]}
+        />
+        <View style={[styles.slowMoPlayhead, { left: `${playPct}%` }]} />
+        <View style={[styles.slowMoThumb, { left: `${startPct}%` }]} />
+        <View style={[styles.slowMoThumb, { left: `${endPct}%` }]} />
+      </View>
+    </View>
+  );
+}
 
 export default function ChallengeCam({
   route,
   navigation,
   targetUser,
   challengeTarget: challengeTargetProp,
+  challengeMaxDuration: challengeMaxDurationProp,
   onClose,
   onVideoCaptured,
   resetToken = 0,
@@ -117,28 +565,73 @@ export default function ChallengeCam({
   const cameraRef = useRef(null);
   const recordWatchdog = useRef(null);
   const stoppingRef = useRef(false);
-  const secondsLeftRef = useRef(RECORD_SECONDS);
+  const recordingLockRef = useRef(false);
+
+  const initialDuration = snapChallengeDuration(
+    challengeMaxDurationProp ??
+      route?.params?.challengeMaxDuration ??
+      route?.params?.reel?.challengeMaxDuration ??
+      route?.params?.reel?.durationSec ??
+      DEFAULT_DURATION
+  );
+
+  const maxDurationRef = useRef(initialDuration);
+  const secondsLeftRef = useRef(initialDuration);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const [maxDurationSec, setMaxDurationSec] = useState(initialDuration);
   const [isRecording, setIsRecording] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(RECORD_SECONDS);
+  const [secondsLeft, setSecondsLeft] = useState(initialDuration);
   const [timeUp, setTimeUp] = useState(false);
   const [facing, setFacing] = useState('back');
-  const [cameraReady, setCameraReady] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const [recordedUri, setRecordedUri] = useState(null);
   const [isMockClip, setIsMockClip] = useState(false);
   const [mountError, setMountError] = useState(null);
   const [cameraKey, setCameraKey] = useState(0);
   const [useFallback, setUseFallback] = useState(false);
   const [frozen, setFrozen] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [speedRate, setSpeedRate] = useState(1);
+  const [clipDurationSec, setClipDurationSec] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [takeCount, setTakeCount] = useState(0);
+  const [slowMoEnabled, setSlowMoEnabled] = useState(false);
+  const [slowMoStartSec, setSlowMoStartSec] = useState(0);
+  const [slowMoEndSec, setSlowMoEndSec] = useState(initialDuration);
+  const [slowMoRate, setSlowMoRate] = useState(0.5);
+  /** Live playhead seconds — ref only (avoids re-render thrash on every tick). */
+  const reviewPlayheadRef = useRef(0);
+  /** expo-video player instance for review clip (pause/unload on unmount). */
+  const videoRef = useRef(null);
+  const recordStartedAtRef = useRef(0);
+  const didAskPermsRef = useRef(false);
+  const didSyncDurationRef = useRef(false);
+
+  const isReviewMode = showPreview;
+  const videoDuration = Math.max(0.5, clipDurationSec || maxDurationSec || DEFAULT_DURATION);
 
   const challengeTarget =
     challengeTargetProp ||
     route?.params?.target ||
     route?.params?.reel?.statSticker ||
     '140 KG x 3 Reps';
+
+  const targetMetricsLabel = buildTargetMetricsLabel(challengeTarget, maxDurationSec, {
+    exercise: route?.params?.exercise || route?.params?.reel?.exercise,
+    reps: route?.params?.reps || route?.params?.reel?.reps,
+    sets: route?.params?.sets || route?.params?.reel?.sets,
+    repLabel: route?.params?.repLabel || route?.params?.reel?.repLabel,
+  });
+
+  const targetVideoUri =
+    route?.params?.targetVideoUri ||
+    route?.params?.challengerUri ||
+    route?.params?.reel?.videoUri ||
+    route?.params?.reel?.recordedVideoUri ||
+    route?.params?.reel?.uri ||
+    null;
 
   const opponentHandle =
     targetUser ||
@@ -150,8 +643,41 @@ export default function ChallengeCam({
     : `@${opponentHandle}`;
 
   const cameraUnavailable = useFallback || !!mountError;
-  const progress = secondsLeft / RECORD_SECONDS;
   const canPost = !!recordedUri || timeUp || frozen;
+
+  const selectDuration = (sec) => {
+    if (isRecording || frozen || showPreview) return;
+    const snapped = snapChallengeDuration(sec);
+    maxDurationRef.current = snapped;
+    setMaxDurationSec(snapped);
+    secondsLeftRef.current = snapped;
+    setSecondsLeft(snapped);
+  };
+
+  // Lock duration pills to challenger target duration (default 30s)
+  useEffect(() => {
+    const incoming = snapChallengeDuration(
+      challengeMaxDurationProp ??
+        route?.params?.challengeMaxDuration ??
+        route?.params?.reel?.challengeMaxDuration ??
+        route?.params?.reel?.durationSec ??
+        initialDuration ??
+        DEFAULT_DURATION
+    );
+    if (isRecording || showPreview || frozen) return;
+    if (didSyncDurationRef.current && incoming === maxDurationRef.current) return;
+    didSyncDurationRef.current = true;
+    maxDurationRef.current = incoming;
+    setMaxDurationSec(incoming);
+    secondsLeftRef.current = incoming;
+    setSecondsLeft(incoming);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    challengeMaxDurationProp,
+    route?.params?.challengeMaxDuration,
+    route?.params?.reel?.challengeMaxDuration,
+    route?.params?.reel?.durationSec,
+  ]);
 
   const formatClock = (seconds) => {
     const s = Math.max(0, Math.floor(seconds));
@@ -175,22 +701,48 @@ export default function ChallengeCam({
       clearTimeout(recordWatchdog.current);
       recordWatchdog.current = null;
     }
+    const limit = maxDurationRef.current || DEFAULT_DURATION;
+    const elapsed = recordStartedAtRef.current
+      ? Math.max(1, Math.round((Date.now() - recordStartedAtRef.current) / 1000))
+      : Math.max(1, limit - (secondsLeftRef.current ?? 0));
+    const lockedDur = fromTimer ? limit : Math.min(limit, elapsed);
+    setClipDurationSec(lockedDur);
+    setSlowMoStartSec(0);
+    setSlowMoEndSec(lockedDur);
+    setSlowMoEnabled(false);
+    setSlowMoRate(0.5);
+    reviewPlayheadRef.current = 0;
     setIsRecording(false);
     setFrozen(true);
+    // URI first so review Video can mount before preview chrome toggles on
+    setIsMockClip(mock);
+    setRecordedUri(uri || `emulator-mock://${Date.now()}.mp4`);
+    setShowPreview(true);
     if (fromTimer) {
       setTimeUp(true);
       setSecondsLeft(0);
+      secondsLeftRef.current = 0;
     }
-    setIsMockClip(mock);
-    setRecordedUri(uri || `emulator-mock://${Date.now()}.mp4`);
     stoppingRef.current = false;
+    recordingLockRef.current = false;
   }, []);
 
-  // Countdown while recording
+  // Floating elapsed duration (smooth) + 1s countdown while recording
   useEffect(() => {
     if (!isRecording) return undefined;
 
-    const interval = setInterval(() => {
+    const limit = maxDurationRef.current || DEFAULT_DURATION;
+    const elapsedTick = setInterval(() => {
+      if (!recordStartedAtRef.current) return;
+      setElapsedSec(
+        Math.min(
+          limit,
+          Math.max(0, Math.floor((Date.now() - recordStartedAtRef.current) / 1000))
+        )
+      );
+    }, 250);
+
+    const countdownTick = setInterval(() => {
       setSecondsLeft((prev) => {
         const next = Math.max(0, prev - 1);
         secondsLeftRef.current = next;
@@ -198,23 +750,22 @@ export default function ChallengeCam({
       });
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(elapsedTick);
+      clearInterval(countdownTick);
+    };
   }, [isRecording]);
 
-  // Auto-stop at 00
+  // Auto-stop at 00 — stopRecording resolves the pending recordAsync promise
   useEffect(() => {
     if (!isRecording || secondsLeft > 0) return;
     (async () => {
-      await stopRecordingNative();
       if (cameraUnavailable) {
         lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true, fromTimer: true });
-      } else {
-        // recordAsync will resolve when stopRecording is called; lock with timer flag
-        setTimeUp(true);
-        setFrozen(true);
-        setIsRecording(false);
-        setSecondsLeft(0);
+        return;
       }
+      setTimeUp(true);
+      await stopRecordingNative();
     })();
   }, [secondsLeft, isRecording, cameraUnavailable, stopRecordingNative, lockResponse]);
 
@@ -226,6 +777,58 @@ export default function ChallengeCam({
       } catch (_) {
         /* ignore */
       }
+    };
+  }, []);
+
+  // Seamless camera + mic permission prompt on first mount
+  useEffect(() => {
+    if (didAskPermsRef.current) return;
+    if (!permission || !micPermission) return;
+    didAskPermsRef.current = true;
+    if (permission.granted && micPermission.granted) return;
+    (async () => {
+      try {
+        if (!permission.granted) await requestPermission();
+        if (!micPermission.granted) await requestMicPermission();
+      } catch (error) {
+        console.warn('Permission request failed:', error?.message || error);
+      }
+    })();
+  }, [permission, micPermission, requestPermission, requestMicPermission]);
+
+  // Pause video + stop camera listeners before screen unmounts (viewState safety)
+  useEffect(() => {
+    return () => {
+      if (recordWatchdog.current) {
+        clearTimeout(recordWatchdog.current);
+        recordWatchdog.current = null;
+      }
+      try {
+        cameraRef.current?.stopRecording?.();
+      } catch (_) {
+        /* ignore */
+      }
+      const player = videoRef.current;
+      if (player) {
+        try {
+          player.pause?.();
+        } catch (_) {
+          /* ignore */
+        }
+        try {
+          // expo-video equivalent of expo-av unloadAsync()
+          if (typeof player.replace === 'function') {
+            player.replace(null);
+          } else if (typeof player.replaceAsync === 'function') {
+            player.replaceAsync(null);
+          } else if (typeof player.unloadAsync === 'function') {
+            player.unloadAsync();
+          }
+        } catch (_) {
+          /* ignore */
+        }
+      }
+      videoRef.current = null;
     };
   }, []);
 
@@ -248,85 +851,99 @@ export default function ChallengeCam({
   };
 
   const toggleFacing = () => {
-    if (isRecording || cameraUnavailable || frozen) return;
+    if (isRecording || cameraUnavailable || frozen || showPreview) return;
+    setIsCameraReady(false);
+    // Facing prop update only — do not remount CameraView (avoids feed dropout).
     setFacing((f) => (f === 'back' ? 'front' : 'back'));
-    setCameraReady(false);
   };
 
   const activateFallback = (reason) => {
     console.warn('Camera fallback:', reason);
     setMountError(reason || 'Camera hardware unavailable');
     setUseFallback(true);
-    setCameraReady(false);
+    setIsCameraReady(false);
     setIsRecording(false);
+    recordingLockRef.current = false;
   };
 
   const retryCamera = () => {
     if (frozen || isRecording) return;
     setMountError(null);
     setUseFallback(false);
-    setCameraReady(false);
+    setIsCameraReady(false);
     setCameraKey((k) => k + 1);
   };
 
   const handleRecordPress = async () => {
-    if (frozen || recordedUri) return;
+    if (frozen || recordedUri || showPreview) return;
 
-    if (cameraUnavailable) {
-      if (isRecording) {
+    // Stop current take — resolves pending recordAsync()
+    if (isRecording) {
+      if (cameraUnavailable) {
         if (recordWatchdog.current) clearTimeout(recordWatchdog.current);
         lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true });
         return;
       }
+      try {
+        cameraRef.current?.stopRecording?.();
+      } catch (error) {
+        console.warn('Stop recording failed:', error?.message || error);
+      }
+      return;
+    }
+
+    const limit = maxDurationRef.current || DEFAULT_DURATION;
+
+    if (cameraUnavailable) {
       setTimeUp(false);
-      secondsLeftRef.current = RECORD_SECONDS;
-      setSecondsLeft(RECORD_SECONDS);
+      setShowPreview(false);
+      setElapsedSec(0);
+      secondsLeftRef.current = limit;
+      setSecondsLeft(limit);
+      recordStartedAtRef.current = Date.now();
+      setTakeCount((n) => n + 1);
       setIsRecording(true);
       recordWatchdog.current = setTimeout(() => {
         lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true, fromTimer: true });
-      }, RECORD_SECONDS * 1000);
+      }, limit * 1000);
       return;
     }
 
-    if (!cameraRef.current || !cameraReady) return;
+    // Shutter gated on onCameraReady — never remount during record
+    if (!isCameraReady || !cameraRef.current || recordingLockRef.current) return;
 
-    if (isRecording) {
-      try {
-        cameraRef.current.stopRecording();
-      } catch (error) {
-        activateFallback(error?.message || 'Stop recording failed');
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true });
-      }
-      return;
-    }
+    recordingLockRef.current = true;
+    setTimeUp(false);
+    setShowPreview(false);
+    setElapsedSec(0);
+    secondsLeftRef.current = limit;
+    setSecondsLeft(limit);
+    recordStartedAtRef.current = Date.now();
+    setTakeCount((n) => n + 1);
+    setIsRecording(true);
+    stoppingRef.current = false;
 
     try {
-      setTimeUp(false);
-      secondsLeftRef.current = RECORD_SECONDS;
-      setSecondsLeft(RECORD_SECONDS);
-      setIsRecording(true);
-      stoppingRef.current = false;
-      const video = await cameraRef.current.recordAsync({ maxDuration: RECORD_SECONDS });
+      // mute:false on CameraView + record options keeps mic track without AGC spikes
+      const video = await cameraRef.current.recordAsync({
+        mute: false,
+        maxDuration: limit,
+      });
       const hitZero = secondsLeftRef.current <= 0;
-      setIsRecording(false);
-      setFrozen(true);
-      if (hitZero) {
-        setTimeUp(true);
-        setSecondsLeft(0);
-        secondsLeftRef.current = 0;
-      }
-      if (video?.uri) {
-        setIsMockClip(false);
-        setRecordedUri(video.uri);
+      const fileUri = video?.uri;
+      if (fileUri) {
+        lockResponse(fileUri, { mock: false, fromTimer: hitZero });
       } else {
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true, fromTimer: hitZero });
+        console.warn('recordAsync resolved without a file URI');
+        setIsRecording(false);
+        recordingLockRef.current = false;
       }
     } catch (error) {
+      // Log only — do not invent a fallback clip on transient record errors
+      console.warn('Recording failed:', error?.message || error);
       setIsRecording(false);
-      const msg = error?.message || String(error);
-      console.warn('Recording failed:', msg);
-      activateFallback(msg);
-      lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true });
+      recordingLockRef.current = false;
+      stoppingRef.current = false;
     }
   };
 
@@ -340,17 +957,27 @@ export default function ChallengeCam({
     } catch (_) {
       /* ignore */
     }
+    const limit = maxDurationRef.current || DEFAULT_DURATION;
     setRecordedUri(null);
     setIsMockClip(false);
     setIsRecording(false);
     setFrozen(false);
+    setShowPreview(false);
     setTimeUp(false);
-    secondsLeftRef.current = RECORD_SECONDS;
-    setSecondsLeft(RECORD_SECONDS);
+    setClipDurationSec(0);
+    setElapsedSec(0);
+    setSlowMoEnabled(false);
+    setSlowMoStartSec(0);
+    setSlowMoEndSec(limit);
+    setSlowMoRate(0.5);
+    reviewPlayheadRef.current = 0;
+    recordStartedAtRef.current = 0;
+    secondsLeftRef.current = limit;
+    setSecondsLeft(limit);
     stoppingRef.current = false;
+    recordingLockRef.current = false;
     setSpeedRate(1);
-    setCameraReady(false);
-    setCameraKey((k) => k + 1);
+    // Keep CameraView mounted — do not bump cameraKey on retake
   }, []);
 
   // Parent bumps resetToken after a successful Arena post so the next session is clean.
@@ -363,43 +990,91 @@ export default function ChallengeCam({
     resetRecordingSession();
   };
 
-  const handlePostBattle = () => {
-    if (!canPost && !recordedUri) return;
-    const uri = recordedUri || `emulator-mock://${Date.now()}.mp4`;
-    const timestamp = Date.now();
-    const payloadMeta = {
-      isMock: isMockClip || uri.startsWith('emulator-mock://'),
+  const buildCapturePayload = useCallback(
+    (uri) => {
+      const timestamp = Date.now();
+      const limit = maxDurationRef.current || DEFAULT_DURATION;
+      const durationSec =
+        clipDurationSec ||
+        Math.max(1, limit - (secondsLeftRef.current ?? 0));
+      return {
+        uri,
+        videoUri: uri,
+        recordedVideoUri: uri,
+        durationSec,
+        durationMs: durationSec * 1000,
+        speedRate,
+        target: challengeTarget,
+        timestamp,
+        opponent: displayHandle,
+        facing,
+        videoQuality: VIDEO_QUALITY,
+        fps: TARGET_FPS,
+        mimeType: 'video/mp4',
+        takeCount,
+        slowMoEnabled,
+        slowMoStartSec,
+        slowMoEndSec,
+        slowMoRate,
+        isMock: isMockClip || uri.startsWith('emulator-mock://'),
+      };
+    },
+    [
+      clipDurationSec,
       speedRate,
-      target: challengeTarget,
-      timestamp,
-      opponent: displayHandle,
-      durationSec: Math.max(1, RECORD_SECONDS - (secondsLeftRef.current ?? 0)),
+      challengeTarget,
+      displayHandle,
+      facing,
+      isMockClip,
+      takeCount,
+      slowMoEnabled,
+      slowMoStartSec,
+      slowMoEndSec,
+      slowMoRate,
+    ]
+  );
+
+  /** KEEP & REVIEW — dispatch URI + metadata into Arena / challenge pipeline */
+  const handleKeepReview = () => {
+    if (!recordedUri && !frozen) return;
+    const uri = recordedUri || `emulator-mock://${Date.now()}.mp4`;
+    const payload = buildCapturePayload(uri);
+    const newArenaPost = {
+      id: `local-${payload.timestamp}`,
+      creator: 'You',
+      category: route?.params?.reel?.category || 'GYM',
+      challengeOf: route?.params?.reel?.creator || 'Yuki_Lift',
+      uri,
+      videoUri: uri,
+      recordedVideoUri: uri,
+      ...payload,
     };
+    setLatestBattleClip(newArenaPost);
     try {
       if (onVideoCaptured) {
-        onVideoCaptured(uri, payloadMeta);
+        onVideoCaptured(uri, { ...payload, videoUri: uri, recordedVideoUri: uri });
         return;
       }
       if (navigation?.navigate) {
         navigation.navigate('Arena', {
-          newArenaPost: {
-            id: `local-${timestamp}`,
-            uri,
-            ...payloadMeta,
-          },
+          newArenaPost,
+          videoUri: uri,
+          recordedVideoUri: uri,
         });
         resetRecordingSession();
         return;
       }
       handleClose();
     } catch (error) {
-      console.warn('Post battle failed:', error?.message || error);
+      console.warn('Keep & review dispatch failed:', error?.message || error);
       handleClose();
     }
   };
 
-  const permissionsLoading = !permission || !micPermission;
-  const permissionsGranted = permission?.granted && micPermission?.granted;
+  const handlePostBattle = () => {
+    if (!canPost && !recordedUri) return;
+    handleKeepReview();
+  };
 
   const requestAllPermissions = async () => {
     try {
@@ -410,53 +1085,44 @@ export default function ChallengeCam({
     }
   };
 
-  const timerLabel = timeUp
-    ? 'TIME UP • 00s'
-    : isRecording
-      ? `• ${formatClock(secondsLeft)}`
-      : formatClock(RECORD_SECONDS);
-
-  const responseStatus = timeUp
-    ? 'TIME UP • 00s'
-    : isRecording
-      ? `• ${formatClock(secondsLeft)}`
-      : frozen
-        ? 'LOCKED'
-        : cameraUnavailable
-          ? 'FALLBACK'
-          : 'READY';
-
-  if (permissionsLoading) {
+  // Never mount CameraView until camera + mic permission objects resolve and are granted.
+  if (!permission || !micPermission) {
     return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
-        <ActivityIndicator color={COLORS.PLATINUM_BASE} size="large" />
-        <Text style={styles.permissionHint}>Checking lens access…</Text>
+      <View style={styles.permissionRoot}>
+        <StatusBar barStyle="light-content" backgroundColor="#05070A" />
+        <ActivityIndicator color="#E5E4E2" size="large" />
+        <Text style={[styles.permissionHint, { color: '#E5E4E2' }]}>
+          Checking camera & microphone…
+        </Text>
       </View>
     );
   }
 
-  if (!permissionsGranted) {
+  if (!permission.granted || !micPermission.granted) {
+    const needsCam = !permission.granted;
+    const needsMic = !micPermission.granted;
     return (
-      <View
-        style={[
-          styles.container,
-          styles.centered,
-          { paddingTop: insets.top, paddingBottom: insets.bottom },
-        ]}
-      >
-        <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
+      <View style={[styles.permissionRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <StatusBar barStyle="light-content" backgroundColor="#05070A" />
         <Text style={styles.permissionEyebrow}>BAWAAL ARENA</Text>
-        <Text style={styles.permissionTitle}>Camera access required</Text>
+        <Text style={styles.permissionTitle}>
+          {needsCam && needsMic
+            ? 'Camera & microphone access required'
+            : needsCam
+              ? 'Camera access is required for BAWAAL ChallengeCam'
+              : 'Microphone access is required for battle audio'}
+        </Text>
         <Text style={styles.permissionHint}>
-          Allow camera and microphone to record your side-by-side battle response.
+          Grant lens + mic to record a synced side-by-side battle response.
         </Text>
         <TouchableOpacity
           style={styles.permissionBtn}
           onPress={requestAllPermissions}
           activeOpacity={0.85}
         >
-          <Text style={styles.permissionBtnText}>GRANT ACCESS</Text>
+          <Text style={styles.permissionBtnText}>
+            {needsCam ? 'GRANT CAMERA PERMISSION' : 'GRANT MICROPHONE PERMISSION'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.ghostBtn} onPress={handleClose} activeOpacity={0.7}>
           <Text style={styles.ghostBtnText}>CANCEL</Text>
@@ -465,218 +1131,543 @@ export default function ChallengeCam({
     );
   }
 
-  return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <StatusBar barStyle="light-content" backgroundColor={CANVAS} />
+  const shutterDisabled =
+    frozen ||
+    showPreview ||
+    (!cameraUnavailable && !isCameraReady);
 
-      {/* Top Header: [X CANCEL] | BAWAAL | [FLIP] */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.headerBtn} onPress={handleClose} activeOpacity={0.75}>
-          <Text style={styles.headerBtnText}>✕ CANCEL</Text>
-        </TouchableOpacity>
-        <Text style={styles.brandTitle}>BAWAAL</Text>
-        <TouchableOpacity
-          style={[
-            styles.flipBtn,
-            (isRecording || cameraUnavailable || frozen) && styles.headerBtnDisabled,
-          ]}
-          onPress={toggleFacing}
-          disabled={isRecording || cameraUnavailable || frozen}
-          activeOpacity={0.75}
-        >
-          <Text style={styles.flipBtnIcon}>⟳</Text>
-          <Text style={styles.flipBtnText}>FLIP</Text>
-        </TouchableOpacity>
+  const recordProgress = isRecording
+    ? Math.min(1, elapsedSec / Math.max(1, maxDurationSec))
+    : 0;
+
+  const lensStarting =
+    !cameraUnavailable && !isCameraReady && !mountError && !frozen && !isReviewMode;
+
+  const renderTopBar = () => (
+    <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+      {lensStarting && (
+        <View style={styles.lensStatusRow} pointerEvents="none">
+          <ActivityIndicator color={COLORS.PLATINUM_BASE} size="small" />
+          <Text style={styles.lensStatusText}>STARTING LENS</Text>
+        </View>
+      )}
+      <View style={styles.topBarRow}>
+        <View style={styles.topBarSide}>
+          <TouchableOpacity onPress={handleClose} activeOpacity={0.75} hitSlop={8}>
+            <Text style={styles.headerBtnText}>✕ CANCEL</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.topBarCenter}>
+          <Text style={styles.brandTitle}>BAWAAL</Text>
+        </View>
+        <View style={[styles.topBarSide, styles.topBarSideRight]}>
+          <TouchableOpacity
+            style={[
+              styles.flipBtn,
+              (isRecording || cameraUnavailable || frozen || showPreview) &&
+                styles.headerBtnDisabled,
+            ]}
+            onPress={toggleFacing}
+            disabled={isRecording || cameraUnavailable || frozen || showPreview}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.flipBtnIcon}>⟳</Text>
+            <Text style={styles.flipBtnText}>FLIP</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderDurationPills = () => (
+    <View style={styles.durationBar}>
+      {DURATION_OPTIONS.map((sec) => {
+        const active = maxDurationSec === sec;
+        return (
+          <TouchableOpacity
+            key={`dur-${sec}`}
+            style={[styles.durationPill, active && styles.durationPillActive]}
+            onPress={() => selectDuration(sec)}
+            disabled={isRecording || frozen || showPreview}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.durationPillText, active && styles.durationPillTextActive]}>
+              {sec}s
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderShutter = () => (
+    <ShutterProgressRing progress={recordProgress} size={96} recording={isRecording}>
+      <TouchableOpacity
+        style={[
+          styles.recordRing,
+          isRecording && styles.recordRingLive,
+          shutterDisabled && styles.recordDisabled,
+        ]}
+        onPress={handleRecordPress}
+        disabled={shutterDisabled && !isRecording}
+        activeOpacity={0.85}
+      >
+        <View style={[styles.recordInner, isRecording && styles.recordInnerLive]} />
+      </TouchableOpacity>
+    </ShutterProgressRing>
+  );
+
+  const recordedVideoUri = recordedUri;
+  const hasReviewClip = isPlayableReviewUri(recordedVideoUri);
+  const showReviewVideo = isReviewMode && hasReviewClip;
+  const showPostBattle = !isRecording && (frozen || canPost);
+
+  return (
+    <View style={styles.rootFill} collapsable={false}>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="#05070A"
+        hidden={isRecording || isReviewMode}
+      />
+
+      {/* Review playback — always mounted; raised above battle column in review */}
+      <View
+        style={[
+          styles.reviewVideoLayer,
+          {
+            zIndex: showReviewVideo ? 10 : -1,
+            elevation: showReviewVideo ? 10 : -1,
+          },
+        ]}
+        pointerEvents="none"
+        collapsable={false}
+      >
+        <ReviewSlowMoPlayer
+          uri={recordedVideoUri}
+          active={showReviewVideo}
+          slowMoEnabled={slowMoEnabled}
+          slowMoStartSec={slowMoStartSec}
+          slowMoEndSec={slowMoEndSec}
+          slowMoRate={slowMoRate}
+          playheadRef={reviewPlayheadRef}
+          videoRef={videoRef}
+        />
       </View>
 
-      <View style={styles.splitContainer}>
-        {/* ORIGINAL POST */}
-        <View style={styles.cardHalf}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.cardHeaderLeft}>
-              <Text style={styles.metaLabel}>ORIGINAL POST</Text>
-              <Text style={styles.metaHandle}>{displayHandle}</Text>
-            </View>
-            <View style={styles.timerBadge}>
-              <PlatinumCountdownRing
-                progress={isRecording || timeUp ? progress : 1}
-                size={54}
-                live={isRecording || timeUp}
-              >
-                <Text
-                  style={[
-                    styles.timerBadgeText,
-                    (isRecording || timeUp) && styles.timerBadgeTextActive,
-                  ]}
-                  numberOfLines={2}
-                >
-                  {timerLabel}
-                </Text>
-              </PlatinumCountdownRing>
-            </View>
-          </View>
-
-          <View style={styles.mediaPlaceholder}>
-            <Text style={styles.placeholderText}>Original reel</Text>
-          </View>
-
-          <View style={styles.targetBadgeWrap} pointerEvents="none">
+      {/*
+        Battle column: top opponent + lower CameraView (flex:1).
+        CameraView + review Video stay mounted — visibility via zIndex only.
+      */}
+      <View
+        style={[
+          styles.battleColumn,
+          isRecording && styles.battleColumnRecording,
+          {
+            paddingTop: isRecording || isReviewMode ? 0 : insets.top + 52,
+            zIndex: showReviewVideo ? -1 : 5,
+            elevation: showReviewVideo ? -1 : 5,
+          },
+        ]}
+        pointerEvents={showReviewVideo ? 'none' : 'auto'}
+        collapsable={false}
+      >
+        {/* Top split — height collapses while recording; opponent Video stays mounted */}
+        <View
+          style={[styles.topSplit, isRecording && styles.topSplitCollapsed]}
+          pointerEvents={isRecording || isReviewMode ? 'none' : 'auto'}
+          collapsable={false}
+        >
+          <OpponentTargetPlayer
+            uri={targetVideoUri}
+            active={!isRecording && !isReviewMode}
+          />
+          {/* Metrics pill — top of opponent frame so it never collides with VS */}
+          <View
+            style={[
+              styles.targetBadgeWrap,
+              (isRecording || isReviewMode) && styles.chromeHidden,
+            ]}
+            pointerEvents="none"
+            collapsable={false}
+          >
             <View style={styles.targetBadge}>
-              <Text style={styles.targetBadgeText}>TARGET: {challengeTarget}</Text>
+              <Text style={styles.targetBadgeText} numberOfLines={2}>
+                {targetMetricsLabel}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* VS */}
-        <View style={styles.vsBadgeContainer}>
+        {/* VS sits on the split border (half over opponent, half over camera) */}
+        <View
+          style={[
+            styles.vsDivider,
+            (isRecording || isReviewMode) && styles.chromeHidden,
+          ]}
+          pointerEvents="none"
+          collapsable={false}
+        >
           <View style={styles.vsBadge}>
             <Text style={styles.vsBadgeText}>VS</Text>
           </View>
         </View>
 
-        {/* YOUR RESPONSE */}
-        <View style={styles.cardHalf}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.metaLabel}>YOUR RESPONSE</Text>
-            <Text
-              style={[
-                styles.metaStatus,
-                (isRecording || timeUp) && styles.metaStatusLive,
-              ]}
-            >
-              {responseStatus}
-            </Text>
-          </View>
+        {/* Lower camera viewport — CameraView always mounted */}
+        <View style={styles.lowerCameraHost} collapsable={false}>
+          <CameraErrorBoundary onError={activateFallback}>
+            <CameraView
+              key={cameraKey}
+              ref={cameraRef}
+              style={styles.cameraFill}
+              facing={facing}
+              mode="video"
+              mute={false}
+              mirror={facing === 'front'}
+              videoQuality={VIDEO_QUALITY}
+              videoBitrate={5_000_000}
+              onCameraReady={() => {
+                setIsCameraReady(true);
+                setMountError(null);
+                setUseFallback(false);
+              }}
+              onMountError={(event) => {
+                const msg =
+                  event?.message ||
+                  (Platform.OS === 'android'
+                    ? 'Emulator camera surface failed to bind'
+                    : 'Camera failed to start');
+                activateFallback(msg);
+              }}
+            />
+          </CameraErrorBoundary>
 
           <View
             style={[
-              styles.cameraViewport,
-              isRecording && styles.viewportRecording,
-              (frozen || timeUp) && styles.viewportFrozen,
+              StyleSheet.absoluteFillObject,
+              !cameraUnavailable && styles.chromeHidden,
             ]}
+            pointerEvents={cameraUnavailable ? 'box-none' : 'none'}
+            collapsable={false}
           >
-            {cameraUnavailable ? (
-              <CameraFallbackSurface
-                message={mountError}
-                isRecording={isRecording}
-                onRetry={frozen ? undefined : retryCamera}
-              />
-            ) : (
-              <CameraErrorBoundary
-                onError={activateFallback}
-                fallback={
-                  <CameraFallbackSurface
-                    message={mountError}
-                    isRecording={isRecording}
-                    onRetry={frozen ? undefined : retryCamera}
-                  />
-                }
-              >
-                <CameraView
-                  key={cameraKey}
-                  ref={cameraRef}
-                  style={styles.camera}
-                  facing={facing}
-                  mode="video"
-                  mute={false}
-                  mirror={facing === 'front'}
-                  onCameraReady={() => {
-                    setCameraReady(true);
-                    setMountError(null);
-                    setUseFallback(false);
-                  }}
-                  onMountError={(event) => {
-                    const msg =
-                      event?.message ||
-                      (Platform.OS === 'android'
-                        ? 'Emulator camera surface failed to bind'
-                        : 'Camera failed to start');
-                    activateFallback(msg);
-                  }}
-                />
-              </CameraErrorBoundary>
-            )}
-
-            {!cameraUnavailable && !cameraReady && !mountError && !frozen && (
-              <View style={styles.cameraOverlay} pointerEvents="none">
-                <ActivityIndicator color={COLORS.PLATINUM_BASE} />
-                <Text style={styles.overlayText}>STARTING LENS</Text>
-              </View>
-            )}
-
-            {(frozen || timeUp) && (
-              <View style={styles.freezeOverlay} pointerEvents="none">
-                <Text style={styles.freezeTitle}>
-                  {timeUp ? 'TIME UP • 00s' : 'RESPONSE LOCKED'}
-                </Text>
-                <Text style={styles.freezeSub}>
-                  {isMockClip ? 'Fallback clip ready' : 'Tap POST BATTLE to send'}
-                </Text>
-              </View>
-            )}
+            <CameraFallbackSurface
+              message={mountError}
+              isRecording={isRecording}
+              onRetry={frozen || isReviewMode ? undefined : retryCamera}
+            />
           </View>
         </View>
       </View>
 
-      {/* Bottom: speed · record ring · POST BATTLE */}
-      <View style={styles.bottomControls}>
-        {(frozen || canPost) && (
-          <View style={styles.speedRow}>
-            <Text style={styles.speedLabel}>SPEED</Text>
-            {SPEED_RATES.map((rate) => {
-              const active = speedRate === rate;
-              return (
-                <TouchableOpacity
-                  key={`speed-${rate}`}
-                  style={[styles.speedChip, active && styles.speedChipActive]}
-                  onPress={() => setSpeedRate(rate)}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.speedChipText, active && styles.speedChipTextActive]}>
-                    {rate}x
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+      {/* Top status — hidden in review */}
+      {!isReviewMode && renderTopBar()}
 
-        <TouchableOpacity
+      {/* Record controls — hidden in review so they cannot overlap the card */}
+      {!isReviewMode && (
+        <View
           style={[
-            styles.recordRing,
-            isRecording && styles.recordRingLive,
-            ((!cameraUnavailable && !cameraReady) || frozen) && styles.recordDisabled,
+            styles.controlsOverlay,
+            { paddingBottom: Math.max(insets.bottom, isRecording ? 20 : 12) },
+            isRecording ? styles.controlsOverlayRecording : styles.controlsOverlayIdle,
           ]}
-          onPress={handleRecordPress}
-          disabled={(!cameraUnavailable && !cameraReady) || frozen}
-          activeOpacity={0.85}
+          pointerEvents="box-none"
         >
-          <View style={[styles.recordInner, isRecording && styles.recordInnerLive]} />
-        </TouchableOpacity>
+          {renderDurationPills()}
+          {renderShutter()}
+          {showPostBattle && (
+            <TouchableOpacity
+              style={[styles.postBattleBtn, !canPost && styles.postBattleBtnDisabled]}
+              onPress={handlePostBattle}
+              disabled={!canPost}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.postBattleText}>POST BATTLE ⚡</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
 
-        <TouchableOpacity
-          style={[styles.postBattleBtn, !canPost && styles.postBattleBtnDisabled]}
-          onPress={handlePostBattle}
-          disabled={!canPost}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.postBattleText}>POST BATTLE ⚡</Text>
-        </TouchableOpacity>
+      {/* Review card — always in tree; visibility toggled (no native media unmount) */}
+      <View
+        style={[
+          styles.previewChrome,
+          {
+            opacity: isReviewMode ? 1 : 0,
+            zIndex: isReviewMode ? 50 : -1,
+            elevation: isReviewMode ? 50 : -1,
+          },
+        ]}
+        pointerEvents={isReviewMode ? 'box-none' : 'none'}
+        collapsable={false}
+      >
+        <View style={styles.previewCard}>
+          <Text style={styles.freezeTitle}>
+            {timeUp ? 'TIME UP · CLIP LOCKED' : 'CLIP READY'}
+          </Text>
+          <Text style={styles.freezeSub}>
+            {!hasReviewClip
+              ? 'Waiting for clip…'
+              : isMockClip
+                ? `Take ${takeCount || 1} · fallback · review or retake`
+                : `Take ${takeCount || 1} · ${formatClock(clipDurationSec)} · ${VIDEO_QUALITY}`}
+          </Text>
 
-        {frozen && (
-          <TouchableOpacity style={styles.retakeLink} onPress={handleRetake} activeOpacity={0.7}>
-            <Text style={styles.retakeLinkText}>RETAKE</Text>
+          <TouchableOpacity
+            style={[styles.slowMoToggle, slowMoEnabled && styles.slowMoToggleOn]}
+            onPress={() => setSlowMoEnabled((v) => !v)}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[styles.slowMoToggleText, slowMoEnabled && styles.slowMoToggleTextOn]}
+            >
+              ⚡ ADD SLOW-MO
+            </Text>
           </TouchableOpacity>
-        )}
+
+          <View
+            style={[
+              styles.slowMoPanel,
+              !slowMoEnabled && styles.chromeHidden,
+            ]}
+            pointerEvents={slowMoEnabled ? 'auto' : 'none'}
+            collapsable={false}
+          >
+            <View style={styles.slowMoTimeRow}>
+              <Text style={styles.slowMoTimeLabel}>
+                START {formatClock(slowMoStartSec)}
+              </Text>
+              <Text style={styles.slowMoTimeLabel}>
+                END {formatClock(slowMoEndSec)}
+              </Text>
+            </View>
+
+            <SlowMoRangeSlider
+              duration={videoDuration}
+              startSec={slowMoStartSec}
+              endSec={slowMoEndSec}
+              playheadRef={reviewPlayheadRef}
+              onChangeStart={setSlowMoStartSec}
+              onChangeEnd={setSlowMoEndSec}
+            />
+
+            <View style={styles.slowMoRateRow}>
+              {SLOW_MO_RATES.map((rate) => {
+                const active = slowMoRate === rate;
+                return (
+                  <TouchableOpacity
+                    key={`sm-${rate}`}
+                    style={[styles.slowMoRatePill, active && styles.slowMoRatePillActive]}
+                    onPress={() => setSlowMoRate(rate)}
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.slowMoRateText,
+                        active && styles.slowMoRateTextActive,
+                      ]}
+                    >
+                      {rate}x
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.previewActions}>
+            <TouchableOpacity
+              style={styles.retakeBtn}
+              onPress={handleRetake}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.retakeBtnText}>RETAKE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.keepBtn}
+              onPress={handleKeepReview}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.keepBtnText}>KEEP & REVIEW</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </View>
   );
 }
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: CANVAS,
+    backgroundColor: '#05070A',
+  },
+  rootFill: {
+    flex: 1,
+    backgroundColor: '#05070A',
+  },
+  battleColumn: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#05070A',
+  },
+  battleColumnRecording: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 15,
+    elevation: 15,
+  },
+  topSplit: {
+    height: 220,
+    width: '100%',
+    backgroundColor: '#05070A',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  topSplitCollapsed: {
+    height: 0,
+  },
+  lowerCameraHost: {
+    flex: 1,
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: '#05070A',
+    minHeight: 160,
+  },
+  cameraFill: {
+    flex: 1,
+    width: '100%',
+  },
+  targetVideo: {
+    width: '100%',
+    height: 220,
+  },
+  opponentPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0A0D12',
+  },
+  chromeHidden: {
+    opacity: 0,
+    zIndex: -1,
+  },
+  vsDivider: {
+    height: 0,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 25,
+    elevation: 25,
+  },
+  controlsOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 40,
+    elevation: 40,
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    gap: 12,
+  },
+  controlsOverlayIdle: {
+    backgroundColor: 'rgba(5, 7, 10, 0.92)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(229, 228, 226, 0.08)',
+  },
+  controlsOverlayRecording: {
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+  },
+  reviewVideoLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 60,
+    elevation: 60,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
+  lensStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  lensStatusText: {
+    color: 'rgba(229, 228, 226, 0.75)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  topBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topBarSide: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  topBarSideRight: {
+    alignItems: 'flex-end',
+  },
+  topBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewChrome: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 24,
+    zIndex: 50,
+    elevation: 50,
+    backgroundColor: 'transparent',
+  },
+  durationBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(5, 7, 10, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 228, 226, 0.22)',
+    borderRadius: 22,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 6,
+  },
+  durationPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 16,
+  },
+  durationPillActive: {
+    backgroundColor: PLATINUM,
+  },
+  durationPillText: {
+    color: 'rgba(229, 228, 226, 0.65)',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  durationPillTextActive: {
+    color: OBSIDIAN,
+  },
+  permissionRoot: {
+    flex: 1,
+    backgroundColor: '#05070A',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
   },
   centered: {
     justifyContent: 'center',
@@ -684,63 +1675,59 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
   },
   permissionEyebrow: {
-    color: COLORS.PLATINUM_BASE,
+    color: '#E5E4E2',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 2,
     marginBottom: 12,
   },
   permissionTitle: {
-    color: COLORS.OFF_WHITE,
-    fontSize: 22,
-    fontWeight: '900',
+    color: '#E5E4E2',
+    fontSize: 16,
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
+    lineHeight: 22,
   },
   permissionHint: {
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(229,228,226,0.65)',
     fontSize: 14,
     textAlign: 'center',
     lineHeight: 21,
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 28,
+    paddingHorizontal: 12,
   },
   permissionBtn: {
-    backgroundColor: COLORS.PLATINUM_BASE,
-    paddingHorizontal: 28,
-    paddingVertical: 14,
-    borderRadius: RADIUS.cta,
-    marginBottom: 14,
-    minWidth: 220,
+    backgroundColor: '#E5E4E2',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minWidth: 240,
     alignItems: 'center',
+    marginBottom: 14,
   },
   permissionBtnText: {
-    color: COLORS.INK,
-    fontSize: 14,
-    fontWeight: '900',
-    letterSpacing: 0.6,
+    color: '#05070A',
+    fontWeight: 'bold',
+    fontSize: 13,
+    letterSpacing: 0.4,
   },
   ghostBtn: {
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
   ghostBtnText: {
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(229,228,226,0.45)',
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
   },
   headerBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     minWidth: 84,
+    alignItems: 'flex-start',
   },
   headerBtnDisabled: {
     opacity: 0.35,
@@ -762,6 +1749,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     minWidth: 84,
     justifyContent: 'center',
+    alignSelf: 'flex-end',
     gap: 6,
   },
   flipBtnIcon: {
@@ -777,10 +1765,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   brandTitle: {
-    color: COLORS.TEXT_PRIMARY,
+    color: PLATINUM,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2,
+    textAlign: 'center',
   },
   splitContainer: {
     flex: 1,
@@ -826,7 +1815,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   metaStatusLive: {
-    color: COLORS.ELECTRIC_CRIMSON,
+    color: ACTIVE_REC,
   },
   timerBadge: {
     alignItems: 'center',
@@ -841,7 +1830,7 @@ const styles = StyleSheet.create({
     maxWidth: 44,
   },
   timerBadgeTextActive: {
-    color: COLORS.ELECTRIC_CRIMSON,
+    color: ACTIVE_REC,
   },
   mediaPlaceholder: {
     flex: 1,
@@ -857,10 +1846,11 @@ const styles = StyleSheet.create({
   },
   cameraViewport: {
     flex: 1,
-    backgroundColor: '#000000',
+    minHeight: 160,
+    backgroundColor: 'transparent',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.18)',
     position: 'relative',
     overflow: 'hidden',
   },
@@ -868,7 +1858,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   viewportRecording: {
-    borderColor: COLORS.ELECTRIC_CRIMSON,
+    borderColor: ACTIVE_REC,
     borderWidth: 2,
   },
   viewportFrozen: {
@@ -882,26 +1872,202 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(5,5,5,0.55)',
     paddingHorizontal: 16,
   },
-  freezeOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
+  recOverlay: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 0,
     alignItems: 'center',
-    backgroundColor: 'rgba(5,5,5,0.72)',
-    paddingHorizontal: 16,
+    zIndex: 45,
+  },
+  recPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderWidth: 1,
+    borderColor: ACTIVE_REC,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  recLabel: {
+    color: ACTIVE_REC,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  recTimer: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    fontVariant: ['tabular-nums'],
+    minWidth: 40,
+  },
+  recRemain: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  previewCard: {
+    width: '100%',
+    backgroundColor: 'rgba(5, 7, 10, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 228, 226, 0.22)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
   },
   freezeTitle: {
-    color: COLORS.PLATINUM_BASE,
+    color: '#E5E4E2',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 1.4,
     textAlign: 'center',
   },
   freezeSub: {
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(229,228,226,0.55)',
     fontSize: 11,
     fontWeight: '600',
     marginTop: 8,
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  slowMoToggle: {
+    borderWidth: 1.5,
+    borderColor: PLATINUM,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    marginBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  slowMoToggleOn: {
+    backgroundColor: PLATINUM,
+    borderColor: PLATINUM,
+  },
+  slowMoToggleText: {
+    color: PLATINUM,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  slowMoToggleTextOn: {
+    color: OBSIDIAN,
+  },
+  slowMoPanel: {
+    width: '100%',
+    marginBottom: 14,
+  },
+  slowMoTimeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  slowMoTimeLabel: {
+    color: PLATINUM,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  slowMoTrackHit: {
+    width: '100%',
+    height: 36,
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  slowMoTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(229, 228, 226, 0.18)',
+    overflow: 'visible',
+    position: 'relative',
+  },
+  slowMoHighlight: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: ACTIVE_REC,
+    borderRadius: 4,
+    opacity: 0.9,
+  },
+  slowMoPlayhead: {
+    position: 'absolute',
+    top: -4,
+    width: 2,
+    height: 16,
+    marginLeft: -1,
+    backgroundColor: PLATINUM,
+  },
+  slowMoThumb: {
+    position: 'absolute',
+    top: -6,
+    width: 20,
+    height: 20,
+    marginLeft: -10,
+    borderRadius: 10,
+    backgroundColor: PLATINUM,
+    borderWidth: 2,
+    borderColor: ACTIVE_REC,
+  },
+  slowMoRateRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  slowMoRatePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(229, 228, 226, 0.28)',
+  },
+  slowMoRatePillActive: {
+    backgroundColor: PLATINUM,
+    borderColor: PLATINUM,
+  },
+  slowMoRateText: {
+    color: 'rgba(229, 228, 226, 0.7)',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  slowMoRateTextActive: {
+    color: OBSIDIAN,
+  },
+  previewActions: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  retakeBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: PLATINUM,
+    borderRadius: RADIUS.cta,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  retakeBtnText: {
+    color: PLATINUM,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  keepBtn: {
+    flex: 1.2,
+    backgroundColor: PLATINUM,
+    borderRadius: RADIUS.cta,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  keepBtnText: {
+    color: OBSIDIAN,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   fallbackSurface: {
     flex: 1,
@@ -927,7 +2093,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   fallbackLive: {
-    color: COLORS.ELECTRIC_CRIMSON,
+    color: ACTIVE_REC,
     fontSize: 11,
     fontWeight: '800',
     marginTop: 12,
@@ -949,18 +2115,22 @@ const styles = StyleSheet.create({
   },
   targetBadgeWrap: {
     position: 'absolute',
-    bottom: 12,
+    top: 8,
     left: 0,
     right: 0,
     alignItems: 'center',
+    paddingHorizontal: 16,
+    marginVertical: 4,
+    zIndex: 6,
   },
   targetBadge: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    maxWidth: '100%',
+    backgroundColor: 'rgba(5, 7, 10, 0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(229, 228, 226, 0.22)',
     paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: RADIUS.pill,
   },
   targetBadgeText: {
@@ -968,26 +2138,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.3,
-  },
-  vsBadgeContainer: {
-    alignItems: 'center',
-    zIndex: 10,
-    marginVertical: -12,
+    textAlign: 'center',
   },
   vsBadge: {
-    backgroundColor: COLORS.PLATINUM_BASE,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    backgroundColor: ACTIVE_REC,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: COLORS.BACKGROUND_OBSIDIAN,
+    borderColor: OBSIDIAN,
+    marginTop: -20,
   },
   vsBadgeText: {
-    color: COLORS.INK,
+    color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 11,
+    letterSpacing: 0.5,
   },
   bottomControls: {
     paddingTop: 12,
@@ -1035,11 +2203,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
   },
   recordRingLive: {
-    borderWidth: 3,
-    borderColor: COLORS.PLATINUM_BASE,
     backgroundColor: 'transparent',
   },
   recordDisabled: {
@@ -1049,20 +2214,21 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: COLORS.ELECTRIC_CRIMSON,
+    backgroundColor: ACTIVE_REC,
   },
   recordInnerLive: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: COLORS.ELECTRIC_CRIMSON,
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    backgroundColor: ACTIVE_REC,
   },
   postBattleBtn: {
     width: '100%',
     backgroundColor: COLORS.PLATINUM_BASE,
     borderRadius: RADIUS.cta,
-    paddingVertical: 16,
+    paddingVertical: 14,
     alignItems: 'center',
+    marginTop: 4,
   },
   postBattleBtnDisabled: {
     opacity: 0.35,
@@ -1072,15 +2238,5 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.2,
-  },
-  retakeLink: {
-    marginTop: 12,
-    paddingVertical: 6,
-  },
-  retakeLinkText: {
-    color: COLORS.TEXT_DIM || 'rgba(255,255,255,0.45)',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
   },
 });
