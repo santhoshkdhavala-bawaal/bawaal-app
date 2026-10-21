@@ -1,5 +1,5 @@
 import React, { Component, useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, Image, StyleSheet, StatusBar, ScrollView } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -10,14 +10,15 @@ import ChallengeScreen from './ChallengeScreen';
 import ProfileScreen from './ProfileScreen';
 import LeaderboardScreen from './LeaderboardScreen';
 import RoleSelection from './RoleSelection';
+import AthleteDashboard from './AthleteDashboard';
 import { COLORS } from './theme';
+import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 
 enableScreens(true);
 
-// Top-level hide (also invoked from index.js) — no wait for first paint.
 SplashScreen.hideAsync().catch(() => {});
 
-const ROOT_BG = '#05070A';
+const ROOT_BG = '#08120F';
 
 const Stack = createNativeStackNavigator();
 const navTheme = {
@@ -34,9 +35,9 @@ const navTheme = {
   },
 };
 
-/** Surfaces silent render crashes instead of a blank white screen. */
-class RootErrorBoundary extends Component {
-  state = { error: null };
+/** Surfaces render crashes instead of a blank black screen. */
+export class RootErrorBoundary extends Component {
+  state = { error: null, info: null };
 
   static getDerivedStateFromError(error) {
     return { error };
@@ -44,6 +45,7 @@ class RootErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.warn('Root render error:', error?.message || error, info?.componentStack);
+    this.setState({ info });
   }
 
   render() {
@@ -52,7 +54,20 @@ class RootErrorBoundary extends Component {
         <View style={styles.errorRoot}>
           <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
           <Text style={styles.errorTitle}>BAWAAL failed to start</Text>
-          <Text style={styles.errorBody}>{String(this.state.error?.message || this.state.error)}</Text>
+          <ScrollView style={styles.errorScroll}>
+            <Text style={styles.errorBody}>
+              {String(this.state.error?.message || this.state.error)}
+            </Text>
+            {!!this.state.info?.componentStack && (
+              <Text style={styles.errorStack}>{this.state.info.componentStack}</Text>
+            )}
+          </ScrollView>
+          <Text
+            style={styles.errorRetry}
+            onPress={() => this.setState({ error: null, info: null })}
+          >
+            TAP TO RETRY
+          </Text>
         </View>
       );
     }
@@ -60,12 +75,16 @@ class RootErrorBoundary extends Component {
   }
 }
 
-/** Landing / entry — never mounts Arena on first paint. */
 function EntryScreen({ navigation }) {
   return (
     <View style={styles.root}>
       <RoleSelection
-        onCompleteRegistration={() => {
+        onCompleteRegistration={async (userData) => {
+          try {
+            await setRegisteredSession(userData || {});
+          } catch (err) {
+            console.warn('Failed to persist registration:', err?.message || err);
+          }
           navigation.replace('Arena');
         }}
       />
@@ -75,23 +94,57 @@ function EntryScreen({ navigation }) {
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [bootReady, setBootReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState('Entry');
+  const [bootError, setBootError] = useState(null);
 
-  // Dismiss Expo native splash immediately — JS Obsidian splash is already painting.
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {
-      /* ignore */
-    });
+    SplashScreen.hideAsync().catch(() => {});
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 2500);
-    return () => clearTimeout(timer);
+    let cancelled = false;
+    const minSplashMs = 1600;
+    const started = Date.now();
+
+    (async () => {
+      try {
+        const session = await getRegisteredSession();
+        if (!cancelled && session?.registered) {
+          setInitialRoute('Arena');
+        }
+      } catch (err) {
+        console.warn('Session boot check failed:', err?.message || err);
+      } finally {
+        const wait = Math.max(0, minSplashMs - (Date.now() - started));
+        setTimeout(() => {
+          if (cancelled) return;
+          try {
+            setBootReady(true);
+            setShowSplash(false);
+          } catch (err) {
+            setBootError(err);
+          }
+        }, wait);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // In-app Obsidian splash on first paint (bypasses native asset cache).
-  if (showSplash) {
+  if (bootError) {
+    return (
+      <View style={styles.errorRoot}>
+        <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
+        <Text style={styles.errorTitle}>Boot error</Text>
+        <Text style={styles.errorBody}>{String(bootError?.message || bootError)}</Text>
+      </View>
+    );
+  }
+
+  if (showSplash || !bootReady) {
     return (
       <View style={styles.jsSplash}>
         <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} hidden />
@@ -99,7 +152,11 @@ export default function App() {
           source={require('./assets/splash_v2.png')}
           style={styles.splashImage}
           resizeMode="contain"
+          onError={(e) => {
+            console.warn('Splash image failed:', e?.nativeEvent?.error);
+          }}
         />
+        <Text style={styles.splashFallback}>BAWAAL</Text>
       </View>
     );
   }
@@ -111,7 +168,7 @@ export default function App() {
         <SafeAreaProvider style={styles.root}>
           <NavigationContainer theme={navTheme}>
             <Stack.Navigator
-              initialRouteName="Entry"
+              initialRouteName={initialRoute}
               screenOptions={{
                 headerShown: false,
                 animation: 'fade',
@@ -124,6 +181,7 @@ export default function App() {
               <Stack.Screen name="Challenge" component={ChallengeScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+              <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
             </Stack.Navigator>
           </NavigationContainer>
         </SafeAreaProvider>
@@ -148,11 +206,20 @@ const styles = StyleSheet.create({
     height: '70%',
     maxWidth: 420,
   },
+  splashFallback: {
+    position: 'absolute',
+    bottom: 64,
+    color: COLORS.PLATINUM_BASE,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 3,
+  },
   errorRoot: {
     flex: 1,
     backgroundColor: ROOT_BG,
     justifyContent: 'center',
     paddingHorizontal: 24,
+    paddingVertical: 40,
   },
   errorTitle: {
     color: COLORS.PLATINUM_BASE,
@@ -162,8 +229,26 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   errorBody: {
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.85)',
     fontSize: 13,
     lineHeight: 20,
+  },
+  errorStack: {
+    color: 'rgba(255,42,95,0.85)',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 16,
+  },
+  errorScroll: {
+    maxHeight: 320,
+    marginBottom: 20,
+  },
+  errorRetry: {
+    color: COLORS.PLATINUM_BASE,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+    marginTop: 12,
   },
 });

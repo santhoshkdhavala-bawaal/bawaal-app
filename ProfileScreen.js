@@ -30,12 +30,26 @@ export default function ProfileScreen({ navigation }) {
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => {
-            if (navigation?.canGoBack?.()) {
-              navigation.goBack();
-              return;
+            try {
+              if (navigation?.canGoBack?.()) {
+                navigation.goBack();
+                return;
+              }
+            } catch (_) {
+              /* fall through to Arena reset */
             }
-            navigation?.navigate?.('Arena');
+            try {
+              navigation?.reset?.({
+                index: 0,
+                routes: [{ name: 'Arena' }],
+              });
+            } catch (_) {
+              navigation?.navigate?.('Arena');
+            }
           }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close passport"
         >
           <Text style={styles.backBtnText}>✕</Text>
         </TouchableOpacity>
@@ -86,20 +100,32 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.metricItem}>
             <View style={styles.metricHeader}>
               <Text style={styles.metricLabel}>Strike Velocity & Speed</Text>
-              <Text style={styles.metricValue}>94 / 100</Text>
+              <Text style={[styles.metricValue, styles.metricValueVelocity]}>94 / 100</Text>
             </View>
             <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: '94%' }]} />
+              <View
+                style={[
+                  styles.progressBarFill,
+                  styles.progressBarVelocity,
+                  { width: '94%' },
+                ]}
+              />
             </View>
           </View>
 
           <View style={styles.metricItem}>
             <View style={styles.metricHeader}>
               <Text style={styles.metricLabel}>Stamina & Form Check Score</Text>
-              <Text style={styles.metricValue}>88 / 100</Text>
+              <Text style={[styles.metricValue, styles.metricValueStamina]}>88 / 100</Text>
             </View>
             <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: '88%' }]} />
+              <View
+                style={[
+                  styles.progressBarFill,
+                  styles.progressBarStamina,
+                  { width: '88%' },
+                ]}
+              />
             </View>
           </View>
         </View>
@@ -275,7 +301,20 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#E5E4E2',
     borderRadius: 4,
+  },
+  progressBarVelocity: {
+    backgroundColor: '#FF6B6B',
+    opacity: 0.85,
+  },
+  progressBarStamina: {
+    backgroundColor: '#51CF66',
+    opacity: 0.85,
+  },
+  metricValueVelocity: {
+    color: '#FF6B6B',
+  },
+  metricValueStamina: {
+    color: '#51CF66',
   },
 });

@@ -8,12 +8,15 @@ import {
   ActivityIndicator,
   Platform,
   PanResponder,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { COLORS, RADIUS } from './theme';
 import { setLatestBattleClip } from './battleClipStore';
+import { postBattleResponseToSupabase } from './src/services/battleResponseService';
+import { persistLocalVideoUri } from './src/services/uploadService';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
 const DEFAULT_DURATION = 30;
@@ -601,6 +604,7 @@ export default function ChallengeCam({
   const [slowMoStartSec, setSlowMoStartSec] = useState(0);
   const [slowMoEndSec, setSlowMoEndSec] = useState(initialDuration);
   const [slowMoRate, setSlowMoRate] = useState(0.5);
+  const [isPosting, setIsPosting] = useState(false);
   /** Live playhead seconds — ref only (avoids re-render thrash on every tick). */
   const reviewPlayheadRef = useRef(0);
   /** expo-video player instance for review clip (pause/unload on unmount). */
@@ -716,7 +720,8 @@ export default function ChallengeCam({
     setFrozen(true);
     // URI first so review Video can mount before preview chrome toggles on
     setIsMockClip(mock);
-    setRecordedUri(uri || `emulator-mock://${Date.now()}.mp4`);
+    const fallbackUri = uri || `emulator-mock://${Date.now()}.mp4`;
+    setRecordedUri(fallbackUri);
     setShowPreview(true);
     if (fromTimer) {
       setTimeUp(true);
@@ -725,6 +730,19 @@ export default function ChallengeCam({
     }
     stoppingRef.current = false;
     recordingLockRef.current = false;
+
+    // Persist camera temp file into documentDirectory so later POST does not 404
+    if (uri && !mock && !String(uri).startsWith('emulator-mock://')) {
+      persistLocalVideoUri(uri)
+        .then((stable) => {
+          if (stable && stable !== uri) {
+            setRecordedUri(stable);
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not persist recorded clip:', err?.message || err);
+        });
+    }
   }, []);
 
   // Floating elapsed duration (smooth) + 1s countdown while recording
@@ -1034,32 +1052,150 @@ export default function ChallengeCam({
     ]
   );
 
-  /** KEEP & REVIEW — dispatch URI + metadata into Arena / challenge pipeline */
-  const handleKeepReview = () => {
+  /**
+   * Upload local clip → Supabase Storage + insert `battle_responses`, then hand off to Arena.
+   */
+  const handlePostToArena = useCallback(
+    async (localVideoUri, challengeDetails = {}) => {
+      const uri = localVideoUri || recordedUri;
+      if (!uri) return null;
+
+      setIsPosting(true);
+      try {
+        let stableUri = uri;
+        if (!String(uri).startsWith('emulator-mock://')) {
+          try {
+            stableUri = await persistLocalVideoUri(uri);
+            if (stableUri && stableUri !== recordedUri) {
+              setRecordedUri(stableUri);
+            }
+          } catch (verifyErr) {
+            console.warn(
+              'Local video verify failed before upload — Arena local preview only:',
+              verifyErr?.message || verifyErr
+            );
+            return {
+              publicCloudUrl: null,
+              data: null,
+              skipped: true,
+              reason: 'missing-local-file',
+              localUri: uri,
+            };
+          }
+        }
+
+        const cloud = await postBattleResponseToSupabase(stableUri, {
+          battleId:
+            challengeDetails.battleId ||
+            route?.params?.battleId ||
+            route?.params?.reel?.battleId ||
+            route?.params?.reel?.id,
+          responderId: challengeDetails.responderId,
+          slowMoStartSec:
+            challengeDetails.slowMoStartSec ??
+            (slowMoEnabled ? slowMoStartSec : 0),
+          slowMoEndSec:
+            challengeDetails.slowMoEndSec ??
+            (slowMoEnabled ? slowMoEndSec : clipDurationSec || maxDurationSec),
+          slowMoRate:
+            challengeDetails.slowMoRate ??
+            (slowMoEnabled ? slowMoRate : 1),
+          ...challengeDetails,
+        });
+
+        if (cloud?.skipped && cloud.reason === 'not-configured') {
+          console.warn(
+            'Supabase not configured — posting local clip to Arena only. Add .env credentials for cloud upload.'
+          );
+        }
+        if (cloud?.skipped && cloud.reason === 'missing-local-file') {
+          console.warn(
+            'Local video missing — posting Arena mock/local preview without cloud upload.'
+          );
+        }
+
+        return cloud;
+      } catch (err) {
+        console.error('Failed to post battle response:', err);
+        Alert.alert(
+          'Post failed',
+          err?.message || 'Error posting to Arena. Please check your connection.'
+        );
+        throw err;
+      } finally {
+        setIsPosting(false);
+      }
+    },
+    [
+      recordedUri,
+      route?.params?.battleId,
+      route?.params?.reel?.battleId,
+      route?.params?.reel?.id,
+      slowMoEnabled,
+      slowMoStartSec,
+      slowMoEndSec,
+      slowMoRate,
+      clipDurationSec,
+      maxDurationSec,
+    ]
+  );
+
+  /** KEEP & REVIEW / POST BATTLE — cloud upload then Arena handoff */
+  const handleKeepReview = async () => {
+    if (isPosting) return;
     if (!recordedUri && !frozen) return;
     const uri = recordedUri || `emulator-mock://${Date.now()}.mp4`;
     const payload = buildCapturePayload(uri);
+
+    // ChallengeScreen owns the confirm modal — defer Supabase upload until "POST TO ARENA"
+    if (onVideoCaptured) {
+      onVideoCaptured(uri, {
+        ...payload,
+        videoUri: uri,
+        recordedVideoUri: uri,
+        localVideoUri: uri,
+        cloudUploaded: false,
+      });
+      return;
+    }
+
+    let cloudUrl = uri;
+    try {
+      const cloud = await handlePostToArena(uri, {
+        slowMoStartSec: payload.slowMoStartSec,
+        slowMoEndSec: payload.slowMoEndSec,
+        slowMoRate: payload.slowMoEnabled ? payload.slowMoRate : 1,
+      });
+      if (cloud?.publicCloudUrl) {
+        cloudUrl = cloud.publicCloudUrl;
+      } else if (cloud?.localUri) {
+        cloudUrl = cloud.localUri;
+      }
+      // Soft skips (mock / missing file / no Supabase) still continue to Arena
+    } catch (_) {
+      // Alert already shown — abort Arena navigation on hard failure
+      return;
+    }
+
     const newArenaPost = {
+      ...payload,
       id: `local-${payload.timestamp}`,
       creator: 'You',
       category: route?.params?.reel?.category || 'GYM',
       challengeOf: route?.params?.reel?.creator || 'Yuki_Lift',
-      uri,
-      videoUri: uri,
-      recordedVideoUri: uri,
-      ...payload,
+      uri: cloudUrl,
+      videoUri: cloudUrl,
+      recordedVideoUri: cloudUrl,
+      localVideoUri: uri,
+      cloudUploaded: cloudUrl !== uri,
     };
     setLatestBattleClip(newArenaPost);
     try {
-      if (onVideoCaptured) {
-        onVideoCaptured(uri, { ...payload, videoUri: uri, recordedVideoUri: uri });
-        return;
-      }
       if (navigation?.navigate) {
         navigation.navigate('Arena', {
           newArenaPost,
-          videoUri: uri,
-          recordedVideoUri: uri,
+          videoUri: cloudUrl,
+          recordedVideoUri: cloudUrl,
         });
         resetRecordingSession();
         return;
@@ -1072,6 +1208,7 @@ export default function ChallengeCam({
   };
 
   const handlePostBattle = () => {
+    if (isPosting) return;
     if (!canPost && !recordedUri) return;
     handleKeepReview();
   };
@@ -1375,12 +1512,16 @@ export default function ChallengeCam({
           {renderShutter()}
           {showPostBattle && (
             <TouchableOpacity
-              style={[styles.postBattleBtn, !canPost && styles.postBattleBtnDisabled]}
+              style={[styles.postBattleBtn, (!canPost || isPosting) && styles.postBattleBtnDisabled]}
               onPress={handlePostBattle}
-              disabled={!canPost}
+              disabled={!canPost || isPosting}
               activeOpacity={0.85}
             >
-              <Text style={styles.postBattleText}>POST BATTLE ⚡</Text>
+              {isPosting ? (
+                <ActivityIndicator color={OBSIDIAN} />
+              ) : (
+                <Text style={styles.postBattleText}>POST BATTLE ⚡</Text>
+              )}
             </TouchableOpacity>
           )}
         </View>
@@ -1473,22 +1614,28 @@ export default function ChallengeCam({
             </View>
           </View>
 
-          <View style={styles.previewActions}>
-            <TouchableOpacity
-              style={styles.retakeBtn}
-              onPress={handleRetake}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.retakeBtnText}>RETAKE</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.keepBtn}
-              onPress={handleKeepReview}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.keepBtnText}>KEEP & REVIEW</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={styles.retakeBtn}
+                onPress={handleRetake}
+                disabled={isPosting}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.retakeBtnText}>RETAKE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.keepBtn, isPosting && styles.postBattleBtnDisabled]}
+                onPress={handleKeepReview}
+                disabled={isPosting}
+                activeOpacity={0.85}
+              >
+                {isPosting ? (
+                  <ActivityIndicator color={OBSIDIAN} />
+                ) : (
+                  <Text style={styles.keepBtnText}>KEEP & REVIEW</Text>
+                )}
+              </TouchableOpacity>
+            </View>
         </View>
       </View>
     </View>

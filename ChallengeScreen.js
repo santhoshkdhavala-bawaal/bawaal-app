@@ -7,9 +7,12 @@ import {
   StyleSheet,
   Pressable,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import ChallengeCam from './ChallengeCam';
 import { setLatestBattleClip } from './battleClipStore';
+import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { COLORS, RADIUS } from './theme';
 
 /**
@@ -20,6 +23,7 @@ export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
   const [resultModal, setResultModal] = useState(null);
   const [camResetToken, setCamResetToken] = useState(0);
+  const [isPosting, setIsPosting] = useState(false);
 
   const handleClose = useCallback(() => {
     try {
@@ -61,26 +65,62 @@ export default function ChallengeScreen({ route, navigation }) {
   );
 
   const postToArena = useCallback(
-    (uri, meta = {}) => {
-      const newArenaPost = buildArenaPost(uri, meta);
-      setLatestBattleClip(newArenaPost);
+    async (uri, meta = {}) => {
+      if (isPosting) return;
+      setIsPosting(true);
+      let finalUri = uri;
       try {
+        // Upload if ChallengeCam has not already pushed this clip to Supabase
+        if (!meta.cloudUploaded && uri && !String(uri).startsWith('emulator-mock://')) {
+          const cloud = await postBattleResponseToSupabase(uri, {
+            battleId: route?.params?.battleId || reel?.battleId || reel?.id,
+            slowMoStartSec: meta.slowMoStartSec,
+            slowMoEndSec: meta.slowMoEndSec,
+            slowMoRate: meta.slowMoEnabled ? meta.slowMoRate : 1,
+          });
+          if (cloud?.publicCloudUrl) {
+            finalUri = cloud.publicCloudUrl;
+          } else if (cloud?.localUri) {
+            finalUri = cloud.localUri;
+          }
+          // missing-local-file / not-configured → still navigate with local/mock preview
+          if (cloud?.skipped && cloud.reason === 'missing-local-file') {
+            console.warn(
+              'Local video missing at POST — continuing with Arena local preview:',
+              cloud.error
+            );
+          }
+        }
+
+        const newArenaPost = buildArenaPost(finalUri, {
+          ...meta,
+          videoUri: finalUri,
+          recordedVideoUri: finalUri,
+          localVideoUri: meta.localVideoUri || uri,
+          cloudUploaded: true,
+        });
+        setLatestBattleClip(newArenaPost);
         setCamResetToken((t) => t + 1);
         if (navigation?.navigate) {
           navigation.navigate('Arena', {
             newArenaPost,
-            videoUri: newArenaPost.videoUri || uri,
-            recordedVideoUri: newArenaPost.recordedVideoUri || uri,
+            videoUri: newArenaPost.videoUri || finalUri,
+            recordedVideoUri: newArenaPost.recordedVideoUri || finalUri,
           });
         } else {
           handleClose();
         }
-      } catch (navError) {
-        console.warn('Post navigation failed:', navError?.message || navError);
-        handleClose();
+      } catch (err) {
+        console.error('Failed to post battle response:', err);
+        Alert.alert(
+          'Post failed',
+          err?.message || 'Error posting to Arena. Please check your connection.'
+        );
+      } finally {
+        setIsPosting(false);
       }
     },
-    [navigation, buildArenaPost, handleClose]
+    [navigation, buildArenaPost, handleClose, isPosting, route?.params?.battleId, reel]
   );
 
   const handleVideoCaptured = useCallback((uri, meta = {}) => {
@@ -145,17 +185,22 @@ export default function ChallengeScreen({ route, navigation }) {
             )}
 
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={[styles.primaryBtn, isPosting && styles.primaryBtnDisabled]}
               activeOpacity={0.85}
+              disabled={isPosting}
               onPress={() => {
                 const payload = resultModal;
-                dismissModal();
-                if (payload?.uri) {
-                  postToArena(payload.uri, payload.meta || {});
-                }
+                if (!payload?.uri || isPosting) return;
+                postToArena(payload.uri, payload.meta || {}).then(() => {
+                  dismissModal();
+                });
               }}
             >
-              <Text style={styles.primaryBtnText}>POST TO ARENA ⚡</Text>
+              {isPosting ? (
+                <ActivityIndicator color="#05070A" />
+              ) : (
+                <Text style={styles.primaryBtnText}>POST TO ARENA ⚡</Text>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.stayBtn} activeOpacity={0.7} onPress={dismissModal}>
@@ -227,9 +272,14 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: COLORS.PLATINUM_BASE,
     borderRadius: RADIUS.cta,
+    minHeight: 48,
     paddingVertical: 15,
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
+  },
+  primaryBtnDisabled: {
+    opacity: 0.7,
   },
   primaryBtnText: {
     color: COLORS.INK,

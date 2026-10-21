@@ -7,9 +7,9 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const dictionary = {
   English: {

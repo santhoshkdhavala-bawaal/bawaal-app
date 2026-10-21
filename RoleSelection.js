@@ -5,7 +5,6 @@ import {
   View,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Image,
   Modal,
@@ -16,6 +15,7 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const COUNTRIES = [
   { name: 'India', flag: '🇮🇳' },
@@ -205,7 +205,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Alex Rider"
-                placeholderTextColor="#526584"
+                placeholderTextColor="#5A7268"
                 value={name}
                 onChangeText={setName}
               />
@@ -217,7 +217,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 <TextInput
                   style={styles.input}
                   placeholder="Age (13+)"
-                  placeholderTextColor="#526584"
+                  placeholderTextColor="#5A7268"
                   keyboardType="numeric"
                   value={age}
                   onChangeText={setAge}
@@ -255,7 +255,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="Enter mobile number"
-                placeholderTextColor="#526584"
+                placeholderTextColor="#5A7268"
                 keyboardType="phone-pad"
                 value={phone}
                 onChangeText={setPhone}
@@ -267,7 +267,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. alex@bawaal.com"
-                placeholderTextColor="#526584"
+                placeholderTextColor="#5A7268"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
@@ -280,7 +280,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Mumbai, India"
-                placeholderTextColor="#526584"
+                placeholderTextColor="#5A7268"
                 value={location}
                 onChangeText={setLocation}
               />
@@ -291,7 +291,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Athlete, Esports, Commentator, Manager, Climbing"
-                placeholderTextColor="#526584"
+                placeholderTextColor="#5A7268"
                 value={sport}
                 onChangeText={setSport}
               />
@@ -493,10 +493,17 @@ export default function RoleSelection({ onCompleteRegistration }) {
   );
 }
 
+const LANDING_BG = '#08120F';
+const GOLD = '#FFD700';
+const CRIMSON = '#FF2A5F';
+const CARD_BG = '#0C1814';
+const INPUT_BG = '#10201A';
+const MUTED = '#8BA89A';
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#070D1B',
+    backgroundColor: LANDING_BG,
   },
   scrollContent: {
     padding: 18,
@@ -530,18 +537,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dropdownLabel: {
-    color: '#8EA0BA',
+    color: MUTED,
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 6,
   },
   dropdownButton: {
-    backgroundColor: '#121D33',
+    backgroundColor: INPUT_BG,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#243452',
+    borderColor: '#1E3A30',
   },
   dropdownText: {
     color: '#FFFFFF',
@@ -552,8 +559,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 2,
-    borderColor: '#E5E4E2',
-    backgroundColor: '#070E1E',
+    borderColor: GOLD,
+    backgroundColor: CARD_BG,
   },
   cardHeader: {
     marginBottom: 16,
@@ -561,7 +568,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#E5E4E2',
+    color: GOLD,
     letterSpacing: 1,
     textAlign: 'center',
   },
@@ -573,18 +580,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   fieldLabel: {
-    color: '#8EA0BA',
+    color: MUTED,
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 6,
   },
   input: {
-    backgroundColor: '#121D33',
+    backgroundColor: INPUT_BG,
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#243452',
+    borderColor: '#1E3A30',
     color: '#FFFFFF',
     fontSize: 14,
   },
@@ -594,24 +601,24 @@ const styles = StyleSheet.create({
   },
   genderBtn: {
     flex: 1,
-    backgroundColor: '#121D33',
+    backgroundColor: INPUT_BG,
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#243452',
+    borderColor: '#1E3A30',
   },
   genderBtnActive: {
-    backgroundColor: '#1C1F26',
-    borderColor: '#F2F2F5',
+    backgroundColor: CRIMSON,
+    borderColor: GOLD,
   },
   genderText: {
-    color: '#8EA0BA',
+    color: MUTED,
     fontSize: 12,
     fontWeight: '700',
   },
   genderTextActive: {
-    color: '#F2F2F5',
+    color: '#FFFFFF',
   },
   termsContainer: {
     flexDirection: 'row',
@@ -624,61 +631,64 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#38BDF8',
+    borderColor: GOLD,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#121D33',
+    backgroundColor: INPUT_BG,
   },
   checkboxChecked: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: GOLD,
   },
   checkmark: {
-    color: '#000000',
+    color: LANDING_BG,
     fontWeight: 'bold',
     fontSize: 12,
   },
   termsText: {
-    color: '#CBD5E1',
+    color: '#C8D9D0',
     fontSize: 12,
     flex: 1,
   },
   termsLink: {
-    color: '#38BDF8',
+    color: GOLD,
     textDecorationLine: 'underline',
   },
   sendOtpBtn: {
-    backgroundColor: '#E5E4E2',
+    backgroundColor: CRIMSON,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 6,
+    borderWidth: 1,
+    borderColor: GOLD,
   },
   sendOtpBtnDisabled: {
-    backgroundColor: '#334155',
+    backgroundColor: '#2A3A34',
     opacity: 0.6,
+    borderColor: '#3A4A44',
   },
   sendOtpBtnText: {
-    color: '#05070A',
+    color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 15,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    backgroundColor: 'rgba(8, 18, 15, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#121D33',
+    backgroundColor: CARD_BG,
     borderRadius: 16,
     padding: 20,
     width: '88%',
     maxHeight: '80%',
     borderWidth: 1,
-    borderColor: '#243452',
+    borderColor: GOLD,
   },
   modalTitle: {
-    color: '#38BDF8',
+    color: GOLD,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 14,
@@ -687,7 +697,7 @@ const styles = StyleSheet.create({
   modalItem: {
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E293B',
+    borderBottomColor: '#1E3A30',
   },
   modalItemText: {
     color: '#FFFFFF',
@@ -697,14 +707,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   legalHeading: {
-    color: '#E5E4E2',
+    color: GOLD,
     fontSize: 13,
     fontWeight: 'bold',
     marginTop: 12,
     marginBottom: 4,
   },
   legalBody: {
-    color: '#CBD5E1',
+    color: '#C8D9D0',
     fontSize: 12,
     lineHeight: 18,
   },
@@ -712,27 +722,30 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   acceptTermsBtn: {
-    backgroundColor: '#38BDF8',
+    backgroundColor: CRIMSON,
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: GOLD,
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: '#334155',
+    backgroundColor: '#2A3A34',
+    borderColor: '#3A4A44',
   },
   acceptTermsBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 12,
   },
   otpModalContent: {
-    backgroundColor: '#070E1E',
+    backgroundColor: LANDING_BG,
     borderRadius: 20,
     padding: 24,
     width: '88%',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E5E4E2',
+    borderColor: GOLD,
   },
   otpLogo: {
     width: 140,
@@ -740,13 +753,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   otpTitle: {
-    color: '#FFFFFF',
+    color: GOLD,
     fontSize: 16,
     fontWeight: '900',
     marginBottom: 4,
   },
   otpSubtitle: {
-    color: '#8EA0BA',
+    color: MUTED,
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 20,
@@ -759,24 +772,26 @@ const styles = StyleSheet.create({
   otpBox: {
     width: 42,
     height: 48,
-    backgroundColor: '#121D33',
+    backgroundColor: INPUT_BG,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#38BDF8',
-    color: '#FFFFFF',
+    borderColor: GOLD,
+    color: GOLD,
     fontSize: 18,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   enterArenaModalBtn: {
-    backgroundColor: '#E5E4E2',
+    backgroundColor: CRIMSON,
     borderRadius: 10,
     paddingVertical: 14,
     width: '100%',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: GOLD,
   },
   enterArenaModalBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 15,
   },

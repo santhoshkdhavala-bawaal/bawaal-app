@@ -68,9 +68,9 @@ export default function AthleteDashboard({ route, navigation }) {
         <Text style={styles.submitBtnText}>Publish Highlight</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity 
-        style={styles.feedBtn} 
-        onPress={() => navigation.navigate('VideoFeed', { user })}
+      <TouchableOpacity
+        style={styles.feedBtn}
+        onPress={() => navigation?.navigate?.('Arena', { user })}
       >
         <Text style={styles.feedBtnText}>View Public Feed</Text>
       </TouchableOpacity>

@@ -32,7 +32,7 @@ export default function ScoutRegistration({ navigation }) {
 
       if (data.success) {
         Alert.alert('Success', `Scout profile created for ${selectedSport}!`);
-        navigation.navigate('VideoFeed', { user: data.user });
+        navigation.navigate('Arena', { user: data.user });
       } else {
         Alert.alert('Error', data.error || 'Registration failed');
       }

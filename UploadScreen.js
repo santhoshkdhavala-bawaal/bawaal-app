@@ -108,7 +108,7 @@ export default function UploadScreen({ navigation }) {
           onPress: () => {
             setVideoUri(null);
             setCaption('');
-            navigation.navigate('ArenaFeed', { newPost: newChallengePost });
+            navigation.navigate('Arena', { newPost: newChallengePost });
           },
         },
       ]);
@@ -137,7 +137,7 @@ export default function UploadScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.closeBtn}
-          onPress={() => navigation?.navigate('ArenaFeed')}
+          onPress={() => navigation?.navigate?.('Arena')}
         >
           <Text style={styles.closeBtnText}>✕</Text>
         </TouchableOpacity>
