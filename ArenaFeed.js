@@ -1,116 +1,92 @@
-import React, { useState, useEffect, useRef, useCallback, Component } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  View,
+  StyleSheet,
   Text,
+  View,
   ScrollView,
   TouchableOpacity,
-  StyleSheet,
-  StatusBar,
+  Dimensions,
+  ActivityIndicator,
+  PanResponder,
+  Modal,
+  Pressable,
   Animated,
   Easing,
-  PanResponder,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { COLORS, RADIUS } from './theme';
-import { consumeLatestBattleClip } from './battleClipStore';
+import { Video, ResizeMode } from 'expo-av';
+import { supabase } from './src/services/supabase';
 
-class VideoErrorBoundary extends Component {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-  componentDidCatch(error) {
-    console.warn('Arena Video failed:', error?.message || error);
-  }
-  render() {
-    if (this.state.failed) return this.props.fallback || null;
-    return this.props.children;
-  }
-}
+const { width, height } = Dimensions.get('window');
 
-function isPlayableUri(uri) {
-  if (!uri || typeof uri !== 'string') return false;
-  if (uri.startsWith('emulator-mock://')) return false;
-  return (
-    uri.startsWith('file://') ||
-    uri.startsWith('content://') ||
-    uri.startsWith('http://') ||
-    uri.startsWith('https://') ||
-    uri.startsWith('ph://') ||
-    uri.startsWith('/')
-  );
-}
+const CRIMSON = '#FF2A5F';
+const GOLD = '#FFD700';
+const PLATINUM = '#E5E4E2';
 
-/** Local battle clip player — maps recordedVideoUri / uri into expo-video. */
-function BattleVideoPlayer({ uri, playing, speed, onEnded }) {
-  const sourceUri = uri;
-  const player = useVideoPlayer(sourceUri, (p) => {
-    p.loop = false;
-    p.muted = false;
-  });
+const LIVE_SCORE_SAMPLES = [
+  {
+    id: 'ind-aus-t20',
+    sport: 'CRICKET',
+    tier: 'PRO',
+    tierTone: 'pro',
+    title: 'IND vs AUS',
+    line: 'IND 184/4 (18.2 ov) vs AUS',
+    detail:
+      'T20 International — India chasing a strong total. 4th wicket partnership still intact at 18.2 overs.',
+    venue: 'Wankhede Stadium · Mumbai',
+    status: 'LIVE',
+  },
+  {
+    id: 'mum-del-ranji',
+    sport: 'RANJI',
+    tier: 'DOMESTIC',
+    tierTone: 'domestic',
+    title: 'MUM vs DEL',
+    line: 'MUM 210/3 vs DEL',
+    detail:
+      'Ranji Trophy — Mumbai solid at 210/3 after lunch. Delhi looking for an early breakthrough.',
+    venue: 'Wankhede · Domestic Circuit',
+    status: 'LIVE',
+  },
+  {
+    id: 'virar-vasai',
+    sport: 'LOCAL TURF',
+    tier: 'COMMUNITY',
+    tierTone: 'community',
+    title: 'VIRAR STRIKERS vs VASAI KINGS',
+    line: 'VIRAR STRIKERS 42/1 (3.5 ov) vs VASAI KINGS',
+    detail:
+      'Community turf cricket — Virar Strikers off to a flyer. Local battle energy on full display.',
+    venue: 'Virar Ground · Community League',
+    status: 'LIVE',
+  },
+  {
+    id: 'isl-mum-mb',
+    sport: 'FOOTBALL',
+    tier: 'ISL',
+    tierTone: 'pro',
+    title: 'MUMBAI CITY vs MOHUN BAGAN',
+    line: 'MUMBAI CITY 2 - 1 MOHUN BAGAN',
+    detail:
+      'Indian Super League — Mumbai City lead late. Mohun Bagan pressing for an equalizer.',
+    venue: 'Mumbai Football Arena',
+    status: 'LIVE',
+  },
+];
 
-  useEffect(() => {
-    try {
-      player.playbackRate = speed || 1;
-    } catch (_) {
-      /* ignore */
-    }
-  }, [player, speed]);
-
-  useEffect(() => {
-    try {
-      if (playing) {
-        if (player.currentTime >= (player.duration || 0) - 0.05) {
-          player.currentTime = 0;
-        }
-        player.play();
-      } else {
-        player.pause();
-      }
-    } catch (_) {
-      /* ignore */
-    }
-  }, [playing, player]);
-
-  useEffect(() => {
-    const sub = player.addListener?.('playToEnd', () => {
-      onEnded?.();
-    });
-    return () => {
-      try {
-        sub?.remove?.();
-      } catch (_) {
-        /* ignore */
-      }
-    };
-  }, [player, onEnded]);
-
-  return (
-    <VideoView
-      style={styles.arenaVideo}
-      player={player}
-      contentFit="cover"
-      nativeControls={false}
-      pointerEvents="none"
-    />
-  );
-}
-
-function PulsingCrimsonDot() {
+function PulsingLiveDot() {
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
-          toValue: 0.35,
-          duration: 700,
+          toValue: 0.25,
+          duration: 520,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 700,
+          duration: 520,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -121,98 +97,115 @@ function PulsingCrimsonDot() {
   }, [pulse]);
 
   return (
-    <Animated.View style={[styles.liveDot, { opacity: pulse }]} />
+    <Animated.View
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: CRIMSON,
+        opacity: pulse,
+        marginRight: 5,
+      }}
+    />
   );
 }
 
-function GradientCard({ style, children, highlighted }) {
+/** Horizontal live sports score ticker — PRO / DOMESTIC / COMMUNITY cards. */
+function LiveScoreTicker({ onSelectMatch }) {
   return (
-    <View style={[styles.reelCard, highlighted && styles.reelCardHighlight, style]}>
-      <View pointerEvents="none" style={styles.cardGradientTop} />
-      {children}
+    <View style={styles.tickerWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tickerContent}
+      >
+        {LIVE_SCORE_SAMPLES.map((match) => (
+          <TouchableOpacity
+            key={match.id}
+            style={styles.scoreCard}
+            activeOpacity={0.85}
+            onPress={() => onSelectMatch?.(match)}
+          >
+            <View style={styles.scoreCardTop}>
+              <Text style={styles.scoreSport}>
+                {match.sport}{' '}
+                <Text
+                  style={[
+                    styles.scoreTier,
+                    match.tierTone === 'community' && styles.scoreTierGold,
+                    match.tierTone === 'domestic' && styles.scoreTierDomestic,
+                  ]}
+                >
+                  [{match.tier}]
+                </Text>
+              </Text>
+              <View style={styles.scoreLiveBadge}>
+                <PulsingLiveDot />
+                <Text style={styles.scoreLiveText}>LIVE</Text>
+              </View>
+            </View>
+            <Text style={styles.scoreLine} numberOfLines={2}>
+              {match.line}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
-const CATEGORIES = [
-  'ALL',
-  'CRICKET',
-  'FOOTBALL',
-  'GYM',
-  'KABBADI',
-  'COMBAT',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
-];
+/** Lightweight bottom sheet for match detail + battle CTA. */
+function MatchDetailSheet({ match, visible, onClose, onStartBattle }) {
+  if (!match) return null;
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+        <Pressable style={styles.sheetCard} onPress={(e) => e.stopPropagation?.()}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetLiveRow}>
+            <PulsingLiveDot />
+            <Text style={styles.sheetLiveText}>LIVE · {match.sport}</Text>
+            <Text
+              style={[
+                styles.sheetTierPill,
+                match.tierTone === 'community' && styles.sheetTierPillGold,
+              ]}
+            >
+              {match.tier}
+            </Text>
+          </View>
+          <Text style={styles.sheetTitle}>{match.title}</Text>
+          <Text style={styles.sheetScore}>{match.line}</Text>
+          <Text style={styles.sheetDetail}>{match.detail}</Text>
+          <Text style={styles.sheetVenue}>{match.venue}</Text>
 
-const SEED_POSTS = [
-  {
-    id: 'seed-yuki',
-    uri: null,
-    speedRate: 1,
-    target: '140 KG x 3 Reps',
-    timestamp: Date.now() - 1000 * 60 * 45,
-    isMock: false,
-    opponent: null,
-    creator: 'Yuki_Lift',
-    category: 'GYM',
-    challengeOf: null,
-    isSeed: true,
-    durationSec: 30,
-    challengeMaxDuration: 30,
-  },
-];
-
-function formatRelativeTime(ts) {
-  const diff = Math.max(0, Date.now() - (ts || Date.now()));
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'JUST NOW';
-  if (mins < 60) return `${mins}M AGO`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}H AGO`;
-  return `${Math.floor(hrs / 24)}D AGO`;
+          <TouchableOpacity
+            style={styles.sheetCta}
+            activeOpacity={0.85}
+            onPress={() => onStartBattle?.(match)}
+          >
+            <Text style={styles.sheetCtaText}>START BATTLE ON THIS MATCH</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.sheetDismiss} onPress={onClose} activeOpacity={0.7}>
+            <Text style={styles.sheetDismissText}>CLOSE</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
 }
 
-function formatClock(seconds) {
-  const s = Math.max(0, Math.floor(seconds));
-  const mins = Math.floor(s / 60);
-  const secs = s % 60;
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-/** Floating platinum play / pause — no circular chrome. */
-function PlayIcon({ playing }) {
-  if (playing) {
-    return (
-      <View style={styles.pauseIconRow}>
-        <View style={styles.pauseBar} />
-        <View style={styles.pauseBar} />
-      </View>
-    );
-  }
-  return <View style={styles.playTriangle} />;
-}
-
-/** Interactive seek bar — tap or drag to scrub playback position. */
+// Interactive Scrub Bar component for live video scrubbing
 function InteractiveScrubBar({ progress, duration, onSeek, onSeekStart, onSeekEnd }) {
-  const trackRef = useRef(null);
-  const trackWidthRef = useRef(0);
-  const trackPageXRef = useRef(0);
-  const localProgressRef = useRef(progress);
-  const durationRef = useRef(duration);
-  const onSeekRef = useRef(onSeek);
-  const onSeekStartRef = useRef(onSeekStart);
-  const onSeekEndRef = useRef(onSeekEnd);
-  const [dragging, setDragging] = useState(false);
   const [localProgress, setLocalProgress] = useState(progress);
-  const displayProgress = dragging ? localProgress : progress;
-
-  durationRef.current = duration;
-  onSeekRef.current = onSeek;
-  onSeekStartRef.current = onSeekStart;
-  onSeekEndRef.current = onSeekEnd;
+  const localProgressRef = useRef(progress);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     if (!dragging) {
@@ -226,820 +219,755 @@ function InteractiveScrubBar({ progress, duration, onSeek, onSeekStart, onSeekEn
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        trackRef.current?.measureInWindow?.((x, _y, width) => {
-          trackPageXRef.current = x;
-          trackWidthRef.current = width;
-        });
         setDragging(true);
-        onSeekStartRef.current?.();
-        const w = trackWidthRef.current || 1;
-        const next = Math.max(0, Math.min(1, (evt.nativeEvent.pageX - trackPageXRef.current) / w));
-        localProgressRef.current = next;
-        setLocalProgress(next);
-        onSeekRef.current?.(next * durationRef.current);
+        if (onSeekStart) onSeekStart();
+        const touchX = evt.nativeEvent.locationX;
+        const newProgress = Math.max(0, Math.min(1, touchX / (width - 48)));
+        setLocalProgress(newProgress);
+        localProgressRef.current = newProgress;
       },
       onPanResponderMove: (evt) => {
-        const w = trackWidthRef.current || 1;
-        const next = Math.max(0, Math.min(1, (evt.nativeEvent.pageX - trackPageXRef.current) / w));
-        localProgressRef.current = next;
-        setLocalProgress(next);
-        onSeekRef.current?.(next * durationRef.current);
+        const touchX = evt.nativeEvent.locationX;
+        const newProgress = Math.max(0, Math.min(1, touchX / (width - 48)));
+        setLocalProgress(newProgress);
+        localProgressRef.current = newProgress;
       },
-      onPanResponderRelease: (evt) => {
-        const w = trackWidthRef.current || 1;
-        const next = Math.max(0, Math.min(1, (evt.nativeEvent.pageX - trackPageXRef.current) / w));
-        localProgressRef.current = next;
-        setLocalProgress(next);
-        onSeekRef.current?.(next * durationRef.current);
+      onPanResponderRelease: () => {
         setDragging(false);
-        onSeekEndRef.current?.(next * durationRef.current);
-      },
-      onPanResponderTerminate: () => {
-        setDragging(false);
-        onSeekEndRef.current?.(localProgressRef.current * durationRef.current);
+        if (onSeek) onSeek(localProgressRef.current);
+        if (onSeekEnd) onSeekEnd();
       },
     })
   ).current;
 
+  const formatTime = (millis) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <View
-      ref={trackRef}
-      style={styles.scrubHitArea}
-      hitSlop={{ top: 12, bottom: 12, left: 0, right: 0 }}
-      onLayout={(e) => {
-        trackWidthRef.current = e.nativeEvent.layout.width;
-        trackRef.current?.measureInWindow?.((x, _y, width) => {
-          trackPageXRef.current = x;
-          if (width) trackWidthRef.current = width;
-        });
-      }}
-      {...panResponder.panHandlers}
-    >
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${displayProgress * 100}%` }]} />
+    <View style={styles.scrubContainer}>
+      <View style={styles.scrubTrackContainer} {...panResponder.panHandlers}>
+        <View style={styles.scrubTrackBackground}>
+          <View
+            style={[
+              styles.scrubTrackFill,
+              { width: `${Math.min(100, Math.max(0, localProgress * 100))}%` },
+            ]}
+          />
+        </View>
         <View
-          pointerEvents="none"
           style={[
             styles.scrubThumb,
-            { left: `${displayProgress * 100}%` },
-            dragging && styles.scrubThumbActive,
+            { left: `${Math.min(100, Math.max(0, localProgress * 100))}%` },
           ]}
         />
+      </View>
+      <View style={styles.scrubTimeRow}>
+        <Text style={styles.scrubTimeText}>
+          {formatTime(localProgress * (duration || 30000))} / {formatTime(duration || 30000)} · 1x
+        </Text>
       </View>
     </View>
   );
 }
 
-function LocalChallengeReel({ post, highlighted, onChallenge }) {
-  // Prefer videoUri from recordAsync payload, then legacy keys.
-  const recordedVideoUri = post.videoUri || post.recordedVideoUri || post.uri || null;
-  const duration = Math.max(
-    1,
-    post.durationSec || (post.durationMs ? Math.round(post.durationMs / 1000) : 60)
-  );
-  const speed = post.speedRate || 1;
-  const [playing, setPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [scrubbing, setScrubbing] = useState(false);
-  const tickRef = useRef(null);
-  const wasPlayingRef = useRef(false);
-  const canPlayVideo = isPlayableUri(recordedVideoUri);
-
-  useEffect(() => {
-    if (!playing || scrubbing) {
-      if (tickRef.current) clearInterval(tickRef.current);
-      return undefined;
-    }
-    tickRef.current = setInterval(() => {
-      setPosition((prev) => {
-        const next = prev + speed * 0.25;
-        if (next >= duration) {
-          setPlaying(false);
-          return duration;
-        }
-        return next;
-      });
-    }, 250);
-    return () => {
-      if (tickRef.current) clearInterval(tickRef.current);
-    };
-  }, [playing, scrubbing, speed, duration]);
-
-  useEffect(() => {
-    if (highlighted) {
-      setPlaying(true);
-      setPosition(0);
-    }
-  }, [highlighted, post.id]);
-
-  const progress = Math.min(1, position / duration);
-  const isLocalResponse = !!recordedVideoUri || post.creator === 'You';
-
-  const handleSeek = useCallback((seconds) => {
-    setPosition(Math.max(0, Math.min(duration, seconds)));
-  }, [duration]);
-
-  const handleSeekStart = useCallback(() => {
-    wasPlayingRef.current = playing;
-    setScrubbing(true);
-    setPlaying(false);
-  }, [playing]);
-
-  const handleSeekEnd = useCallback(() => {
-    setScrubbing(false);
-    if (wasPlayingRef.current) setPlaying(true);
-  }, []);
-
-  return (
-    <GradientCard highlighted={highlighted}>
-      <View style={styles.reelHeader}>
-        <View>
-          <Text style={styles.reelCreator}>
-            {isLocalResponse ? 'YOU' : `@${post.creator || 'athlete'}`}
-          </Text>
-          {!!post.challengeOf && (
-            <Text style={styles.reelVersus}>VS @{post.challengeOf}</Text>
-          )}
-        </View>
-        <Text style={styles.reelTime}>{formatRelativeTime(post.timestamp)}</Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.playerStage}
-        activeOpacity={0.95}
-        onPress={() => setPlaying((p) => !p)}
-      >
-        <View style={styles.videoFrame}>
-          {canPlayVideo ? (
-            <VideoErrorBoundary
-              fallback={
-                <Text style={styles.playerStatus}>VIDEO SURFACE UNAVAILABLE</Text>
-              }
-            >
-              {/* source={{ uri: item.videoUri }} */}
-              <BattleVideoPlayer
-                uri={recordedVideoUri}
-                playing={playing}
-                speed={speed}
-                onEnded={() => {
-                  setPlaying(false);
-                  setPosition(duration);
-                }}
-              />
-            </VideoErrorBoundary>
-          ) : (
-            <View style={styles.videoPlaceholderFill} />
-          )}
-          <Text style={styles.playerStatus} pointerEvents="none">
-            {post.isMock
-              ? 'LOCAL FALLBACK CLIP'
-              : canPlayVideo
-                ? 'LOCAL BATTLE RESPONSE'
-                : recordedVideoUri
-                  ? 'CLIP URI PENDING'
-                  : 'ARENA REEL'}
-          </Text>
-          <View style={styles.playOverlay} pointerEvents="none">
-            <PlayIcon playing={playing} />
-          </View>
-        </View>
-      </TouchableOpacity>
-
-      <View style={styles.scrubRow}>
-        <InteractiveScrubBar
-          progress={progress}
-          duration={duration}
-          onSeek={handleSeek}
-          onSeekStart={handleSeekStart}
-          onSeekEnd={handleSeekEnd}
-        />
-        <Text style={styles.playerClock}>
-          {formatClock(position)} / {formatClock(duration)} · {speed}x
-        </Text>
-      </View>
-
-      <View style={styles.targetPill}>
-        <Text style={styles.targetPillText}>TARGET: {post.target}</Text>
-      </View>
-
-      {!isLocalResponse && (
-        <TouchableOpacity style={styles.challengeButton} activeOpacity={0.85} onPress={onChallenge}>
-          <Text style={styles.challengeButtonText}>CHALLENGE THIS ⚡</Text>
-        </TouchableOpacity>
-      )}
-
-      {isLocalResponse && (
-        <View style={styles.postedBadge}>
-          <Text style={styles.postedBadgeText}>POSTED TO ARENA</Text>
-        </View>
-      )}
-    </GradientCard>
-  );
-}
-
 export default function ArenaFeed({ navigation, route }) {
-  const insets = useSafeAreaInsets();
-  const [activeCategory, setActiveCategory] = useState('ALL');
-  const [localPosts, setLocalPosts] = useState(SEED_POSTS);
-  const [highlightId, setHighlightId] = useState(null);
-  const feedScrollRef = useRef(null);
-  const consumedPostId = useRef(null);
+  const [feedBattles, setFeedBattles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('ALL');
+  const [playingStates, setPlayingStates] = useState({});
+  const [videoProgress, setVideoProgress] = useState({});
+  const [videoDurations, setVideoDurations] = useState({});
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const videoRefs = useRef({});
 
-  const ingestArenaPost = useCallback(
-    (newArenaPost) => {
-      if (!newArenaPost) return;
-      const uri =
-        newArenaPost.videoUri ||
-        newArenaPost.recordedVideoUri ||
-        newArenaPost.uri ||
-        null;
-      const normalized = {
-        ...newArenaPost,
-        id: newArenaPost.id || `local-${newArenaPost.timestamp || Date.now()}`,
-        uri,
-        videoUri: uri,
-        recordedVideoUri: uri,
-        durationSec:
-          newArenaPost.durationSec ||
-          (newArenaPost.durationMs ? Math.round(newArenaPost.durationMs / 1000) : 60),
-        creator: newArenaPost.creator || 'You',
-      };
-      if (!normalized.id) return;
-      if (consumedPostId.current === normalized.id) return;
-      consumedPostId.current = normalized.id;
-
-      setLocalPosts((prev) => {
-        if (prev.some((p) => p.id === normalized.id)) return prev;
-        return [normalized, ...prev];
-      });
-      setHighlightId(normalized.id);
-      setActiveCategory('ALL');
-
-      requestAnimationFrame(() => {
-        feedScrollRef.current?.scrollTo?.({ y: 0, animated: true });
-      });
-
-      try {
-        navigation?.setParams?.({
-          newArenaPost: undefined,
-          recordedVideoUri: undefined,
-          videoUri: undefined,
-        });
-      } catch (_) {
-        /* ignore */
-      }
-    },
-    [navigation]
-  );
-
-  useEffect(() => {
-    const incoming = route?.params?.newArenaPost;
-    if (incoming) {
-      ingestArenaPost(incoming);
-      return;
-    }
-    const fromStore = consumeLatestBattleClip();
-    if (fromStore) ingestArenaPost(fromStore);
-  }, [route?.params?.newArenaPost, ingestArenaPost]);
-
-  const openChallenge = (fromPost) => {
-    const challengeMaxDuration =
-      fromPost?.challengeMaxDuration ||
-      fromPost?.durationSec ||
-      fromPost?.maxDurationSec ||
-      30;
-    const challengerUri =
-      fromPost?.videoUri || fromPost?.recordedVideoUri || fromPost?.uri || null;
-    navigation?.navigate('Challenge', {
-      challengeMaxDuration,
-      challengerUri,
-      targetVideoUri: challengerUri,
+  const handleStartBattleOnMatch = (match) => {
+    setSelectedMatch(null);
+    navigation?.navigate?.('Challenge', {
+      challengeMaxDuration: 30,
+      target: `${match.sport}: ${match.line}`,
+      battleId: match.id,
       reel: {
-        creator: fromPost?.creator || 'Yuki_Lift',
-        statSticker: fromPost?.target || '140 KG x 3 Reps',
-        category: fromPost?.category || 'GYM',
-        durationSec: challengeMaxDuration,
-        challengeMaxDuration,
-        videoUri: challengerUri,
-        uri: challengerUri,
+        creator: match.sport,
+        statSticker: match.line,
+        category: match.sport.includes('FOOTBALL') ? 'FOOTBALL' : 'CRICKET',
+        challengeMaxDuration: 30,
+        durationSec: 30,
+        battleId: match.id,
       },
     });
   };
 
-  const visiblePosts = localPosts.filter((post) => {
-    if (activeCategory === 'ALL') return true;
-    return (post.category || 'GYM') === activeCategory;
-  });
+  // Fetch live battles from Supabase on mount
+  useEffect(() => {
+    fetchArenaBattles();
+  }, []);
+
+  const fetchArenaBattles = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('battle_responses')
+        .select(`
+          id,
+          video_url,
+          slow_mo_start,
+          slow_mo_end,
+          slow_mo_speed,
+          created_at,
+          profiles (
+            username,
+            avatar_url
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        setFeedBattles(data);
+      } else {
+        // Fallback default sample if DB is empty
+        setFeedBattles([
+          {
+            id: 'sample-1',
+            profiles: { username: 'Yuki_Lift', avatar_url: null },
+            video_url: 'https://d826372d82.imgdist.com/pub/sfprod/sample_challenge.mp4',
+            target_exercise: '140 KG x 3 Reps',
+          },
+        ]);
+      }
+    } catch (err) {
+      console.error('Error fetching arena feed:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const togglePlay = async (id) => {
+    const ref = videoRefs.current[id];
+    if (!ref) return;
+
+    const isPlaying = playingStates[id];
+    if (isPlaying) {
+      await ref.pauseAsync();
+      setPlayingStates((prev) => ({ ...prev, [id]: false }));
+    } else {
+      await ref.playAsync();
+      setPlayingStates((prev) => ({ ...prev, [id]: true }));
+    }
+  };
+
+  const handlePlaybackStatusUpdate = (id, status) => {
+    if (status.isLoaded) {
+      const progress = status.positionMillis / (status.durationMillis || 1);
+      setVideoProgress((prev) => ({ ...prev, [id]: progress }));
+      setVideoDurations((prev) => ({ ...prev, [id]: status.durationMillis }));
+      if (status.didJustFinish) {
+        setPlayingStates((prev) => ({ ...prev, [id]: false }));
+        videoRefs.current[id]?.setPositionAsync(0);
+      }
+    }
+  };
+
+  const handleSeek = async (id, progress) => {
+    const ref = videoRefs.current[id];
+    const duration = videoDurations[id] || 30000;
+    if (ref) {
+      await ref.setPositionAsync(progress * duration);
+    }
+  };
 
   return (
-    <View style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.BACKGROUND_OBSIDIAN} />
-      <View style={styles.container}>
-        <View style={[styles.headerBlock, { paddingTop: Math.max(insets.top, 16) + 16 }]}>
-          {/* ROW 1 — Brand + profile actions */}
-          <View style={styles.headerRow1}>
-            <Text style={styles.brandName}>BAWAAL</Text>
-            <View style={styles.headerActionGroup}>
-              <TouchableOpacity
-                style={styles.headerActionBtn}
-                activeOpacity={0.75}
-                onPress={() => navigation?.navigate?.('Profile')}
-              >
-                <Text style={styles.headerActionText}>ME</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.headerActionBtn}
-                activeOpacity={0.75}
-                onPress={() => navigation?.navigate?.('Profile', { section: 'settings' })}
-              >
-                <Text style={styles.headerActionText}>SET</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ROW 2 — Section + live badge */}
-          <View style={styles.headerRow2}>
-            <Text style={styles.sectionLabel}>ARENA</Text>
-            <View style={styles.liveBadge}>
-              <PulsingCrimsonDot />
-              <Text style={styles.liveText}>TOKYO GLOBAL LIVE</Text>
-            </View>
-          </View>
+    <View style={styles.container}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>BAWAAL</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('AthleteDashboard')}>
+            <Text style={styles.headerButtonText}>ME</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton}>
+            <Text style={styles.headerButtonText}>SET</Text>
+          </TouchableOpacity>
         </View>
+      </View>
 
-        <View style={styles.categoryBarContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoryScrollContent}
+      {/* Sub-Header Arena Status */}
+      <View style={styles.subHeader}>
+        <Text style={styles.arenaLabel}>ARENA</Text>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>TOKYO GLOBAL LIVE</Text>
+        </View>
+      </View>
+
+      {/* Live sports score ticker */}
+      <LiveScoreTicker onSelectMatch={setSelectedMatch} />
+
+      <MatchDetailSheet
+        match={selectedMatch}
+        visible={!!selectedMatch}
+        onClose={() => setSelectedMatch(null)}
+        onStartBattle={handleStartBattleOnMatch}
+      />
+
+      {/* Category Tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
+        {['ALL', 'CRICKET', 'FOOTBALL', 'GYM', 'KARATE'].map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.tabItem, activeTab === tab && styles.activeTabItem]}
+            onPress={() => setActiveTab(tab)}
           >
-            {CATEGORIES.map((category) => {
-              const isActive = activeCategory === category;
-              return (
-                <TouchableOpacity
-                  key={category}
-                  onPress={() => setActiveCategory(category)}
-                  activeOpacity={0.75}
-                  style={[styles.categoryPill, isActive && styles.categoryPillActive]}
-                >
-                  <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
-                    {category}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>{tab}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
-        <ScrollView
-          ref={feedScrollRef}
-          style={styles.feedScroll}
-          contentContainerStyle={[styles.feedContent, { paddingBottom: 96 + insets.bottom }]}
-        >
-          {visiblePosts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>NO POSTS IN {activeCategory}</Text>
-              <Text style={styles.emptyBody}>Switch category or post a battle response.</Text>
-            </View>
-          ) : (
-            visiblePosts.map((post) => (
-              <LocalChallengeReel
-                key={post.id}
-                post={post}
-                highlighted={highlightId === post.id}
-                onChallenge={() => openChallenge(post)}
-              />
-            ))
-          )}
+      {/* Feed List */}
+      {loading ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#FF2A5F" />
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.feedScroll} showsVerticalScrollIndicator={false}>
+          {feedBattles.map((item) => {
+            const isPlaying = playingStates[item.id] || false;
+            const progress = videoProgress[item.id] || 0;
+            const duration = videoDurations[item.id] || 30000;
+
+            return (
+              <View key={item.id} style={styles.postCard}>
+                {/* Post Header */}
+                <View style={styles.postHeader}>
+                  <View style={styles.userInfo}>
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarText}>YOU</Text>
+                    </View>
+                    <Text style={styles.vsText}>VS @{item.profiles?.username || 'Yuki_Lift'}</Text>
+                  </View>
+                  <Text style={styles.timeText}>JUST NOW</Text>
+                </View>
+
+                {/* Video Container */}
+                <View style={styles.videoContainer}>
+                  <Video
+                    ref={(ref) => (videoRefs.current[item.id] = ref)}
+                    source={{ uri: item.video_url }}
+                    style={styles.videoPlayer}
+                    resizeMode={ResizeMode.COVER}
+                    isLooping={false}
+                    onPlaybackStatusUpdate={(status) => handlePlaybackStatusUpdate(item.id, status)}
+                  />
+
+                  {/* Play/Pause Overlay Button */}
+                  <TouchableOpacity style={styles.playOverlayButton} onPress={() => togglePlay(item.id)}>
+                    {!isPlaying && (
+                      <View style={styles.playIconContainer}>
+                        <View style={styles.playBar} />
+                        <View style={styles.playBar} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Interactive Scrub Bar */}
+                  <InteractiveScrubBar
+                    progress={progress}
+                    duration={duration}
+                    onSeek={(p) => handleSeek(item.id, p)}
+                  />
+                </View>
+
+                {/* Target Metadata Banner */}
+                <View style={styles.targetBanner}>
+                  <Text style={styles.targetBannerText}>TARGET: 140 KG x 3 Reps</Text>
+                </View>
+
+                {/* Post Footer Action */}
+                <View style={styles.postFooter}>
+                  <TouchableOpacity style={styles.postedBadgeButton}>
+                    <Text style={styles.postedBadgeText}>POSTED TO ARENA</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
         </ScrollView>
+      )}
 
-        {/* Bottom charcoal glass nav + platinum FAB */}
-        <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <TouchableOpacity style={styles.navItem} activeOpacity={0.75}>
-            <Text style={styles.navItemActive}>ARENA</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.fab}
-            activeOpacity={0.9}
-            onPress={() => openChallenge(SEED_POSTS[0])}
-            accessibilityLabel="Create challenge"
-          >
-            <Text style={styles.fabIcon}>+</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.navItem}
-            activeOpacity={0.75}
-            onPress={() => navigation?.navigate?.('Leaderboard')}
-          >
-            <Text style={styles.navItemText}>RANK</Text>
-          </TouchableOpacity>
-        </View>
+      {/* Bottom Navigation Bar */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('ArenaFeed')}>
+          <Text style={styles.navTextActive}>ARENA</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.fabButton} onPress={() => navigation.navigate('ChallengeCam')}>
+          <Text style={styles.fabPlus}>+</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navItem} onPress={() => navigation.navigate('LeaderboardScreen')}>
+          <Text style={styles.navText}>RANK</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
-  },
   container: {
     flex: 1,
-    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
+    backgroundColor: '#05070A',
+    paddingTop: 45,
   },
-  headerBlock: {
-    paddingHorizontal: 16,
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  headerTitle: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 1.5,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  headerButton: {
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  headerButtonText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  subHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  tickerWrap: {
     marginBottom: 12,
   },
-  headerRow1: {
+  tickerContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 2,
+  },
+  scoreCard: {
+    backgroundColor: '#090D12',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1A222D',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+    minWidth: 220,
+    maxWidth: 280,
+  },
+  scoreCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  scoreSport: {
+    color: PLATINUM,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    flexShrink: 1,
+  },
+  scoreTier: {
+    color: CRIMSON,
+    fontWeight: '900',
+  },
+  scoreTierGold: {
+    color: GOLD,
+  },
+  scoreTierDomestic: {
+    color: '#7DD3FC',
+  },
+  scoreLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  scoreLiveText: {
+    color: CRIMSON,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  scoreLine: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 7, 10, 0.72)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: '#0A0E14',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    borderColor: '#1A222D',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 28,
+  },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#2A3340',
+    marginBottom: 14,
+  },
+  sheetLiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sheetLiveText: {
+    color: CRIMSON,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    marginRight: 8,
+  },
+  sheetTierPill: {
+    color: CRIMSON,
+    fontSize: 10,
+    fontWeight: '800',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 42, 95, 0.45)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  sheetTierPillGold: {
+    color: GOLD,
+    borderColor: 'rgba(255, 215, 0, 0.45)',
+  },
+  sheetTitle: {
+    color: PLATINUM,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  sheetScore: {
+    color: CRIMSON,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  sheetDetail: {
+    color: 'rgba(229, 228, 226, 0.72)',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  sheetVenue: {
+    color: 'rgba(229, 228, 226, 0.45)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 18,
+  },
+  sheetCta: {
+    backgroundColor: PLATINUM,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sheetCtaText: {
+    color: '#05070A',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  sheetDismiss: {
+    borderWidth: 1,
+    borderColor: '#1A222D',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  sheetDismissText: {
+    color: 'rgba(229, 228, 226, 0.55)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  arenaLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#888',
+    letterSpacing: 1,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF2A5F',
+    marginRight: 6,
+  },
+  liveText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  tabsContainer: {
+    paddingHorizontal: 16,
+    maxHeight: 45,
+    marginBottom: 10,
+  },
+  tabItem: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+    backgroundColor: '#0E131A',
+    height: 36,
+  },
+  activeTabItem: {
+    backgroundColor: '#FFF',
+    borderColor: '#FFF',
+  },
+  tabText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  activeTabText: {
+    color: '#000',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  feedScroll: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
+  postCard: {
+    backgroundColor: '#0E131A',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#1C232D',
+    marginBottom: 20,
+    overflow: 'hidden',
+    padding: 12,
+  },
+  postHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
-  headerRow2: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  brandName: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-  },
-  sectionLabel: {
-    color: '#9EA3B0',
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  headerActionGroup: {
+  userInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.GLASS_OVERLAY,
-    borderWidth: 1,
-    borderColor: COLORS.GLASS_BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: COLORS.ELECTRIC_CRIMSON,
-    marginRight: 6,
-  },
-  liveText: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  headerActionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    alignItems: 'center',
+  avatarPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2A3444',
     justifyContent: 'center',
-  },
-  headerActionText: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-  categoryBarContainer: {
-    paddingVertical: 8,
-  },
-  categoryScrollContent: {
-    paddingHorizontal: 16,
     alignItems: 'center',
+    marginRight: 8,
   },
-  categoryPill: {
-    backgroundColor: 'transparent',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginRight: 10,
-  },
-  categoryPillActive: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: COLORS.PLATINUM_BASE,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    color: COLORS.TEXT_MUTED,
-  },
-  categoryTextActive: {
-    color: COLORS.TEXT_PRIMARY,
-    fontWeight: '900',
-  },
-  feedScroll: {
-    flex: 1,
-  },
-  feedContent: {
-    padding: 16,
-  },
-  reelCard: {
-    backgroundColor: COLORS.CARD_BOTTOM,
-    borderRadius: RADIUS.card,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: COLORS.CARD_BORDER,
-    overflow: 'hidden',
-  },
-  cardGradientTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '55%',
-    backgroundColor: COLORS.CARD_TOP,
-    opacity: 0.92,
-  },
-  reelCardHighlight: {
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-  },
-  reelHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    zIndex: 1,
-  },
-  reelCreator: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-  reelVersus: {
-    color: COLORS.PLATINUM_BASE,
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  reelTime: {
-    color: COLORS.TEXT_DIM,
+  avatarText: {
+    color: '#FFF',
     fontSize: 10,
+    fontWeight: '800',
+  },
+  vsText: {
+    color: '#FFF',
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.6,
   },
-  playerStage: {
-    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.CARD_BORDER,
-    zIndex: 1,
-    overflow: 'hidden',
+  timeText: {
+    color: '#777',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  videoFrame: {
+  videoContainer: {
     width: '100%',
-    height: 280,
+    height: 340,
+    backgroundColor: '#000',
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
     position: 'relative',
     justifyContent: 'center',
+  },
+  videoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  playOverlayButton: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  // Explicit Video dimensions: width 100%, height 280, borderRadius 12
-  arenaVideo: {
+  playIconContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 16,
+    borderRadius: 30,
+  },
+  playBar: {
+    width: 6,
+    height: 24,
+    backgroundColor: '#FFF',
+    borderRadius: 3,
+  },
+  scrubContainer: {
+    position: 'absolute',
+    bottom: 12,
+    left: 16,
+    right: 16,
+  },
+  scrubTrackContainer: {
+    height: 20,
+    justifyContent: 'center',
+  },
+  scrubTrackBackground: {
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
     width: '100%',
-    height: 280,
-    borderRadius: 12,
     overflow: 'hidden',
   },
-  videoPlaceholderFill: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: COLORS.BACKGROUND_OBSIDIAN,
-  },
-  playerStatus: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    zIndex: 3,
-    color: COLORS.TEXT_DIM,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  playOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  playTriangle: {
-    width: 0,
-    height: 0,
-    marginLeft: 6,
-    borderTopWidth: 24,
-    borderBottomWidth: 24,
-    borderLeftWidth: 40,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#E5E4E2',
-    // Soft visibility over bright frames
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.55,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  pauseIconRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pauseBar: {
-    width: 10,
-    height: 40,
-    borderRadius: 2,
-    backgroundColor: '#E5E4E2',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.55,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  scrubRow: {
-    marginTop: 10,
-    marginBottom: 12,
-    zIndex: 1,
-  },
-  scrubHitArea: {
-    width: '100%',
-    height: 28,
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  progressTrack: {
-    width: '100%',
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    justifyContent: 'center',
-  },
-  progressFill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#E5E4E2',
-    borderRadius: 2,
+  scrubTrackFill: {
+    height: '100%',
+    backgroundColor: '#FF2A5F',
   },
   scrubThumb: {
     position: 'absolute',
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#E5E4E2',
+    backgroundColor: '#FFF',
+    top: 4,
     marginLeft: -6,
-    top: -4.5,
-    opacity: 0.85,
   },
-  scrubThumbActive: {
-    opacity: 1,
-    transform: [{ scale: 1.15 }],
+  scrubTimeRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginTop: 4,
   },
-  playerClock: {
-    color: COLORS.TEXT_PRIMARY,
+  scrubTimeText: {
+    color: '#FFF',
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: '600',
   },
-  targetPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: RADIUS.pill,
-    marginBottom: 12,
-    zIndex: 1,
-  },
-  targetPillText: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-  },
-  challengeButton: {
-    backgroundColor: COLORS.PLATINUM_BASE,
-    paddingVertical: 14,
-    borderRadius: RADIUS.cta,
-    alignItems: 'center',
-    zIndex: 1,
-  },
-  challengeButtonText: {
-    color: COLORS.INK,
-    fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 1.2,
-  },
-  postedBadge: {
-    backgroundColor: COLORS.GLASS_OVERLAY,
-    borderWidth: 1,
-    borderColor: COLORS.GLASS_BORDER,
-    borderRadius: RADIUS.chip,
+  targetBanner: {
+    backgroundColor: '#141B24',
+    borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
-    zIndex: 1,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+  },
+  targetBannerText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  postFooter: {
+    marginTop: 10,
+  },
+  postedBadgeButton: {
+    backgroundColor: '#141B24',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
   },
   postedBadgeText: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  emptyState: {
-    paddingVertical: 48,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  emptyBody: {
-    color: COLORS.TEXT_DIM,
+    color: '#888',
     fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   bottomNav: {
     position: 'absolute',
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
+    height: 70,
+    backgroundColor: '#0A0E14',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: COLORS.NAV_BAR,
+    alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: COLORS.CARD_BORDER,
-    paddingTop: 10,
-    paddingHorizontal: 28,
+    borderTopColor: '#1A222D',
   },
   navItem: {
-    minWidth: 64,
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
   },
-  navItemText: {
-    color: COLORS.TEXT_MUTED,
-    fontSize: 11,
+  navText: {
+    color: '#666',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 1,
+  },
+  navTextActive: {
+    color: '#FFF',
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 1.2,
+    letterSpacing: 1,
   },
-  navItemActive: {
-    color: COLORS.TEXT_PRIMARY,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.PLATINUM_BASE,
-    alignItems: 'center',
+  fabButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FFF',
     justifyContent: 'center',
-    marginTop: -22,
-    borderWidth: 4,
-    borderColor: COLORS.NAV_BAR,
+    alignItems: 'center',
+    marginBottom: 15,
   },
-  fabIcon: {
-    color: COLORS.INK,
+  fabPlus: {
     fontSize: 28,
-    fontWeight: '400',
+    fontWeight: '900',
+    color: '#000',
     marginTop: -2,
   },
 });
