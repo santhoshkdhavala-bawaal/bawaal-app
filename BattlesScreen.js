@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,10 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
+import {
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from 'expo-camera';
 import BrandHeader from './BrandHeader';
 import CreateBattleSheet from './CreateBattleSheet';
 import { useMainTabs } from './mainTabContext';
@@ -69,6 +73,22 @@ export default function BattlesScreen({ navigation }) {
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [createOpen, setCreateOpen] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
+
+  const ensureMediaPermissions = useCallback(async () => {
+    if (!cameraPermission?.granted) {
+      await requestCameraPermission();
+    }
+    if (!micPermission?.granted) {
+      await requestMicPermission();
+    }
+  }, [
+    cameraPermission?.granted,
+    micPermission?.granted,
+    requestCameraPermission,
+    requestMicPermission,
+  ]);
 
   const featuredLive = (() => {
     const live = battles.find((b) => b.status === 'LIVE' && b.liveMatch);
@@ -119,7 +139,8 @@ export default function BattlesScreen({ navigation }) {
     });
   };
 
-  const openLiveArena = (role = 'spectator') => {
+  const openLiveArena = async (role = 'spectator') => {
+    await ensureMediaPermissions();
     navigation?.navigate?.('Live1v1Battle', {
       role,
       battleId: featuredLive.battleId,

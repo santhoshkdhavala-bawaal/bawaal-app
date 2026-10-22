@@ -27,6 +27,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  useCameraPermissions,
+  useMicrophonePermissions,
+} from 'expo-camera';
+import {
   castVote,
   incrementReps,
   sendHype,
@@ -389,6 +393,10 @@ export default function Live1v1BattleScreen({
 }) {
   const insets = useSafeAreaInsets();
   const senderIdRef = useRef('spectator-local');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const mediaReady =
+    Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
   const match = useMemo(() => {
     const incoming = route?.params?.match || {};
@@ -533,8 +541,32 @@ export default function Live1v1BattleScreen({
     focusedRivalRef.current = focusedRival;
   }, [focusedRival]);
 
+  // Explicit camera + mic prompts when entering the Battle Arena.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain !== false) {
+        await requestCameraPermission();
+      }
+      if (cancelled) return;
+      if (micPermission && !micPermission.granted && micPermission.canAskAgain !== false) {
+        await requestMicPermission();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cameraPermission,
+    micPermission,
+    requestCameraPermission,
+    requestMicPermission,
+  ]);
+
   useEffect(() => {
     if (!isAgoraConfigured()) return undefined;
+    // Broadcasters must have cam/mic before publishing; spectators can join as audience earlier.
+    if (isBroadcaster && !mediaReady) return undefined;
 
     let cancelled = false;
     const channel = battleChannelName(battleId || 'featured-live');
@@ -553,7 +585,7 @@ export default function Live1v1BattleScreen({
       setRtcJoined(false);
       void leaveChannel();
     };
-  }, [battleId, isBroadcaster, myRtcUid]);
+  }, [battleId, isBroadcaster, mediaReady, myRtcUid]);
 
   useEffect(
     () => () => {
