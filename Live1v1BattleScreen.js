@@ -704,6 +704,7 @@ export default function Live1v1BattleScreen({
     }, HUD_FADE_MS);
   }, [HUD_FADE_MS, clearHudHideTimer, hudOpacity]);
 
+  /** Show HUD at full opacity and restart the 5s auto-fade timer. */
   const showHud = useCallback(() => {
     setShowControls(true);
     Animated.timing(hudOpacity, {
@@ -714,33 +715,9 @@ export default function Live1v1BattleScreen({
     scheduleHudHide();
   }, [hudOpacity, scheduleHudHide]);
 
-  const hideHud = useCallback(() => {
-    clearHudHideTimer();
-    setShowControls(false);
-    Animated.timing(hudOpacity, {
-      toValue: 0,
-      duration: 320,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [clearHudHideTimer, hudOpacity]);
-
-  /** Full-screen tap: toggle controls ON/OFF; when ON, reset 5s auto-fade. */
-  const toggleHud = useCallback(() => {
-    if (showControls) {
-      hideHud();
-    } else {
-      showHud();
-    }
-  }, [hideHud, showControls, showHud]);
-
   const bumpHud = useCallback(() => {
-    if (!showControls) {
-      showHud();
-      return;
-    }
-    scheduleHudHide();
-  }, [scheduleHudHide, showControls, showHud]);
+    showHud();
+  }, [showHud]);
 
   useEffect(() => {
     scheduleHudHide();
@@ -1207,25 +1184,23 @@ export default function Live1v1BattleScreen({
             pointerEvents="none"
           >
             <Text style={styles.voteHintText}>
-              TAP GLOVES TO VOTE · TAP SCREEN TO TOGGLE HUD
+              TAP GLOVES TO VOTE · TAP SCREEN TO SHOW HUD
             </Text>
           </Animated.View>
         ) : null}
       </View>
 
-      {!showControls ? (
-        <Pressable
-          style={styles.hudTapCatcher}
-          onPress={toggleHud}
-          accessibilityRole="button"
-          accessibilityLabel="Show battle HUD"
-        />
-      ) : null}
-
-      <Animated.View
-        style={[styles.hudChrome, { opacity: hudOpacity }]}
-        pointerEvents={showControls ? 'box-none' : 'none'}
+      {/* Full-screen tap: open video space → show HUD + reset 5s timer; chrome buttons stay clickable. */}
+      <Pressable
+        style={styles.hudTapCatcher}
+        onPress={showHud}
+        accessibilityRole="button"
+        accessibilityLabel="Show battle HUD"
       >
+        <Animated.View
+          style={[styles.hudChrome, { opacity: hudOpacity }]}
+          pointerEvents={showControls ? 'box-none' : 'none'}
+        >
         <View style={styles.hudTopBlock} pointerEvents="box-none">
           <View style={styles.header}>
             <TouchableOpacity
@@ -1289,16 +1264,7 @@ export default function Live1v1BattleScreen({
           </View>
         </View>
 
-        {showControls ? (
-          <Pressable
-            style={styles.hudMidTapZone}
-            onPress={toggleHud}
-            accessibilityRole="button"
-            accessibilityLabel="Hide battle HUD"
-          />
-        ) : (
-          <View style={styles.hudMidTapZone} pointerEvents="none" />
-        )}
+        <View style={styles.hudMidTapZone} pointerEvents="none" />
 
         <View style={styles.hudBottomBlock} pointerEvents="box-none">
           <ParticipantHudToolbar
@@ -1444,7 +1410,8 @@ export default function Live1v1BattleScreen({
             </TouchableOpacity>
           </View>
         </View>
-      </Animated.View>
+        </Animated.View>
+      </Pressable>
 
       <Modal
         visible={banterOpen}
