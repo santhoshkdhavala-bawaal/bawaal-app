@@ -50,6 +50,10 @@ import {
   onRemoteUsersChanged,
   switchCamera,
 } from './src/services/agoraService';
+import {
+  ACTIVE_USER,
+  toChallengerAthlete,
+} from './src/services/activeUserProfile';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -238,20 +242,13 @@ function StreamSurface({
           zOrderMediaOverlay
         />
       ) : (
-        <>
-          <Text style={styles.streamHint}>
-            {cameraOff && isLocal
-              ? 'CAMERA OFF'
-              : isLocal
-                ? 'STARTING CAMERA'
-                : isAgoraConfigured()
-                  ? 'WAITING FOR STREAM'
-                  : 'RTC READY'}
-          </Text>
-          <Text style={styles.streamIdHint} numberOfLines={1}>
-            {streamId || `uid:${rtcUid || '—'}`}
-          </Text>
-        </>
+        <Text style={styles.streamHint}>
+          {cameraOff && isLocal
+            ? 'CAMERA OFF'
+            : isLocal
+              ? 'STARTING CAMERA'
+              : 'STANDBY'}
+        </Text>
       )}
     </View>
   );
@@ -480,6 +477,9 @@ export default function Live1v1BattleScreen({
   const mediaReady =
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
+  const arenaRole = route?.params?.role || 'spectator';
+  const isBroadcaster = arenaRole === 'host' || arenaRole === 'challenger';
+
   const match = useMemo(() => {
     const incoming = route?.params?.match || {};
     const host = { ...DEFAULT_HOST, ...(incoming.host || {}) };
@@ -487,26 +487,66 @@ export default function Live1v1BattleScreen({
     if (!challengers?.length && incoming.challenger) {
       challengers = [{ ...DEFAULT_CHALLENGERS[0], ...incoming.challenger }];
     }
+    if (!challengers?.length) {
+      challengers = [...DEFAULT_CHALLENGERS];
+    } else {
+      challengers = [...challengers];
+    }
+
+    // ACCEPT CHALLENGE → bind logged-in profile into slot 0 (replaces mock @NYC_LIFT).
+    if (arenaRole === 'challenger') {
+      const participant =
+        route?.params?.participant ||
+        toChallengerAthlete(route?.params?.activeUser || {});
+      const pool = [
+        ...challengers,
+        ...DEFAULT_CHALLENGERS.filter(
+          (d) => !challengers.some((c) => c.id === d.id || c.handle === d.handle)
+        ),
+      ];
+      const withoutSelf = pool.filter(
+        (c) =>
+          c.id !== participant.id &&
+          c.userId !== participant.userId &&
+          c.handle !== participant.handle &&
+          c.handle !== '@NYC_LIFT'
+      );
+      challengers = [participant, ...withoutSelf].slice(0, 9);
+    }
+
     return {
       ...DEFAULT_MATCH,
       ...incoming,
       host,
-      challengers: challengers?.length ? challengers : [...DEFAULT_CHALLENGERS],
+      challengers,
     };
-  }, [route?.params?.match]);
+  }, [arenaRole, route?.params?.activeUser, route?.params?.match, route?.params?.participant]);
 
   const battleId =
     route?.params?.battleId || match.id || match.battleId || null;
-  const arenaRole = route?.params?.role || 'spectator';
-  const isBroadcaster = arenaRole === 'host' || arenaRole === 'challenger';
 
-  const [viewMode, setViewMode] = useState(VIEW_SPOTLIGHT);
+  const selfAthlete = useMemo(() => {
+    if (arenaRole === 'host') return match.host;
+    if (arenaRole === 'challenger') {
+      return (
+        match.challengers.find((c) => c.isSelf || c.id === ACTIVE_USER.id) ||
+        match.challengers[0]
+      );
+    }
+    return null;
+  }, [arenaRole, match.challengers, match.host]);
+
+  const [viewMode, setViewMode] = useState(
+    arenaRole === 'challenger' ? VIEW_DUAL : VIEW_SPOTLIGHT
+  );
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
-  const [focusedRival, setFocusedRival] = useState(match.challengers[0]);
+  const [focusedRival, setFocusedRival] = useState(
+    () => (arenaRole === 'challenger' ? match.challengers[0] : match.challengers[0])
+  );
   const [hostVotes, setHostVotes] = useState(match.initialHostVotes ?? 1240);
   const [rivalVotes, setRivalVotes] = useState(
-    () => focusedRival?.votes ?? match.challengers[0]?.votes ?? 1060
+    () => match.challengers[0]?.votes ?? 1060
   );
   const [hypeCount, setHypeCount] = useState(match.initialHype ?? 88);
   const [floatingReactions, setFloatingReactions] = useState([]);
@@ -523,17 +563,29 @@ export default function Live1v1BattleScreen({
     if (arenaRole === 'challenger') {
       return (
         Number(route?.params?.rtcUid) ||
-        Number(match.challengers?.[0]?.rtcUid) ||
-        2001
+        Number(selfAthlete?.rtcUid) ||
+        Number(ACTIVE_USER.rtcUid) ||
+        2101
       );
     }
     return 0;
-  }, [arenaRole, match.challengers, match.host?.rtcUid, route?.params?.rtcUid]);
+  }, [arenaRole, match.host?.rtcUid, route?.params?.rtcUid, selfAthlete?.rtcUid]);
 
   const isLocalHost = isBroadcaster && arenaRole === 'host';
-  const isLocalChallengerUid = useCallback(
-    (uid) => isBroadcaster && arenaRole === 'challenger' && Number(uid) === myRtcUid,
-    [arenaRole, isBroadcaster, myRtcUid]
+  const isLocalAthlete = useCallback(
+    (athlete) => {
+      if (!isBroadcaster || !athlete) return false;
+      if (arenaRole === 'host') {
+        return athlete.id === hostAthlete.id || athlete.rtcUid === hostAthlete.rtcUid;
+      }
+      return (
+        athlete.isSelf === true ||
+        athlete.id === ACTIVE_USER.id ||
+        athlete.userId === ACTIVE_USER.userId ||
+        Number(athlete.rtcUid) === myRtcUid
+      );
+    },
+    [arenaRole, hostAthlete.id, hostAthlete.rtcUid, isBroadcaster, myRtcUid]
   );
 
   const hasRemoteUid = useCallback(
@@ -906,14 +958,14 @@ export default function Live1v1BattleScreen({
             >
               <View style={styles.grid}>
                 {gridAthletes.map((athlete) => {
-                  const localTile = isLocalChallengerUid(athlete.rtcUid);
+                  const localTile = isLocalAthlete(athlete);
                   return (
                     <ChallengerTile
                       key={athlete.id}
                       athlete={athlete}
                       onPress={focusChallenger}
                       isLocal={localTile}
-                      hasRemote={hasRemoteUid(athlete.rtcUid)}
+                      hasRemote={!localTile && hasRemoteUid(athlete.rtcUid)}
                       cameraOff={cameraOff && localTile}
                       cameraFacing={cameraFacing}
                     />
@@ -944,13 +996,13 @@ export default function Live1v1BattleScreen({
               athlete={focusedRival || challengers[0]}
               variant="rival"
               onRepPress={handleRivalRep}
-              isLocal={isLocalChallengerUid(
-                (focusedRival || challengers[0])?.rtcUid
-              )}
-              hasRemote={hasRemoteUid((focusedRival || challengers[0])?.rtcUid)}
+              isLocal={isLocalAthlete(focusedRival || challengers[0])}
+              hasRemote={
+                !isLocalAthlete(focusedRival || challengers[0]) &&
+                hasRemoteUid((focusedRival || challengers[0])?.rtcUid)
+              }
               cameraOff={
-                cameraOff &&
-                isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
+                cameraOff && isLocalAthlete(focusedRival || challengers[0])
               }
               cameraFacing={cameraFacing}
             />
@@ -1311,16 +1363,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0D0D0D',
   },
   streamHint: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  streamIdHint: {
-    color: '#333333',
-    fontSize: 9,
-    marginTop: 4,
-    paddingHorizontal: 8,
+    color: '#444444',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   overlayRow: {
     position: 'absolute',

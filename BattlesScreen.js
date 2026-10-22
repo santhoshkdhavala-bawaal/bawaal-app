@@ -13,6 +13,7 @@ import {
 import BrandHeader from './BrandHeader';
 import CreateBattleSheet from './CreateBattleSheet';
 import { useMainTabs } from './mainTabContext';
+import { toChallengerAthlete } from './src/services/activeUserProfile';
 
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
@@ -141,10 +142,36 @@ export default function BattlesScreen({ navigation }) {
 
   const openLiveArena = async (role = 'spectator') => {
     await ensureMediaPermissions();
+    const participant = toChallengerAthlete();
+    const baseMatch = featuredLive.match || {
+      category: `[GYM] ${featuredLive.challengeTitle || '100 Pushups Sprint'}`,
+      timerLabel: '01:32',
+      spectatorsLabel: '4.2K LIVE',
+      host: {
+        id: 'host-mumbai',
+        handle: '@MUMBAI_STRIKER',
+        flag: featuredLive.hostFlag || '🇮🇳',
+        label: featuredLive.hostLabel || 'INDIA',
+        reps: 43,
+        rtcUid: 1001,
+        streamId: 'rtc-host-mumbai',
+      },
+    };
+
     navigation?.navigate?.('Live1v1Battle', {
       role,
       battleId: featuredLive.battleId,
-      match: featuredLive.match,
+      participant: role === 'challenger' ? participant : undefined,
+      rtcUid: role === 'challenger' ? participant.rtcUid : undefined,
+      match: {
+        ...baseMatch,
+        ...(role === 'challenger'
+          ? {
+              challenger: participant,
+              challengers: [participant],
+            }
+          : {}),
+      },
     });
   };
 
