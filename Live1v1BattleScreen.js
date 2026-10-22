@@ -202,6 +202,24 @@ const DEFAULT_MATCH = Object.freeze({
 
 let reactionSeq = 0;
 
+function AthleteAvatarPlaceholder({ handle, flag, cameraOff }) {
+  const initial = String(handle || '?')
+    .replace(/^@/, '')
+    .charAt(0)
+    .toUpperCase();
+  return (
+    <View style={styles.avatarPlaceholder}>
+      <View style={styles.avatarCircle}>
+        <Text style={styles.avatarInitial}>{initial}</Text>
+      </View>
+      <Text style={styles.avatarFlag}>{flag || '🌐'}</Text>
+      <Text style={styles.streamHint}>
+        {cameraOff ? 'CAMERA OFF' : 'STANDBY'}
+      </Text>
+    </View>
+  );
+}
+
 /**
  * Local tile → expo-camera CameraView.
  * Remote tile → Agora RtcSurfaceView when a stream is connected.
@@ -210,11 +228,13 @@ function StreamSurface({
   streamId,
   rtcUid,
   label,
+  flag,
   role = 'challenger',
   isLocal = false,
   hasRemote = false,
   cameraOff = false,
   cameraFacing = 'front',
+  micMuted = false,
   style,
 }) {
   const showLocalCamera = isLocal && !cameraOff;
@@ -230,7 +250,7 @@ function StreamSurface({
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing={cameraFacing}
-          mute
+          mute={micMuted}
           mirror={cameraFacing === 'front'}
         />
       ) : showRemoteRtc ? (
@@ -243,14 +263,14 @@ function StreamSurface({
           }}
           zOrderMediaOverlay
         />
+      ) : isLocal || cameraOff ? (
+        <AthleteAvatarPlaceholder
+          handle={label}
+          flag={flag}
+          cameraOff={cameraOff && isLocal}
+        />
       ) : (
-        <Text style={styles.streamHint}>
-          {cameraOff && isLocal
-            ? 'CAMERA OFF'
-            : isLocal
-              ? 'STARTING CAMERA'
-              : 'STANDBY'}
-        </Text>
+        <Text style={styles.streamHint}>STANDBY</Text>
       )}
     </View>
   );
@@ -272,9 +292,14 @@ function FloatingReactionLayer({ reactions }) {
             },
           ]}
         >
-          <Text style={rx.text ? styles.floatingPillEmoji : styles.floatingEmoji}>
+          <Animated.Text
+            style={[
+              rx.text ? styles.floatingPillEmoji : styles.floatingEmoji,
+              rx.scale ? { transform: [{ scale: rx.scale }] } : null,
+            ]}
+          >
             {rx.emoji}
-          </Text>
+          </Animated.Text>
           {!!rx.text && <Text style={styles.floatingPillText}>{rx.text}</Text>}
         </Animated.View>
       ))}
@@ -332,6 +357,7 @@ function HostSpotlight({
   hasRemote,
   cameraOff,
   cameraFacing,
+  micMuted,
 }) {
   return (
     <View style={styles.hostSpotlight}>
@@ -339,11 +365,13 @@ function HostSpotlight({
         streamId={host.streamId}
         rtcUid={host.rtcUid}
         label={host.handle}
+        flag={host.flag}
         role="host"
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
+        micMuted={micMuted}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -382,6 +410,7 @@ function ChallengerTile({
   hasRemote,
   cameraOff,
   cameraFacing,
+  micMuted,
 }) {
   return (
     <TouchableOpacity
@@ -393,11 +422,13 @@ function ChallengerTile({
         streamId={athlete.streamId}
         rtcUid={athlete.rtcUid}
         label={athlete.handle}
+        flag={athlete.flag}
         role="challenger"
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
+        micMuted={micMuted}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.tileTop}>
@@ -426,6 +457,7 @@ function DualFocusPane({
   hasRemote,
   cameraOff,
   cameraFacing,
+  micMuted,
 }) {
   const isHost = variant === 'host';
   return (
@@ -434,11 +466,13 @@ function DualFocusPane({
         streamId={athlete.streamId}
         rtcUid={athlete.rtcUid}
         label={athlete.handle}
+        flag={athlete.flag}
         role={isHost ? 'host' : 'challenger'}
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
+        micMuted={micMuted}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -602,6 +636,35 @@ export default function Live1v1BattleScreen({
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
   const rivalPercent = 100 - hostPercent;
 
+  const [hostBarAnim] = useState(() => new Animated.Value(hostPercent));
+  const [hypeBurstScale] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    Animated.timing(hostBarAnim, {
+      toValue: hostPercent,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [hostBarAnim, hostPercent]);
+
+  const hostBarWidth = useMemo(
+    () =>
+      hostBarAnim.interpolate({
+        inputRange: [0, 100],
+        outputRange: ['0%', '100%'],
+      }),
+    [hostBarAnim]
+  );
+  const rivalBarWidth = useMemo(
+    () =>
+      hostBarAnim.interpolate({
+        inputRange: [0, 100],
+        outputRange: ['100%', '0%'],
+      }),
+    [hostBarAnim]
+  );
+
   const trayBottomPad =
     Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + 4;
 
@@ -610,23 +673,37 @@ export default function Live1v1BattleScreen({
     const left = options.left ?? Math.max(12, Math.random() * (SCREEN_W - 56));
     const opacity = new Animated.Value(0);
     const translateY = new Animated.Value(0);
+    const scale = new Animated.Value(0.6);
 
     setFloatingReactions((prev) => [
-      ...prev.slice(-18),
-      { id, emoji, left, text: options.text || null, opacity, translateY },
+      ...prev.slice(-22),
+      {
+        id,
+        emoji,
+        left,
+        text: options.text || null,
+        opacity,
+        translateY,
+        scale,
+      },
     ]);
 
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+      Animated.spring(scale, {
+        toValue: options.burst ? 1.35 : 1,
+        friction: 5,
+        useNativeDriver: true,
+      }),
       Animated.timing(translateY, {
-        toValue: -150,
-        duration: 1500,
+        toValue: options.burst ? -180 - Math.random() * 40 : -150,
+        duration: options.burst ? 1200 : 1500,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.sequence([
-        Animated.delay(900),
-        Animated.timing(opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+        Animated.delay(options.burst ? 700 : 900),
+        Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
       ]),
     ]).start(() => {
       setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
@@ -821,17 +898,30 @@ export default function Live1v1BattleScreen({
   const handleHype = useCallback(() => {
     setHypeCount((n) => n + 1);
     onHype?.();
-    for (let i = 0; i < 3; i += 1) {
+    Animated.sequence([
+      Animated.timing(hypeBurstScale, {
+        toValue: 1.18,
+        duration: 90,
+        useNativeDriver: true,
+      }),
+      Animated.spring(hypeBurstScale, {
+        toValue: 1,
+        friction: 4,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    for (let i = 0; i < 6; i += 1) {
       setTimeout(() => {
         spawnFloatingReaction('🔥', {
-          left: 24 + Math.random() * (SCREEN_W - 72),
+          burst: true,
+          left: 20 + Math.random() * (SCREEN_W - 64),
         });
-      }, i * 80);
+      }, i * 55);
     }
     if (battleId) {
       void sendHype(battleId, senderIdRef.current);
     }
-  }, [battleId, onHype, spawnFloatingReaction]);
+  }, [battleId, hypeBurstScale, onHype, spawnFloatingReaction]);
 
   const submitBanter = useCallback(() => {
     const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
@@ -852,20 +942,30 @@ export default function Live1v1BattleScreen({
     onVote?.('host', focusedRival?.id);
     spawnFloatingReaction('🥊', {
       left: SCREEN_W * 0.18,
-      text: `VOTED ${hostAthlete.label}`,
+      text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
     });
     if (battleId) {
       void castVote(battleId, null, senderIdRef.current);
     }
-  }, [battleId, focusedRival?.id, hostAthlete.label, onVote, spawnFloatingReaction]);
+  }, [
+    battleId,
+    focusedRival?.id,
+    hostAthlete.handle,
+    hostAthlete.label,
+    onVote,
+    spawnFloatingReaction,
+  ]);
 
   const handleVoteRival = useCallback(() => {
     const rivalId = focusedRival?.userId || focusedRival?.id || null;
     setRivalVotes((n) => n + 1);
+    setFocusedRival((fr) =>
+      fr ? { ...fr, votes: (fr.votes ?? 0) + 1 } : fr
+    );
     onVote?.('challenger', rivalId);
     spawnFloatingReaction('🥊', {
       left: SCREEN_W * 0.55,
-      text: `VOTED ${focusedRival?.label || 'RIVAL'}`,
+      text: `VOTED ${focusedRival?.handle || focusedRival?.label || 'RIVAL'}`,
     });
     if (battleId) {
       void castVote(battleId, rivalId, senderIdRef.current);
@@ -979,6 +1079,7 @@ export default function Live1v1BattleScreen({
                 hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
                 cameraOff={cameraOff && isLocalHost}
                 cameraFacing={cameraFacing}
+                micMuted={micMuted && isLocalHost}
               />
             </View>
             <ScrollView
@@ -998,6 +1099,7 @@ export default function Live1v1BattleScreen({
                       hasRemote={!localTile && hasRemoteUid(athlete.rtcUid)}
                       cameraOff={cameraOff && localTile}
                       cameraFacing={cameraFacing}
+                      micMuted={micMuted && localTile}
                     />
                   );
                 })}
@@ -1014,6 +1116,7 @@ export default function Live1v1BattleScreen({
               hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
               cameraOff={cameraOff && isLocalHost}
               cameraFacing={cameraFacing}
+              micMuted={micMuted && isLocalHost}
             />
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
@@ -1035,6 +1138,9 @@ export default function Live1v1BattleScreen({
                 cameraOff && isLocalAthlete(focusedRival || challengers[0])
               }
               cameraFacing={cameraFacing}
+              micMuted={
+                micMuted && isLocalAthlete(focusedRival || challengers[0])
+              }
             />
           </>
         )}
@@ -1090,16 +1196,16 @@ export default function Live1v1BattleScreen({
           </TouchableOpacity>
         </View>
         <View style={styles.pollBarTrack}>
-          <View style={[styles.pollBarHost, { width: `${hostPercent}%` }]}>
+          <Animated.View style={[styles.pollBarHost, { width: hostBarWidth }]}>
             {hostPercent >= 18 ? (
               <Text style={styles.pollBarPctHost}>{hostPercent}%</Text>
             ) : null}
-          </View>
-          <View style={[styles.pollBarChallenger, { width: `${rivalPercent}%` }]}>
+          </Animated.View>
+          <Animated.View style={[styles.pollBarChallenger, { width: rivalBarWidth }]}>
             {rivalPercent >= 18 ? (
               <Text style={styles.pollBarPctRival}>{rivalPercent}%</Text>
             ) : null}
-          </View>
+          </Animated.View>
         </View>
         <Text style={styles.tapToVoteText}>
           TAP HANDLE TO FOLLOW ·{' '}
@@ -1110,10 +1216,16 @@ export default function Live1v1BattleScreen({
       </View>
 
       <View style={[styles.actionTray, { paddingBottom: trayBottomPad }]}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleHype} activeOpacity={0.85}>
-          <Text style={styles.actionIcon}>🔥</Text>
-          <Text style={styles.actionLabel}>HYPE ({hypeCount})</Text>
-        </TouchableOpacity>
+        <Animated.View style={{ transform: [{ scale: hypeBurstScale }] }}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handleHype}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.actionIcon}>🔥</Text>
+            <Text style={styles.actionLabel}>HYPE ({hypeCount})</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
         <TouchableOpacity
           style={styles.actionButton}
@@ -1475,6 +1587,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
+  },
+  avatarPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0A0A0A',
+    gap: 6,
+  },
+  avatarCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: SURFACE,
+    borderWidth: 2,
+    borderColor: ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {
+    color: WHITE,
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  avatarFlag: {
+    fontSize: 18,
   },
   overlayRow: {
     position: 'absolute',
