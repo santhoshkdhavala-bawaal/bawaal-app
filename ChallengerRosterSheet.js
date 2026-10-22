@@ -152,13 +152,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   hostBadge: {
-    backgroundColor: ORANGE,
+    backgroundColor: '#FFE600',
     borderRadius: 4,
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
   },
   hostBadgeText: {
-    color: WHITE,
+    color: '#000000',
     fontSize: 10,
     fontWeight: '900',
   },

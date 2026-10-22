@@ -946,17 +946,20 @@ export default function Live1v1BattleScreen({
       </View>
 
       <View style={styles.rosterTriggerRow}>
+        {viewMode === VIEW_DUAL ? (
+          <TouchableOpacity
+            style={styles.showAllBtn}
+            onPress={() => setViewMode(VIEW_SPOTLIGHT)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
-          style={styles.showAllBtn}
-          onPress={openChallengerRoster}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.showAllBtnText}>
-            {viewMode === VIEW_DUAL ? '▦ SHOW ALL CHALLENGERS' : '▦ LATEST CHALLENGERS'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.watchRosterBtn}
+          style={[
+            styles.watchRosterBtn,
+            viewMode === VIEW_SPOTLIGHT && styles.watchRosterBtnGrow,
+          ]}
           onPress={openChallengerRoster}
           activeOpacity={0.85}
         >
@@ -1345,6 +1348,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
+  watchRosterBtnGrow: {
+    flex: 1,
+    alignItems: 'center',
+  },
   watchRosterBtnText: {
     color: CYAN,
     fontSize: 10,
@@ -1649,20 +1656,20 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   pollBadgeHost: {
-    backgroundColor: ORANGE,
+    backgroundColor: '#FFE600',
     borderRadius: 4,
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
   },
   pollBadgeHostText: {
-    color: WHITE,
+    color: '#000000',
     fontSize: 10,
     fontWeight: '900',
   },
   pollBadgeRival: {
-    backgroundColor: CYAN,
+    backgroundColor: '#00E5FF',
     borderRadius: 4,
-    paddingHorizontal: 5,
+    paddingHorizontal: 6,
     paddingVertical: 2,
   },
   pollBadgeRivalText: {
