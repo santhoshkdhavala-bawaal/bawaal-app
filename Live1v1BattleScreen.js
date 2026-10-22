@@ -55,6 +55,7 @@ import {
   toChallengerAthlete,
 } from './src/services/activeUserProfile';
 import AthleteProfileSheet from './AthleteProfileSheet';
+import ChallengerRosterSheet from './ChallengerRosterSheet';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -560,6 +561,7 @@ export default function Live1v1BattleScreen({
   const [rtcJoined, setRtcJoined] = useState(false);
   const [profileAthlete, setProfileAthlete] = useState(null);
   const [profileRole, setProfileRole] = useState('ATHLETE');
+  const [rosterOpen, setRosterOpen] = useState(false);
 
   const myRtcUid = useMemo(() => {
     if (arenaRole === 'host') return Number(match.host?.rtcUid) || 1001;
@@ -799,7 +801,20 @@ export default function Live1v1BattleScreen({
     setViewMode(VIEW_DUAL);
   }, []);
 
-  const showAllChallengers = useCallback(() => {
+  const openChallengerRoster = useCallback(() => {
+    setRosterOpen(true);
+  }, []);
+
+  const selectRivalFromRoster = useCallback(
+    (athlete) => {
+      focusChallenger(athlete);
+      setRosterOpen(false);
+    },
+    [focusChallenger]
+  );
+
+  const viewGridFromRoster = useCallback(() => {
+    setRosterOpen(false);
     setViewMode(VIEW_SPOTLIGHT);
   }, []);
 
@@ -930,15 +945,24 @@ export default function Live1v1BattleScreen({
         </View>
       </View>
 
-      {viewMode === VIEW_DUAL ? (
+      <View style={styles.rosterTriggerRow}>
         <TouchableOpacity
           style={styles.showAllBtn}
-          onPress={showAllChallengers}
+          onPress={openChallengerRoster}
           activeOpacity={0.85}
         >
-          <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+          <Text style={styles.showAllBtnText}>
+            {viewMode === VIEW_DUAL ? '▦ SHOW ALL CHALLENGERS' : '▦ LATEST CHALLENGERS'}
+          </Text>
         </TouchableOpacity>
-      ) : null}
+        <TouchableOpacity
+          style={styles.watchRosterBtn}
+          onPress={openChallengerRoster}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.stageContainer}>
         {viewMode === VIEW_SPOTLIGHT ? (
@@ -1034,11 +1058,12 @@ export default function Live1v1BattleScreen({
               setProfileAthlete(hostAthlete);
             }}
           >
-            <Text style={styles.pollRoleTagHost}>[H]</Text>
+            <View style={styles.pollBadgeHost}>
+              <Text style={styles.pollBadgeHostText}>[H]</Text>
+            </View>
             <Text style={styles.pollHostText} numberOfLines={1}>
               {hostAthlete.handle || '@HOST'}
             </Text>
-            <Text style={styles.pollRoleHint}>HOST</Text>
           </TouchableOpacity>
 
           <Text style={styles.pollPercentMid}>
@@ -1053,11 +1078,12 @@ export default function Live1v1BattleScreen({
               setProfileAthlete(focusedRival || challengers[0]);
             }}
           >
-            <Text style={styles.pollRoleHint}>RIVAL</Text>
             <Text style={styles.pollChallengerText} numberOfLines={1}>
               {(focusedRival || challengers[0])?.handle || '@RIVAL'}
             </Text>
-            <Text style={styles.pollRoleTagRival}>[R]</Text>
+            <View style={styles.pollBadgeRival}>
+              <Text style={styles.pollBadgeRivalText}>[R]</Text>
+            </View>
           </TouchableOpacity>
         </View>
         <View style={styles.pollBarTrack}>
@@ -1163,6 +1189,16 @@ export default function Live1v1BattleScreen({
         athlete={profileAthlete}
         roleLabel={profileRole}
         onClose={() => setProfileAthlete(null)}
+      />
+
+      <ChallengerRosterSheet
+        visible={rosterOpen}
+        host={hostAthlete}
+        challengers={challengers}
+        activeRivalId={focusedRival?.id || focusedRival?.handle}
+        onSelectRival={selectRivalFromRoster}
+        onViewGrid={viewGridFromRoster}
+        onClose={() => setRosterOpen(false)}
       />
     </View>
   );
@@ -1283,17 +1319,37 @@ const styles = StyleSheet.create({
     height: 16,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
-  showAllBtn: {
-    marginHorizontal: 16,
+  rosterTriggerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 12,
     marginTop: 8,
     marginBottom: 4,
-    alignSelf: 'flex-start',
+  },
+  showAllBtn: {
+    flex: 1,
     backgroundColor: SURFACE,
     borderWidth: 1,
     borderColor: ORANGE,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
+    alignItems: 'center',
+  },
+  watchRosterBtn: {
+    backgroundColor: 'rgba(0,229,255,0.12)',
+    borderWidth: 1,
+    borderColor: CYAN,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  watchRosterBtnText: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   showAllBtnText: {
     color: ORANGE,
@@ -1592,32 +1648,38 @@ const styles = StyleSheet.create({
   pollHandleHitRight: {
     justifyContent: 'flex-end',
   },
-  pollRoleTagHost: {
-    color: ORANGE,
+  pollBadgeHost: {
+    backgroundColor: ORANGE,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  pollBadgeHostText: {
+    color: WHITE,
     fontSize: 10,
     fontWeight: '900',
   },
-  pollRoleTagRival: {
-    color: CYAN,
+  pollBadgeRival: {
+    backgroundColor: CYAN,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  pollBadgeRivalText: {
+    color: '#000000',
     fontSize: 10,
     fontWeight: '900',
-  },
-  pollRoleHint: {
-    color: MUTED,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.4,
   },
   pollHostText: {
     color: WHITE,
     fontWeight: '900',
-    fontSize: 11,
+    fontSize: 12,
     flexShrink: 1,
   },
   pollChallengerText: {
     color: WHITE,
     fontWeight: '900',
-    fontSize: 11,
+    fontSize: 12,
     flexShrink: 1,
     textAlign: 'right',
   },
