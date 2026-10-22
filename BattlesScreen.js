@@ -49,11 +49,48 @@ const SEED_BATTLES = [
   },
 ];
 
+const DEFAULT_FEATURED = {
+  challengeTitle: '100 Pushups Sprint',
+  hostFlag: '🇮🇳',
+  rivalFlag: null,
+  hostLabel: 'IND',
+  rivalLabel: null,
+};
+
+function featuredSubtitle(featured) {
+  const title = featured?.challengeTitle || 'Open Challenge';
+  const hostSide = featured?.hostFlag || featured?.hostLabel || 'HOST';
+  const rivalSide = featured?.rivalFlag || featured?.rivalLabel || '…';
+  return `${title} · ${hostSide} vs ${rivalSide}`;
+}
+
 export default function BattlesScreen({ navigation }) {
   const { openProfileGateway } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [createOpen, setCreateOpen] = useState(false);
+
+  const featuredLive = (() => {
+    const live = battles.find((b) => b.status === 'LIVE' && b.liveMatch);
+    if (!live?.liveMatch) return DEFAULT_FEATURED;
+    const m = live.liveMatch;
+    const rival =
+      m.challenger ||
+      (Array.isArray(m.challengers) && m.challengers[0]) ||
+      null;
+    return {
+      battleId: live.id,
+      match: m,
+      challengeTitle:
+        m.category?.replace(/^\[[^\]]+\]\s*/, '') ||
+        live.target ||
+        DEFAULT_FEATURED.challengeTitle,
+      hostFlag: m.host?.flag || DEFAULT_FEATURED.hostFlag,
+      rivalFlag: rival?.flag || null,
+      hostLabel: m.host?.label || DEFAULT_FEATURED.hostLabel,
+      rivalLabel: rival?.label || null,
+    };
+  })();
 
   const openChallenge = (battle) => {
     if (battle.liveMatch) {
@@ -83,7 +120,11 @@ export default function BattlesScreen({ navigation }) {
   };
 
   const openLiveArena = (role = 'spectator') => {
-    navigation?.navigate?.('Live1v1Battle', { role });
+    navigation?.navigate?.('Live1v1Battle', {
+      role,
+      battleId: featuredLive.battleId,
+      match: featuredLive.match,
+    });
   };
 
   const listCtaLabel = (battle) => {
@@ -133,6 +174,29 @@ export default function BattlesScreen({ navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <View style={styles.featuredCard}>
+          <Text style={styles.featuredTitle}>🔴 LIVE 1v1 BATTLE BAWAAL</Text>
+          <Text style={styles.featuredSubtitle} numberOfLines={1}>
+            {featuredSubtitle(featuredLive)}
+          </Text>
+          <View style={styles.featuredActions}>
+            <TouchableOpacity
+              style={[styles.featuredBtn, styles.featuredBtnOutline]}
+              activeOpacity={0.85}
+              onPress={() => openLiveArena('spectator')}
+            >
+              <Text style={styles.featuredBtnOutlineText}>👁️ WATCH LIVE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.featuredBtn, styles.featuredBtnSolid]}
+              activeOpacity={0.85}
+              onPress={() => openLiveArena('challenger')}
+            >
+              <Text style={styles.featuredBtnSolidText}>⚔️ ACCEPT CHALLENGE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {visible.map((battle) => {
           const title = battle.target || battle.description || 'OPEN CHALLENGE';
           return (
@@ -160,23 +224,6 @@ export default function BattlesScreen({ navigation }) {
             </View>
           );
         })}
-
-        <View style={styles.liveCtaRow}>
-          <TouchableOpacity
-            style={[styles.liveCtaBtn, styles.liveCtaPrimary]}
-            activeOpacity={0.85}
-            onPress={() => openLiveArena('spectator')}
-          >
-            <Text style={styles.liveCtaPrimaryText}>🔴 WATCH ARENA</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.liveCtaBtn, styles.liveCtaSecondary]}
-            activeOpacity={0.85}
-            onPress={() => openLiveArena('challenger')}
-          >
-            <Text style={styles.liveCtaSecondaryText}>⚔️ ACCEPT / JOIN BATTLE</Text>
-          </TouchableOpacity>
-        </View>
 
         <TouchableOpacity
           style={styles.createBtn}
@@ -271,39 +318,64 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.3,
   },
-  liveCtaRow: {
-    gap: 10,
-    marginBottom: 16,
-    marginTop: 4,
-  },
-  liveCtaBtn: {
+  featuredCard: {
+    backgroundColor: CARD,
     borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderColor: FLAME_ORANGE,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 12,
+    marginBottom: 14,
+  },
+  featuredTitle: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  featuredSubtitle: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  featuredActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  featuredBtn: {
+    flex: 1,
+    borderRadius: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  liveCtaPrimary: {
+  featuredBtnOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: FLAME_ORANGE,
+  },
+  featuredBtnSolid: {
     backgroundColor: FLAME_ORANGE,
     borderWidth: 1.5,
     borderColor: FLAME_ORANGE,
   },
-  liveCtaSecondary: {
-    backgroundColor: 'rgba(255,87,34,0.12)',
-    borderWidth: 1.5,
-    borderColor: FLAME_ORANGE,
-  },
-  liveCtaPrimaryText: {
-    color: WHITE,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  liveCtaSecondaryText: {
+  featuredBtnOutlineText: {
     color: FLAME_ORANGE,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 0.4,
+    letterSpacing: 0.2,
+    textAlign: 'center',
+  },
+  featuredBtnSolidText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
   createBtn: {
     backgroundColor: '#121212',
