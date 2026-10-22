@@ -1087,12 +1087,13 @@ export default function Live1v1BattleScreen({
   const rivalVotesLabel = formatVoteCount(rivalVotes);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={BG} />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
+      {/* Full-bleed video stage — fills entire screen behind floating HUD */}
       <View style={styles.stageContainer}>
         {viewMode === VIEW_SPOTLIGHT ? (
-          <>
+          <View style={styles.fullVideoColumn}>
             <View style={styles.spotlightHostWrap}>
               <HostSpotlight
                 host={hostAthlete}
@@ -1134,9 +1135,9 @@ export default function Live1v1BattleScreen({
                 })}
               </View>
             </ScrollView>
-          </>
+          </View>
         ) : (
-          <>
+          <View style={styles.fullVideoColumn}>
             <DualFocusPane
               athlete={hostAthlete}
               variant="host"
@@ -1173,7 +1174,7 @@ export default function Live1v1BattleScreen({
               cameraFacing={cameraFacing}
               micMuted={micMuted && isLocalAthlete(rivalAthlete)}
             />
-          </>
+          </View>
         )}
 
         <FloatingReactionLayer reactions={floatingReactions} />
@@ -1190,7 +1191,7 @@ export default function Live1v1BattleScreen({
         ) : null}
       </View>
 
-      {/* Full-screen tap: open video space → show HUD + reset 5s timer; chrome buttons stay clickable. */}
+      {/* Absolute floating HUD — fades without resizing the video */}
       <Pressable
         style={styles.hudTapCatcher}
         onPress={showHud}
@@ -1201,215 +1202,221 @@ export default function Live1v1BattleScreen({
           style={[styles.hudChrome, { opacity: hudOpacity }]}
           pointerEvents={showControls ? 'box-none' : 'none'}
         >
-        <View style={styles.hudTopBlock} pointerEvents="box-none">
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.headerBrand}
-              onPress={() => {
-                bumpHud();
-                if (navigation?.canGoBack?.()) navigation.goBack();
-                else navigation?.navigate?.('Main', { tab: 'Battles' });
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.brandTitle}>BAWAAL</Text>
-              <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {viewMode === VIEW_SPOTLIGHT
-                  ? 'BATTLE BAWAAL ARENA'
-                  : 'DUAL FOCUS 1v1'}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.timerBadge}>
-              <Text style={styles.timerText}>{match.timerLabel}</Text>
-              <Text style={styles.categoryText} numberOfLines={1}>
-                {match.category}
-              </Text>
-            </View>
-
-            <View style={styles.liveBadge}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText} numberOfLines={1}>
-                {rtcJoined ? 'LIVE' : match.spectatorsLabel}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.rosterTriggerRow}>
-            {viewMode === VIEW_DUAL ? (
+          <View
+            style={[styles.hudTopBlock, { paddingTop: insets.top }]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.header}>
               <TouchableOpacity
-                style={styles.showAllBtn}
+                style={styles.headerBrand}
                 onPress={() => {
                   bumpHud();
-                  setViewMode(VIEW_SPOTLIGHT);
+                  if (navigation?.canGoBack?.()) navigation.goBack();
+                  else navigation?.navigate?.('Main', { tab: 'Battles' });
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.brandTitle}>BAWAAL</Text>
+                <Text style={styles.brandSubtitle} numberOfLines={1}>
+                  {viewMode === VIEW_SPOTLIGHT
+                    ? 'BATTLE BAWAAL ARENA'
+                    : 'DUAL FOCUS 1v1'}
+                </Text>
+              </TouchableOpacity>
+
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerText}>{match.timerLabel}</Text>
+                <Text style={styles.categoryText} numberOfLines={1}>
+                  {match.category}
+                </Text>
+              </View>
+
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText} numberOfLines={1}>
+                  {rtcJoined ? 'LIVE' : match.spectatorsLabel}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.rosterTriggerRow}>
+              {viewMode === VIEW_DUAL ? (
+                <TouchableOpacity
+                  style={styles.showAllBtn}
+                  onPress={() => {
+                    bumpHud();
+                    setViewMode(VIEW_SPOTLIGHT);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.watchRosterBtn,
+                  viewMode === VIEW_SPOTLIGHT && styles.watchRosterBtnGrow,
+                ]}
+                onPress={() => {
+                  bumpHud();
+                  openChallengerRoster();
                 }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+                <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[
-                styles.watchRosterBtn,
-                viewMode === VIEW_SPOTLIGHT && styles.watchRosterBtnGrow,
-              ]}
-              onPress={() => {
+            </View>
+          </View>
+
+          <View style={styles.hudMidTapZone} pointerEvents="none" />
+
+          <View
+            style={[styles.hudBottomBlock, { paddingBottom: trayBottomPad }]}
+            pointerEvents="box-none"
+          >
+            <ParticipantHudToolbar
+              visible={isBroadcaster}
+              micMuted={micMuted}
+              cameraOff={cameraOff}
+              onFlip={() => {
                 bumpHud();
-                openChallengerRoster();
+                handleFlipCamera();
               }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              onToggleMic={() => {
+                bumpHud();
+                handleToggleMic();
+              }}
+              onToggleCamera={() => {
+                bumpHud();
+                handleToggleCamera();
+              }}
+            />
 
-        <View style={styles.hudMidTapZone} pointerEvents="none" />
-
-        <View style={styles.hudBottomBlock} pointerEvents="box-none">
-          <ParticipantHudToolbar
-            visible={isBroadcaster}
-            micMuted={micMuted}
-            cameraOff={cameraOff}
-            onFlip={() => {
-              bumpHud();
-              handleFlipCamera();
-            }}
-            onToggleMic={() => {
-              bumpHud();
-              handleToggleMic();
-            }}
-            onToggleCamera={() => {
-              bumpHud();
-              handleToggleCamera();
-            }}
-          />
-
-          <View style={styles.pollSection}>
-            <View style={styles.pollLabelRow}>
-              <TouchableOpacity
-                style={styles.pollHandleHit}
-                activeOpacity={0.8}
-                onPress={() => {
-                  bumpHud();
-                  setProfileRole('HOST');
-                  setProfileAthlete(hostAthlete);
-                }}
-              >
-                <View style={styles.pollBadgeHost}>
-                  <Text style={styles.pollBadgeHostText}>[H]</Text>
-                </View>
-                <Text style={styles.pollHostText} numberOfLines={1}>
-                  {hostAthlete.handle || '@HOST'}
-                </Text>
-                <Text style={styles.pollTallyHost}>{hostVotesLabel}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.pollPercentMid}>
-                ({hostPercent}%) ⚡ ({rivalPercent}%)
-              </Text>
-
-              <TouchableOpacity
-                style={[styles.pollHandleHit, styles.pollHandleHitRight]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  bumpHud();
-                  setProfileRole('RIVAL');
-                  setProfileAthlete(rivalAthlete);
-                }}
-              >
-                <Text style={styles.pollTallyRival}>{rivalVotesLabel}</Text>
-                <Text style={styles.pollChallengerText} numberOfLines={1}>
-                  {rivalAthlete?.handle || '@RIVAL'}
-                </Text>
-                <View style={styles.pollBadgeRival}>
-                  <Text style={styles.pollBadgeRivalText}>[R]</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.pollBarTrack}>
-              <Animated.View style={[styles.pollBarHost, { width: hostBarWidth }]}>
-                {hostPercent >= 18 ? (
-                  <Text style={styles.pollBarPctHost}>
-                    {hostVotesLabel} · {hostPercent}%
+            <View style={styles.pollSection}>
+              <View style={styles.pollLabelRow}>
+                <TouchableOpacity
+                  style={styles.pollHandleHit}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    bumpHud();
+                    setProfileRole('HOST');
+                    setProfileAthlete(hostAthlete);
+                  }}
+                >
+                  <View style={styles.pollBadgeHost}>
+                    <Text style={styles.pollBadgeHostText}>[H]</Text>
+                  </View>
+                  <Text style={styles.pollHostText} numberOfLines={1}>
+                    {hostAthlete.handle || '@HOST'}
                   </Text>
-                ) : null}
-              </Animated.View>
-              <Animated.View
-                style={[styles.pollBarChallenger, { width: rivalBarWidth }]}
-              >
-                {rivalPercent >= 18 ? (
-                  <Text style={styles.pollBarPctRival}>
-                    {rivalPercent}% · {rivalVotesLabel}
-                  </Text>
-                ) : null}
-              </Animated.View>
-            </View>
-          </View>
+                  <Text style={styles.pollTallyHost}>{hostVotesLabel}</Text>
+                </TouchableOpacity>
 
-          <View style={[styles.actionTray, { paddingBottom: trayBottomPad }]}>
-            <Animated.View style={{ transform: [{ scale: hypeBurstScale }] }}>
+                <Text style={styles.pollPercentMid}>
+                  ({hostPercent}%) ⚡ ({rivalPercent}%)
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.pollHandleHit, styles.pollHandleHitRight]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    bumpHud();
+                    setProfileRole('RIVAL');
+                    setProfileAthlete(rivalAthlete);
+                  }}
+                >
+                  <Text style={styles.pollTallyRival}>{rivalVotesLabel}</Text>
+                  <Text style={styles.pollChallengerText} numberOfLines={1}>
+                    {rivalAthlete?.handle || '@RIVAL'}
+                  </Text>
+                  <View style={styles.pollBadgeRival}>
+                    <Text style={styles.pollBadgeRivalText}>[R]</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.pollBarTrack}>
+                <Animated.View style={[styles.pollBarHost, { width: hostBarWidth }]}>
+                  {hostPercent >= 18 ? (
+                    <Text style={styles.pollBarPctHost}>
+                      {hostVotesLabel} · {hostPercent}%
+                    </Text>
+                  ) : null}
+                </Animated.View>
+                <Animated.View
+                  style={[styles.pollBarChallenger, { width: rivalBarWidth }]}
+                >
+                  {rivalPercent >= 18 ? (
+                    <Text style={styles.pollBarPctRival}>
+                      {rivalPercent}% · {rivalVotesLabel}
+                    </Text>
+                  ) : null}
+                </Animated.View>
+              </View>
+            </View>
+
+            <View style={styles.actionTray}>
+              <Animated.View style={{ transform: [{ scale: hypeBurstScale }] }}>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={handleHype}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.actionIcon}>🔥</Text>
+                  <Text style={styles.actionLabel}>HYPE ({hypeCount})</Text>
+                </TouchableOpacity>
+              </Animated.View>
+
               <TouchableOpacity
                 style={styles.actionButton}
-                onPress={handleHype}
+                onPress={() => {
+                  bumpHud();
+                  setBanterOpen(true);
+                }}
                 activeOpacity={0.85}
               >
-                <Text style={styles.actionIcon}>🔥</Text>
-                <Text style={styles.actionLabel}>HYPE ({hypeCount})</Text>
+                <Text style={styles.actionIcon}>💬</Text>
+                <Text style={styles.actionLabel}>BANTER</Text>
               </TouchableOpacity>
-            </Animated.View>
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                bumpHud();
-                setBanterOpen(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionIcon}>💬</Text>
-              <Text style={styles.actionLabel}>BANTER</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={handleVoteHost}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.gloveChip, styles.gloveChipHost]}>
+                  <Text style={styles.gloveEmoji}>🥊</Text>
+                </View>
+                <Text style={[styles.actionLabel, styles.actionLabelHost]}>
+                  VOTE HOST
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleVoteHost}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.gloveChip, styles.gloveChipHost]}>
-                <Text style={styles.gloveEmoji}>🥊</Text>
-              </View>
-              <Text style={[styles.actionLabel, styles.actionLabelHost]}>
-                VOTE HOST
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={handleVoteRival}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.gloveChip, styles.gloveChipRival]}>
+                  <Text style={styles.gloveEmoji}>🥊</Text>
+                </View>
+                <Text style={[styles.actionLabel, styles.actionLabelRival]}>
+                  VOTE RIVAL
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handleVoteRival}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.gloveChip, styles.gloveChipRival]}>
-                <Text style={styles.gloveEmoji}>🥊</Text>
-              </View>
-              <Text style={[styles.actionLabel, styles.actionLabelRival]}>
-                VOTE RIVAL
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                bumpHud();
-                handleShare();
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionIcon}>🚀</Text>
-              <Text style={styles.actionLabel}>SHARE</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => {
+                  bumpHud();
+                  handleShare();
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.actionIcon}>🚀</Text>
+                <Text style={styles.actionLabel}>SHARE</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
         </Animated.View>
       </Pressable>
 
@@ -1475,36 +1482,46 @@ export default function Live1v1BattleScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: BG,
     overflow: 'hidden',
   },
   hudTapCatcher: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
+    zIndex: 10,
   },
   hudChrome: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
-    zIndex: 20,
+    zIndex: 10,
   },
   hudMidTapZone: {
     flex: 1,
     width: '100%',
   },
   hudTopBlock: {
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   hudBottomBlock: {
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
   },
   voteHintBanner: {
     position: 'absolute',
     alignSelf: 'center',
-    bottom: 28,
+    bottom: '22%',
     left: 24,
     right: 24,
     backgroundColor: 'rgba(0,0,0,0.72)',
@@ -1674,13 +1691,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   stageContainer: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    backgroundColor: BG,
+    zIndex: 0,
+  },
+  fullVideoColumn: {
     flex: 1,
     width: '100%',
-    position: 'relative',
+    height: '100%',
   },
   spotlightHostWrap: {
-    flex: 0.4,
+    flex: 0.42,
     width: '100%',
+    minHeight: 0,
   },
   hostSpotlight: {
     flex: 1,
@@ -1689,8 +1714,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   gridScroll: {
-    flex: 0.6,
+    flex: 0.58,
     width: '100%',
+    minHeight: 0,
     backgroundColor: BG,
   },
   gridContent: {
@@ -1767,6 +1793,7 @@ const styles = StyleSheet.create({
   dualPane: {
     flex: 1,
     width: '100%',
+    minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#080808',
@@ -2087,7 +2114,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     backgroundColor: 'transparent',
-    paddingTop: 10,
+    paddingTop: 8,
+    paddingHorizontal: 4,
   },
   actionButton: {
     alignItems: 'center',
