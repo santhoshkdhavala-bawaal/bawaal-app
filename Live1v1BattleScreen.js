@@ -7,7 +7,7 @@
  *
  * WebRTC-ready: StreamSurface accepts `streamId` / `rtcUid` for Agora / 100ms wiring.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -26,6 +26,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  castVote,
+  incrementReps,
+  sendHype,
+  sendReaction,
+  subscribeToBattle,
+} from './src/services/battleSyncService';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const GRID_GAP = 4;
@@ -222,7 +229,7 @@ function FloatingReactionLayer({ reactions }) {
   );
 }
 
-function HostSpotlight({ host, live }) {
+function HostSpotlight({ host, live, onRepPress }) {
   return (
     <View style={styles.hostSpotlight}>
       <StreamSurface
@@ -246,10 +253,15 @@ function HostSpotlight({ host, live }) {
               <Text style={styles.paneLiveText}>LIVE</Text>
             </View>
           ) : null}
-          <View style={styles.hostRepsBadge}>
+          <TouchableOpacity
+            style={styles.hostRepsBadge}
+            onPress={onRepPress}
+            activeOpacity={0.85}
+            hitSlop={8}
+          >
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={styles.repsCountHost}>{host.reps}</Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -283,7 +295,7 @@ function ChallengerTile({ athlete, onPress }) {
   );
 }
 
-function DualFocusPane({ athlete, variant }) {
+function DualFocusPane({ athlete, variant, onRepPress }) {
   const isHost = variant === 'host';
   return (
     <View style={styles.dualPane}>
@@ -301,12 +313,17 @@ function DualFocusPane({ athlete, variant }) {
             {athlete.handle}
           </Text>
         </View>
-        <View style={isHost ? styles.hostRepsBadge : styles.challengerRepsBadge}>
+        <TouchableOpacity
+          style={isHost ? styles.hostRepsBadge : styles.challengerRepsBadge}
+          onPress={onRepPress}
+          activeOpacity={0.85}
+          hitSlop={8}
+        >
           <Text style={styles.repsLabel}>REPS</Text>
           <Text style={isHost ? styles.repsCountHost : styles.repsCountChallenger}>
             {athlete.reps}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -321,6 +338,8 @@ export default function Live1v1BattleScreen({
   onShare,
 }) {
   const insets = useSafeAreaInsets();
+  const senderIdRef = useRef('spectator-local');
+
   const match = useMemo(() => {
     const incoming = route?.params?.match || {};
     const host = { ...DEFAULT_HOST, ...(incoming.host || {}) };
@@ -336,7 +355,12 @@ export default function Live1v1BattleScreen({
     };
   }, [route?.params?.match]);
 
+  const battleId =
+    route?.params?.battleId || match.id || match.battleId || null;
+
   const [viewMode, setViewMode] = useState(VIEW_SPOTLIGHT);
+  const [hostAthlete, setHostAthlete] = useState(match.host);
+  const [challengers, setChallengers] = useState(match.challengers);
   const [focusedRival, setFocusedRival] = useState(match.challengers[0]);
   const [hostVotes, setHostVotes] = useState(match.initialHostVotes ?? 1240);
   const [rivalVotes, setRivalVotes] = useState(
@@ -382,6 +406,94 @@ export default function Live1v1BattleScreen({
     });
   }, []);
 
+  const applyRemoteEvent = useCallback(
+    (row) => {
+      if (!row || row.sender_id === senderIdRef.current) return;
+      const type = row.event_type;
+      if (type === 'HYPE') {
+        setHypeCount((n) => n + 1);
+        spawnFloatingReaction('🔥', {
+          left: 24 + Math.random() * (SCREEN_W - 72),
+        });
+        return;
+      }
+      if (type === 'VOTE_HOST') {
+        setHostVotes((n) => n + 1);
+        spawnFloatingReaction('🥊', {
+          left: SCREEN_W * 0.18,
+          text: `VOTED ${hostAthlete.label}`,
+        });
+        return;
+      }
+      if (type === 'VOTE_RIVAL') {
+        setRivalVotes((n) => n + 1);
+        setChallengers((prev) =>
+          prev.map((c) =>
+            c.id === row.target_challenger_id || c.userId === row.target_challenger_id
+              ? { ...c, votes: (c.votes || 0) + 1 }
+              : c
+          )
+        );
+        spawnFloatingReaction('🥊', {
+          left: SCREEN_W * 0.55,
+          text: 'VOTED RIVAL',
+        });
+      }
+    },
+    [hostAthlete.label, spawnFloatingReaction]
+  );
+
+  const focusedRivalRef = useRef(focusedRival);
+
+  useEffect(() => {
+    senderIdRef.current = `spectator-${Date.now().toString(36)}`;
+  }, []);
+
+  useEffect(() => {
+    focusedRivalRef.current = focusedRival;
+  }, [focusedRival]);
+
+  useEffect(() => {
+    if (!battleId) return undefined;
+    const unsubscribe = subscribeToBattle(battleId, (payload) => {
+      if (payload.table === 'battle_events' && payload.eventType === 'INSERT') {
+        applyRemoteEvent(payload.new);
+        return;
+      }
+      if (payload.table === 'battles' && payload.new) {
+        const next = payload.new;
+        if (typeof next.host_reps === 'number') {
+          setHostAthlete((h) => ({ ...h, reps: next.host_reps }));
+        }
+        return;
+      }
+      if (payload.table === 'battle_challengers' && payload.new) {
+        const row = payload.new;
+        setChallengers((prev) =>
+          prev.map((c) =>
+            c.id === row.user_id || c.userId === row.user_id
+              ? { ...c, reps: row.reps ?? c.reps, votes: row.votes ?? c.votes }
+              : c
+          )
+        );
+        setFocusedRival((fr) =>
+          fr && (fr.id === row.user_id || fr.userId === row.user_id)
+            ? { ...fr, reps: row.reps ?? fr.reps, votes: row.votes ?? fr.votes }
+            : fr
+        );
+        const fr = focusedRivalRef.current;
+        if (
+          typeof row.votes === 'number' &&
+          fr &&
+          (fr.id === row.user_id || fr.userId === row.user_id)
+        ) {
+          setRivalVotes(row.votes);
+        }
+      }
+    });
+    return unsubscribe;
+  }, [applyRemoteEvent, battleId]);
+
   const focusChallenger = useCallback((athlete) => {
     setFocusedRival(athlete);
     setRivalVotes(athlete.votes ?? 500);
@@ -402,7 +514,10 @@ export default function Live1v1BattleScreen({
         });
       }, i * 80);
     }
-  }, [onHype, spawnFloatingReaction]);
+    if (battleId) {
+      void sendHype(battleId, senderIdRef.current);
+    }
+  }, [battleId, onHype, spawnFloatingReaction]);
 
   const submitBanter = useCallback(() => {
     const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
@@ -413,39 +528,74 @@ export default function Live1v1BattleScreen({
       left: 20 + Math.random() * Math.max(40, SCREEN_W - 220),
       text: `@You: ${text}`,
     });
-  }, [banterDraft, onBanter, spawnFloatingReaction]);
+    if (battleId) {
+      void sendReaction(battleId, senderIdRef.current, 'BANTER', null);
+    }
+  }, [banterDraft, battleId, onBanter, spawnFloatingReaction]);
 
   const handleVoteHost = useCallback(() => {
     setHostVotes((n) => n + 1);
     onVote?.('host', focusedRival?.id);
     spawnFloatingReaction('🥊', {
       left: SCREEN_W * 0.18,
-      text: `VOTED ${match.host.label}`,
+      text: `VOTED ${hostAthlete.label}`,
     });
-  }, [focusedRival?.id, match.host.label, onVote, spawnFloatingReaction]);
+    if (battleId) {
+      void castVote(battleId, null, senderIdRef.current);
+    }
+  }, [battleId, focusedRival?.id, hostAthlete.label, onVote, spawnFloatingReaction]);
 
   const handleVoteRival = useCallback(() => {
+    const rivalId = focusedRival?.userId || focusedRival?.id || null;
     setRivalVotes((n) => n + 1);
-    onVote?.('challenger', focusedRival?.id);
+    onVote?.('challenger', rivalId);
     spawnFloatingReaction('🥊', {
       left: SCREEN_W * 0.55,
       text: `VOTED ${focusedRival?.label || 'RIVAL'}`,
     });
-  }, [focusedRival?.id, focusedRival?.label, onVote, spawnFloatingReaction]);
+    if (battleId) {
+      void castVote(battleId, rivalId, senderIdRef.current);
+    }
+  }, [battleId, focusedRival, onVote, spawnFloatingReaction]);
+
+  const handleHostRep = useCallback(() => {
+    const current = hostAthlete.reps ?? 0;
+    setHostAthlete((h) => ({ ...h, reps: current + 1 }));
+    if (battleId) {
+      void incrementReps(battleId, hostAthlete.id || hostAthlete.userId || 'host', current);
+    }
+  }, [battleId, hostAthlete.id, hostAthlete.reps, hostAthlete.userId]);
+
+  const handleRivalRep = useCallback(() => {
+    if (!focusedRival) return;
+    const current = focusedRival.reps ?? 0;
+    const next = { ...focusedRival, reps: current + 1 };
+    setFocusedRival(next);
+    setChallengers((prev) =>
+      prev.map((c) => (c.id === focusedRival.id ? next : c))
+    );
+    if (battleId) {
+      void incrementReps(
+        battleId,
+        focusedRival.userId || focusedRival.id,
+        current
+      );
+    }
+  }, [battleId, focusedRival]);
 
   const handleShare = useCallback(async () => {
     onShare?.();
     try {
       await Share.share({
-        message: `Watch BATTLE BAWAAL live — ${match.host.handle} arena on BAWAAL!`,
+        message: `Watch BATTLE BAWAAL live — ${hostAthlete.handle} arena on BAWAAL!`,
         title: 'BAWAAL Live Arena',
       });
     } catch (_) {
       /* dismissed */
     }
-  }, [match.host.handle, onShare]);
+  }, [hostAthlete.handle, onShare]);
 
-  const gridAthletes = match.challengers.slice(0, 9);
+  const gridAthletes = challengers.slice(0, 9);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -492,7 +642,7 @@ export default function Live1v1BattleScreen({
         {viewMode === VIEW_SPOTLIGHT ? (
           <>
             <View style={styles.spotlightHostWrap}>
-              <HostSpotlight host={match.host} live />
+              <HostSpotlight host={hostAthlete} live onRepPress={handleHostRep} />
             </View>
             <ScrollView
               style={styles.gridScroll}
@@ -512,7 +662,11 @@ export default function Live1v1BattleScreen({
           </>
         ) : (
           <>
-            <DualFocusPane athlete={match.host} variant="host" />
+            <DualFocusPane
+              athlete={hostAthlete}
+              variant="host"
+              onRepPress={handleHostRep}
+            />
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
               <View style={styles.vsCircle}>
@@ -520,7 +674,11 @@ export default function Live1v1BattleScreen({
               </View>
               <View style={styles.vsLine} />
             </View>
-            <DualFocusPane athlete={focusedRival || match.challengers[0]} variant="rival" />
+            <DualFocusPane
+              athlete={focusedRival || challengers[0]}
+              variant="rival"
+              onRepPress={handleRivalRep}
+            />
           </>
         )}
 
@@ -530,7 +688,7 @@ export default function Live1v1BattleScreen({
       <View style={styles.pollSection}>
         <View style={styles.pollLabelRow}>
           <Text style={styles.pollHostText}>
-            {match.host.label} {hostPercent}%
+            {hostAthlete.label} {hostPercent}%
           </Text>
           <Text style={styles.thunderIcon}>⚡</Text>
           <Text style={styles.pollChallengerText}>

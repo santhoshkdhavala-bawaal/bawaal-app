@@ -57,7 +57,10 @@ export default function BattlesScreen({ navigation }) {
 
   const openChallenge = (battle) => {
     if (battle.liveMatch) {
-      navigation?.navigate?.('Live1v1Battle', { match: battle.liveMatch });
+      navigation?.navigate?.('Live1v1Battle', {
+        match: battle.liveMatch,
+        battleId: battle.id || battle.liveMatch.battleId || battle.liveMatch.id,
+      });
       return;
     }
     const label = battle.target || battle.description || 'OPEN CHALLENGE';

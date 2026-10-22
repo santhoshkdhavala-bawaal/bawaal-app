@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { createLiveBattle, newBattleId } from './src/services/battleSyncService';
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
@@ -116,7 +117,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
   );
 
   const buildPayload = () => {
-    const battleId = `live-${Date.now()}`;
+    const battleId = newBattleId();
     const rival =
       battleType === 'direct'
         ? rivalHandle.startsWith('@')
@@ -125,6 +126,10 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
         : '@OPEN_FIELD';
     const challengeTitle = title.trim() || 'OPEN CHALLENGE';
     const mins = Math.max(1, Math.round(duration.seconds / 60));
+    const rivalUserId =
+      battleType === 'direct'
+        ? rival.replace(/^@/, '').toLowerCase()
+        : 'open-field';
 
     return {
       id: battleId,
@@ -159,20 +164,26 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
         },
       },
       liveMatch: {
+        id: battleId,
+        battleId,
         category: `[${sport}] ${challengeTitle.toUpperCase()}`,
         timerLabel: `${pad2(mins)}:00`,
         spectatorsLabel: '0 LIVE',
         host: {
+          id: 'host-mumbai',
           handle: HOST_HANDLE,
           flag: '🇮🇳',
           label: 'INDIA',
           reps: 0,
         },
         challenger: {
+          id: rivalUserId,
+          userId: rivalUserId,
           handle: battleType === 'direct' ? rival : '@OPEN_FIELD',
           flag: battleType === 'direct' ? '🇺🇸' : '🌐',
           label: battleType === 'direct' ? 'USA' : 'OPEN',
           reps: 0,
+          votes: 0,
         },
         initialHostVotes: 1,
         initialChallengerVotes: 1,
@@ -181,8 +192,28 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
     };
   };
 
-  const launch = () => {
+  const launch = async () => {
     const battle = buildPayload();
+    await createLiveBattle({
+      id: battle.id,
+      hostId: 'host-mumbai',
+      hostUsername: HOST_HANDLE,
+      hostFlag: '🇮🇳',
+      title: battle.target,
+      category: battle.sport,
+      matchLength: `${battle.durationSec}s`,
+      status: scheduleMode === 'now' ? 'live' : 'scheduled',
+      challenger:
+        battleType === 'direct'
+          ? {
+              userId: battle.liveMatch.challenger.userId,
+              username: battle.liveMatch.challenger.handle,
+              flag: battle.liveMatch.challenger.flag,
+              reps: 0,
+              votes: 0,
+            }
+          : null,
+    });
     onClose?.();
     onLaunch?.(battle);
   };
