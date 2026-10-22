@@ -605,12 +605,13 @@ export default function Live1v1BattleScreen({
   const [profileAthlete, setProfileAthlete] = useState(null);
   const [profileRole, setProfileRole] = useState('ATHLETE');
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [hudVisible, setHudVisible] = useState(true);
+  const [showControls, setShowControls] = useState(true);
   const [voteHintVisible, setVoteHintVisible] = useState(true);
   const [hudOpacity] = useState(() => new Animated.Value(1));
   const [hintOpacity] = useState(() => new Animated.Value(1));
   const hudHideTimerRef = useRef(null);
   const voteHintTimerRef = useRef(null);
+  const HUD_FADE_MS = 5000;
 
   const myRtcUid = useMemo(() => {
     if (arenaRole === 'host') return Number(match.host?.rtcUid) || 1001;
@@ -693,33 +694,53 @@ export default function Live1v1BattleScreen({
   const scheduleHudHide = useCallback(() => {
     clearHudHideTimer();
     hudHideTimerRef.current = setTimeout(() => {
-      setHudVisible(false);
+      setShowControls(false);
       Animated.timing(hudOpacity, {
         toValue: 0,
         duration: 380,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }).start();
-    }, 3000);
-  }, [clearHudHideTimer, hudOpacity]);
+    }, HUD_FADE_MS);
+  }, [HUD_FADE_MS, clearHudHideTimer, hudOpacity]);
 
-  const revealHud = useCallback(() => {
-    setHudVisible(true);
+  const showHud = useCallback(() => {
+    setShowControls(true);
     Animated.timing(hudOpacity, {
       toValue: 1,
-      duration: 200,
+      duration: 220,
       useNativeDriver: true,
     }).start();
     scheduleHudHide();
   }, [hudOpacity, scheduleHudHide]);
 
+  const hideHud = useCallback(() => {
+    clearHudHideTimer();
+    setShowControls(false);
+    Animated.timing(hudOpacity, {
+      toValue: 0,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [clearHudHideTimer, hudOpacity]);
+
+  /** Full-screen tap: toggle controls ON/OFF; when ON, reset 5s auto-fade. */
+  const toggleHud = useCallback(() => {
+    if (showControls) {
+      hideHud();
+    } else {
+      showHud();
+    }
+  }, [hideHud, showControls, showHud]);
+
   const bumpHud = useCallback(() => {
-    if (!hudVisible) {
-      revealHud();
+    if (!showControls) {
+      showHud();
       return;
     }
     scheduleHudHide();
-  }, [hudVisible, revealHud, scheduleHudHide]);
+  }, [scheduleHudHide, showControls, showHud]);
 
   useEffect(() => {
     scheduleHudHide();
@@ -731,12 +752,12 @@ export default function Live1v1BattleScreen({
       }).start(({ finished }) => {
         if (finished) setVoteHintVisible(false);
       });
-    }, 4500);
+    }, HUD_FADE_MS + 500);
     return () => {
       clearHudHideTimer();
       if (voteHintTimerRef.current) clearTimeout(voteHintTimerRef.current);
     };
-  }, [clearHudHideTimer, hintOpacity, scheduleHudHide]);
+  }, [HUD_FADE_MS, clearHudHideTimer, hintOpacity, scheduleHudHide]);
 
   const spawnFloatingReaction = useCallback((emoji, options = {}) => {
     const id = `rx-${Date.now()}-${reactionSeq++}`;
@@ -1092,7 +1113,7 @@ export default function Live1v1BattleScreen({
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
-      <Pressable style={styles.stageContainer} onPress={revealHud}>
+      <View style={styles.stageContainer}>
         {viewMode === VIEW_SPOTLIGHT ? (
           <>
             <View style={styles.spotlightHostWrap}>
@@ -1190,11 +1211,20 @@ export default function Live1v1BattleScreen({
             </Text>
           </Animated.View>
         ) : null}
-      </Pressable>
+      </View>
+
+      {!showControls ? (
+        <Pressable
+          style={styles.hudTapCatcher}
+          onPress={toggleHud}
+          accessibilityRole="button"
+          accessibilityLabel="Show battle HUD"
+        />
+      ) : null}
 
       <Animated.View
         style={[styles.hudChrome, { opacity: hudOpacity }]}
-        pointerEvents={hudVisible ? 'box-none' : 'none'}
+        pointerEvents={showControls ? 'box-none' : 'none'}
       >
         <View style={styles.hudTopBlock} pointerEvents="box-none">
           <View style={styles.header}>
@@ -1258,6 +1288,17 @@ export default function Live1v1BattleScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {showControls ? (
+          <Pressable
+            style={styles.hudMidTapZone}
+            onPress={toggleHud}
+            accessibilityRole="button"
+            accessibilityLabel="Hide battle HUD"
+          />
+        ) : (
+          <View style={styles.hudMidTapZone} pointerEvents="none" />
+        )}
 
         <View style={styles.hudBottomBlock} pointerEvents="box-none">
           <ParticipantHudToolbar
@@ -1470,10 +1511,18 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
     overflow: 'hidden',
   },
+  hudTapCatcher: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
   hudChrome: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
     zIndex: 20,
+  },
+  hudMidTapZone: {
+    flex: 1,
+    width: '100%',
   },
   hudTopBlock: {
     backgroundColor: 'rgba(0,0,0,0.55)',
@@ -2096,9 +2145,9 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
   },
   gloveChipRival: {
-    backgroundColor: 'rgba(0,229,255,0.28)',
+    backgroundColor: 'rgba(0,229,255,0.35)',
     borderWidth: 1.5,
-    borderColor: CYAN,
+    borderColor: '#00E5FF',
   },
   gloveEmoji: {
     fontSize: 18,
@@ -2110,7 +2159,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   actionLabelHost: { color: ORANGE },
-  actionLabelRival: { color: CYAN },
+  actionLabelRival: { color: '#00E5FF' },
   banterOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
