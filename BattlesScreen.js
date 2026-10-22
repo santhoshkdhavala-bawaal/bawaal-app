@@ -60,6 +60,7 @@ export default function BattlesScreen({ navigation }) {
       navigation?.navigate?.('Live1v1Battle', {
         match: battle.liveMatch,
         battleId: battle.id || battle.liveMatch.battleId || battle.liveMatch.id,
+        role: 'spectator',
       });
       return;
     }
@@ -79,6 +80,15 @@ export default function BattlesScreen({ navigation }) {
         durationSec: 30,
       },
     });
+  };
+
+  const openLiveArena = (role = 'spectator') => {
+    navigation?.navigate?.('Live1v1Battle', { role });
+  };
+
+  const listCtaLabel = (battle) => {
+    if (battle.status === 'HOT' || battle.status === 'LIVE') return 'CHALLENGE';
+    return 'ACCEPT';
   };
 
   const onLaunchBattle = (battle) => {
@@ -145,26 +155,35 @@ export default function BattlesScreen({ navigation }) {
                 activeOpacity={0.85}
                 onPress={() => openChallenge(battle)}
               >
-                <Text style={styles.enterBtnText}>ENTER</Text>
+                <Text style={styles.enterBtnText}>{listCtaLabel(battle)}</Text>
               </TouchableOpacity>
             </View>
           );
         })}
 
-        <TouchableOpacity
-          style={styles.liveBtn}
-          activeOpacity={0.85}
-          onPress={() => navigation?.navigate?.('Live1v1Battle')}
-        >
-          <Text style={styles.liveBtnText}>🔴 WATCH LIVE 1v1 · IND vs USA</Text>
-        </TouchableOpacity>
+        <View style={styles.liveCtaRow}>
+          <TouchableOpacity
+            style={[styles.liveCtaBtn, styles.liveCtaPrimary]}
+            activeOpacity={0.85}
+            onPress={() => openLiveArena('spectator')}
+          >
+            <Text style={styles.liveCtaPrimaryText}>🔴 WATCH ARENA</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.liveCtaBtn, styles.liveCtaSecondary]}
+            activeOpacity={0.85}
+            onPress={() => openLiveArena('challenger')}
+          >
+            <Text style={styles.liveCtaSecondaryText}>⚔️ ACCEPT / JOIN BATTLE</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={styles.createBtn}
           activeOpacity={0.85}
           onPress={() => setCreateOpen(true)}
         >
-          <Text style={styles.createBtnText}>+ SET UP DIRECT BATTLE</Text>
+          <Text style={styles.createBtnText}>🔥 CREATE NEW CHALLENGE</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -243,26 +262,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 6,
+    minWidth: 92,
+    alignItems: 'center',
   },
   enterBtnText: {
     color: '#000000',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
+    letterSpacing: 0.3,
   },
-  liveBtn: {
-    backgroundColor: 'rgba(255,87,34,0.12)',
+  liveCtaRow: {
+    gap: 10,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  liveCtaBtn: {
     borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  liveCtaPrimary: {
+    backgroundColor: FLAME_ORANGE,
     borderWidth: 1.5,
     borderColor: FLAME_ORANGE,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 16,
   },
-  liveBtnText: {
-    color: FLAME_ORANGE,
+  liveCtaSecondary: {
+    backgroundColor: 'rgba(255,87,34,0.12)',
+    borderWidth: 1.5,
+    borderColor: FLAME_ORANGE,
+  },
+  liveCtaPrimaryText: {
+    color: WHITE,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.5,
+  },
+  liveCtaSecondaryText: {
+    color: FLAME_ORANGE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   createBtn: {
     backgroundColor: '#121212',
