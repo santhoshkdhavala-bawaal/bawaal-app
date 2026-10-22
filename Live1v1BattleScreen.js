@@ -54,6 +54,7 @@ import {
   ACTIVE_USER,
   toChallengerAthlete,
 } from './src/services/activeUserProfile';
+import AthleteProfileSheet from './AthleteProfileSheet';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -557,6 +558,8 @@ export default function Live1v1BattleScreen({
   const [cameraOff, setCameraOff] = useState(false);
   const [cameraFacing, setCameraFacing] = useState('front');
   const [rtcJoined, setRtcJoined] = useState(false);
+  const [profileAthlete, setProfileAthlete] = useState(null);
+  const [profileRole, setProfileRole] = useState('ATHLETE');
 
   const myRtcUid = useMemo(() => {
     if (arenaRole === 'host') return Number(match.host?.rtcUid) || 1001;
@@ -1023,21 +1026,56 @@ export default function Live1v1BattleScreen({
 
       <View style={styles.pollSection}>
         <View style={styles.pollLabelRow}>
-          <Text style={styles.pollHostText}>
-            {hostAthlete.label} {hostPercent}%
+          <TouchableOpacity
+            style={styles.pollHandleHit}
+            activeOpacity={0.8}
+            onPress={() => {
+              setProfileRole('HOST');
+              setProfileAthlete(hostAthlete);
+            }}
+          >
+            <Text style={styles.pollRoleTagHost}>[H]</Text>
+            <Text style={styles.pollHostText} numberOfLines={1}>
+              {hostAthlete.handle || '@HOST'}
+            </Text>
+            <Text style={styles.pollRoleHint}>HOST</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.pollPercentMid}>
+            {hostPercent}% ⚡ {rivalPercent}%
           </Text>
-          <Text style={styles.thunderIcon}>⚡</Text>
-          <Text style={styles.pollChallengerText}>
-            {rivalPercent}% {focusedRival?.label || 'RIVAL'}
-          </Text>
+
+          <TouchableOpacity
+            style={[styles.pollHandleHit, styles.pollHandleHitRight]}
+            activeOpacity={0.8}
+            onPress={() => {
+              setProfileRole('RIVAL');
+              setProfileAthlete(focusedRival || challengers[0]);
+            }}
+          >
+            <Text style={styles.pollRoleHint}>RIVAL</Text>
+            <Text style={styles.pollChallengerText} numberOfLines={1}>
+              {(focusedRival || challengers[0])?.handle || '@RIVAL'}
+            </Text>
+            <Text style={styles.pollRoleTagRival}>[R]</Text>
+          </TouchableOpacity>
         </View>
         <View style={styles.pollBarTrack}>
-          <View style={[styles.pollBarHost, { width: `${hostPercent}%` }]} />
-          <View style={[styles.pollBarChallenger, { width: `${rivalPercent}%` }]} />
+          <View style={[styles.pollBarHost, { width: `${hostPercent}%` }]}>
+            {hostPercent >= 18 ? (
+              <Text style={styles.pollBarPctHost}>{hostPercent}%</Text>
+            ) : null}
+          </View>
+          <View style={[styles.pollBarChallenger, { width: `${rivalPercent}%` }]}>
+            {rivalPercent >= 18 ? (
+              <Text style={styles.pollBarPctRival}>{rivalPercent}%</Text>
+            ) : null}
+          </View>
         </View>
         <Text style={styles.tapToVoteText}>
+          TAP HANDLE TO FOLLOW ·{' '}
           {viewMode === VIEW_SPOTLIGHT
-            ? 'TAP A TILE TO FOCUS RIVALRY · THEN VOTE'
+            ? 'TAP A TILE TO FOCUS · THEN VOTE'
             : 'TAP HOST / RIVAL TO CAST YOUR VOTE'}
         </Text>
       </View>
@@ -1119,6 +1157,13 @@ export default function Live1v1BattleScreen({
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <AthleteProfileSheet
+        visible={Boolean(profileAthlete)}
+        athlete={profileAthlete}
+        roleLabel={profileRole}
+        onClose={() => setProfileAthlete(null)}
+      />
     </View>
   );
 }
@@ -1524,48 +1569,97 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   pollSection: {
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     backgroundColor: BG,
     borderTopWidth: 1,
     borderTopColor: SURFACE,
   },
   pollLabelRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+    gap: 4,
+  },
+  pollHandleHit: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 0,
+  },
+  pollHandleHitRight: {
+    justifyContent: 'flex-end',
+  },
+  pollRoleTagHost: {
+    color: ORANGE,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  pollRoleTagRival: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  pollRoleHint: {
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   pollHostText: {
     color: WHITE,
     fontWeight: '900',
-    fontSize: 13,
-  },
-  thunderIcon: {
-    color: ORANGE,
-    marginHorizontal: 8,
-    fontSize: 12,
+    fontSize: 11,
+    flexShrink: 1,
   },
   pollChallengerText: {
     color: WHITE,
     fontWeight: '900',
-    fontSize: 13,
+    fontSize: 11,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  pollPercentMid: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    flexShrink: 0,
+    paddingHorizontal: 4,
   },
   pollBarTrack: {
-    height: 12,
+    height: 16,
     width: '100%',
     backgroundColor: SURFACE,
-    borderRadius: 6,
+    borderRadius: 8,
     flexDirection: 'row',
     overflow: 'hidden',
   },
   pollBarHost: {
     height: '100%',
     backgroundColor: ORANGE,
+    justifyContent: 'center',
+    paddingLeft: 6,
+  },
+  pollBarPctHost: {
+    color: WHITE,
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  pollBarPctRival: {
+    color: '#000000',
+    fontSize: 9,
+    fontWeight: '900',
+    textAlign: 'right',
+    paddingRight: 6,
   },
   pollBarChallenger: {
     height: '100%',
     backgroundColor: CYAN,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
   tapToVoteText: {
     color: '#555555',
