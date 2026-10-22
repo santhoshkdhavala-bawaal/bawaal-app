@@ -274,7 +274,61 @@ function FloatingReactionLayer({ reactions }) {
   );
 }
 
-function HostSpotlight({ host, live, onRepPress, isLocal, hasRemote, cameraOff }) {
+/** Compact cam/mic overlays — only rendered on the local participant's video. */
+function LocalMediaControls({
+  visible,
+  micMuted,
+  cameraOff,
+  onFlip,
+  onToggleMic,
+  onToggleCamera,
+  compact = false,
+}) {
+  if (!visible) return null;
+  const btnStyle = [styles.localMediaBtn, compact && styles.localMediaBtnCompact];
+  return (
+    <View
+      style={[styles.localMediaBar, compact && styles.localMediaBarCompact]}
+      pointerEvents="box-none"
+    >
+      <TouchableOpacity style={btnStyle} onPress={onFlip} activeOpacity={0.8} hitSlop={6}>
+        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
+          🔄
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[...btnStyle, micMuted && styles.localMediaBtnActive]}
+        onPress={onToggleMic}
+        activeOpacity={0.8}
+        hitSlop={6}
+      >
+        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
+          {micMuted ? '🔇' : '🎙️'}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[...btnStyle, cameraOff && styles.localMediaBtnActive]}
+        onPress={onToggleCamera}
+        activeOpacity={0.8}
+        hitSlop={6}
+      >
+        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
+          {cameraOff ? '📷' : '📹'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function HostSpotlight({
+  host,
+  live,
+  onRepPress,
+  isLocal,
+  hasRemote,
+  cameraOff,
+  mediaControls,
+}) {
   return (
     <View style={styles.hostSpotlight}>
       <StreamSurface
@@ -312,11 +366,19 @@ function HostSpotlight({ host, live, onRepPress, isLocal, hasRemote, cameraOff }
           </TouchableOpacity>
         </View>
       </View>
+      {mediaControls}
     </View>
   );
 }
 
-function ChallengerTile({ athlete, onPress, isLocal, hasRemote, cameraOff }) {
+function ChallengerTile({
+  athlete,
+  onPress,
+  isLocal,
+  hasRemote,
+  cameraOff,
+  mediaControls,
+}) {
   return (
     <TouchableOpacity
       style={styles.tile}
@@ -342,11 +404,20 @@ function ChallengerTile({ athlete, onPress, isLocal, hasRemote, cameraOff }) {
       <View style={styles.tileReps}>
         <Text style={styles.tileRepsText}>{athlete.reps}</Text>
       </View>
+      {mediaControls}
     </TouchableOpacity>
   );
 }
 
-function DualFocusPane({ athlete, variant, onRepPress, isLocal, hasRemote, cameraOff }) {
+function DualFocusPane({
+  athlete,
+  variant,
+  onRepPress,
+  isLocal,
+  hasRemote,
+  cameraOff,
+  mediaControls,
+}) {
   const isHost = variant === 'host';
   return (
     <View style={styles.dualPane}>
@@ -379,6 +450,7 @@ function DualFocusPane({ athlete, variant, onRepPress, isLocal, hasRemote, camer
           </Text>
         </TouchableOpacity>
       </View>
+      {mediaControls}
     </View>
   );
 }
@@ -431,7 +503,6 @@ export default function Live1v1BattleScreen({
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
   const [remoteUids, setRemoteUids] = useState([]);
-  const [gearOpen, setGearOpen] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [rtcJoined, setRtcJoined] = useState(false);
@@ -758,12 +829,25 @@ export default function Live1v1BattleScreen({
 
   const gridAthletes = challengers.slice(0, 9);
 
+  const localMediaControls = (compact = false) => (
+    <LocalMediaControls
+      visible={isBroadcaster}
+      micMuted={micMuted}
+      cameraOff={cameraOff}
+      onFlip={handleFlipCamera}
+      onToggleMic={handleToggleMic}
+      onToggleCamera={handleToggleCamera}
+      compact={compact}
+    />
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
       <View style={styles.header}>
         <TouchableOpacity
+          style={styles.headerBrand}
           onPress={() => {
             if (navigation?.canGoBack?.()) navigation.goBack();
             else navigation?.navigate?.('Main', { tab: 'Battles' });
@@ -771,7 +855,7 @@ export default function Live1v1BattleScreen({
           activeOpacity={0.8}
         >
           <Text style={styles.brandTitle}>BAWAAL</Text>
-          <Text style={styles.brandSubtitle}>
+          <Text style={styles.brandSubtitle} numberOfLines={1}>
             {viewMode === VIEW_SPOTLIGHT ? 'BATTLE BAWAAL ARENA' : 'DUAL FOCUS 1v1'}
           </Text>
         </TouchableOpacity>
@@ -783,71 +867,13 @@ export default function Live1v1BattleScreen({
           </Text>
         </View>
 
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={styles.gearBtn}
-            onPress={() => setGearOpen((v) => !v)}
-            activeOpacity={0.85}
-            hitSlop={8}
-          >
-            <Text style={styles.gearBtnText}>⚙️</Text>
-          </TouchableOpacity>
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>
-              {rtcJoined ? 'LIVE RTC' : match.spectatorsLabel}
-            </Text>
-          </View>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText} numberOfLines={1}>
+            {rtcJoined ? 'LIVE' : match.spectatorsLabel}
+          </Text>
         </View>
       </View>
-
-      {gearOpen ? (
-        <View style={styles.gearMenu}>
-          <Text style={styles.gearMenuTitle}>CAMERA CONTROLS</Text>
-          <View style={styles.gearMenuRow}>
-            <TouchableOpacity
-              style={[styles.gearControl, !isBroadcaster && styles.gearControlDisabled]}
-              onPress={isBroadcaster ? handleFlipCamera : undefined}
-              activeOpacity={0.85}
-              disabled={!isBroadcaster}
-            >
-              <Text style={styles.gearControlIcon}>🔄</Text>
-              <Text style={styles.gearControlLabel}>Flip</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.gearControl,
-                micMuted && styles.gearControlActive,
-                !isBroadcaster && styles.gearControlDisabled,
-              ]}
-              onPress={isBroadcaster ? handleToggleMic : undefined}
-              activeOpacity={0.85}
-              disabled={!isBroadcaster}
-            >
-              <Text style={styles.gearControlIcon}>{micMuted ? '🔇' : '🎙️'}</Text>
-              <Text style={styles.gearControlLabel}>{micMuted ? 'Muted' : 'Mic'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.gearControl,
-                cameraOff && styles.gearControlActive,
-                !isBroadcaster && styles.gearControlDisabled,
-              ]}
-              onPress={isBroadcaster ? handleToggleCamera : undefined}
-              activeOpacity={0.85}
-              disabled={!isBroadcaster}
-            >
-              <Text style={styles.gearControlIcon}>{cameraOff ? '📷' : '📹'}</Text>
-              <Text style={styles.gearControlLabel}>{cameraOff ? 'Cam Off' : 'Cam'}</Text>
-            </TouchableOpacity>
-          </View>
-          {!isBroadcaster ? (
-            <Text style={styles.gearSpectatorHint}>
-              Spectator mode — watching only (low bandwidth)
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
 
       {viewMode === VIEW_DUAL ? (
         <TouchableOpacity
@@ -870,6 +896,7 @@ export default function Live1v1BattleScreen({
                 isLocal={isLocalHost}
                 hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
                 cameraOff={cameraOff && isLocalHost}
+                mediaControls={isLocalHost ? localMediaControls(false) : null}
               />
             </View>
             <ScrollView
@@ -888,6 +915,7 @@ export default function Live1v1BattleScreen({
                       isLocal={localTile}
                       hasRemote={hasRemoteUid(athlete.rtcUid)}
                       cameraOff={cameraOff && localTile}
+                      mediaControls={localTile ? localMediaControls(true) : null}
                     />
                   );
                 })}
@@ -903,6 +931,7 @@ export default function Live1v1BattleScreen({
               isLocal={isLocalHost}
               hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
               cameraOff={cameraOff && isLocalHost}
+              mediaControls={isLocalHost ? localMediaControls(false) : null}
             />
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
@@ -922,6 +951,11 @@ export default function Live1v1BattleScreen({
               cameraOff={
                 cameraOff &&
                 isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
+              }
+              mediaControls={
+                isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
+                  ? localMediaControls(false)
+                  : null
               }
             />
           </>
@@ -1042,136 +1076,111 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: SURFACE,
+  },
+  headerBrand: {
+    flexShrink: 1,
+    maxWidth: '28%',
   },
   brandTitle: {
     color: WHITE,
     fontWeight: '900',
-    fontSize: 18,
+    fontSize: 16,
     letterSpacing: 1,
   },
   brandSubtitle: {
     color: MUTED,
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   timerBadge: {
+    flexShrink: 1,
     alignItems: 'center',
     backgroundColor: BG,
     borderWidth: 1.5,
     borderColor: ORANGE,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
-    maxWidth: 160,
+    maxWidth: '42%',
   },
   timerText: {
     color: ORANGE,
     fontWeight: '900',
-    fontSize: 18,
+    fontSize: 16,
   },
   categoryText: {
     color: '#CCCCCC',
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: '700',
   },
   liveBadge: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 0, 0, 0.15)',
     borderWidth: 1,
     borderColor: '#FF0000',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 14,
+    maxWidth: '28%',
   },
   liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
     backgroundColor: '#FF0000',
-    marginRight: 6,
+    marginRight: 5,
   },
   liveText: {
     color: WHITE,
     fontWeight: '800',
-    fontSize: 10,
+    fontSize: 9,
   },
-  headerRight: {
+  localMediaBar: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    zIndex: 8,
   },
-  gearBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: SURFACE,
-    borderWidth: 1,
-    borderColor: BORDER,
+  localMediaBarCompact: {
+    right: 6,
+    bottom: 6,
+    gap: 4,
+  },
+  localMediaBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
-  gearBtnText: {
+  localMediaBtnCompact: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  localMediaBtnActive: {
+    backgroundColor: 'rgba(255,87,34,0.55)',
+    borderColor: ORANGE,
+  },
+  localMediaIcon: {
     fontSize: 14,
   },
-  gearMenu: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  gearMenuTitle: {
-    color: MUTED,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  gearMenuRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  gearControl: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BG,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
-    paddingVertical: 10,
-  },
-  gearControlActive: {
-    borderColor: ORANGE,
-    backgroundColor: 'rgba(255,87,34,0.12)',
-  },
-  gearControlDisabled: {
-    opacity: 0.4,
-  },
-  gearControlIcon: {
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  gearControlLabel: {
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  gearSpectatorHint: {
-    color: MUTED,
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 8,
-    textAlign: 'center',
+  localMediaIconCompact: {
+    fontSize: 11,
   },
   showAllBtn: {
     marginHorizontal: 16,
