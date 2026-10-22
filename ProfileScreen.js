@@ -5,58 +5,32 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  StatusBar,
-  Image,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BrandHeader from './BrandHeader';
+import { useMainTabs } from './mainTabContext';
 
 export default function ProfileScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
+  const { openProfileGateway } = useMainTabs();
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 24) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#05070A" />
-
-      {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.brandRow}>
-          <Image
-            source={require('./assets/BAWAAL_text.png')}
-            style={styles.wordmarkLogo}
-          />
-          <Text style={styles.headerAccent}>PASSPORT</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => {
-            try {
-              if (navigation?.canGoBack?.()) {
-                navigation.goBack();
-                return;
-              }
-            } catch (_) {
-              /* fall through to Arena reset */
-            }
-            try {
-              navigation?.reset?.({
-                index: 0,
-                routes: [{ name: 'Arena' }],
-              });
-            } catch (_) {
-              navigation?.navigate?.('Arena');
-            }
-          }}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityRole="button"
-          accessibilityLabel="Close passport"
-        >
-          <Text style={styles.backBtnText}>✕</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      <BrandHeader
+        screenName="PASSPORT"
+        onBrandPress={openProfileGateway}
+        rightSlot={
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation?.navigate?.('Arena')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Close passport"
+          >
+            <Text style={styles.backBtnText}>✕</Text>
+          </TouchableOpacity>
+        }
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Profile Info Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarRow}>
             <View style={styles.avatarCircle}>
@@ -70,32 +44,28 @@ export default function ProfileScreen({ navigation }) {
                 </View>
               </View>
               <Text style={styles.handleText}>@rohit_vk7 • Virar Boxing Club</Text>
-              <Text style={styles.bioText}>🥊 Combat Sports Athlete & Striker</Text>
+              <Text style={styles.bioText}>Combat Sports Athlete & Striker</Text>
             </View>
           </View>
 
-          {/* Stats Bar */}
           <View style={styles.statsRow}>
-            <View style={styles.statCol}>
+            <View style={[styles.statCol, styles.statBoxPts]}>
               <Text style={styles.statNumber}>3,850</Text>
               <Text style={styles.statLabel}>BAWAAL PTS</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCol}>
+            <View style={[styles.statCol, styles.statBoxRank]}>
               <Text style={styles.statNumber}>#1</Text>
               <Text style={styles.statLabel}>VIRAR RANK</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statCol}>
+            <View style={[styles.statCol, styles.statBoxWins]}>
               <Text style={styles.statNumber}>18</Text>
               <Text style={styles.statLabel}>BATTLES WON</Text>
             </View>
           </View>
         </View>
 
-        {/* AI Scouting Metrics */}
         <View style={styles.metricsCard}>
-          <Text style={styles.metricsTitle}>⚡ AI FORM & SCOUTING METRICS</Text>
+          <Text style={styles.metricsTitle}>AI FORM & SCOUTING METRICS</Text>
 
           <View style={styles.metricItem}>
             <View style={styles.metricHeader}>
@@ -137,66 +107,45 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#05070A',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#232630',
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  wordmarkLogo: {
-    width: 95,
-    height: 20,
-    resizeMode: 'contain',
-  },
-  headerAccent: {
-    color: '#E5E4E2',
-    fontSize: 16,
-    fontWeight: 'bold',
+    backgroundColor: '#000000',
   },
   backBtn: {
     padding: 6,
   },
   backBtnText: {
-    color: '#A8AFB8',
+    color: '#E5E5E5',
     fontSize: 18,
   },
   scrollContent: {
     padding: 16,
+    paddingBottom: 120,
   },
   profileCard: {
-    backgroundColor: '#1C1F26',
+    backgroundColor: '#121212',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#232630',
+    borderColor: '#1A1A1A',
+    marginBottom: 16,
   },
   avatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    marginBottom: 16,
   },
   avatarCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#E5E4E2',
-    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FF5722',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   avatarText: {
-    color: '#05070A',
-    fontSize: 24,
-    fontWeight: 'bold',
+    color: '#000000',
+    fontSize: 26,
+    fontWeight: '900',
   },
   profileDetails: {
     flex: 1,
@@ -204,79 +153,88 @@ const styles = StyleSheet.create({
   nameBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   userName: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   verifiedBadge: {
-    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    backgroundColor: 'rgba(255,87,34,0.15)',
+    borderWidth: 1,
+    borderColor: '#FF5722',
+    borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 4,
   },
   verifiedText: {
-    color: '#22C55E',
+    color: '#FF5722',
     fontSize: 9,
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
   handleText: {
-    color: '#A8AFB8',
+    color: '#A0A0A0',
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 4,
   },
   bioText: {
-    color: '#E5E4E2',
-    fontSize: 12,
-    fontWeight: '600',
+    color: '#E5E5E5',
+    fontSize: 13,
     marginTop: 4,
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    marginTop: 20,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#232630',
+    gap: 8,
   },
   statCol: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
     alignItems: 'center',
+    borderWidth: 1,
+  },
+  statBoxPts: {
+    backgroundColor: '#000000',
+    borderColor: '#FF5722',
+  },
+  statBoxRank: {
+    backgroundColor: '#000000',
+    borderColor: '#A0A0A0',
+  },
+  statBoxWins: {
+    backgroundColor: '#000000',
+    borderColor: '#A0A0A0',
   },
   statNumber: {
     color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '900',
   },
   statLabel: {
-    color: '#A8AFB8',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#232630',
+    color: '#A0A0A0',
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 4,
+    letterSpacing: 0.5,
   },
   metricsCard: {
-    backgroundColor: '#1C1F26',
+    backgroundColor: '#121212',
     borderRadius: 16,
     padding: 16,
-    marginTop: 16,
     borderWidth: 1,
-    borderColor: '#232630',
+    borderColor: '#1A1A1A',
   },
   metricsTitle: {
-    color: '#A8AFB8',
+    color: '#FF5722',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '900',
+    letterSpacing: 1,
     marginBottom: 16,
   },
   metricItem: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   metricHeader: {
     flexDirection: 'row',
@@ -284,37 +242,26 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   metricLabel: {
-    color: '#FFFFFF',
+    color: '#E5E5E5',
     fontSize: 13,
     fontWeight: '600',
   },
   metricValue: {
-    color: '#E5E4E2',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '800',
   },
+  metricValueVelocity: { color: '#FF5722' },
+  metricValueStamina: { color: '#A0A0A0' },
   progressBarTrack: {
-    height: 8,
-    backgroundColor: '#232630',
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#000000',
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
-  progressBarVelocity: {
-    backgroundColor: '#FF6B6B',
-    opacity: 0.85,
-  },
-  progressBarStamina: {
-    backgroundColor: '#51CF66',
-    opacity: 0.85,
-  },
-  metricValueVelocity: {
-    color: '#FF6B6B',
-  },
-  metricValueStamina: {
-    color: '#51CF66',
-  },
+  progressBarVelocity: { backgroundColor: '#FF5722' },
+  progressBarStamina: { backgroundColor: '#A0A0A0' },
 });

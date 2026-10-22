@@ -5,10 +5,10 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import * as SplashScreen from 'expo-splash-screen';
-import ArenaFeed from './ArenaFeed';
+import MainTabs from './MainTabs';
 import ChallengeScreen from './ChallengeScreen';
-import ProfileScreen from './ProfileScreen';
 import LeaderboardScreen from './LeaderboardScreen';
+import Live1v1BattleScreen from './Live1v1BattleScreen';
 import RoleSelection from './RoleSelection';
 import AthleteDashboard from './AthleteDashboard';
 import { COLORS } from './theme';
@@ -18,7 +18,7 @@ enableScreens(true);
 
 SplashScreen.hideAsync().catch(() => {});
 
-const ROOT_BG = '#08120F';
+const ROOT_BG = '#000000';
 
 const Stack = createNativeStackNavigator();
 const navTheme = {
@@ -85,7 +85,7 @@ function EntryScreen({ navigation }) {
           } catch (err) {
             console.warn('Failed to persist registration:', err?.message || err);
           }
-          navigation.replace('Arena');
+          navigation.replace('Main', { tab: 'Arena' });
         }}
       />
     </View>
@@ -110,8 +110,9 @@ export default function App() {
     (async () => {
       try {
         const session = await getRegisteredSession();
+        // Returning registered users skip onboarding → BAWAAL Arena (Main tabs)
         if (!cancelled && session?.registered) {
-          setInitialRoute('Arena');
+          setInitialRoute('Main');
         }
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
@@ -177,11 +178,30 @@ export default function App() {
               }}
             >
               <Stack.Screen name="Entry" component={EntryScreen} />
-              <Stack.Screen name="Arena" component={ArenaFeed} />
-              <Stack.Screen name="Challenge" component={ChallengeScreen} />
-              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Main" component={MainTabs} />
+              <Stack.Screen
+                name="Challenge"
+                component={ChallengeScreen}
+                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+              />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+              <Stack.Screen
+                name="Live1v1Battle"
+                component={Live1v1BattleScreen}
+                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+              />
               <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
+              {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
+              <Stack.Screen
+                name="Arena"
+                component={MainTabs}
+                initialParams={{ tab: 'Arena' }}
+              />
+              <Stack.Screen
+                name="Profile"
+                component={MainTabs}
+                initialParams={{ tab: 'Passport' }}
+              />
             </Stack.Navigator>
           </NavigationContainer>
         </SafeAreaProvider>

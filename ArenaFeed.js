@@ -1,18 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
   View,
   ScrollView,
   TouchableOpacity,
+  Pressable,
+  Animated,
+  Share,
+  Easing,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { consumeLatestBattleClip, peekLatestBattleClip } from './battleClipStore';
+import { subscribeArenaPosts, drainPendingArenaPosts } from './arenaFeedStore';
+import BrandHeader from './BrandHeader';
+import ResponseReelDrawer from './ResponseReelDrawer';
+import ArenaReelViewer from './ArenaReelViewer';
+import BanterBottomSheet from './BanterBottomSheet';
+import { useMainTabs } from './mainTabContext';
 
-const CRIMSON = '#FF2A5F';
-const GOLD = '#FFD700';
-const PLATINUM = '#E5E4E2';
-const DARK_BG = '#08120F';
+const WHITE = '#FFFFFF';
+const OFF_WHITE = '#E8ECE9';
+const DARK_BG = '#000000';
+const SURFACE = '#121212';
+const BORDER = 'rgba(232,236,233,0.28)';
+const MUTED = '#A0A0A0';
+const PLATINUM = '#E8ECE9';
+const LIVE_CRIMSON = '#FF0033';
+const FLAME_ORANGE = '#FF5722';
+const CRIMSON = LIVE_CRIMSON;
+const GOLD = FLAME_ORANGE;
 
-// Locked permanent categories
 const PERMANENT_SPORTS_TABS = [
   'ALL',
   'CRICKET',
@@ -34,6 +53,7 @@ const LIVE_SCORE_SAMPLES = [
     title: 'IND vs AUS',
     line: 'IND 184/4 (18.2 ov) vs AUS',
     status: 'LIVE',
+    special: true,
   },
   {
     id: 'mum-del-ranji',
@@ -42,169 +62,770 @@ const LIVE_SCORE_SAMPLES = [
     title: 'MUM vs DEL',
     line: 'MUM 210/3 vs DEL',
     status: 'LIVE',
+    special: false,
+  },
+  {
+    id: 'lift-wars',
+    sport: 'GYM',
+    tier: 'EVENT',
+    title: 'LIFT WARS FINAL',
+    line: 'Squad A leading · 12 battles',
+    status: 'LIVE',
+    special: true,
   },
 ];
 
-export default function ArenaFeed({ navigation }) {
-  const [activeTab, setActiveTab] = useState('ALL');
-  const [feedItems, setFeedItems] = useState([]);
+const DEMO_ATHLETE_HANDLES = [
+  'Aarav_Iron',
+  'Neha_Lift',
+  'Karan_Pull',
+  'Mia_Torque',
+  'Dev_Snatch',
+  'Riya_Core',
+  'Omar_Press',
+  'Sana_Drive',
+  'Leo_Hang',
+  'Zoe_Reps',
+];
+
+function buildDemoResponses(challengeId) {
+  return DEMO_ATHLETE_HANDLES.map((handle, i) => ({
+    id: `${challengeId}-r${i + 1}`,
+    creator: handle,
+    videoUri: null,
+    votes: 120 - i * 9 + ((i * 3) % 7),
+    createdAt: Date.now() - i * 3600_000,
+    rank: i + 1,
+  }));
+}
+
+function seedArenaFeed() {
+  const gymId = 'challenge-gym-yuki';
+  const cricketId = 'challenge-cricket-rohit';
+  const combatId = 'challenge-combat-aman';
+  const gymResponses = buildDemoResponses(gymId);
+  const cricketResponses = buildDemoResponses(cricketId).slice(0, 6);
+  const combatResponses = buildDemoResponses(combatId).slice(0, 8);
+
+  /** General Arena reels — no challenge tags, no battle CTAs */
+  const reels = [
+    {
+      id: 'reel-throttle-1',
+      type: 'reel',
+      sport: 'THROTTLE',
+      author: '@RaceQueen_IN',
+      caption: 'Night pull on the expressway · 0–100',
+      hypeCount: 842,
+      videoUri: null,
+      createdAt: Date.now() - 5_000_000,
+    },
+    {
+      id: 'reel-football-1',
+      type: 'reel',
+      sport: 'FOOTBALL',
+      author: '@Karan_FreeKick',
+      caption: 'Free-kick practice · top bins',
+      hypeCount: 312,
+      videoUri: null,
+      createdAt: Date.now() - 40_000_000,
+    },
+    {
+      id: 'reel-gym-1',
+      type: 'reel',
+      sport: 'GYM',
+      author: '@Mia_Torque',
+      caption: 'Floor PR session · chalk & chaos',
+      hypeCount: 1204,
+      videoUri: null,
+      createdAt: Date.now() - 12_000_000,
+    },
+    {
+      id: 'reel-cricket-1',
+      type: 'reel',
+      sport: 'CRICKET',
+      author: '@StreetBat_MUM',
+      caption: 'Gully yorker · street cricket heat',
+      hypeCount: 560,
+      videoUri: null,
+      createdAt: Date.now() - 8_000_000,
+    },
+    {
+      id: 'reel-combat-1',
+      type: 'reel',
+      sport: 'COMBAT',
+      author: '@VirarStriker',
+      caption: 'Pad work · late night gym lights',
+      hypeCount: 991,
+      videoUri: null,
+      createdAt: Date.now() - 3_000_000,
+    },
+  ];
+
+  /** Official battle cards only — VS / target / athletes responded */
+  const battles = [
+    {
+      id: gymId,
+      challengeId: gymId,
+      type: 'battle_thread',
+      sport: 'GYM',
+      author: 'CHALLENGE',
+      opponent: '@Yuki_Lift',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${gymResponses[0].creator}`,
+      target: '140 KG x 3 Reps',
+      status: 'LIVE BATTLE',
+      challengeVideoUri: null,
+      responses: gymResponses,
+      createdAt: Date.now() - 86_400_000,
+    },
+    {
+      id: cricketId,
+      challengeId: cricketId,
+      type: 'battle_thread',
+      sport: 'CRICKET',
+      author: 'CHALLENGE',
+      opponent: '@Rohit_VK7',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${cricketResponses[0].creator}`,
+      target: 'Cover drive · 6 balls',
+      status: 'OPEN',
+      challengeVideoUri: null,
+      responses: cricketResponses,
+      createdAt: Date.now() - 50_000_000,
+    },
+    {
+      id: combatId,
+      challengeId: combatId,
+      type: 'battle_thread',
+      sport: 'COMBAT',
+      author: 'CHALLENGE',
+      opponent: '@Aman_Striker',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${combatResponses[0].creator}`,
+      target: '3-round shadow spar',
+      status: 'HOT',
+      challengeVideoUri: null,
+      responses: combatResponses,
+      createdAt: Date.now() - 20_000_000,
+    },
+  ];
+
+  return [...reels, ...battles].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function isOfficialBattlePost(post) {
+  if (!post) return false;
+  if (post.type === 'battle_thread' || post.type === 'battle') return true;
+  if (post.isBattle === true || post.isBattleResponse === true) return true;
+  if (post.challengeId || post.battleId) return true;
+  return false;
+}
+
+function mapPostToReel(post) {
+  const uri =
+    post.videoUri || post.recordedVideoUri || post.uri || post.localVideoUri || null;
+  const rawHandle =
+    post.author ||
+    post.handle ||
+    (post.creator === 'You' || post.creator === 'YOU' ? '@you' : post.creator) ||
+    '@athlete';
+  const author = String(rawHandle).startsWith('@')
+    ? String(rawHandle)
+    : `@${String(rawHandle).replace(/^@/, '')}`;
+  return {
+    id: post.id || `reel-${Date.now()}`,
+    type: 'reel',
+    sport: post.category || post.sport || 'ALL',
+    author,
+    caption: post.caption || post.title || post.target || 'Arena drop',
+    hypeCount: post.hypeCount || 0,
+    videoUri: uri,
+    createdAt: post.timestamp || post.createdAt || Date.now(),
+  };
+}
+
+function isPlayableUri(uri) {
+  return (
+    typeof uri === 'string' &&
+    (uri.startsWith('file://') ||
+      uri.startsWith('http://') ||
+      uri.startsWith('https://') ||
+      uri.startsWith('content://'))
+  );
+}
+
+function ClipSurface({ uri, label, style }) {
+  const playable = isPlayableUri(uri);
+  const player = useVideoPlayer(playable ? { uri } : null, (p) => {
+    p.loop = true;
+    p.muted = true;
+    try {
+      if (playable) p.play();
+    } catch (_) {
+      /* ignore */
+    }
+  });
 
   useEffect(() => {
-    setFeedItems([
-      {
-        id: '1',
-        sport: 'GYM',
-        author: 'YOU',
-        opponent: '@Yuki_Lift',
-        target: '140 KG x 3 Reps',
-        status: 'POSTED TO ARENA',
-      },
-    ]);
+    let cancelled = false;
+    (async () => {
+      try {
+        if (playable) {
+          await player.replaceAsync({ uri });
+          if (!cancelled) {
+            player.loop = true;
+            player.muted = true;
+            player.play();
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        player.pause();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player, uri, playable]);
+
+  if (!playable) {
+    return (
+      <View style={[styles.clipPlaceholder, style]}>
+        <View style={styles.streamLiveRow}>
+          <View style={styles.liveDot} />
+          <Text style={styles.streamLiveLabel}>LIVE</Text>
+        </View>
+        <Text style={styles.clipPlaceholderLabel}>{label || 'BAWAAL CLIP'}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.clipVideoWrap, style]}>
+      <VideoView
+        style={StyleSheet.absoluteFillObject}
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+      />
+      {!!label && (
+        <View style={styles.clipCornerTag}>
+          <Text style={styles.clipCornerTagText}>{label}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function sortResponses(list, mode) {
+  const copy = [...(list || [])];
+  if (mode === 'latest') {
+    return copy.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  }
+  return copy.sort((a, b) => (b.votes || 0) - (a.votes || 0));
+}
+
+function mapPostToResponse(post) {
+  const uri =
+    post.videoUri || post.recordedVideoUri || post.uri || post.localVideoUri || null;
+  const creator =
+    post.creator === 'You' || post.creator === 'YOU' ? 'You' : post.creator || 'You';
+  return {
+    id: post.id || `resp-${Date.now()}`,
+    creator,
+    videoUri: uri,
+    // Fresh posts from the device sit at #1 until real votes sync
+    votes: post.votes ?? (creator === 'You' ? 10_000 : 1),
+    createdAt: post.timestamp || post.createdAt || Date.now(),
+  };
+}
+
+function ingestArenaPost(prev, post) {
+  if (!post) return prev;
+
+  // General uploads → Arena reel only (never invent a battle card)
+  if (!isOfficialBattlePost(post)) {
+    const reel = mapPostToReel(post);
+    const withoutDup = prev.filter((item) => item.id !== reel.id);
+    return [reel, ...withoutDup];
+  }
+
+  const sport = post.category || post.sport || 'GYM';
+  const opponent =
+    post.opponent ||
+    (post.challengeOf ? `@${String(post.challengeOf).replace(/^@/, '')}` : '@Challenger');
+  const challengeId =
+    post.challengeId ||
+    post.battleId ||
+    post.reel?.id ||
+    `thread-${sport}-${String(opponent).replace(/\W/g, '')}`;
+  const response = mapPostToResponse(post);
+  const idx = prev.findIndex(
+    (t) =>
+      t.type === 'battle_thread' &&
+      (t.challengeId === challengeId || t.id === challengeId)
+  );
+
+  if (idx >= 0) {
+    const next = [...prev];
+    const thread = { ...next[idx] };
+    const withoutDup = (thread.responses || []).filter((r) => r.id !== response.id);
+    thread.responses = [response, ...withoutDup];
+    const leader = sortResponses(thread.responses, 'top')[0];
+    thread.leaderLabel = leader
+      ? leader.creator === 'You'
+        ? 'YOU'
+        : `@${leader.creator.replace(/^@/, '')}`
+      : thread.leaderLabel;
+    thread.status = 'LIVE BATTLE';
+    next.splice(idx, 1);
+    return [thread, ...next];
+  }
+
+  const responses = [response, ...buildDemoResponses(challengeId).slice(0, 9)];
+  const leader = sortResponses(responses, 'top')[0];
+  const thread = {
+    id: challengeId,
+    challengeId,
+    type: 'battle_thread',
+    sport,
+    author: 'CHALLENGE',
+    opponent,
+    challengerLabel: 'YOU',
+    leaderLabel: leader
+      ? leader.creator === 'You'
+        ? 'YOU'
+        : `@${leader.creator.replace(/^@/, '')}`
+      : 'YOU',
+    target: post.target || 'OPEN CHALLENGE',
+    status: 'LIVE BATTLE',
+    challengeVideoUri: post.challengeVideoUri || null,
+    responses,
+    createdAt: Date.now(),
+  };
+  return [thread, ...prev];
+}
+
+function GeneralReelCard({ item, onOpen, onHype }) {
+  const [engageOpen, setEngageOpen] = useState(false);
+  const [banterOpen, setBanterOpen] = useState(false);
+  const menuAnim = useRef(new Animated.Value(0)).current;
+  const fireScale = useRef(new Animated.Value(0)).current;
+  const fireOpacity = useRef(new Animated.Value(0)).current;
+  const handle = item.author?.startsWith('@')
+    ? item.author
+    : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
+
+  useEffect(() => {
+    Animated.timing(menuAnim, {
+      toValue: engageOpen ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [engageOpen, menuAnim]);
+
+  const playFireBurst = useCallback(() => {
+    fireScale.setValue(0.4);
+    fireOpacity.setValue(1);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(fireScale, {
+          toValue: 1.35,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fireScale, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.delay(280),
+        Animated.timing(fireOpacity, {
+          toValue: 0,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [fireOpacity, fireScale]);
+
+  const onFirePress = useCallback(() => {
+    onHype?.(item.id);
+    playFireBurst();
+  }, [item.id, onHype, playFireBurst]);
+
+  const openImmersive = useCallback(() => {
+    setEngageOpen(false);
+    onOpen?.(item);
+  }, [item, onOpen]);
+
+  const openBanterSheet = useCallback(() => {
+    setEngageOpen(false);
+    setBanterOpen(true);
   }, []);
+
+  const onSharePress = useCallback(async () => {
+    setEngageOpen(false);
+    try {
+      await Share.share({
+        message: `${handle} on BAWAAL Arena\n${item.caption || ''}\nhttps://bawaal.app/reel/${item.id}`,
+        title: 'Share BAWAAL Reel',
+      });
+    } catch (_) {
+      /* user dismissed */
+    }
+  }, [handle, item.caption, item.id]);
+
+  const menuTranslateY = menuAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [28, 0],
+  });
+  const menuOpacity = menuAnim;
+
+  return (
+    <View style={styles.reelCard}>
+      <ClipSurface uri={item.videoUri} label={null} style={styles.reelFullBleed} />
+
+      {/* Middle-screen tap → Full Immersive View */}
+      <Pressable
+        style={styles.reelMiddleTap}
+        onPress={openImmersive}
+        accessibilityLabel="Open immersive reel"
+      />
+
+      <View style={styles.reelScrim} pointerEvents="none" />
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.fireBurst,
+          {
+            opacity: fireOpacity,
+            transform: [{ scale: fireScale }],
+          },
+        ]}
+      >
+        <Text style={styles.fireBurstText}>🔥</Text>
+      </Animated.View>
+
+      <View style={styles.reelBottomLeft} pointerEvents="none">
+        <Text style={styles.reelHandle}>{handle}</Text>
+        <Text style={styles.reelCaptionOverlay} numberOfLines={2}>
+          {item.caption}
+        </Text>
+      </View>
+
+      <View style={styles.reelEngageWrap}>
+        <Animated.View
+          pointerEvents={engageOpen ? 'auto' : 'none'}
+          style={[
+            styles.engageDrawer,
+            {
+              opacity: menuOpacity,
+              transform: [{ translateY: menuTranslateY }],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.reelActionBtn}
+            onPress={onFirePress}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.reelActionEmoji}>🔥</Text>
+            <Text style={styles.reelActionCount}>{item.hypeCount || 0}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.reelActionBtn}
+            onPress={openBanterSheet}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.reelActionEmoji}>💬</Text>
+            <Text style={styles.reelActionCount}>BANTER</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.reelActionBtn}
+            onPress={onSharePress}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.reelActionEmoji}>🚀</Text>
+            <Text style={styles.reelActionCount}>SHARE</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <TouchableOpacity
+          style={[styles.engageToggle, engageOpen && styles.engageToggleOpen]}
+          onPress={() => setEngageOpen((v) => !v)}
+          activeOpacity={0.85}
+          accessibilityLabel={engageOpen ? 'Close engage menu' : 'Open engage menu'}
+        >
+          <Text style={styles.engageToggleText}>{engageOpen ? '✕' : '⋮'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      <BanterBottomSheet
+        visible={banterOpen}
+        reel={item}
+        onClose={() => setBanterOpen(false)}
+      />
+    </View>
+  );
+}
+
+function BattleCard({ item, onOpenResponses }) {
+  const responses = sortResponses(item.responses, 'top');
+  const leader = responses[0];
+  const responseCount = responses.length;
+  const leaderUri = leader?.videoUri || null;
+
+  return (
+    <View style={styles.feedCard}>
+      <View style={styles.feedCardHeader}>
+        <View style={styles.battleBadge}>
+          <Text style={styles.battleBadgeText}>OFFICIAL BATTLE</Text>
+        </View>
+        <Text style={styles.feedTime}>{item.status || 'BATTLE'}</Text>
+      </View>
+
+      <View style={styles.vsRow}>
+        <Text style={styles.vsTitle}>
+          {item.challengerLabel || 'YOU'} vs {item.leaderLabel || item.opponent}
+        </Text>
+      </View>
+
+      <View style={styles.splitRow}>
+        <View style={styles.splitPane}>
+          <ClipSurface
+            uri={item.challengeVideoUri}
+            label={item.opponent}
+            style={styles.splitClip}
+          />
+        </View>
+        <View style={styles.splitDivider}>
+          <Text style={styles.splitVs}>VS</Text>
+        </View>
+        <View style={styles.splitPane}>
+          <ClipSurface
+            uri={leaderUri}
+            label={
+              leader
+                ? leader.creator === 'You'
+                  ? 'YOU'
+                  : `@${leader.creator}`
+                : 'LEADER'
+            }
+            style={styles.splitClip}
+          />
+        </View>
+      </View>
+
+      <TouchableOpacity
+        style={styles.responseBadge}
+        onPress={() => onOpenResponses?.(item)}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.responseBadgeText}>
+          {responseCount} ATHLETE{responseCount === 1 ? '' : 'S'} RESPONDED
+        </Text>
+      </TouchableOpacity>
+
+      <View style={styles.feedFooter}>
+        <Text style={styles.targetText}>TARGET: {item.target}</Text>
+        <View style={styles.postedBadge}>
+          <Text style={styles.postedText}>{item.sport}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+export default function ArenaFeed({ navigation, route }) {
+  const { openProfileGateway } = useMainTabs();
+  const [activeTab, setActiveTab] = useState('ALL');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [feedItems, setFeedItems] = useState(() => seedArenaFeed());
+  const [hubThread, setHubThread] = useState(null);
+  const [activeReel, setActiveReel] = useState(null);
+  const ingestedIds = useRef(new Set());
+
+  const absorbPost = useCallback((post) => {
+    if (!post) return;
+    const key = post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
+    if (key && ingestedIds.current.has(key)) return;
+    if (key) ingestedIds.current.add(key);
+    setFeedItems((prev) => ingestArenaPost(prev, post));
+  }, []);
+
+  const hypeReel = useCallback((id) => {
+    setFeedItems((prev) =>
+      prev.map((item) =>
+        item.id === id && item.type === 'reel'
+          ? { ...item, hypeCount: (item.hypeCount || 0) + 1 }
+          : item
+      )
+    );
+  }, []);
+
+  // Live subscription — POST TO ARENA pushes here instantly (no toast)
+  useEffect(() => {
+    drainPendingArenaPosts().forEach(absorbPost);
+    return subscribeArenaPosts(absorbPost);
+  }, [absorbPost]);
+
+  // Instant ingest when POST TO ARENA navigates here with params
+  useEffect(() => {
+    const fromParams = route?.params?.newArenaPost;
+    if (!fromParams) return;
+    absorbPost(fromParams);
+    navigation?.setParams?.({ newArenaPost: undefined });
+  }, [route?.params?.newArenaPost, absorbPost, navigation]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fromStore = consumeLatestBattleClip();
+      if (fromStore) absorbPost(fromStore);
+      else {
+        const peek = peekLatestBattleClip();
+        if (peek) absorbPost(peek);
+      }
+    }, [absorbPost])
+  );
 
   const visibleFeed =
     activeTab === 'ALL'
       ? feedItems
       : feedItems.filter((item) => item.sport === activeTab);
 
-  const openChallenge = (item) => {
-    navigation?.navigate?.('Challenge', {
-      challengeMaxDuration: 30,
-      target: item?.target || '140 KG x 3 Reps',
-      handle: item?.opponent?.replace(/^@/, '') || 'Yuki_Lift',
-      reel: {
-        creator: item?.opponent?.replace(/^@/, '') || 'Yuki_Lift',
-        statSticker: item?.target || '140 KG x 3 Reps',
-        category: item?.sport || 'GYM',
-        challengeMaxDuration: 30,
-        durationSec: 30,
-      },
-    });
-  };
-
   return (
     <View style={styles.container}>
-      {/* Top Header — ME only (SET relocated so it cannot overlap ALL tab) */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>BAWAAL</Text>
-        <View style={styles.headerActions}>
+      <BrandHeader
+        screenName="ARENA"
+        onBrandPress={openProfileGateway}
+        rightSlot={
           <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => navigation?.navigate?.('Profile')}
+            style={styles.scoresPill}
+            onPress={() => setFiltersOpen((v) => !v)}
+            activeOpacity={0.85}
+            accessibilityLabel="Scores and sports"
           >
-            <Text style={styles.headerBtnText}>ME</Text>
+            <Text style={styles.scoresPillText}>
+              ⚡ SCORES & SPORTS {filtersOpen ? '▴' : '▾'}
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => navigation?.navigate?.('Leaderboard')}
-          >
-            <Text style={styles.headerBtnText}>RANK</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        }
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Arena Subheader */}
-        <View style={styles.subheaderRow}>
-          <Text style={styles.subheaderTitle}>ARENA</Text>
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveBadgeText}>TOKYO GLOBAL LIVE</Text>
-          </View>
-        </View>
-
-        {/* Live Score Ticker Cards */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tickerContainer}>
-          {LIVE_SCORE_SAMPLES.map((score) => (
-            <TouchableOpacity key={score.id} style={styles.scoreCard}>
-              <View style={styles.scoreCardHeader}>
-                <Text style={styles.scoreSport}>
-                  {score.sport} [{score.tier}]
-                </Text>
-                <View style={styles.miniLiveBadge}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.miniLiveText}>{score.status}</Text>
-                </View>
+        {filtersOpen ? (
+          <View style={styles.filtersPanel}>
+            <View style={styles.subheaderRow}>
+              <Text style={styles.subheaderTitle}>LIVE FEED</Text>
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveBadgeText}>TOKYO GLOBAL LIVE</Text>
               </View>
-              <Text style={styles.scoreTitle}>{score.title}</Text>
-              <Text style={styles.scoreLine}>{score.line}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            </View>
 
-        {/* Locked permanent sports tabs */}
-        <View style={styles.tabsWrapper}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabsContainer}
-          >
-            {PERMANENT_SPORTS_TABS.map((tab) => {
-              const isActive = activeTab === tab;
-              return (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tickerContainer}
+            >
+              {LIVE_SCORE_SAMPLES.map((score) => (
                 <TouchableOpacity
-                  key={tab}
-                  style={[
-                    styles.tabButton,
-                    isActive ? styles.activeTabButton : styles.inactiveTabButton,
-                  ]}
-                  onPress={() => setActiveTab(tab)}
+                  key={score.id}
+                  style={[styles.scoreCard, score.special && styles.scoreCardSpecial]}
                 >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      isActive ? styles.activeTabText : styles.inactiveTabText,
-                    ]}
-                  >
-                    {tab}
-                  </Text>
+                  <View style={styles.scoreCardHeader}>
+                    <Text
+                      style={[styles.scoreSport, score.special && styles.scoreSportSpecial]}
+                    >
+                      {score.sport} [{score.tier}]
+                    </Text>
+                    <View style={styles.miniLiveBadge}>
+                      <View style={styles.liveDot} />
+                      <Text style={styles.miniLiveText}>{score.status}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.scoreTitle}>{score.title}</Text>
+                  <Text style={styles.scoreLine}>{score.line}</Text>
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+              ))}
+            </ScrollView>
 
-        {/* Feed Items */}
-        {visibleFeed.map((item) => (
-          <View key={item.id} style={styles.feedCard}>
-            <View style={styles.feedCardHeader}>
-              <Text style={styles.feedAuthor}>{item.author}</Text>
-              <Text style={styles.feedOpponent}>VS {item.opponent}</Text>
-              <Text style={styles.feedTime}>JUST NOW</Text>
-            </View>
-
-            <View style={styles.videoContainer}>
-              <View style={styles.streamPlaceholder}>
-                <View style={styles.streamLiveRow}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.streamLiveLabel}>LIVE</Text>
-                </View>
-                <Text style={styles.streamPlaceholderText}>
-                  BAWAAL ARENA STREAM - LIVE FEED ACTIVE
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.feedFooter}>
-              <Text style={styles.targetText}>TARGET: {item.target}</Text>
-              <View style={styles.postedBadge}>
-                <Text style={styles.postedText}>{item.status}</Text>
-              </View>
-            </View>
-
-            {/* Challenge action row under each video card */}
-            <View style={styles.battleActionRow}>
-              <TouchableOpacity
-                style={styles.battleBtn}
-                activeOpacity={0.85}
-                onPress={() => openChallenge(item)}
+            <View style={styles.tabsWrapper}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tabsContainer}
               >
-                <Text style={styles.battleBtnText}>+ BATTLE / CHALLENGE</Text>
-              </TouchableOpacity>
+                {PERMANENT_SPORTS_TABS.map((tab) => {
+                  const isActive = activeTab === tab;
+                  return (
+                    <TouchableOpacity
+                      key={tab}
+                      style={[
+                        styles.tabButton,
+                        isActive ? styles.activeTabButton : styles.inactiveTabButton,
+                      ]}
+                      onPress={() => setActiveTab(tab)}
+                    >
+                      <Text
+                        style={[
+                          styles.tabText,
+                          isActive ? styles.activeTabText : styles.inactiveTabText,
+                        ]}
+                      >
+                        {tab}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </View>
-        ))}
+        ) : null}
+
+        {visibleFeed.map((item) => {
+          if (item.type === 'reel') {
+            return (
+              <GeneralReelCard
+                key={item.id}
+                item={item}
+                onOpen={setActiveReel}
+                onHype={hypeReel}
+              />
+            );
+          }
+          if (item.type === 'battle_thread') {
+            return (
+              <BattleCard
+                key={item.id}
+                item={item}
+                onOpenResponses={setHubThread}
+              />
+            );
+          }
+          return null;
+        })}
       </ScrollView>
+
+      <ArenaReelViewer
+        visible={!!activeReel}
+        reel={activeReel}
+        onClose={() => setActiveReel(null)}
+      />
+      <ResponseReelDrawer
+        visible={!!hubThread}
+        thread={hubThread}
+        onClose={() => setHubThread(null)}
+      />
     </View>
   );
 }
@@ -213,40 +834,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: DARK_BG,
-    paddingTop: 45,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 10,
-  },
-  headerTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  headerBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#2A3B37',
-    backgroundColor: '#121E1B',
-  },
-  headerBtnText: {
-    color: PLATINUM,
-    fontWeight: 'bold',
-    fontSize: 12,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 110,
+    paddingTop: 0,
+  },
+  scoresPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  scoresPillText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  filtersPanel: {
+    marginTop: 8,
+    marginBottom: 4,
   },
   subheaderRow: {
     flexDirection: 'row',
@@ -258,13 +867,13 @@ const styles = StyleSheet.create({
   subheaderTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#8A9E9A',
+    color: MUTED,
     letterSpacing: 1.2,
   },
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A0F14',
+    backgroundColor: SURFACE,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -290,12 +899,16 @@ const styles = StyleSheet.create({
   },
   scoreCard: {
     width: 210,
-    backgroundColor: '#0F1A17',
+    backgroundColor: SURFACE,
     borderRadius: 12,
     padding: 12,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: '#1E332E',
+    borderColor: BORDER,
+  },
+  scoreCardSpecial: {
+    borderColor: FLAME_ORANGE,
+    backgroundColor: 'rgba(255, 85, 0, 0.12)',
   },
   scoreCardHeader: {
     flexDirection: 'row',
@@ -304,18 +917,146 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   scoreSport: {
-    color: CRIMSON,
+    color: LIVE_CRIMSON,
     fontSize: 11,
     fontWeight: 'bold',
+  },
+  scoreSportSpecial: {
+    color: FLAME_ORANGE,
   },
   miniLiveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   miniLiveText: {
-    color: CRIMSON,
+    color: LIVE_CRIMSON,
     fontSize: 9,
     fontWeight: 'bold',
+  },
+  reelCard: {
+    height: 520,
+    marginHorizontal: 0,
+    marginBottom: 12,
+    backgroundColor: DARK_BG,
+    overflow: 'hidden',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: BORDER,
+  },
+  reelFullBleed: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  reelMiddleTap: {
+    position: 'absolute',
+    top: '22%',
+    bottom: '28%',
+    left: '12%',
+    right: '18%',
+    zIndex: 6,
+  },
+  reelScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0,0.15)',
+  },
+  fireBurst: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 12,
+  },
+  fireBurstText: {
+    fontSize: 88,
+  },
+  reelBottomLeft: {
+    position: 'absolute',
+    left: 16,
+    right: 72,
+    bottom: 20,
+    zIndex: 8,
+  },
+  reelHandle: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  reelCaptionOverlay: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  reelEngageWrap: {
+    position: 'absolute',
+    right: 12,
+    bottom: 18,
+    alignItems: 'flex-end',
+    zIndex: 14,
+  },
+  engageToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(232,236,233,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  engageToggleOpen: {
+    borderColor: FLAME_ORANGE,
+    backgroundColor: 'rgba(0, 0, 0,0.9)',
+  },
+  engageToggleText: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+    marginTop: -1,
+  },
+  engageDrawer: {
+    backgroundColor: 'rgba(0, 0, 0,0.92)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(160,176,168,0.35)',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    alignItems: 'center',
+    gap: 12,
+  },
+  reelActionBtn: {
+    alignItems: 'center',
+  },
+  reelActionEmoji: {
+    fontSize: 24,
+  },
+  reelActionCount: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  battleBadge: {
+    backgroundColor: 'rgba(255,87,34,0.15)',
+    borderWidth: 1,
+    borderColor: FLAME_ORANGE,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  battleBadgeText: {
+    color: FLAME_ORANGE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  vsRow: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   scoreTitle: {
     color: '#FFFFFF',
@@ -324,7 +1065,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   scoreLine: {
-    color: '#8A9E9A',
+    color: MUTED,
     fontSize: 11,
   },
   tabsWrapper: {
@@ -338,16 +1079,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     marginRight: 8,
-    backgroundColor: '#121E1B',
+    backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: '#1E332E',
+    borderColor: BORDER,
   },
   activeTabButton: {
     backgroundColor: PLATINUM,
     borderColor: PLATINUM,
   },
   inactiveTabButton: {
-    backgroundColor: '#121E1B',
+    backgroundColor: SURFACE,
   },
   tabText: {
     fontSize: 12,
@@ -357,15 +1098,15 @@ const styles = StyleSheet.create({
     color: DARK_BG,
   },
   inactiveTabText: {
-    color: '#8A9E9A',
+    color: MUTED,
   },
   feedCard: {
-    backgroundColor: '#0F1A17',
+    backgroundColor: SURFACE,
     borderRadius: 16,
     marginHorizontal: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1E332E',
+    borderColor: BORDER,
     overflow: 'hidden',
   },
   feedCardHeader: {
@@ -374,54 +1115,101 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
   },
-  feedAuthor: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    fontSize: 13,
-  },
-  feedOpponent: {
+  vsTitle: {
     color: GOLD,
-    fontWeight: 'bold',
+    fontWeight: '900',
     fontSize: 13,
+    letterSpacing: 0.4,
+    flex: 1,
+    paddingRight: 8,
   },
   feedTime: {
-    color: '#6B827D',
+    color: MUTED,
     fontSize: 10,
   },
-  videoContainer: {
-    height: 220,
-    backgroundColor: '#050A09',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#1E332E',
+  splitRow: {
+    flexDirection: 'row',
+    height: 200,
+    backgroundColor: DARK_BG,
   },
-  streamPlaceholder: {
-    width: '100%',
-    height: '100%',
+  splitPane: {
+    flex: 1,
+  },
+  splitClip: {
+    flex: 1,
+  },
+  splitDivider: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: DARK_BG,
+  },
+  splitVs: {
+    color: CRIMSON,
+    fontWeight: '900',
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  clipVideoWrap: {
+    flex: 1,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+  clipPlaceholder: {
+    flex: 1,
+    backgroundColor: DARK_BG,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#090D12',
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
+  },
+  clipPlaceholderLabel: {
+    color: PLATINUM,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  clipCornerTag: {
+    position: 'absolute',
+    left: 8,
+    top: 8,
+    backgroundColor: 'rgba(0, 0, 0,0.75)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+  clipCornerTagText: {
+    color: PLATINUM,
+    fontSize: 10,
+    fontWeight: '800',
   },
   streamLiveRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   streamLiveLabel: {
     color: CRIMSON,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.2,
   },
-  streamPlaceholderText: {
-    color: PLATINUM,
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textAlign: 'center',
+  responseBadge: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  responseBadgeText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   feedFooter: {
     padding: 12,
@@ -433,36 +1221,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: 'bold',
     fontSize: 13,
+    flex: 1,
+    paddingRight: 8,
   },
   postedBadge: {
-    backgroundColor: '#162823',
+    backgroundColor: DARK_BG,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#243D37',
+    borderColor: BORDER,
   },
   postedText: {
-    color: '#8A9E9A',
+    color: MUTED,
     fontSize: 10,
     fontWeight: 'bold',
-  },
-  battleActionRow: {
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    paddingTop: 2,
-  },
-  battleBtn: {
-    backgroundColor: PLATINUM,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  battleBtnText: {
-    color: DARK_BG,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
   },
 });

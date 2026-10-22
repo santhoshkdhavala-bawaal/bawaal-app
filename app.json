@@ -9,7 +9,7 @@
     "splash": {
       "image": "./assets/splash_v2.png",
       "resizeMode": "contain",
-      "backgroundColor": "#05070A"
+      "backgroundColor": "#08120F"
     },
     "scheme": "bawaal",
     "ios": {
@@ -24,12 +24,12 @@
       "package": "com.bawaal.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#05070A"
+        "backgroundColor": "#08120F"
       },
       "splash": {
         "image": "./assets/splash_v2.png",
         "resizeMode": "contain",
-        "backgroundColor": "#05070A"
+        "backgroundColor": "#08120F"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -55,7 +55,7 @@
         "expo-splash-screen",
         {
           "image": "./assets/splash_v2.png",
-          "backgroundColor": "#05070A",
+          "backgroundColor": "#08120F",
           "resizeMode": "contain",
           "imageWidth": 280
         }

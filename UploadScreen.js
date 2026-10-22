@@ -121,7 +121,7 @@ export default function UploadScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 24) }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#05070A" />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
 
       {/* HEADER */}
       <View style={styles.header}>
@@ -290,7 +290,7 @@ export default function UploadScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
   },
   header: {
     flexDirection: 'row',
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   captionInput: {
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
     borderRadius: 8,
     padding: 12,
     color: '#FFFFFF',
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   catChip: {
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
     color: '#05070A',
   },
   metricInput: {
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
     borderRadius: 8,
     padding: 12,
     color: '#E5E4E2',

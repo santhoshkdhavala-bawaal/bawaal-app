@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Modal, Image } from 'react-native';
 
-const LANDING_BG = '#08120F';
+const LANDING_BG = '#000000';
 const GOLD = '#FFD700';
 const CRIMSON = '#FF2A5F';
 
@@ -54,7 +54,7 @@ export default function OTPModal({ visible, onVerify }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 18, 15, 0.95)',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -79,7 +79,7 @@ const styles = StyleSheet.create({
   },
   otpInput: {
     width: '85%',
-    backgroundColor: '#10201A',
+    backgroundColor: '#0A0C10',
     borderRadius: 12,
     color: GOLD,
     fontSize: 26,

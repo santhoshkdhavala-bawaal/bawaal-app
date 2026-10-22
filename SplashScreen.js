@@ -9,7 +9,7 @@ import {
 import { COLORS } from './theme';
 
 /**
- * In-app Obsidian splash — mirrors native splash_v2.png / #05070A branding.
+ * In-app splash — mirrors native splash_v2.png / #000000 branding.
  */
 export default function SplashScreen({ navigation }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -34,7 +34,7 @@ export default function SplashScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#05070A" hidden />
+      <StatusBar barStyle="light-content" backgroundColor="#000000" hidden />
       <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
         <Image
           source={require('./assets/splash_v2.png')}
@@ -49,7 +49,7 @@ export default function SplashScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
   },

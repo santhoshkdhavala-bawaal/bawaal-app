@@ -8,10 +8,10 @@ import {
   Pressable,
   Image,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import ChallengeCam from './ChallengeCam';
 import { setLatestBattleClip } from './battleClipStore';
+import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { COLORS, RADIUS } from './theme';
 
@@ -31,7 +31,7 @@ export default function ChallengeScreen({ route, navigation }) {
         navigation.goBack();
         return;
       }
-      navigation?.navigate?.('Arena');
+      navigation?.navigate?.('Main', { tab: 'Arena' });
     } catch (error) {
       console.warn('ChallengeScreen close failed:', error?.message || error);
     }
@@ -68,56 +68,53 @@ export default function ChallengeScreen({ route, navigation }) {
     async (uri, meta = {}) => {
       if (isPosting) return;
       setIsPosting(true);
-      let finalUri = uri;
-      try {
-        // Upload if ChallengeCam has not already pushed this clip to Supabase
-        if (!meta.cloudUploaded && uri && !String(uri).startsWith('emulator-mock://')) {
-          const cloud = await postBattleResponseToSupabase(uri, {
-            battleId: route?.params?.battleId || reel?.battleId || reel?.id,
-            slowMoStartSec: meta.slowMoStartSec,
-            slowMoEndSec: meta.slowMoEndSec,
-            slowMoRate: meta.slowMoEnabled ? meta.slowMoRate : 1,
-          });
-          if (cloud?.publicCloudUrl) {
-            finalUri = cloud.publicCloudUrl;
-          } else if (cloud?.localUri) {
-            finalUri = cloud.localUri;
-          }
-          // missing-local-file / not-configured → still navigate with local/mock preview
-          if (cloud?.skipped && cloud.reason === 'missing-local-file') {
-            console.warn(
-              'Local video missing at POST — continuing with Arena local preview:',
-              cloud.error
-            );
-          }
-        }
 
-        const newArenaPost = buildArenaPost(finalUri, {
-          ...meta,
-          videoUri: finalUri,
-          recordedVideoUri: finalUri,
-          localVideoUri: meta.localVideoUri || uri,
-          cloudUploaded: true,
+      const isFullScreenCreate =
+        route?.params?.mode === 'FULL_SCREEN' || route?.params?.cameraMode === 'FULL_SCREEN';
+      const challengeId = isFullScreenCreate
+        ? undefined
+        : route?.params?.battleId || reel?.battleId || reel?.id;
+      // Instant local feed — never wait on Supabase Storage (Expo Go / demo safe)
+      const localUri = meta.localVideoUri || meta.recordedVideoUri || meta.videoUri || uri;
+      const optimisticPost = buildArenaPost(localUri, {
+        ...meta,
+        videoUri: localUri,
+        recordedVideoUri: localUri,
+        localVideoUri: localUri,
+        cloudUploaded: false,
+        type: isFullScreenCreate ? 'reel' : 'battle_thread',
+        caption: meta.caption || reel?.statSticker || route?.params?.target || 'Arena drop',
+        author: '@you',
+        ...(challengeId
+          ? { challengeId, battleId: challengeId }
+          : { isBattle: false }),
+        sport: reel?.category || meta.category || 'GYM',
+      });
+
+      // Instant feed insert (store + navigation) — no toast / no cloud wait
+      pushArenaPost(optimisticPost);
+      setLatestBattleClip(optimisticPost);
+      setCamResetToken((t) => t + 1);
+      setResultModal(null);
+      if (navigation?.navigate) {
+        // Tab 1 ARENA — post already prepended via pushArenaPost
+        navigation.navigate('Main', {
+          tab: 'Arena',
+          newArenaPost: optimisticPost,
         });
-        setLatestBattleClip(newArenaPost);
-        setCamResetToken((t) => t + 1);
-        if (navigation?.navigate) {
-          navigation.navigate('Arena', {
-            newArenaPost,
-            videoUri: newArenaPost.videoUri || finalUri,
-            recordedVideoUri: newArenaPost.recordedVideoUri || finalUri,
-          });
-        } else {
-          handleClose();
-        }
-      } catch (err) {
-        console.error('Failed to post battle response:', err);
-        Alert.alert(
-          'Post failed',
-          err?.message || 'Error posting to Arena. Please check your connection.'
-        );
-      } finally {
-        setIsPosting(false);
+      } else {
+        handleClose();
+      }
+      setIsPosting(false);
+
+      // Silent background cloud — never surface skipped/not-configured banners
+      if (!meta.cloudUploaded && uri && !String(uri).startsWith('emulator-mock://')) {
+        postBattleResponseToSupabase(uri, {
+          battleId: challengeId,
+          slowMoStartSec: meta.slowMoStartSec,
+          slowMoEndSec: meta.slowMoEndSec,
+          slowMoRate: meta.slowMoEnabled ? meta.slowMoRate : 1,
+        }).catch(() => {});
       }
     },
     [navigation, buildArenaPost, handleClose, isPosting, route?.params?.battleId, reel]
@@ -197,7 +194,7 @@ export default function ChallengeScreen({ route, navigation }) {
               }}
             >
               {isPosting ? (
-                <ActivityIndicator color="#05070A" />
+                <ActivityIndicator color="#000000" />
               ) : (
                 <Text style={styles.primaryBtnText}>POST TO ARENA ⚡</Text>
               )}
@@ -216,7 +213,7 @@ export default function ChallengeScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: '#000000',
   },
   backdrop: {
     flex: 1,

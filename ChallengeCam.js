@@ -8,13 +8,13 @@ import {
   ActivityIndicator,
   Platform,
   PanResponder,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { COLORS, RADIUS } from './theme';
 import { setLatestBattleClip } from './battleClipStore';
+import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { persistLocalVideoUri } from './src/services/uploadService';
 
@@ -36,9 +36,9 @@ function snapChallengeDuration(sec) {
   }
   return best;
 }
-const ACTIVE_REC = COLORS.ACTIVE_RECORDING || '#DC2626';
-const PLATINUM = '#E5E4E2';
-const OBSIDIAN = '#05070A';
+const ACTIVE_REC = '#FF0033';
+const PLATINUM = '#E5E5E5';
+const OBSIDIAN = '#000000';
 const VIDEO_QUALITY = '1080p';
 const TARGET_FPS = 30;
 
@@ -191,9 +191,9 @@ function buildTargetMetricsLabel(rawTarget, durationSec, extras = {}) {
 }
 
 /**
- * Permanently-mounted review player (expo-video).
- * - Playhead written to playheadRef (no parent setState thrash)
- * - playbackRate only changes when crossing into/out of the slow-mo window
+ * Review player — loads file:// URI immediately after a take.
+ * Slow-mo ON: loops strictly inside [start, end] at 0.25x / 0.5x / 0.75x.
+ * Slow-mo OFF: full-clip loop at 1x so athletes always see their take.
  */
 function ReviewSlowMoPlayer({
   uri,
@@ -205,14 +205,16 @@ function ReviewSlowMoPlayer({
   playheadRef,
   videoRef,
 }) {
-  const player = useVideoPlayer(null, (p) => {
+  const playable = isPlayableReviewUri(uri);
+  const source = playable ? { uri } : null;
+  const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = false;
     p.preservesPitch = true;
-    p.timeUpdateEventInterval = 0.05;
+    p.timeUpdateEventInterval = 0.04;
   });
   const loadedUriRef = useRef(null);
-  const inRangeRef = useRef(null); // null | boolean — null forces re-apply
+  const seekingRef = useRef(false);
   const slowMoCfgRef = useRef({
     enabled: slowMoEnabled,
     start: slowMoStartSec,
@@ -222,13 +224,14 @@ function ReviewSlowMoPlayer({
 
   useEffect(() => {
     slowMoCfgRef.current = {
-      enabled: slowMoEnabled,
-      start: slowMoStartSec,
-      end: slowMoEndSec,
-      rate: slowMoRate,
+      enabled: !!slowMoEnabled,
+      start: Math.max(0, Number(slowMoStartSec) || 0),
+      end: Math.max(
+        (Number(slowMoStartSec) || 0) + MIN_SLOW_MO_SPAN,
+        Number(slowMoEndSec) || MIN_SLOW_MO_SPAN
+      ),
+      rate: Number(slowMoRate) || 0.5,
     };
-    // Config changed — re-evaluate boundary once (not every tick)
-    inRangeRef.current = null;
   }, [slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate]);
 
   useEffect(() => {
@@ -240,70 +243,141 @@ function ReviewSlowMoPlayer({
     };
   }, [player, videoRef]);
 
-  const applyRateOnBoundary = useCallback(
-    (currentSec) => {
-      const cfg = slowMoCfgRef.current;
-      const inRange =
-        !!cfg.enabled && currentSec >= cfg.start && currentSec <= cfg.end;
-      if (inRangeRef.current === inRange) return;
-      inRangeRef.current = inRange;
-      const nextRate = inRange ? cfg.rate : 1.0;
+  const seekTo = useCallback(
+    (sec) => {
       try {
-        player.preservesPitch = true;
-        player.playbackRate = nextRate;
+        seekingRef.current = true;
+        const t = Math.max(0, sec);
+        if (typeof player.seekBy === 'function') {
+          // seekBy is relative — prefer currentTime assignment
+        }
+        player.currentTime = t;
+        if (playheadRef) playheadRef.current = t;
       } catch (_) {
         /* ignore */
+      } finally {
+        setTimeout(() => {
+          seekingRef.current = false;
+        }, 80);
       }
     },
-    [player]
+    [player, playheadRef]
   );
 
+  const applyPlaybackForConfig = useCallback(() => {
+    const cfg = slowMoCfgRef.current;
+    try {
+      player.preservesPitch = true;
+      if (cfg.enabled) {
+        player.loop = false;
+        player.playbackRate = cfg.rate;
+        seekTo(cfg.start);
+      } else {
+        player.loop = true;
+        player.playbackRate = 1;
+      }
+      if (active) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }, [player, active, seekTo]);
+
+  // Load / reload local file URI into the player as soon as a take lands
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        if (isPlayableReviewUri(uri)) {
-          if (loadedUriRef.current !== uri) {
-            await player.replaceAsync({ uri });
-            if (cancelled) return;
-            loadedUriRef.current = uri;
-            inRangeRef.current = null;
-          }
-          player.loop = true;
-          if (active) {
-            player.play();
-          } else {
-            player.pause();
-          }
-        } else {
-          loadedUriRef.current = null;
-          try {
-            player.pause();
-          } catch (_) {
-            /* ignore */
-          }
+      if (!playable || !uri) {
+        loadedUriRef.current = null;
+        try {
+          player.pause();
+        } catch (_) {
+          /* ignore */
         }
-      } catch (_) {
-        /* ignore replace/play races during teardown */
+        return;
+      }
+      try {
+        if (loadedUriRef.current !== uri) {
+          if (typeof player.replaceAsync === 'function') {
+            await player.replaceAsync({ uri });
+          } else if (typeof player.replace === 'function') {
+            player.replace({ uri });
+          }
+          if (cancelled) return;
+          loadedUriRef.current = uri;
+        }
+        if (active) {
+          // Small delay so replace settles before play/seek
+          requestAnimationFrame(() => {
+            if (!cancelled) applyPlaybackForConfig();
+          });
+        } else {
+          player.pause();
+        }
+      } catch (err) {
+        console.warn('[review] load failed:', err?.message || err);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [player, uri, active]);
+  }, [player, uri, playable, active, applyPlaybackForConfig]);
 
+  // Slider / speed → live windowed loop
   useEffect(() => {
-    applyRateOnBoundary(player.currentTime || 0);
-  }, [applyRateOnBoundary, player, slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate]);
+    if (!active || !playable) return;
+    applyPlaybackForConfig();
+  }, [
+    slowMoEnabled,
+    slowMoStartSec,
+    slowMoEndSec,
+    slowMoRate,
+    active,
+    playable,
+    applyPlaybackForConfig,
+  ]);
 
   useEffect(() => {
     const sub = player.addListener?.('timeUpdate', (payload) => {
+      if (seekingRef.current) return;
       const currentSec =
-        typeof payload?.currentTime === 'number' ? payload.currentTime : 0;
-      if (playheadRef) {
-        playheadRef.current = currentSec;
+        typeof payload?.currentTime === 'number' ? payload.currentTime : player.currentTime || 0;
+      if (playheadRef) playheadRef.current = currentSec;
+      const cfg = slowMoCfgRef.current;
+      if (!cfg.enabled || !active) return;
+      try {
+        if (currentSec < cfg.start - 0.05) {
+          seekTo(cfg.start);
+          player.playbackRate = cfg.rate;
+          player.play();
+          return;
+        }
+        if (currentSec >= cfg.end - 0.05) {
+          seekTo(cfg.start);
+          player.playbackRate = cfg.rate;
+          player.play();
+        } else if (Math.abs((player.playbackRate || 1) - cfg.rate) > 0.01) {
+          player.preservesPitch = true;
+          player.playbackRate = cfg.rate;
+        }
+      } catch (_) {
+        /* ignore */
       }
-      applyRateOnBoundary(currentSec);
+    });
+    // Also listen for playToEnd when loop is false
+    const endSub = player.addListener?.('playToEnd', () => {
+      const cfg = slowMoCfgRef.current;
+      if (!cfg.enabled || !active) return;
+      try {
+        seekTo(cfg.start);
+        player.playbackRate = cfg.rate;
+        player.play();
+      } catch (_) {
+        /* ignore */
+      }
     });
     return () => {
       try {
@@ -311,10 +385,14 @@ function ReviewSlowMoPlayer({
       } catch (_) {
         /* ignore */
       }
+      try {
+        endSub?.remove?.();
+      } catch (_) {
+        /* ignore */
+      }
     };
-  }, [player, playheadRef, applyRateOnBoundary]);
+  }, [player, playheadRef, seekTo, active]);
 
-  // Pause + clear source before native view tears down (viewState safety)
   useEffect(() => {
     return () => {
       try {
@@ -322,21 +400,19 @@ function ReviewSlowMoPlayer({
       } catch (_) {
         /* ignore */
       }
-      try {
-        if (typeof player.replace === 'function') {
-          player.replace(null);
-        } else if (typeof player.replaceAsync === 'function') {
-          player.replaceAsync(null);
-        }
-      } catch (_) {
-        /* ignore */
-      }
     };
   }, [player]);
+
+  if (!playable) {
+    return (
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: OBSIDIAN }]} />
+    );
+  }
 
   return (
     <View style={StyleSheet.absoluteFillObject} collapsable={false}>
       <VideoView
+        key={`review-vv-${uri}`}
         style={StyleSheet.absoluteFillObject}
         player={player}
         contentFit="cover"
@@ -580,6 +656,10 @@ export default function ChallengeCam({
 
   const maxDurationRef = useRef(initialDuration);
   const secondsLeftRef = useRef(initialDuration);
+
+  const cameraMode =
+    route?.params?.mode || route?.params?.cameraMode || 'SPLIT';
+  const isFullScreenCreate = cameraMode === 'FULL_SCREEN';
 
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
@@ -1103,25 +1183,18 @@ export default function ChallengeCam({
           ...challengeDetails,
         });
 
-        if (cloud?.skipped && cloud.reason === 'not-configured') {
-          console.warn(
-            'Supabase not configured — posting local clip to Arena only. Add .env credentials for cloud upload.'
-          );
-        }
-        if (cloud?.skipped && cloud.reason === 'missing-local-file') {
-          console.warn(
-            'Local video missing — posting Arena mock/local preview without cloud upload.'
-          );
-        }
-
         return cloud;
       } catch (err) {
-        console.error('Failed to post battle response:', err);
-        Alert.alert(
-          'Post failed',
-          err?.message || 'Error posting to Arena. Please check your connection.'
-        );
-        throw err;
+        // Soft-fail: never block KEEP & REVIEW — silent local preview
+        const msg = String(err?.message || err || '');
+        return {
+          publicCloudUrl: null,
+          data: null,
+          skipped: true,
+          reason: 'cloud-error',
+          localUri: uri,
+          error: msg,
+        };
       } finally {
         setIsPosting(false);
       }
@@ -1140,7 +1213,7 @@ export default function ChallengeCam({
     ]
   );
 
-  /** KEEP & REVIEW / POST BATTLE — cloud upload then Arena handoff */
+  /** KEEP & REVIEW / POST BATTLE — local Arena first, cloud in background */
   const handleKeepReview = async () => {
     if (isPosting) return;
     if (!recordedUri && !frozen) return;
@@ -1159,40 +1232,46 @@ export default function ChallengeCam({
       return;
     }
 
-    let cloudUrl = uri;
-    try {
-      const cloud = await handlePostToArena(uri, {
-        slowMoStartSec: payload.slowMoStartSec,
-        slowMoEndSec: payload.slowMoEndSec,
-        slowMoRate: payload.slowMoEnabled ? payload.slowMoRate : 1,
-      });
-      if (cloud?.publicCloudUrl) {
-        cloudUrl = cloud.publicCloudUrl;
-      } else if (cloud?.localUri) {
-        cloudUrl = cloud.localUri;
-      }
-      // Soft skips (mock / missing file / no Supabase) still continue to Arena
-    } catch (_) {
-      // Alert already shown — abort Arena navigation on hard failure
-      return;
-    }
+    const isFullScreenCreate =
+      route?.params?.mode === 'FULL_SCREEN' || route?.params?.cameraMode === 'FULL_SCREEN';
+    const challengeId = isFullScreenCreate
+      ? undefined
+      : route?.params?.battleId ||
+        route?.params?.reel?.battleId ||
+        route?.params?.reel?.id;
+    // Instant local handoff — never block on Storage / JWS
+    const cloudUrl = uri;
+    // Fire-and-forget cloud; Arena already has file://
+    handlePostToArena(uri, {
+      slowMoStartSec: payload.slowMoStartSec,
+      slowMoEndSec: payload.slowMoEndSec,
+      slowMoRate: payload.slowMoEnabled ? payload.slowMoRate : 1,
+    }).catch(() => {});
 
     const newArenaPost = {
       ...payload,
       id: `local-${payload.timestamp}`,
       creator: 'You',
+      author: '@you',
+      type: isFullScreenCreate ? 'reel' : 'battle_thread',
+      caption: payload.target || route?.params?.target || 'Arena drop',
+      ...(challengeId ? { challengeId, battleId: challengeId } : { isBattle: false }),
       category: route?.params?.reel?.category || 'GYM',
-      challengeOf: route?.params?.reel?.creator || 'Yuki_Lift',
+      challengeOf: isFullScreenCreate
+        ? undefined
+        : route?.params?.reel?.creator || 'Yuki_Lift',
       uri: cloudUrl,
       videoUri: cloudUrl,
       recordedVideoUri: cloudUrl,
       localVideoUri: uri,
-      cloudUploaded: cloudUrl !== uri,
+      cloudUploaded: false,
     };
+    pushArenaPost(newArenaPost);
     setLatestBattleClip(newArenaPost);
     try {
       if (navigation?.navigate) {
-        navigation.navigate('Arena', {
+        navigation.navigate('Main', {
+          tab: 'Arena',
           newArenaPost,
           videoUri: cloudUrl,
           recordedVideoUri: cloudUrl,
@@ -1226,7 +1305,7 @@ export default function ChallengeCam({
   if (!permission || !micPermission) {
     return (
       <View style={styles.permissionRoot}>
-        <StatusBar barStyle="light-content" backgroundColor="#05070A" />
+        <StatusBar barStyle="light-content" backgroundColor={OBSIDIAN} />
         <ActivityIndicator color="#E5E4E2" size="large" />
         <Text style={[styles.permissionHint, { color: '#E5E4E2' }]}>
           Checking camera & microphone…
@@ -1240,7 +1319,7 @@ export default function ChallengeCam({
     const needsMic = !micPermission.granted;
     return (
       <View style={[styles.permissionRoot, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#05070A" />
+        <StatusBar barStyle="light-content" backgroundColor={OBSIDIAN} />
         <Text style={styles.permissionEyebrow}>BAWAAL ARENA</Text>
         <Text style={styles.permissionTitle}>
           {needsCam && needsMic
@@ -1363,7 +1442,7 @@ export default function ChallengeCam({
     <View style={styles.rootFill} collapsable={false}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor="#05070A"
+        backgroundColor={OBSIDIAN}
         hidden={isRecording || isReviewMode}
       />
 
@@ -1380,8 +1459,9 @@ export default function ChallengeCam({
         collapsable={false}
       >
         <ReviewSlowMoPlayer
+          key={`review-player-${recordedVideoUri || 'empty'}`}
           uri={recordedVideoUri}
-          active={showReviewVideo}
+          active={!!isReviewMode && hasReviewClip}
           slowMoEnabled={slowMoEnabled}
           slowMoStartSec={slowMoStartSec}
           slowMoEndSec={slowMoEndSec}
@@ -1400,7 +1480,8 @@ export default function ChallengeCam({
           styles.battleColumn,
           isRecording && styles.battleColumnRecording,
           {
-            paddingTop: isRecording || isReviewMode ? 0 : insets.top + 52,
+            paddingTop:
+              isFullScreenCreate || isRecording || isReviewMode ? 0 : insets.top + 52,
             zIndex: showReviewVideo ? -1 : 5,
             elevation: showReviewVideo ? -1 : 5,
           },
@@ -1408,38 +1489,46 @@ export default function ChallengeCam({
         pointerEvents={showReviewVideo ? 'none' : 'auto'}
         collapsable={false}
       >
-        {/* Top split — height collapses while recording; opponent Video stays mounted */}
+        {/* Top split — collapsed for FULL_SCREEN creation and while recording */}
         <View
-          style={[styles.topSplit, isRecording && styles.topSplitCollapsed]}
-          pointerEvents={isRecording || isReviewMode ? 'none' : 'auto'}
+          style={[
+            styles.topSplit,
+            (isFullScreenCreate || isRecording) && styles.topSplitCollapsed,
+          ]}
+          pointerEvents={
+            isFullScreenCreate || isRecording || isReviewMode ? 'none' : 'auto'
+          }
           collapsable={false}
         >
-          <OpponentTargetPlayer
-            uri={targetVideoUri}
-            active={!isRecording && !isReviewMode}
-          />
-          {/* Metrics pill — top of opponent frame so it never collides with VS */}
-          <View
-            style={[
-              styles.targetBadgeWrap,
-              (isRecording || isReviewMode) && styles.chromeHidden,
-            ]}
-            pointerEvents="none"
-            collapsable={false}
-          >
-            <View style={styles.targetBadge}>
-              <Text style={styles.targetBadgeText} numberOfLines={2}>
-                {targetMetricsLabel}
-              </Text>
-            </View>
-          </View>
+          {!isFullScreenCreate ? (
+            <>
+              <OpponentTargetPlayer
+                uri={targetVideoUri}
+                active={!isRecording && !isReviewMode}
+              />
+              <View
+                style={[
+                  styles.targetBadgeWrap,
+                  (isRecording || isReviewMode) && styles.chromeHidden,
+                ]}
+                pointerEvents="none"
+                collapsable={false}
+              >
+                <View style={styles.targetBadge}>
+                  <Text style={styles.targetBadgeText} numberOfLines={2}>
+                    {targetMetricsLabel}
+                  </Text>
+                </View>
+              </View>
+            </>
+          ) : null}
         </View>
 
-        {/* VS sits on the split border (half over opponent, half over camera) */}
+        {/* VS — hidden during full-screen creation */}
         <View
           style={[
             styles.vsDivider,
-            (isRecording || isReviewMode) && styles.chromeHidden,
+            (isFullScreenCreate || isRecording || isReviewMode) && styles.chromeHidden,
           ]}
           pointerEvents="none"
           collapsable={false}
@@ -1597,7 +1686,10 @@ export default function ChallengeCam({
                   <TouchableOpacity
                     key={`sm-${rate}`}
                     style={[styles.slowMoRatePill, active && styles.slowMoRatePillActive]}
-                    onPress={() => setSlowMoRate(rate)}
+                    onPress={() => {
+                      setSlowMoEnabled(true);
+                      setSlowMoRate(rate);
+                    }}
                     activeOpacity={0.8}
                   >
                     <Text
@@ -1646,16 +1738,16 @@ export default function ChallengeCam({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
   },
   rootFill: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
   },
   battleColumn: {
     flex: 1,
     width: '100%',
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
   },
   battleColumnRecording: {
     ...StyleSheet.absoluteFillObject,
@@ -1665,7 +1757,7 @@ const styles = StyleSheet.create({
   topSplit: {
     height: 220,
     width: '100%',
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -1676,7 +1768,7 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     overflow: 'hidden',
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
     minHeight: 160,
   },
   cameraFill: {
@@ -1728,7 +1820,7 @@ const styles = StyleSheet.create({
   },
   reviewVideoLayer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
+    backgroundColor: OBSIDIAN,
   },
   topBar: {
     position: 'absolute',
@@ -1811,7 +1903,7 @@ const styles = StyleSheet.create({
   },
   permissionRoot: {
     flex: 1,
-    backgroundColor: '#05070A',
+    backgroundColor: OBSIDIAN,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 28,

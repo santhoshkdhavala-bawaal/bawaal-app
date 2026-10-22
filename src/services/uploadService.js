@@ -1,5 +1,10 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { supabase, isSupabaseConfigured } from './supabase';
+import {
+  canAttemptCloudUpload,
+  isCloudAuthError,
+  isSupabaseConfigured,
+  supabase,
+} from './supabase';
 
 /** Decode base64 → ArrayBuffer without relying on atob (Hermes-safe). */
 function base64ToArrayBuffer(base64) {
@@ -42,7 +47,6 @@ function normalizeLocalUri(uri) {
 
 /**
  * Copy camera temp clips into app document storage so POST still works after review.
- * Camera cache URIs often disappear → fetch/read then returns 404.
  */
 export async function persistLocalVideoUri(localUri) {
   const uri = normalizeLocalUri(localUri);
@@ -55,7 +59,6 @@ export async function persistLocalVideoUri(localUri) {
       throw new Error(`Local video file not found at ${uri}`);
     }
 
-    // Already under our docs folder — keep as-is
     if (uri.includes('/battle_clips/')) return uri;
 
     const dir = `${FileSystem.documentDirectory}battle_clips`;
@@ -69,17 +72,13 @@ export async function persistLocalVideoUri(localUri) {
   }
 }
 
-/**
- * Verify local clip exists and load bytes via FileSystem (avoids fetch 404 on file://).
- */
 export async function readLocalVideoBytes(localUri) {
-  let uri = normalizeLocalUri(localUri);
+  const uri = normalizeLocalUri(localUri);
   if (!uri) throw new Error('Missing local video URI for upload');
   if (uri.startsWith('emulator-mock://')) {
     throw new Error('Cannot upload emulator mock clip to cloud storage');
   }
 
-  // Prefer FileSystem for file:// paths — fetch(file://) often returns 404 on RN.
   if (uri.startsWith('file://') || uri.startsWith('/')) {
     const info = await FileSystem.getInfoAsync(uri);
     if (!info.exists) {
@@ -92,13 +91,11 @@ export async function readLocalVideoBytes(localUri) {
     return base64ToArrayBuffer(base64);
   }
 
-  // content:// — copy into docs then read as file
   if (uri.startsWith('content://') || uri.startsWith('ph://')) {
     const stable = await persistLocalVideoUri(uri);
     return readLocalVideoBytes(stable);
   }
 
-  // Remote HTTPS — fetch is appropriate
   if (uri.startsWith('http://') || uri.startsWith('https://')) {
     const response = await fetch(uri);
     if (!response.ok) {
@@ -113,19 +110,39 @@ export async function readLocalVideoBytes(localUri) {
 }
 
 /**
- * Upload a local battle clip to the public `battle-videos` storage bucket.
- * Returns the public HTTPS URL for the uploaded object.
+ * Try Supabase Storage upload; on any auth/storage/offline failure return local file:// URI.
+ * Never throws for Storage / JWS / network — Expo Go demo can always post locally.
+ *
+ * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string }}
  */
 export const uploadBattleVideo = async (localUri) => {
+  let stableUri = normalizeLocalUri(localUri);
+  try {
+    stableUri = await persistLocalVideoUri(localUri);
+  } catch (err) {
+    console.warn('[upload] Could not persist clip — using original URI:', err?.message || err);
+    stableUri = normalizeLocalUri(localUri) || localUri;
+  }
+
+  const localFallback = (reason, error) => ({
+    publicUrl: null,
+    localUri: stableUri,
+    skipped: true,
+    reason,
+    error: error ? String(error?.message || error) : undefined,
+  });
+
   if (!isSupabaseConfigured()) {
-    throw new Error(
-      'Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env'
-    );
+    return localFallback('not-configured');
   }
 
   try {
+    const canCloud = await canAttemptCloudUpload();
+    if (!canCloud) {
+      return localFallback('auth-unavailable');
+    }
+
     const filename = `battle_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.mp4`;
-    const stableUri = await persistLocalVideoUri(localUri);
     const arrayBuffer = await readLocalVideoBytes(stableUri);
 
     const { error } = await supabase.storage.from('battle-videos').upload(filename, arrayBuffer, {
@@ -134,21 +151,32 @@ export const uploadBattleVideo = async (localUri) => {
       upsert: false,
     });
 
-    if (error) throw error;
+    if (error) {
+      if (isCloudAuthError(error) || /storage/i.test(String(error?.message || ''))) {
+        return localFallback('storage-error', error);
+      }
+      return localFallback('storage-error', error);
+    }
 
     const { data: publicUrlData } = supabase.storage
       .from('battle-videos')
       .getPublicUrl(filename);
 
     if (!publicUrlData?.publicUrl) {
-      throw new Error('Upload succeeded but public URL was not returned');
+      return localFallback('no-public-url');
     }
 
-    return publicUrlData.publicUrl;
+    return {
+      publicUrl: publicUrlData.publicUrl,
+      localUri: stableUri,
+      skipped: false,
+    };
   } catch (err) {
-    console.error('Error uploading battle video:', err);
-    throw err;
+    return localFallback(
+      isCloudAuthError(err) ? 'auth-unavailable' : 'storage-error',
+      err
+    );
   }
 };
 
-export { normalizeLocalUri };
+export { normalizeLocalUri, isCloudAuthError };

@@ -205,7 +205,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Alex Rider"
-                placeholderTextColor="#5A7268"
+                placeholderTextColor="#6E7480"
                 value={name}
                 onChangeText={setName}
               />
@@ -217,7 +217,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 <TextInput
                   style={styles.input}
                   placeholder="Age (13+)"
-                  placeholderTextColor="#5A7268"
+                  placeholderTextColor="#6E7480"
                   keyboardType="numeric"
                   value={age}
                   onChangeText={setAge}
@@ -255,7 +255,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="Enter mobile number"
-                placeholderTextColor="#5A7268"
+                placeholderTextColor="#6E7480"
                 keyboardType="phone-pad"
                 value={phone}
                 onChangeText={setPhone}
@@ -267,7 +267,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. alex@bawaal.com"
-                placeholderTextColor="#5A7268"
+                placeholderTextColor="#6E7480"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
@@ -280,7 +280,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Mumbai, India"
-                placeholderTextColor="#5A7268"
+                placeholderTextColor="#6E7480"
                 value={location}
                 onChangeText={setLocation}
               />
@@ -291,7 +291,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Athlete, Esports, Commentator, Manager, Climbing"
-                placeholderTextColor="#5A7268"
+                placeholderTextColor="#6E7480"
                 value={sport}
                 onChangeText={setSport}
               />
@@ -493,12 +493,14 @@ export default function RoleSelection({ onCompleteRegistration }) {
   );
 }
 
-const LANDING_BG = '#08120F';
+const LANDING_BG = '#000000';
 const GOLD = '#FFD700';
 const CRIMSON = '#FF2A5F';
-const CARD_BG = '#0C1814';
-const INPUT_BG = '#10201A';
-const MUTED = '#8BA89A';
+const PLATINUM = '#E5E4E2';
+const CARD_BG = '#000000';
+const INPUT_BG = '#0A0C10';
+const MUTED = '#9EA3B0';
+const BORDER = 'rgba(229, 228, 226, 0.14)';
 
 const styles = StyleSheet.create({
   container: {
@@ -548,7 +550,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#1E3A30',
+    borderColor: BORDER,
   },
   dropdownText: {
     color: '#FFFFFF',
@@ -591,7 +593,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#1E3A30',
+    borderColor: BORDER,
     color: '#FFFFFF',
     fontSize: 14,
   },
@@ -606,10 +608,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#1E3A30',
+    borderColor: BORDER,
   },
   genderBtnActive: {
-    backgroundColor: CRIMSON,
+    backgroundColor: PLATINUM,
     borderColor: GOLD,
   },
   genderText: {
@@ -618,7 +620,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   genderTextActive: {
-    color: '#FFFFFF',
+    color: LANDING_BG,
   },
   termsContainer: {
     flexDirection: 'row',
@@ -645,7 +647,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   termsText: {
-    color: '#C8D9D0',
+    color: PLATINUM,
     fontSize: 12,
     flex: 1,
   },
@@ -663,9 +665,9 @@ const styles = StyleSheet.create({
     borderColor: GOLD,
   },
   sendOtpBtnDisabled: {
-    backgroundColor: '#2A3A34',
+    backgroundColor: INPUT_BG,
     opacity: 0.6,
-    borderColor: '#3A4A44',
+    borderColor: BORDER,
   },
   sendOtpBtnText: {
     color: '#FFFFFF',
@@ -674,7 +676,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(8, 18, 15, 0.92)',
+    backgroundColor: 'rgba(0, 0, 0, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -697,7 +699,7 @@ const styles = StyleSheet.create({
   modalItem: {
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E3A30',
+    borderBottomColor: BORDER,
   },
   modalItemText: {
     color: '#FFFFFF',
@@ -714,7 +716,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   legalBody: {
-    color: '#C8D9D0',
+    color: PLATINUM,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -730,8 +732,8 @@ const styles = StyleSheet.create({
     borderColor: GOLD,
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: '#2A3A34',
-    borderColor: '#3A4A44',
+    backgroundColor: INPUT_BG,
+    borderColor: BORDER,
   },
   acceptTermsBtnText: {
     color: '#FFFFFF',
