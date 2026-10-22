@@ -16,8 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.bawaal.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "Allow BAWAAL to access your camera to record battle responses.",
-        "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone to record battle audio."
+        "NSCameraUsageDescription": "Allow BAWAAL to access your camera for live battle streaming and responses.",
+        "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone for live battle audio and responses."
       }
     },
     "android": {
@@ -34,7 +34,12 @@
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.BLUETOOTH",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.INTERNET"
       ]
     },
     "web": {
@@ -45,10 +50,21 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow BAWAAL to access your camera to record battle responses.",
-          "microphonePermission": "Allow BAWAAL to access your microphone to record battle audio.",
+          "cameraPermission": "Allow BAWAAL to access your camera for live battle streaming and responses.",
+          "microphonePermission": "Allow BAWAAL to access your microphone for live battle audio and responses.",
           "recordAudioAndroid": true,
           "barcodeScannerEnabled": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 24
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
         }
       ],
       [

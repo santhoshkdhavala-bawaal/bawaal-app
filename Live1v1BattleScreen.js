@@ -33,6 +33,23 @@ import {
   sendReaction,
   subscribeToBattle,
 } from './src/services/battleSyncService';
+import {
+  battleChannelName,
+  destroyAgoraEngine,
+  getAgoraSdk,
+  isAgoraConfigured,
+  joinBattleChannel,
+  leaveChannel,
+  muteLocalAudioStream,
+  muteLocalVideoStream,
+  onRemoteUsersChanged,
+  switchCamera,
+} from './src/services/agoraService';
+
+const AgoraSdk = getAgoraSdk();
+const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
+const VideoSourceType = AgoraSdk?.VideoSourceType || {};
+const RenderModeType = AgoraSdk?.RenderModeType || {};
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const GRID_GAP = 4;
@@ -175,30 +192,54 @@ const DEFAULT_MATCH = Object.freeze({
 let reactionSeq = 0;
 
 /**
- * WebRTC multi-stream ready surface.
- * Wire Agora / 100ms by mounting native VideoView when `remoteTrack` / `rtcEngine` is provided.
+ * Agora-backed video surface. Falls back to placeholder when SDK / stream unavailable.
+ * Local broadcaster uses uid 0 + VideoSourceCamera; remotes use VideoSourceRemote.
  */
 function StreamSurface({
   streamId,
   rtcUid,
   label,
   role = 'challenger',
-  remoteTrack = null,
+  isLocal = false,
+  hasRemote = false,
+  cameraOff = false,
   style,
 }) {
-  // Hook point for RTC engines:
-  // if (remoteTrack) return <RtcSurfaceView canvas={{ uid: rtcUid }} ... />
+  const showVideo =
+    Boolean(RtcSurfaceView) &&
+    ((isLocal && !cameraOff) || (hasRemote && Number(rtcUid) > 0));
+
   return (
     <View
       style={[styles.streamSurface, role === 'host' && styles.streamSurfaceHost, style]}
       accessibilityLabel={`stream-${streamId || rtcUid || label}`}
     >
-      <Text style={styles.streamHint}>
-        {remoteTrack ? 'RTC LIVE' : 'RTC READY'}
-      </Text>
-      <Text style={styles.streamIdHint} numberOfLines={1}>
-        {streamId || `uid:${rtcUid || '—'}`}
-      </Text>
+      {showVideo ? (
+        <RtcSurfaceView
+          style={StyleSheet.absoluteFillObject}
+          canvas={{
+            uid: isLocal ? 0 : Number(rtcUid) || 0,
+            sourceType: isLocal
+              ? VideoSourceType.VideoSourceCamera
+              : VideoSourceType.VideoSourceRemote,
+            renderMode: RenderModeType.RenderModeHidden ?? 1,
+          }}
+          zOrderMediaOverlay={!isLocal}
+        />
+      ) : (
+        <>
+          <Text style={styles.streamHint}>
+            {cameraOff && isLocal
+              ? 'CAMERA OFF'
+              : isAgoraConfigured()
+                ? 'WAITING FOR STREAM'
+                : 'RTC READY'}
+          </Text>
+          <Text style={styles.streamIdHint} numberOfLines={1}>
+            {streamId || `uid:${rtcUid || '—'}`}
+          </Text>
+        </>
+      )}
     </View>
   );
 }
@@ -229,7 +270,7 @@ function FloatingReactionLayer({ reactions }) {
   );
 }
 
-function HostSpotlight({ host, live, onRepPress }) {
+function HostSpotlight({ host, live, onRepPress, isLocal, hasRemote, cameraOff }) {
   return (
     <View style={styles.hostSpotlight}>
       <StreamSurface
@@ -237,6 +278,9 @@ function HostSpotlight({ host, live, onRepPress }) {
         rtcUid={host.rtcUid}
         label={host.handle}
         role="host"
+        isLocal={isLocal}
+        hasRemote={hasRemote}
+        cameraOff={cameraOff}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -268,7 +312,7 @@ function HostSpotlight({ host, live, onRepPress }) {
   );
 }
 
-function ChallengerTile({ athlete, onPress }) {
+function ChallengerTile({ athlete, onPress, isLocal, hasRemote, cameraOff }) {
   return (
     <TouchableOpacity
       style={styles.tile}
@@ -280,6 +324,9 @@ function ChallengerTile({ athlete, onPress }) {
         rtcUid={athlete.rtcUid}
         label={athlete.handle}
         role="challenger"
+        isLocal={isLocal}
+        hasRemote={hasRemote}
+        cameraOff={cameraOff}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.tileTop}>
@@ -295,7 +342,7 @@ function ChallengerTile({ athlete, onPress }) {
   );
 }
 
-function DualFocusPane({ athlete, variant, onRepPress }) {
+function DualFocusPane({ athlete, variant, onRepPress, isLocal, hasRemote, cameraOff }) {
   const isHost = variant === 'host';
   return (
     <View style={styles.dualPane}>
@@ -304,6 +351,9 @@ function DualFocusPane({ athlete, variant, onRepPress }) {
         rtcUid={athlete.rtcUid}
         label={athlete.handle}
         role={isHost ? 'host' : 'challenger'}
+        isLocal={isLocal}
+        hasRemote={hasRemote}
+        cameraOff={cameraOff}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -357,6 +407,8 @@ export default function Live1v1BattleScreen({
 
   const battleId =
     route?.params?.battleId || match.id || match.battleId || null;
+  const arenaRole = route?.params?.role || 'spectator';
+  const isBroadcaster = arenaRole === 'host' || arenaRole === 'challenger';
 
   const [viewMode, setViewMode] = useState(VIEW_SPOTLIGHT);
   const [hostAthlete, setHostAthlete] = useState(match.host);
@@ -370,6 +422,34 @@ export default function Live1v1BattleScreen({
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
+  const [remoteUids, setRemoteUids] = useState([]);
+  const [gearOpen, setGearOpen] = useState(false);
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [rtcJoined, setRtcJoined] = useState(false);
+
+  const myRtcUid = useMemo(() => {
+    if (arenaRole === 'host') return Number(match.host?.rtcUid) || 1001;
+    if (arenaRole === 'challenger') {
+      return (
+        Number(route?.params?.rtcUid) ||
+        Number(match.challengers?.[0]?.rtcUid) ||
+        2001
+      );
+    }
+    return 0;
+  }, [arenaRole, match.challengers, match.host?.rtcUid, route?.params?.rtcUid]);
+
+  const isLocalHost = isBroadcaster && arenaRole === 'host';
+  const isLocalChallengerUid = useCallback(
+    (uid) => isBroadcaster && arenaRole === 'challenger' && Number(uid) === myRtcUid,
+    [arenaRole, isBroadcaster, myRtcUid]
+  );
+
+  const hasRemoteUid = useCallback(
+    (uid) => remoteUids.includes(Number(uid)),
+    [remoteUids]
+  );
 
   const totalVotes = Math.max(1, hostVotes + rivalVotes);
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
@@ -452,6 +532,55 @@ export default function Live1v1BattleScreen({
   useEffect(() => {
     focusedRivalRef.current = focusedRival;
   }, [focusedRival]);
+
+  useEffect(() => {
+    if (!isAgoraConfigured()) return undefined;
+
+    let cancelled = false;
+    const channel = battleChannelName(battleId || 'featured-live');
+    const unsubRemote = onRemoteUsersChanged((uids) => {
+      if (!cancelled) setRemoteUids(uids);
+    });
+
+    (async () => {
+      const join = await joinBattleChannel(channel, myRtcUid, isBroadcaster);
+      if (!cancelled) setRtcJoined(Boolean(join?.ok));
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubRemote?.();
+      setRtcJoined(false);
+      void leaveChannel();
+    };
+  }, [battleId, isBroadcaster, myRtcUid]);
+
+  useEffect(
+    () => () => {
+      void destroyAgoraEngine();
+    },
+    []
+  );
+
+  const handleFlipCamera = useCallback(() => {
+    switchCamera();
+  }, []);
+
+  const handleToggleMic = useCallback(() => {
+    setMicMuted((prev) => {
+      const next = !prev;
+      muteLocalAudioStream(next);
+      return next;
+    });
+  }, []);
+
+  const handleToggleCamera = useCallback(() => {
+    setCameraOff((prev) => {
+      const next = !prev;
+      muteLocalVideoStream(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!battleId) return undefined;
@@ -622,11 +751,71 @@ export default function Live1v1BattleScreen({
           </Text>
         </View>
 
-        <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveText}>{match.spectatorsLabel}</Text>
+        <View style={styles.headerRight}>
+          <TouchableOpacity
+            style={styles.gearBtn}
+            onPress={() => setGearOpen((v) => !v)}
+            activeOpacity={0.85}
+            hitSlop={8}
+          >
+            <Text style={styles.gearBtnText}>⚙️</Text>
+          </TouchableOpacity>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>
+              {rtcJoined ? 'LIVE RTC' : match.spectatorsLabel}
+            </Text>
+          </View>
         </View>
       </View>
+
+      {gearOpen ? (
+        <View style={styles.gearMenu}>
+          <Text style={styles.gearMenuTitle}>CAMERA CONTROLS</Text>
+          <View style={styles.gearMenuRow}>
+            <TouchableOpacity
+              style={[styles.gearControl, !isBroadcaster && styles.gearControlDisabled]}
+              onPress={isBroadcaster ? handleFlipCamera : undefined}
+              activeOpacity={0.85}
+              disabled={!isBroadcaster}
+            >
+              <Text style={styles.gearControlIcon}>🔄</Text>
+              <Text style={styles.gearControlLabel}>Flip</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.gearControl,
+                micMuted && styles.gearControlActive,
+                !isBroadcaster && styles.gearControlDisabled,
+              ]}
+              onPress={isBroadcaster ? handleToggleMic : undefined}
+              activeOpacity={0.85}
+              disabled={!isBroadcaster}
+            >
+              <Text style={styles.gearControlIcon}>{micMuted ? '🔇' : '🎙️'}</Text>
+              <Text style={styles.gearControlLabel}>{micMuted ? 'Muted' : 'Mic'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.gearControl,
+                cameraOff && styles.gearControlActive,
+                !isBroadcaster && styles.gearControlDisabled,
+              ]}
+              onPress={isBroadcaster ? handleToggleCamera : undefined}
+              activeOpacity={0.85}
+              disabled={!isBroadcaster}
+            >
+              <Text style={styles.gearControlIcon}>{cameraOff ? '📷' : '📹'}</Text>
+              <Text style={styles.gearControlLabel}>{cameraOff ? 'Cam Off' : 'Cam'}</Text>
+            </TouchableOpacity>
+          </View>
+          {!isBroadcaster ? (
+            <Text style={styles.gearSpectatorHint}>
+              Spectator mode — watching only (low bandwidth)
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {viewMode === VIEW_DUAL ? (
         <TouchableOpacity
@@ -642,7 +831,14 @@ export default function Live1v1BattleScreen({
         {viewMode === VIEW_SPOTLIGHT ? (
           <>
             <View style={styles.spotlightHostWrap}>
-              <HostSpotlight host={hostAthlete} live onRepPress={handleHostRep} />
+              <HostSpotlight
+                host={hostAthlete}
+                live
+                onRepPress={handleHostRep}
+                isLocal={isLocalHost}
+                hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
+                cameraOff={cameraOff && isLocalHost}
+              />
             </View>
             <ScrollView
               style={styles.gridScroll}
@@ -650,13 +846,19 @@ export default function Live1v1BattleScreen({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.grid}>
-                {gridAthletes.map((athlete) => (
-                  <ChallengerTile
-                    key={athlete.id}
-                    athlete={athlete}
-                    onPress={focusChallenger}
-                  />
-                ))}
+                {gridAthletes.map((athlete) => {
+                  const localTile = isLocalChallengerUid(athlete.rtcUid);
+                  return (
+                    <ChallengerTile
+                      key={athlete.id}
+                      athlete={athlete}
+                      onPress={focusChallenger}
+                      isLocal={localTile}
+                      hasRemote={hasRemoteUid(athlete.rtcUid)}
+                      cameraOff={cameraOff && localTile}
+                    />
+                  );
+                })}
               </View>
             </ScrollView>
           </>
@@ -666,6 +868,9 @@ export default function Live1v1BattleScreen({
               athlete={hostAthlete}
               variant="host"
               onRepPress={handleHostRep}
+              isLocal={isLocalHost}
+              hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
+              cameraOff={cameraOff && isLocalHost}
             />
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
@@ -678,6 +883,14 @@ export default function Live1v1BattleScreen({
               athlete={focusedRival || challengers[0]}
               variant="rival"
               onRepPress={handleRivalRep}
+              isLocal={isLocalChallengerUid(
+                (focusedRival || challengers[0])?.rtcUid
+              )}
+              hasRemote={hasRemoteUid((focusedRival || challengers[0])?.rtcUid)}
+              cameraOff={
+                cameraOff &&
+                isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
+              }
             />
           </>
         )}
@@ -855,6 +1068,78 @@ const styles = StyleSheet.create({
     color: WHITE,
     fontWeight: '800',
     fontSize: 10,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gearBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  gearBtnText: {
+    fontSize: 14,
+  },
+  gearMenu: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: SURFACE,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  gearMenuTitle: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
+  gearMenuRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  gearControl: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BG,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 10,
+  },
+  gearControlActive: {
+    borderColor: ORANGE,
+    backgroundColor: 'rgba(255,87,34,0.12)',
+  },
+  gearControlDisabled: {
+    opacity: 0.4,
+  },
+  gearControlIcon: {
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  gearControlLabel: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  gearSpectatorHint: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
   },
   showAllBtn: {
     marginHorizontal: 16,
