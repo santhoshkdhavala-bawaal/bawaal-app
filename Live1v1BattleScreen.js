@@ -585,22 +585,27 @@ export default function Live1v1BattleScreen({
     return null;
   }, [arenaRole, match.challengers, match.host]);
 
+  // --- Live arena UI state (local until fully mirrored via Supabase Realtime) ---
   const [viewMode, setViewMode] = useState(
     arenaRole === 'challenger' ? VIEW_DUAL : VIEW_SPOTLIGHT
   );
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
-  const [focusedRival, setFocusedRival] = useState(
-    () => (arenaRole === 'challenger' ? match.challengers[0] : match.challengers[0])
+  const [focusedRival, setFocusedRival] = useState(() => match.challengers[0]);
+  /** Crowd tallies — drive animated progress bar + glove vote actions. */
+  const [hostVotes, setHostVotes] = useState(
+    () => Number(match.initialHostVotes ?? 1240)
   );
-  const [hostVotes, setHostVotes] = useState(match.initialHostVotes ?? 1240);
   const [rivalVotes, setRivalVotes] = useState(
-    () => match.challengers[0]?.votes ?? 1060
+    () => Number(match.challengers[0]?.votes ?? 1060)
   );
-  const [hypeCount, setHypeCount] = useState(match.initialHype ?? 88);
+  const [hypeCount, setHypeCount] = useState(() => Number(match.initialHype ?? 88));
+  /** Floating HUD chrome (timer/handles/vote bar/gloves) — 5s auto-fade. */
+  const [showControls, setShowControls] = useState(true);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
+  /** Agora remote publisher uids currently in the channel. */
   const [remoteUids, setRemoteUids] = useState([]);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
@@ -609,7 +614,6 @@ export default function Live1v1BattleScreen({
   const [profileAthlete, setProfileAthlete] = useState(null);
   const [profileRole, setProfileRole] = useState('ATHLETE');
   const [rosterOpen, setRosterOpen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
   const [voteHintVisible, setVoteHintVisible] = useState(true);
   const [hudOpacity] = useState(() => new Animated.Value(1));
   const [hintOpacity] = useState(() => new Animated.Value(1));
