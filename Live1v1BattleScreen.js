@@ -27,6 +27,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  CameraView,
   useCameraPermissions,
   useMicrophonePermissions,
 } from 'expo-camera';
@@ -196,8 +197,8 @@ const DEFAULT_MATCH = Object.freeze({
 let reactionSeq = 0;
 
 /**
- * Agora-backed video surface. Falls back to placeholder when SDK / stream unavailable.
- * Local broadcaster uses uid 0 + VideoSourceCamera; remotes use VideoSourceRemote.
+ * Local tile → expo-camera CameraView.
+ * Remote tile → Agora RtcSurfaceView when a stream is connected.
  */
 function StreamSurface({
   streamId,
@@ -207,37 +208,45 @@ function StreamSurface({
   isLocal = false,
   hasRemote = false,
   cameraOff = false,
+  cameraFacing = 'front',
   style,
 }) {
-  const showVideo =
-    Boolean(RtcSurfaceView) &&
-    ((isLocal && !cameraOff) || (hasRemote && Number(rtcUid) > 0));
+  const showLocalCamera = isLocal && !cameraOff;
+  const showRemoteRtc =
+    !isLocal && Boolean(RtcSurfaceView) && hasRemote && Number(rtcUid) > 0;
 
   return (
     <View
       style={[styles.streamSurface, role === 'host' && styles.streamSurfaceHost, style]}
       accessibilityLabel={`stream-${streamId || rtcUid || label}`}
     >
-      {showVideo ? (
+      {showLocalCamera ? (
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing={cameraFacing}
+          mute
+          mirror={cameraFacing === 'front'}
+        />
+      ) : showRemoteRtc ? (
         <RtcSurfaceView
           style={StyleSheet.absoluteFillObject}
           canvas={{
-            uid: isLocal ? 0 : Number(rtcUid) || 0,
-            sourceType: isLocal
-              ? VideoSourceType.VideoSourceCamera
-              : VideoSourceType.VideoSourceRemote,
+            uid: Number(rtcUid) || 0,
+            sourceType: VideoSourceType.VideoSourceRemote,
             renderMode: RenderModeType.RenderModeHidden ?? 1,
           }}
-          zOrderMediaOverlay={!isLocal}
+          zOrderMediaOverlay
         />
       ) : (
         <>
           <Text style={styles.streamHint}>
             {cameraOff && isLocal
               ? 'CAMERA OFF'
-              : isAgoraConfigured()
-                ? 'WAITING FOR STREAM'
-                : 'RTC READY'}
+              : isLocal
+                ? 'STARTING CAMERA'
+                : isAgoraConfigured()
+                  ? 'WAITING FOR STREAM'
+                  : 'RTC READY'}
           </Text>
           <Text style={styles.streamIdHint} numberOfLines={1}>
             {streamId || `uid:${rtcUid || '—'}`}
@@ -274,47 +283,43 @@ function FloatingReactionLayer({ reactions }) {
   );
 }
 
-/** Compact cam/mic overlays — only rendered on the local participant's video. */
-function LocalMediaControls({
+/** Participant-only HUD above the vote bar — never shown to spectators. */
+function ParticipantHudToolbar({
   visible,
   micMuted,
   cameraOff,
   onFlip,
   onToggleMic,
   onToggleCamera,
-  compact = false,
 }) {
   if (!visible) return null;
-  const btnStyle = [styles.localMediaBtn, compact && styles.localMediaBtnCompact];
   return (
-    <View
-      style={[styles.localMediaBar, compact && styles.localMediaBarCompact]}
-      pointerEvents="box-none"
-    >
-      <TouchableOpacity style={btnStyle} onPress={onFlip} activeOpacity={0.8} hitSlop={6}>
-        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
-          🔄
-        </Text>
-      </TouchableOpacity>
+    <View style={styles.participantHud}>
       <TouchableOpacity
-        style={[...btnStyle, micMuted && styles.localMediaBtnActive]}
+        style={styles.participantHudBtn}
+        onPress={onFlip}
+        activeOpacity={0.85}
+      >
+        <Text style={styles.participantHudIcon}>🔄</Text>
+        <Text style={styles.participantHudLabel}>Flip</Text>
+      </TouchableOpacity>
+      <View style={styles.participantHudDivider} />
+      <TouchableOpacity
+        style={[styles.participantHudBtn, micMuted && styles.participantHudBtnActive]}
         onPress={onToggleMic}
-        activeOpacity={0.8}
-        hitSlop={6}
+        activeOpacity={0.85}
       >
-        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
-          {micMuted ? '🔇' : '🎙️'}
-        </Text>
+        <Text style={styles.participantHudIcon}>{micMuted ? '🔇' : '🎙️'}</Text>
+        <Text style={styles.participantHudLabel}>{micMuted ? 'Unmute' : 'Mute'}</Text>
       </TouchableOpacity>
+      <View style={styles.participantHudDivider} />
       <TouchableOpacity
-        style={[...btnStyle, cameraOff && styles.localMediaBtnActive]}
+        style={[styles.participantHudBtn, cameraOff && styles.participantHudBtnActive]}
         onPress={onToggleCamera}
-        activeOpacity={0.8}
-        hitSlop={6}
+        activeOpacity={0.85}
       >
-        <Text style={[styles.localMediaIcon, compact && styles.localMediaIconCompact]}>
-          {cameraOff ? '📷' : '📹'}
-        </Text>
+        <Text style={styles.participantHudIcon}>{cameraOff ? '📷' : '📹'}</Text>
+        <Text style={styles.participantHudLabel}>{cameraOff ? 'Cam On' : 'Cam Off'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -327,7 +332,7 @@ function HostSpotlight({
   isLocal,
   hasRemote,
   cameraOff,
-  mediaControls,
+  cameraFacing,
 }) {
   return (
     <View style={styles.hostSpotlight}>
@@ -339,6 +344,7 @@ function HostSpotlight({
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
+        cameraFacing={cameraFacing}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -366,7 +372,6 @@ function HostSpotlight({
           </TouchableOpacity>
         </View>
       </View>
-      {mediaControls}
     </View>
   );
 }
@@ -377,11 +382,11 @@ function ChallengerTile({
   isLocal,
   hasRemote,
   cameraOff,
-  mediaControls,
+  cameraFacing,
 }) {
   return (
     <TouchableOpacity
-      style={styles.tile}
+      style={[styles.tile, isLocal && styles.tileLocal]}
       activeOpacity={0.88}
       onPress={() => onPress?.(athlete)}
     >
@@ -393,6 +398,7 @@ function ChallengerTile({
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
+        cameraFacing={cameraFacing}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.tileTop}>
@@ -404,7 +410,11 @@ function ChallengerTile({
       <View style={styles.tileReps}>
         <Text style={styles.tileRepsText}>{athlete.reps}</Text>
       </View>
-      {mediaControls}
+      {isLocal ? (
+        <View style={styles.tileYouPill}>
+          <Text style={styles.tileYouText}>YOU</Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -416,7 +426,7 @@ function DualFocusPane({
   isLocal,
   hasRemote,
   cameraOff,
-  mediaControls,
+  cameraFacing,
 }) {
   const isHost = variant === 'host';
   return (
@@ -429,6 +439,7 @@ function DualFocusPane({
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
+        cameraFacing={cameraFacing}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.overlayRow}>
@@ -450,7 +461,6 @@ function DualFocusPane({
           </Text>
         </TouchableOpacity>
       </View>
-      {mediaControls}
     </View>
   );
 }
@@ -505,6 +515,7 @@ export default function Live1v1BattleScreen({
   const [remoteUids, setRemoteUids] = useState([]);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState('front');
   const [rtcJoined, setRtcJoined] = useState(false);
 
   const myRtcUid = useMemo(() => {
@@ -666,6 +677,7 @@ export default function Live1v1BattleScreen({
   );
 
   const handleFlipCamera = useCallback(() => {
+    setCameraFacing((prev) => (prev === 'front' ? 'back' : 'front'));
     switchCamera();
   }, []);
 
@@ -829,18 +841,6 @@ export default function Live1v1BattleScreen({
 
   const gridAthletes = challengers.slice(0, 9);
 
-  const localMediaControls = (compact = false) => (
-    <LocalMediaControls
-      visible={isBroadcaster}
-      micMuted={micMuted}
-      cameraOff={cameraOff}
-      onFlip={handleFlipCamera}
-      onToggleMic={handleToggleMic}
-      onToggleCamera={handleToggleCamera}
-      compact={compact}
-    />
-  );
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
@@ -896,7 +896,7 @@ export default function Live1v1BattleScreen({
                 isLocal={isLocalHost}
                 hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
                 cameraOff={cameraOff && isLocalHost}
-                mediaControls={isLocalHost ? localMediaControls(false) : null}
+                cameraFacing={cameraFacing}
               />
             </View>
             <ScrollView
@@ -915,7 +915,7 @@ export default function Live1v1BattleScreen({
                       isLocal={localTile}
                       hasRemote={hasRemoteUid(athlete.rtcUid)}
                       cameraOff={cameraOff && localTile}
-                      mediaControls={localTile ? localMediaControls(true) : null}
+                      cameraFacing={cameraFacing}
                     />
                   );
                 })}
@@ -931,7 +931,7 @@ export default function Live1v1BattleScreen({
               isLocal={isLocalHost}
               hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
               cameraOff={cameraOff && isLocalHost}
-              mediaControls={isLocalHost ? localMediaControls(false) : null}
+              cameraFacing={cameraFacing}
             />
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
@@ -952,17 +952,22 @@ export default function Live1v1BattleScreen({
                 cameraOff &&
                 isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
               }
-              mediaControls={
-                isLocalChallengerUid((focusedRival || challengers[0])?.rtcUid)
-                  ? localMediaControls(false)
-                  : null
-              }
+              cameraFacing={cameraFacing}
             />
           </>
         )}
 
         <FloatingReactionLayer reactions={floatingReactions} />
       </View>
+
+      <ParticipantHudToolbar
+        visible={isBroadcaster}
+        micMuted={micMuted}
+        cameraOff={cameraOff}
+        onFlip={handleFlipCamera}
+        onToggleMic={handleToggleMic}
+        onToggleCamera={handleToggleCamera}
+      />
 
       <View style={styles.pollSection}>
         <View style={styles.pollLabelRow}>
@@ -1143,44 +1148,43 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 9,
   },
-  localMediaBar: {
-    position: 'absolute',
-    right: 10,
-    bottom: 10,
+  participantHud: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    zIndex: 8,
-  },
-  localMediaBarCompact: {
-    right: 6,
-    bottom: 6,
-    gap: 4,
-  },
-  localMediaBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 22,
+    backgroundColor: 'rgba(18,18,18,0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.14)',
   },
-  localMediaBtnCompact: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  participantHudBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
-  localMediaBtnActive: {
-    backgroundColor: 'rgba(255,87,34,0.55)',
-    borderColor: ORANGE,
+  participantHudBtnActive: {
+    backgroundColor: 'rgba(255,87,34,0.22)',
   },
-  localMediaIcon: {
-    fontSize: 14,
+  participantHudIcon: {
+    fontSize: 13,
   },
-  localMediaIconCompact: {
-    fontSize: 11,
+  participantHudLabel: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  participantHudDivider: {
+    width: 1,
+    height: 16,
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   showAllBtn: {
     marginHorizontal: 16,
@@ -1237,6 +1241,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     position: 'relative',
+  },
+  tileLocal: {
+    borderColor: ORANGE,
+    borderWidth: 1.5,
+  },
+  tileYouPill: {
+    position: 'absolute',
+    left: 6,
+    bottom: 6,
+    backgroundColor: ORANGE,
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  tileYouText: {
+    color: WHITE,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   tileTop: {
     position: 'absolute',
