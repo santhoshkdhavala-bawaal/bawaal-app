@@ -25,7 +25,10 @@ import {
   Dimensions,
   ScrollView,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   CameraView,
   useCameraPermissions,
@@ -292,8 +295,9 @@ function FloatingReactionLayer({ reactions }) {
         <Animated.View
           key={rx.id}
           style={[
-            styles.floatingItem,
+            rx.placement === 'toast' ? styles.floatingToastItem : styles.floatingItem,
             rx.text ? styles.floatingPill : null,
+            rx.placement === 'toast' ? styles.floatingToastPill : null,
             {
               left: rx.left,
               opacity: rx.opacity,
@@ -715,6 +719,26 @@ export default function Live1v1BattleScreen({
     scheduleHudHide();
   }, [hudOpacity, scheduleHudHide]);
 
+  const hideHud = useCallback(() => {
+    clearHudHideTimer();
+    setShowControls(false);
+    Animated.timing(hudOpacity, {
+      toValue: 0,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [clearHudHideTimer, hudOpacity]);
+
+  /** Empty video space: toggle HUD; when turning ON, reset 5s fade. */
+  const toggleHud = useCallback(() => {
+    if (showControls) {
+      hideHud();
+    } else {
+      showHud();
+    }
+  }, [hideHud, showControls, showHud]);
+
   const bumpHud = useCallback(() => {
     showHud();
   }, [showHud]);
@@ -738,9 +762,12 @@ export default function Live1v1BattleScreen({
 
   const spawnFloatingReaction = useCallback((emoji, options = {}) => {
     const id = `rx-${Date.now()}-${reactionSeq++}`;
-    const left = options.left ?? Math.max(12, Math.random() * (SCREEN_W - 56));
+    const isToast = options.placement === 'toast';
+    const left = isToast
+      ? Math.max(24, (SCREEN_W - 220) / 2)
+      : options.left ?? Math.max(12, Math.random() * (SCREEN_W - 56));
     const opacity = new Animated.Value(0);
-    const translateY = new Animated.Value(0);
+    const translateY = new Animated.Value(isToast ? -8 : 0);
     const scale = new Animated.Value(0.6);
 
     setFloatingReactions((prev) => [
@@ -750,6 +777,7 @@ export default function Live1v1BattleScreen({
         emoji,
         left,
         text: options.text || null,
+        placement: options.placement || 'float',
         opacity,
         translateY,
         scale,
@@ -764,13 +792,17 @@ export default function Live1v1BattleScreen({
         useNativeDriver: true,
       }),
       Animated.timing(translateY, {
-        toValue: options.burst ? -180 - Math.random() * 40 : -150,
-        duration: options.burst ? 1200 : 1500,
+        toValue: isToast
+          ? 10
+          : options.burst
+            ? -180 - Math.random() * 40
+            : -150,
+        duration: isToast ? 900 : options.burst ? 1200 : 1500,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.sequence([
-        Animated.delay(options.burst ? 700 : 900),
+        Animated.delay(isToast ? 1100 : options.burst ? 700 : 900),
         Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
       ]),
     ]).start(() => {
@@ -1011,7 +1043,7 @@ export default function Live1v1BattleScreen({
     setHostVotes((n) => n + 1);
     onVote?.('host', focusedRival?.id);
     spawnFloatingReaction('🥊', {
-      left: SCREEN_W * 0.18,
+      placement: 'toast',
       text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
     });
     if (battleId) {
@@ -1036,7 +1068,7 @@ export default function Live1v1BattleScreen({
     );
     onVote?.('challenger', rivalId);
     spawnFloatingReaction('🥊', {
-      left: SCREEN_W * 0.55,
+      placement: 'toast',
       text: `VOTED ${focusedRival?.handle || focusedRival?.label || 'RIVAL'}`,
     });
     if (battleId) {
@@ -1194,16 +1226,25 @@ export default function Live1v1BattleScreen({
       {/* Absolute floating HUD — fades without resizing the video */}
       <Pressable
         style={styles.hudTapCatcher}
-        onPress={showHud}
+        onPress={toggleHud}
         accessibilityRole="button"
-        accessibilityLabel="Show battle HUD"
+        accessibilityLabel="Toggle battle HUD"
       >
         <Animated.View
           style={[styles.hudChrome, { opacity: hudOpacity }]}
           pointerEvents={showControls ? 'box-none' : 'none'}
         >
-          <View
-            style={[styles.hudTopBlock, { paddingTop: insets.top }]}
+          <SafeAreaView
+            edges={['top']}
+            style={[
+              styles.hudTopBlock,
+              {
+                paddingTop:
+                  Platform.OS === 'android'
+                    ? Math.max(insets.top, StatusBar.currentHeight || 40)
+                    : undefined,
+              },
+            ]}
             pointerEvents="box-none"
           >
             <View style={styles.header}>
@@ -1266,7 +1307,7 @@ export default function Live1v1BattleScreen({
                 <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </SafeAreaView>
 
           <View style={styles.hudMidTapZone} pointerEvents="none" />
 
@@ -1962,11 +2003,16 @@ const styles = StyleSheet.create({
   },
   floatingLayer: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 20,
+    zIndex: 25,
   },
   floatingItem: {
     position: 'absolute',
-    bottom: 40,
+    bottom: '28%',
+  },
+  floatingToastItem: {
+    position: 'absolute',
+    top: '38%',
+    alignSelf: 'center',
   },
   floatingEmoji: {
     fontSize: 34,
@@ -1982,6 +2028,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     maxWidth: 220,
+  },
+  floatingToastPill: {
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderColor: 'rgba(255,255,255,0.18)',
+    maxWidth: SCREEN_W - 48,
+    alignSelf: 'center',
   },
   floatingPillEmoji: {
     fontSize: 16,
