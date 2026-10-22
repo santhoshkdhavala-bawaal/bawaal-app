@@ -1,18 +1,11 @@
 /**
- * Live1v1BattleScreen — production spectator stage for BAWAAL cross-border live battles.
+ * Live1v1BattleScreen — BAWAAL Multi-Challenger Arena Matrix
  *
- * Layout (frozen):
- *  - 50/50 vertical stack: Host (top) / Challenger (bottom)
- *  - Center VS seam badge at 50%
- *  - Overlay badges: flag+handle top-left, REPS top-right (per pane)
+ * View modes:
+ *  - SPOTLIGHT_GRID (default): Host spotlight 40% + 3×3 challenger matrix 60%
+ *  - DUAL_FOCUS: Host vs tapped challenger 50/50 vertical split
  *
- * Interaction engine (locked):
- *  - Floating emoji reactions over the camera canvas
- *  - Hype / Banter / Host vote / Rival vote / Share handlers
- *  - Live crowd poll percentages
- *
- * Ready for WebSocket sync via optional callbacks:
- *  onVoteHost | onVoteChallenger | onHype | onBanter | onShare
+ * WebRTC-ready: StreamSurface accepts `streamId` / `rtcUid` for Agora / 100ms wiring.
  */
 import React, { useCallback, useMemo, useState } from 'react';
 import {
@@ -30,10 +23,13 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Dimensions,
+  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_W } = Dimensions.get('window');
+const GRID_GAP = 4;
+const TILE_W = (SCREEN_W - GRID_GAP * 4) / 3;
 
 const BG = '#000000';
 const SURFACE = '#121212';
@@ -43,28 +39,162 @@ const MUTED = '#888888';
 const ORANGE = '#FF5722';
 const CYAN = '#00E5FF';
 
-const DEFAULT_MATCH = Object.freeze({
-  category: '[COMBAT] 3-ROUND SPAR',
-  timerLabel: '01:32',
-  spectatorsLabel: '4.2K LIVE',
-  host: Object.freeze({
-    handle: '@MUMBAI_STRIKER',
-    flag: '🇮🇳',
-    label: 'INDIA',
-    reps: 43,
-  }),
-  challenger: Object.freeze({
+const VIEW_SPOTLIGHT = 'SPOTLIGHT_GRID';
+const VIEW_DUAL = 'DUAL_FOCUS';
+
+const DEFAULT_HOST = Object.freeze({
+  id: 'host-mumbai',
+  handle: '@MUMBAI_STRIKER',
+  flag: '🇮🇳',
+  label: 'INDIA',
+  country: 'IND',
+  reps: 43,
+  streamId: 'rtc-host-mumbai',
+  rtcUid: 1001,
+});
+
+const DEFAULT_CHALLENGERS = Object.freeze([
+  {
+    id: 'c-nyc',
     handle: '@NYC_LIFT',
     flag: '🇺🇸',
     label: 'USA',
+    country: 'USA',
     reps: 41,
-  }),
+    streamId: 'rtc-c-nyc',
+    rtcUid: 2001,
+    votes: 1060,
+  },
+  {
+    id: 'c-karachi',
+    handle: '@KARACHI_IRON',
+    flag: '🇵🇰',
+    label: 'PAKISTAN',
+    country: 'PAK',
+    reps: 38,
+    streamId: 'rtc-c-karachi',
+    rtcUid: 2002,
+    votes: 980,
+  },
+  {
+    id: 'c-london',
+    handle: '@LDN_STRIKE',
+    flag: '🇬🇧',
+    label: 'UK',
+    country: 'GBR',
+    reps: 36,
+    streamId: 'rtc-c-london',
+    rtcUid: 2003,
+    votes: 720,
+  },
+  {
+    id: 'c-tokyo',
+    handle: '@TOKYO_PR',
+    flag: '🇯🇵',
+    label: 'JAPAN',
+    country: 'JPN',
+    reps: 44,
+    streamId: 'rtc-c-tokyo',
+    rtcUid: 2004,
+    votes: 890,
+  },
+  {
+    id: 'c-dubai',
+    handle: '@DXB_POWER',
+    flag: '🇦🇪',
+    label: 'UAE',
+    country: 'UAE',
+    reps: 33,
+    streamId: 'rtc-c-dubai',
+    rtcUid: 2005,
+    votes: 610,
+  },
+  {
+    id: 'c-berlin',
+    handle: '@BERLIN_REP',
+    flag: '🇩🇪',
+    label: 'GERMANY',
+    country: 'DEU',
+    reps: 35,
+    streamId: 'rtc-c-berlin',
+    rtcUid: 2006,
+    votes: 540,
+  },
+  {
+    id: 'c-lagos',
+    handle: '@LAGOS_HEAT',
+    flag: '🇳🇬',
+    label: 'NIGERIA',
+    country: 'NGA',
+    reps: 40,
+    streamId: 'rtc-c-lagos',
+    rtcUid: 2007,
+    votes: 770,
+  },
+  {
+    id: 'c-sao',
+    handle: '@SAO_FORCA',
+    flag: '🇧🇷',
+    label: 'BRAZIL',
+    country: 'BRA',
+    reps: 37,
+    streamId: 'rtc-c-sao',
+    rtcUid: 2008,
+    votes: 650,
+  },
+  {
+    id: 'c-seoul',
+    handle: '@SEOUL_MAX',
+    flag: '🇰🇷',
+    label: 'KOREA',
+    country: 'KOR',
+    reps: 39,
+    streamId: 'rtc-c-seoul',
+    rtcUid: 2009,
+    votes: 700,
+  },
+]);
+
+const DEFAULT_MATCH = Object.freeze({
+  category: '[COMBAT] 3-ROUND SPAR · BATTLE BAWAAL',
+  timerLabel: '01:32',
+  spectatorsLabel: '4.2K LIVE',
+  host: DEFAULT_HOST,
+  challengers: DEFAULT_CHALLENGERS,
   initialHostVotes: 1240,
-  initialChallengerVotes: 1060,
   initialHype: 88,
 });
 
 let reactionSeq = 0;
+
+/**
+ * WebRTC multi-stream ready surface.
+ * Wire Agora / 100ms by mounting native VideoView when `remoteTrack` / `rtcEngine` is provided.
+ */
+function StreamSurface({
+  streamId,
+  rtcUid,
+  label,
+  role = 'challenger',
+  remoteTrack = null,
+  style,
+}) {
+  // Hook point for RTC engines:
+  // if (remoteTrack) return <RtcSurfaceView canvas={{ uid: rtcUid }} ... />
+  return (
+    <View
+      style={[styles.streamSurface, role === 'host' && styles.streamSurfaceHost, style]}
+      accessibilityLabel={`stream-${streamId || rtcUid || label}`}
+    >
+      <Text style={styles.streamHint}>
+        {remoteTrack ? 'RTC LIVE' : 'RTC READY'}
+      </Text>
+      <Text style={styles.streamIdHint} numberOfLines={1}>
+        {streamId || `uid:${rtcUid || '—'}`}
+      </Text>
+    </View>
+  );
+}
 
 function FloatingReactionLayer({ reactions }) {
   return (
@@ -92,11 +222,78 @@ function FloatingReactionLayer({ reactions }) {
   );
 }
 
-function AthletePane({ athlete, reps, repsVariant }) {
-  const isHost = repsVariant === 'host';
+function HostSpotlight({ host, live }) {
   return (
-    <View style={styles.athletePane}>
-      <View style={styles.cameraPlaceholder} />
+    <View style={styles.hostSpotlight}>
+      <StreamSurface
+        streamId={host.streamId}
+        rtcUid={host.rtcUid}
+        label={host.handle}
+        role="host"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={styles.overlayRow}>
+        <View style={styles.handleBadge}>
+          <Text style={styles.flagText}>{host.flag}</Text>
+          <Text style={styles.handleText} numberOfLines={1}>
+            {host.handle}
+          </Text>
+        </View>
+        <View style={styles.hostMetaCol}>
+          {live ? (
+            <View style={styles.paneLivePill}>
+              <View style={styles.liveDot} />
+              <Text style={styles.paneLiveText}>LIVE</Text>
+            </View>
+          ) : null}
+          <View style={styles.hostRepsBadge}>
+            <Text style={styles.repsLabel}>REPS</Text>
+            <Text style={styles.repsCountHost}>{host.reps}</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ChallengerTile({ athlete, onPress }) {
+  return (
+    <TouchableOpacity
+      style={styles.tile}
+      activeOpacity={0.88}
+      onPress={() => onPress?.(athlete)}
+    >
+      <StreamSurface
+        streamId={athlete.streamId}
+        rtcUid={athlete.rtcUid}
+        label={athlete.handle}
+        role="challenger"
+        style={StyleSheet.absoluteFillObject}
+      />
+      <View style={styles.tileTop}>
+        <Text style={styles.tileFlag}>{athlete.flag}</Text>
+        <Text style={styles.tileHandle} numberOfLines={1}>
+          {athlete.handle}
+        </Text>
+      </View>
+      <View style={styles.tileReps}>
+        <Text style={styles.tileRepsText}>{athlete.reps}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function DualFocusPane({ athlete, variant }) {
+  const isHost = variant === 'host';
+  return (
+    <View style={styles.dualPane}>
+      <StreamSurface
+        streamId={athlete.streamId}
+        rtcUid={athlete.rtcUid}
+        label={athlete.handle}
+        role={isHost ? 'host' : 'challenger'}
+        style={StyleSheet.absoluteFillObject}
+      />
       <View style={styles.overlayRow}>
         <View style={styles.handleBadge}>
           <Text style={styles.flagText}>{athlete.flag}</Text>
@@ -107,7 +304,7 @@ function AthletePane({ athlete, reps, repsVariant }) {
         <View style={isHost ? styles.hostRepsBadge : styles.challengerRepsBadge}>
           <Text style={styles.repsLabel}>REPS</Text>
           <Text style={isHost ? styles.repsCountHost : styles.repsCountChallenger}>
-            {reps}
+            {athlete.reps}
           </Text>
         </View>
       </View>
@@ -115,15 +312,6 @@ function AthletePane({ athlete, reps, repsVariant }) {
   );
 }
 
-/**
- * @param {object} props
- * @param {object} [props.navigation]
- * @param {object} [props.route] — route.params.match overrides DEFAULT_MATCH
- * @param {(side: 'host'|'challenger') => void} [props.onVote]
- * @param {() => void} [props.onHype]
- * @param {(text: string) => void} [props.onBanter]
- * @param {() => void} [props.onShare]
- */
 export default function Live1v1BattleScreen({
   navigation,
   route,
@@ -133,29 +321,35 @@ export default function Live1v1BattleScreen({
   onShare,
 }) {
   const insets = useSafeAreaInsets();
-  const match = useMemo(
-    () => ({
+  const match = useMemo(() => {
+    const incoming = route?.params?.match || {};
+    const host = { ...DEFAULT_HOST, ...(incoming.host || {}) };
+    let challengers = incoming.challengers;
+    if (!challengers?.length && incoming.challenger) {
+      challengers = [{ ...DEFAULT_CHALLENGERS[0], ...incoming.challenger }];
+    }
+    return {
       ...DEFAULT_MATCH,
-      ...(route?.params?.match || {}),
-      host: { ...DEFAULT_MATCH.host, ...(route?.params?.match?.host || {}) },
-      challenger: {
-        ...DEFAULT_MATCH.challenger,
-        ...(route?.params?.match?.challenger || {}),
-      },
-    }),
-    [route?.params?.match]
-  );
+      ...incoming,
+      host,
+      challengers: challengers?.length ? challengers : [...DEFAULT_CHALLENGERS],
+    };
+  }, [route?.params?.match]);
 
-  const [hostVotes, setHostVotes] = useState(match.initialHostVotes);
-  const [challengerVotes, setChallengerVotes] = useState(match.initialChallengerVotes);
-  const [hypeCount, setHypeCount] = useState(match.initialHype);
+  const [viewMode, setViewMode] = useState(VIEW_SPOTLIGHT);
+  const [focusedRival, setFocusedRival] = useState(match.challengers[0]);
+  const [hostVotes, setHostVotes] = useState(match.initialHostVotes ?? 1240);
+  const [rivalVotes, setRivalVotes] = useState(
+    () => focusedRival?.votes ?? match.challengers[0]?.votes ?? 1060
+  );
+  const [hypeCount, setHypeCount] = useState(match.initialHype ?? 88);
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
 
-  const totalVotes = Math.max(1, hostVotes + challengerVotes);
+  const totalVotes = Math.max(1, hostVotes + rivalVotes);
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
-  const challengerPercent = 100 - hostPercent;
+  const rivalPercent = 100 - hostPercent;
 
   const trayBottomPad =
     Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + 4;
@@ -188,6 +382,16 @@ export default function Live1v1BattleScreen({
     });
   }, []);
 
+  const focusChallenger = useCallback((athlete) => {
+    setFocusedRival(athlete);
+    setRivalVotes(athlete.votes ?? 500);
+    setViewMode(VIEW_DUAL);
+  }, []);
+
+  const showAllChallengers = useCallback(() => {
+    setViewMode(VIEW_SPOTLIGHT);
+  }, []);
+
   const handleHype = useCallback(() => {
     setHypeCount((n) => n + 1);
     onHype?.();
@@ -213,27 +417,35 @@ export default function Live1v1BattleScreen({
 
   const handleVoteHost = useCallback(() => {
     setHostVotes((n) => n + 1);
-    onVote?.('host');
-    spawnFloatingReaction('🥊', { left: SCREEN_W * 0.18, text: 'VOTED INDIA' });
-  }, [onVote, spawnFloatingReaction]);
+    onVote?.('host', focusedRival?.id);
+    spawnFloatingReaction('🥊', {
+      left: SCREEN_W * 0.18,
+      text: `VOTED ${match.host.label}`,
+    });
+  }, [focusedRival?.id, match.host.label, onVote, spawnFloatingReaction]);
 
-  const handleVoteChallenger = useCallback(() => {
-    setChallengerVotes((n) => n + 1);
-    onVote?.('challenger');
-    spawnFloatingReaction('🥊', { left: SCREEN_W * 0.55, text: 'VOTED USA' });
-  }, [onVote, spawnFloatingReaction]);
+  const handleVoteRival = useCallback(() => {
+    setRivalVotes((n) => n + 1);
+    onVote?.('challenger', focusedRival?.id);
+    spawnFloatingReaction('🥊', {
+      left: SCREEN_W * 0.55,
+      text: `VOTED ${focusedRival?.label || 'RIVAL'}`,
+    });
+  }, [focusedRival?.id, focusedRival?.label, onVote, spawnFloatingReaction]);
 
   const handleShare = useCallback(async () => {
     onShare?.();
     try {
       await Share.share({
-        message: `Watch live 1v1 battle ${match.host.label} vs ${match.challenger.label} on BAWAAL!`,
-        title: 'BAWAAL Live 1v1',
+        message: `Watch BATTLE BAWAAL live — ${match.host.handle} arena on BAWAAL!`,
+        title: 'BAWAAL Live Arena',
       });
     } catch (_) {
       /* dismissed */
     }
-  }, [match.challenger.label, match.host.label, onShare]);
+  }, [match.host.handle, onShare]);
+
+  const gridAthletes = match.challengers.slice(0, 9);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -248,12 +460,16 @@ export default function Live1v1BattleScreen({
           activeOpacity={0.8}
         >
           <Text style={styles.brandTitle}>BAWAAL</Text>
-          <Text style={styles.brandSubtitle}>LIVE 1v1 BATTLE</Text>
+          <Text style={styles.brandSubtitle}>
+            {viewMode === VIEW_SPOTLIGHT ? 'BATTLE BAWAAL ARENA' : 'DUAL FOCUS 1v1'}
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.timerBadge}>
           <Text style={styles.timerText}>{match.timerLabel}</Text>
-          <Text style={styles.categoryText}>{match.category}</Text>
+          <Text style={styles.categoryText} numberOfLines={1}>
+            {match.category}
+          </Text>
         </View>
 
         <View style={styles.liveBadge}>
@@ -262,23 +478,51 @@ export default function Live1v1BattleScreen({
         </View>
       </View>
 
-      {/* Frozen 50/50 vertical stage */}
+      {viewMode === VIEW_DUAL ? (
+        <TouchableOpacity
+          style={styles.showAllBtn}
+          onPress={showAllChallengers}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+        </TouchableOpacity>
+      ) : null}
+
       <View style={styles.stageContainer}>
-        <AthletePane athlete={match.host} reps={match.host.reps} repsVariant="host" />
-
-        <View style={styles.vsCenterSeam} pointerEvents="none">
-          <View style={styles.vsLine} />
-          <View style={styles.vsCircle}>
-            <Text style={styles.vsText}>VS</Text>
-          </View>
-          <View style={styles.vsLine} />
-        </View>
-
-        <AthletePane
-          athlete={match.challenger}
-          reps={match.challenger.reps}
-          repsVariant="challenger"
-        />
+        {viewMode === VIEW_SPOTLIGHT ? (
+          <>
+            <View style={styles.spotlightHostWrap}>
+              <HostSpotlight host={match.host} live />
+            </View>
+            <ScrollView
+              style={styles.gridScroll}
+              contentContainerStyle={styles.gridContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.grid}>
+                {gridAthletes.map((athlete) => (
+                  <ChallengerTile
+                    key={athlete.id}
+                    athlete={athlete}
+                    onPress={focusChallenger}
+                  />
+                ))}
+              </View>
+            </ScrollView>
+          </>
+        ) : (
+          <>
+            <DualFocusPane athlete={match.host} variant="host" />
+            <View style={styles.vsCenterSeam} pointerEvents="none">
+              <View style={styles.vsLine} />
+              <View style={styles.vsCircle}>
+                <Text style={styles.vsText}>VS</Text>
+              </View>
+              <View style={styles.vsLine} />
+            </View>
+            <DualFocusPane athlete={focusedRival || match.challengers[0]} variant="rival" />
+          </>
+        )}
 
         <FloatingReactionLayer reactions={floatingReactions} />
       </View>
@@ -290,14 +534,18 @@ export default function Live1v1BattleScreen({
           </Text>
           <Text style={styles.thunderIcon}>⚡</Text>
           <Text style={styles.pollChallengerText}>
-            {challengerPercent}% {match.challenger.label}
+            {rivalPercent}% {focusedRival?.label || 'RIVAL'}
           </Text>
         </View>
         <View style={styles.pollBarTrack}>
           <View style={[styles.pollBarHost, { width: `${hostPercent}%` }]} />
-          <View style={[styles.pollBarChallenger, { width: `${challengerPercent}%` }]} />
+          <View style={[styles.pollBarChallenger, { width: `${rivalPercent}%` }]} />
         </View>
-        <Text style={styles.tapToVoteText}>TAP BELOW TO CAST YOUR VOTE</Text>
+        <Text style={styles.tapToVoteText}>
+          {viewMode === VIEW_SPOTLIGHT
+            ? 'TAP A TILE TO FOCUS RIVALRY · THEN VOTE'
+            : 'TAP HOST / RIVAL TO CAST YOUR VOTE'}
+        </Text>
       </View>
 
       <View style={[styles.actionTray, { paddingBottom: trayBottomPad }]}>
@@ -326,7 +574,7 @@ export default function Live1v1BattleScreen({
 
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={handleVoteChallenger}
+          onPress={handleVoteRival}
           activeOpacity={0.85}
         >
           <Text style={styles.actionIcon}>🥊</Text>
@@ -416,6 +664,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: 8,
+    maxWidth: 160,
   },
   timerText: {
     color: ORANGE,
@@ -449,20 +698,122 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 10,
   },
+  showAllBtn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: ORANGE,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  showAllBtnText: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
   stageContainer: {
     flex: 1,
     width: '100%',
     position: 'relative',
   },
-  athletePane: {
+  spotlightHostWrap: {
+    flex: 0.4,
+    width: '100%',
+  },
+  hostSpotlight: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#080808',
+    overflow: 'hidden',
+  },
+  gridScroll: {
+    flex: 0.6,
+    width: '100%',
+    backgroundColor: BG,
+  },
+  gridContent: {
+    padding: GRID_GAP,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+  },
+  tile: {
+    width: TILE_W,
+    height: TILE_W * 1.15,
+    backgroundColor: SURFACE,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: BORDER,
+    position: 'relative',
+  },
+  tileTop: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+  },
+  tileFlag: { fontSize: 11 },
+  tileHandle: {
+    color: WHITE,
+    fontSize: 9,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  tileReps: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    backgroundColor: CYAN,
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  tileRepsText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dualPane: {
     flex: 1,
     width: '100%',
     position: 'relative',
+    overflow: 'hidden',
     backgroundColor: '#080808',
   },
-  cameraPlaceholder: {
-    ...StyleSheet.absoluteFillObject,
+  streamSurface: {
     backgroundColor: SURFACE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streamSurfaceHost: {
+    backgroundColor: '#0D0D0D',
+  },
+  streamHint: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  streamIdHint: {
+    color: '#333333',
+    fontSize: 9,
+    marginTop: 4,
+    paddingHorizontal: 8,
   },
   overlayRow: {
     position: 'absolute',
@@ -477,7 +828,7 @@ const styles = StyleSheet.create({
   handleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '62%',
+    maxWidth: '58%',
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     borderWidth: 1,
     borderColor: '#333333',
@@ -494,6 +845,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 13,
     flexShrink: 1,
+  },
+  hostMetaCol: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  paneLivePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,0,0,0.2)',
+    borderWidth: 1,
+    borderColor: '#FF0000',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  paneLiveText: {
+    color: WHITE,
+    fontSize: 9,
+    fontWeight: '900',
   },
   hostRepsBadge: {
     alignItems: 'center',
