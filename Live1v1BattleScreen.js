@@ -4,8 +4,9 @@
  * LOCK-IN (role UI):
  *  - Spectator (!isParticipant): transparent VOTE HOST · BANTER · VOTE RIVAL dock;
  *    floating poll bar; no camera tools.
- *  - Athlete (isParticipant): no vote UI; Flip/Mute/Cam at bottom:30 on local stream only;
- *    showControls 5s auto-fade; [HOST]/[RIVAL] handle badges; dual-focus has no 9-tile grid.
+ *  - Athlete (isParticipant): no vote UI / no poll; Flip/Mute/Cam at bottom:24;
+ *    showControls 5s auto-fade; [HOST]/[RIVAL] handle badges.
+ *  - 9-tile challenger grid lives ONLY inside ChallengerRosterSheet (never on main stage).
  *
  * LOCK-IN (roster → 1v1):
  *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
@@ -83,8 +84,6 @@ const VideoSourceType = AgoraSdk?.VideoSourceType || {};
 const RenderModeType = AgoraSdk?.RenderModeType || {};
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const GRID_GAP = 4;
-const TILE_W = (SCREEN_W - GRID_GAP * 4) / 3;
 
 const BG = '#000000';
 const SURFACE = '#121212';
@@ -265,23 +264,23 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
 
 /**
  * Simulated remote WebRTC layer for Rival when no Agora publish is present.
- * Keeps dual 1v1 layout honest in solo / DEV testing without a second device.
+ * Visual-only (no center copy) so the VS badge stays crisp and collision-free.
  */
-function RivalSimFeed({ label }) {
-  const [pulse] = useState(() => new Animated.Value(0.35));
+function RivalSimFeed() {
+  const [pulse] = useState(() => new Animated.Value(0.28));
 
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, {
-          toValue: 0.85,
-          duration: 1100,
+          toValue: 0.55,
+          duration: 1400,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
-          toValue: 0.35,
-          duration: 1100,
+          toValue: 0.28,
+          duration: 1400,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
@@ -293,14 +292,7 @@ function RivalSimFeed({ label }) {
 
   return (
     <View style={styles.rivalSimRoot} pointerEvents="none">
-      <View style={styles.rivalSimScan} />
-      <Animated.View style={[styles.rivalSimCore, { opacity: pulse }]}>
-        <Text style={styles.rivalSimBadge}>LIVE FEED</Text>
-        <Text style={styles.rivalSimLabel} numberOfLines={1}>
-          {label || '@RIVAL'}
-        </Text>
-        <Text style={styles.rivalSimHint}>SIMULATED WEBRTC</Text>
-      </Animated.View>
+      <Animated.View style={[styles.rivalSimScan, { opacity: pulse }]} />
     </View>
   );
 }
@@ -476,7 +468,7 @@ function StreamSurface({
   } else if (showRivalSim) {
     liveTrack = (
       <View style={styles.cameraLayer} pointerEvents="none">
-        <RivalSimFeed label={label} />
+        <RivalSimFeed />
       </View>
     );
   }
@@ -642,51 +634,6 @@ function HostSpotlight({
         </View>
       ) : null}
     </View>
-  );
-}
-
-function ChallengerTile({
-  athlete,
-  onPress,
-  isLocal,
-  hasRemote,
-  cameraOff,
-  cameraFacing,
-  micMuted,
-  mediaReady = false,
-}) {
-  const safe = athlete || DEFAULT_CHALLENGERS[0];
-  return (
-    <TouchableOpacity
-      style={[styles.tile, styles.panelRival, isLocal && styles.tileLocal]}
-      activeOpacity={0.88}
-      onPress={() => onPress?.(safe)}
-    >
-      <StreamSurface
-        streamId={safe.streamId}
-        rtcUid={safe.rtcUid}
-        label={safe.handle}
-        role="challenger"
-        isLocal={isLocal}
-        hasRemote={hasRemote}
-        cameraOff={cameraOff}
-        cameraFacing={cameraFacing}
-        micMuted={micMuted}
-        mediaReady={mediaReady}
-        style={StyleSheet.absoluteFillObject}
-      />
-      <View style={styles.tileTop} pointerEvents="none">
-        <AthleteHandlePill handle={safe.handle} flag={safe.flag} tone="rival" />
-      </View>
-      <View style={styles.tileReps}>
-        <Text style={styles.tileRepsText}>{safe.reps ?? 0}</Text>
-      </View>
-      {isLocal ? (
-        <View style={styles.tileYouPill}>
-          <Text style={styles.tileYouText}>YOU</Text>
-        </View>
-      ) : null}
-    </TouchableOpacity>
   );
 }
 
@@ -1344,10 +1291,8 @@ function Live1v1BattleScreenInner({
     [callOutRival, focusChallenger, isHostRole]
   );
 
-  /** Optional full matrix browse from the sheet (leaves dual until a rival is re-picked). */
+  /** Grid browse stays inside ChallengerRosterSheet — never remount tiles on the main stage. */
   const viewGridFromRoster = useCallback(() => {
-    setRosterOpen(false);
-    setHasActiveRival(false);
     bumpHud();
   }, [bumpHud]);
 
@@ -1590,7 +1535,6 @@ function Live1v1BattleScreenInner({
     bumpHud();
   }, [bumpHud, handleHostRep, handleRivalRep, hasActiveRival]);
 
-  const gridAthletes = (challengers?.length ? challengers : DEFAULT_CHALLENGERS).slice(0, 9);
   const safeHostAthlete = hostAthlete || DEFAULT_HOST;
   const rivalAthlete =
     focusedRival || challengers?.[0] || DEFAULT_CHALLENGERS[0];
@@ -1735,37 +1679,6 @@ function Live1v1BattleScreenInner({
                 micMuted={micMuted && hostUsesDeviceCamera}
               />
             </View>
-            <ScrollView
-              style={styles.gridScroll}
-              contentContainerStyle={[
-                styles.gridContent,
-                styles.gridContentBottomClearance,
-              ]}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.grid}>
-                {gridAthletes.map((athlete, index) => {
-                  const tile = athlete || DEFAULT_CHALLENGERS[index % DEFAULT_CHALLENGERS.length];
-                  const localTile = isLocalAthlete(tile);
-                  return (
-                    <ChallengerTile
-                      key={tile.id || `tile-${index}`}
-                      athlete={tile}
-                      mediaReady={mediaReady}
-                      onPress={(a) => {
-                        bumpHud();
-                        focusChallenger(a);
-                      }}
-                      isLocal={localTile}
-                      hasRemote={!localTile && hasRemoteUid(tile.rtcUid)}
-                      cameraOff={cameraOff && localTile}
-                      cameraFacing={cameraFacing}
-                      micMuted={micMuted && localTile}
-                    />
-                  );
-                })}
-              </View>
-            </ScrollView>
           </View>
         )}
       </View>
@@ -1945,13 +1858,13 @@ function Live1v1BattleScreenInner({
       <FloatingReactionLayer reactions={floatingReactions || []} />
       </Pressable>
 
-      {/* Athlete camera tools — bottom center; fades with showControls / 5s timer */}
+      {/* Athlete Mode — camera tools only (no gloves / no poll). Auto-fades with HUD. */}
       {isParticipant ? (
         <Animated.View
           style={[
             styles.athleteToolsDock,
             {
-              bottom: Math.max(30, insets.bottom || 0),
+              bottom: 24 + Math.max(0, insets.bottom || 0),
               opacity: hudOpacity,
             },
           ]}
@@ -1977,7 +1890,7 @@ function Live1v1BattleScreenInner({
         </Animated.View>
       ) : null}
 
-      {/* Spectator floating bar — hidden for active athletes */}
+      {/* Spectator Mode — floating gloves only (no camera tools). */}
       {!isParticipant ? (
         <View
           style={[
@@ -2261,7 +2174,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 30,
+    bottom: 24,
     zIndex: 90,
     elevation: 90,
     alignItems: 'center',
@@ -2493,7 +2406,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   spotlightHostWrap: {
-    flex: 0.42,
+    flex: 1,
     width: '100%',
     minHeight: 0,
     backgroundColor: 'transparent',
@@ -2510,74 +2423,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: 'transparent',
     overflow: 'hidden',
-  },
-  gridScroll: {
-    flex: 0.58,
-    width: '100%',
-    minHeight: 0,
-    backgroundColor: PANEL_RIVAL,
-  },
-  gridContent: {
-    padding: GRID_GAP,
-  },
-  gridContentBottomClearance: {
-    // Keep challenger tiles / rep numbers out of the floating vote dock
-    paddingBottom: 120,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: GRID_GAP,
-  },
-  tile: {
-    width: TILE_W,
-    height: TILE_W * 1.15,
-    backgroundColor: PANEL_RIVAL,
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: BORDER,
-    position: 'relative',
-  },
-  tileLocal: {
-    borderColor: ORANGE,
-    borderWidth: 1.5,
-  },
-  tileYouPill: {
-    position: 'absolute',
-    left: 6,
-    bottom: 6,
-    backgroundColor: ORANGE,
-    borderRadius: 5,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  tileYouText: {
-    color: WHITE,
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-  tileTop: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    right: 6,
-    zIndex: 4,
-  },
-  tileReps: {
-    position: 'absolute',
-    right: 6,
-    bottom: 6,
-    backgroundColor: CYAN,
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  tileRepsText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: '900',
   },
   dualPane: {
     flex: 1,
@@ -2639,31 +2484,9 @@ const styles = StyleSheet.create({
   },
   rivalSimScan: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,229,255,0.06)',
+    backgroundColor: 'rgba(0,229,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(0,229,255,0.22)',
-  },
-  rivalSimCore: {
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-  },
-  rivalSimBadge: {
-    color: CYAN,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  rivalSimLabel: {
-    color: WHITE,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  rivalSimHint: {
-    color: MUTED,
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    borderColor: 'rgba(0,229,255,0.18)',
   },
   participantHudHidden: {
     height: 0,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   View,
@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Pressable,
   ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,11 +20,14 @@ const CYAN = '#00E5FF';
 const BORDER = '#1F2937';
 const CALL_OUT = '#FFE600';
 
+const { width: SCREEN_W } = Dimensions.get('window');
+const GRID_GAP = 8;
+const TILE_W = (SCREEN_W - 32 - GRID_GAP * 2) / 3;
+
 /**
- * LATEST CHALLENGERS / queued roster sheet.
+ * Slide-up challenger roster — the ONLY place the 9-tile queue grid mounts.
  * Host mode: CALL OUT jumps the auto-queue and launches a duel immediately.
  * Selecting VS (spectator) → parent enters dual 1v1 (Host | Rival).
- * Opens over live dual-focus; does not require leaving 1v1 first.
  */
 export default function ChallengerRosterSheet({
   visible,
@@ -38,16 +42,37 @@ export default function ChallengerRosterSheet({
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const [gridMode, setGridMode] = useState(false);
   const count =
     typeof queuedCount === 'number' ? queuedCount : challengers.length;
   const title = hostMode
     ? `QUEUED ATHLETES (${count})`
     : 'LATEST CHALLENGERS';
 
+  const closeSheet = () => {
+    setGridMode(false);
+    onClose?.();
+  };
+
+  const gridAthletes = (() => {
+    const base = (challengers.length ? challengers : []).slice(0, 9);
+    if (!base.length) return base;
+    const filled = [...base];
+    while (filled.length < 9) {
+      filled.push(base[filled.length % base.length]);
+    }
+    return filled;
+  })();
+
+  const pickAthlete = (athlete) => {
+    if (hostMode) onCallOut?.(athlete);
+    else onSelectRival?.(athlete);
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={closeSheet}>
       <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+        <Pressable style={styles.backdrop} onPress={closeSheet} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
           <View style={styles.pullBar} />
           <Text style={styles.title}>{title}</Text>
@@ -79,7 +104,41 @@ export default function ChallengerRosterSheet({
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           >
-            {challengers.length === 0 ? (
+            {gridMode ? (
+              <View style={styles.grid}>
+                {gridAthletes.length === 0 ? (
+                  <View style={styles.emptyCard}>
+                    <Text style={styles.emptyText}>No athletes waiting in queue</Text>
+                  </View>
+                ) : (
+                  gridAthletes.map((athlete, index) => {
+                    const active =
+                      athlete.id === activeRivalId ||
+                      athlete.handle === activeRivalId;
+                    return (
+                      <TouchableOpacity
+                        key={`${athlete.id || athlete.handle || 'tile'}-${index}`}
+                        style={[styles.tile, active && styles.tileActive]}
+                        activeOpacity={0.85}
+                        onPress={() => pickAthlete(athlete)}
+                      >
+                        <Text style={styles.tileFlag}>{athlete.flag || '🌐'}</Text>
+                        <Text style={styles.tileHandle} numberOfLines={1}>
+                          {athlete.handle || '@CONTENDER'}
+                        </Text>
+                        <Text style={styles.tileMeta} numberOfLines={1}>
+                          {athlete.label || athlete.country || 'OPEN'}
+                        </Text>
+                        <Text style={styles.tileReps}>{athlete.reps ?? 0} REPS</Text>
+                        <Text style={styles.tileAction}>
+                          {hostMode ? (active ? 'LIVE' : 'CALL OUT') : 'VS'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
+              </View>
+            ) : challengers.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>No athletes waiting in queue</Text>
               </View>
@@ -134,9 +193,14 @@ export default function ChallengerRosterSheet({
           <TouchableOpacity
             style={styles.gridBtn}
             activeOpacity={0.85}
-            onPress={onViewGrid}
+            onPress={() => {
+              setGridMode((prev) => !prev);
+              onViewGrid?.();
+            }}
           >
-            <Text style={styles.gridBtnText}>▦ BROWSE FULL GRID</Text>
+            <Text style={styles.gridBtnText}>
+              {gridMode ? '☰ SHOW QUEUE LIST' : '▦ BROWSE FULL GRID'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -154,7 +218,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   sheet: {
-    maxHeight: '72%',
+    maxHeight: '78%',
     backgroundColor: BG,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
@@ -224,6 +288,8 @@ const styles = StyleSheet.create({
   list: { flexGrow: 0 },
   listContent: { paddingBottom: 8, gap: 8 },
   emptyCard: {
+    flex: 1,
+    minWidth: '100%',
     backgroundColor: SURFACE,
     borderRadius: 10,
     borderWidth: 1,
@@ -235,6 +301,53 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 12,
     fontWeight: '700',
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: GRID_GAP,
+  },
+  tile: {
+    width: TILE_W,
+    minHeight: TILE_W * 1.05,
+    backgroundColor: SURFACE,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  tileActive: {
+    borderColor: CYAN,
+  },
+  tileFlag: { fontSize: 22 },
+  tileHandle: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    textAlign: 'center',
+    maxWidth: '100%',
+  },
+  tileMeta: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  tileReps: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  tileAction: {
+    color: ORANGE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    marginTop: 2,
   },
   row: {
     flexDirection: 'row',
