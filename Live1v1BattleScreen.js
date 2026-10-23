@@ -86,8 +86,6 @@ import ChallengerRosterSheet from './ChallengerRosterSheet';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
-const VideoSourceType = AgoraSdk?.VideoSourceType || {};
-const RenderModeType = AgoraSdk?.RenderModeType || {};
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -483,14 +481,14 @@ function StreamSurface({
     />
   );
 
-  // Local athlete box (@SANTHOSH / Host): persistent 180px tile — surface vs STANDBY.
+  // Local athlete: full-bleed surface vs STANDBY inside 50% viewport.
   if (isLocal) {
     return (
       <View
         style={[
           styles.streamSurface,
+          styles.streamSurfaceFill,
           role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
-          styles.athleteTileWrap,
           style,
         ]}
         accessibilityLabel={`stream-${streamId || rtcUid || label}`}
@@ -508,17 +506,12 @@ function StreamSurface({
   let liveTrack = null;
   if (showRemoteRtc) {
     liveTrack = (
-      <View style={styles.cameraLayer} pointerEvents="none">
-        <RtcSurfaceView
-          style={{ flex: 1, width: '100%', height: '100%' }}
-          canvas={{
-            uid,
-            sourceType: VideoSourceType.VideoSourceRemote,
-            renderMode: RenderModeType.RenderModeHidden ?? 1,
-          }}
-          zOrderMediaOverlay
-        />
-      </View>
+      <ArenaLocalVideo
+        isCameraOn
+        remoteUid={uid}
+        handle={label}
+        flag={flag}
+      />
     );
   } else if (showRivalSim) {
     liveTrack = (
@@ -532,6 +525,7 @@ function StreamSurface({
     <View
       style={[
         styles.streamSurface,
+        styles.streamSurfaceFill,
         role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
         style,
       ]}
@@ -625,148 +619,6 @@ function ParticipantHudToolbar({
           {isCameraOn ? 'Cam Off' : 'Cam On'}
         </Text>
       </TouchableOpacity>
-    </View>
-  );
-}
-
-function HostSpotlight({
-  host,
-  live,
-  onRepPress,
-  isLocal,
-  hasRemote,
-  isCameraOn = true,
-  cameraFacing,
-  micMuted,
-  mediaReady = false,
-  rtcJoined = false,
-  connectionOffline = false,
-  overlaysVisible = true,
-  showHandle = true,
-  topInset = 12,
-}) {
-  const safeHost = host || DEFAULT_HOST;
-  return (
-    <View style={styles.hostSpotlight}>
-      <StreamSurface
-        streamId={safeHost.streamId}
-        rtcUid={safeHost.rtcUid}
-        label={safeHost.handle}
-        flag={safeHost.flag}
-        role="host"
-        isLocal={isLocal}
-        hasRemote={hasRemote}
-        isCameraOn={isCameraOn}
-        cameraFacing={cameraFacing}
-        micMuted={micMuted}
-        mediaReady={mediaReady}
-        rtcJoined={rtcJoined}
-        connectionOffline={connectionOffline}
-        style={styles.cameraLayer}
-      />
-      {showHandle ? (
-        <View
-          style={[styles.handleAnchorInPane, { top: topInset, left: 16 }]}
-          pointerEvents="none"
-        >
-          <AthleteHandlePill
-            handle={safeHost.handle}
-            flag={safeHost.flag}
-            tone="host"
-          />
-        </View>
-      ) : null}
-      {overlaysVisible ? (
-        <View style={styles.statsAnchorHost} pointerEvents="box-none">
-          {live ? (
-            <View style={styles.paneLivePill}>
-              <View style={styles.liveDot} />
-              <Text style={styles.paneLiveText}>LIVE</Text>
-            </View>
-          ) : null}
-          <TouchableOpacity
-            style={styles.hostRepsBadge}
-            onPress={onRepPress}
-            activeOpacity={0.85}
-            hitSlop={8}
-          >
-            <Text style={styles.repsLabel}>REPS</Text>
-            <Text style={styles.repsCountHost}>{safeHost.reps ?? 0}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function DualFocusPane({
-  athlete,
-  variant,
-  onRepPress,
-  isLocal,
-  hasRemote,
-  isCameraOn = true,
-  cameraFacing,
-  micMuted,
-  mediaReady = false,
-  rtcJoined = false,
-  connectionOffline = false,
-  overlaysVisible = true,
-  showHandle = true,
-  topInset = 12,
-}) {
-  const isHost = variant === 'host';
-  const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
-  // Host badge lives in the global left header column; rival keeps in-pane handle.
-  const handleTop = isHost ? topInset : 12;
-  return (
-    <View style={styles.dualPane} pointerEvents="box-none">
-      <StreamSurface
-        streamId={safe.streamId}
-        rtcUid={safe.rtcUid}
-        label={safe.handle}
-        flag={safe.flag}
-        role={isHost ? 'host' : 'challenger'}
-        isLocal={isLocal}
-        hasRemote={hasRemote}
-        isCameraOn={isCameraOn}
-        cameraFacing={cameraFacing}
-        micMuted={micMuted}
-        mediaReady={mediaReady}
-        rtcJoined={rtcJoined}
-        connectionOffline={connectionOffline}
-        style={styles.cameraLayer}
-      />
-      {showHandle ? (
-        <View
-          style={[styles.handleAnchorInPane, { top: handleTop, left: 16 }]}
-          pointerEvents="none"
-        >
-          <AthleteHandlePill
-            handle={safe.handle}
-            flag={safe.flag}
-            tone={isHost ? 'host' : 'rival'}
-          />
-        </View>
-      ) : null}
-      {overlaysVisible ? (
-        <View
-          style={isHost ? styles.statsAnchorHost : styles.statsAnchorRival}
-          pointerEvents="box-none"
-        >
-          <TouchableOpacity
-            style={isHost ? styles.hostRepsBadge : styles.challengerRepsBadge}
-            onPress={onRepPress}
-            activeOpacity={0.85}
-            hitSlop={8}
-          >
-            <Text style={styles.repsLabel}>REPS</Text>
-            <Text style={isHost ? styles.repsCountHost : styles.repsCountChallenger}>
-              {safe.reps ?? 0}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -1706,9 +1558,15 @@ function Live1v1BattleScreenInner({
   /** Solo warm-up = full Host; active ring = 50/50 dual with VS. */
   const isDualFocus = Boolean(hasActiveRival);
 
+  const rivalIsLocal = isLocalAthlete(rivalAthlete);
+  /** Local athlete uses isCameraOn; remote panes stay "live" and fall back to STANDBY if no track. */
+  const isHostCamOn = hostUsesDeviceCamera ? isCameraOn : true;
+  const isRivalCamOn = rivalIsLocal ? isCameraOn : true;
+  const rivalBadgeBottom = isAthlete ? 100 : 16;
+
   // Never return null/undefined — always mount a full arena tree.
   return (
-    <View style={[styles.rootScreen, { paddingTop: safeTop }]}>
+    <View style={styles.rootScreen}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
@@ -1718,171 +1576,171 @@ function Live1v1BattleScreenInner({
         accessibilityRole="button"
         accessibilityLabel="Toggle battle HUD"
       >
-      {/* Full-bleed video stage — 1v1 dual panes OR roster grid (never both) */}
-      <View style={styles.stageContainer} pointerEvents="box-none">
-        {isDualFocus ? (
+      {/* STRICT 50/50 Host / Rival viewport split */}
+      <View style={styles.arenaSplitColumn} pointerEvents="box-none">
+        {/* TOP HALF: HOST (50%) */}
+        <View style={styles.hostHalf} pointerEvents="box-none">
+          <StreamSurface
+            streamId={safeHostAthlete.streamId}
+            rtcUid={safeHostAthlete.rtcUid}
+            label={safeHostAthlete.handle}
+            flag={safeHostAthlete.flag}
+            role="host"
+            isLocal={hostUsesDeviceCamera}
+            hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
+            isCameraOn={isHostCamOn}
+            cameraFacing={cameraFacing}
+            micMuted={micMuted && hostUsesDeviceCamera}
+            mediaReady={mediaReady}
+            rtcJoined={rtcJoined}
+            connectionOffline={connectionOffline}
+            style={styles.cameraLayer}
+          />
+
           <View
             style={{
-              flex: 1,
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              paddingVertical: 16,
-              width: '100%',
+              position: 'absolute',
+              top: safeTop,
+              left: 16,
+              gap: 8,
+              zIndex: 8,
+              maxWidth: '62%',
             }}
             pointerEvents="box-none"
           >
-            {/* Top Tile: Host */}
+            <View style={styles.hostBadge} pointerEvents="none">
+              <AthleteHandlePill
+                handle={safeHostAthlete.handle}
+                flag={safeHostAthlete.flag}
+                tone="host"
+              />
+            </View>
+            {isSpectator ? (
+              <TouchableOpacity
+                style={styles.challengersButton}
+                onPress={openChallengerRoster}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Challengers in queue ${challengersInQueueCount}`}
+              >
+                <Text style={styles.challengersText}>
+                  CHALLENGERS ({challengersInQueueCount})
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          {repsVisible ? (
             <View
               style={{
-                width: '100%',
-                height: 180,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
+                position: 'absolute',
+                top: safeTop,
+                right: 16,
+                zIndex: 8,
+                alignItems: 'flex-end',
+                gap: 6,
               }}
               pointerEvents="box-none"
             >
-              <DualFocusPane
-                athlete={safeHostAthlete}
-                variant="host"
-                overlaysVisible={repsVisible}
-                mediaReady={mediaReady}
-                rtcJoined={rtcJoined}
-                connectionOffline={connectionOffline}
-                showHandle={false}
-                onRepPress={() => {
+              {rtcJoined ? (
+                <View style={styles.paneLivePill}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.paneLiveText}>LIVE</Text>
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={styles.hostRepsBadge}
+                onPress={() => {
                   bumpHud();
                   handleHostRep();
                 }}
-                isLocal={hostUsesDeviceCamera}
-                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                isCameraOn={hostUsesDeviceCamera ? isCameraOn : true}
-                cameraFacing={cameraFacing}
-                micMuted={micMuted && hostUsesDeviceCamera}
+                activeOpacity={0.85}
+                hitSlop={8}
+              >
+                <Text style={styles.repsLabel}>REPS</Text>
+                <Text style={styles.repsCountHost}>
+                  {safeHostAthlete.reps ?? 0}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+
+        {/* CENTER VS BADGE */}
+        <View style={styles.vsAbsoluteCenter} pointerEvents="none">
+          <View style={styles.vsBadge}>
+            <Text style={styles.vsText}>VS</Text>
+          </View>
+        </View>
+
+        {/* BOTTOM HALF: RIVAL (50%) */}
+        <View style={styles.rivalHalf} pointerEvents="box-none">
+          <StreamSurface
+            streamId={rivalAthlete?.streamId}
+            rtcUid={rivalAthlete?.rtcUid}
+            label={rivalAthlete?.handle}
+            flag={rivalAthlete?.flag}
+            role="challenger"
+            isLocal={rivalIsLocal}
+            hasRemote={!rivalIsLocal && hasRemoteUid(rivalAthlete?.rtcUid)}
+            isCameraOn={isRivalCamOn}
+            cameraFacing={cameraFacing}
+            micMuted={micMuted && rivalIsLocal}
+            mediaReady={mediaReady}
+            rtcJoined={rtcJoined}
+            connectionOffline={connectionOffline}
+            style={styles.cameraLayer}
+          />
+
+          <View
+            style={{
+              position: 'absolute',
+              bottom: rivalBadgeBottom,
+              left: 16,
+              zIndex: 8,
+              maxWidth: '62%',
+            }}
+            pointerEvents="none"
+          >
+            <View style={styles.rivalBadge}>
+              <AthleteHandlePill
+                handle={rivalAthlete?.handle}
+                flag={rivalAthlete?.flag}
+                tone="rival"
               />
             </View>
+          </View>
 
-            {/* Center VS Divider */}
+          {repsVisible ? (
             <View
               style={{
-                height: 40,
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 10,
-              }}
-              pointerEvents="none"
-            >
-              <View style={styles.vsBadge}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
-            </View>
-
-            {/* Bottom Tile: Rival (@SANTHOSH) — 60px clear of control bar / badges */}
-            <View
-              style={{
-                width: '100%',
-                height: 180,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                marginBottom: 60,
+                position: 'absolute',
+                bottom: rivalBadgeBottom,
+                right: 16,
+                zIndex: 8,
               }}
               pointerEvents="box-none"
             >
-              <DualFocusPane
-                athlete={rivalAthlete}
-                variant="rival"
-                overlaysVisible={repsVisible}
-                mediaReady={mediaReady}
-                rtcJoined={rtcJoined}
-                connectionOffline={connectionOffline}
-                onRepPress={() => {
+              <TouchableOpacity
+                style={styles.challengerRepsBadge}
+                onPress={() => {
                   bumpHud();
                   handleRivalRep();
                 }}
-                isLocal={isLocalAthlete(rivalAthlete)}
-                hasRemote={
-                  !isLocalAthlete(rivalAthlete) &&
-                  hasRemoteUid(rivalAthlete?.rtcUid)
-                }
-                isCameraOn={
-                  isLocalAthlete(rivalAthlete) ? isCameraOn : true
-                }
-                cameraFacing={cameraFacing}
-                micMuted={micMuted && isLocalAthlete(rivalAthlete)}
-              />
+                activeOpacity={0.85}
+                hitSlop={8}
+              >
+                <Text style={styles.repsLabel}>REPS</Text>
+                <Text style={styles.repsCountChallenger}>
+                  {rivalAthlete?.reps ?? 0}
+                </Text>
+              </TouchableOpacity>
             </View>
-          </View>
-        ) : (
-          <View style={styles.fullVideoColumn} pointerEvents="box-none">
-            <View style={styles.spotlightHostWrap}>
-              <HostSpotlight
-                host={safeHostAthlete}
-                live
-                overlaysVisible={repsVisible}
-                mediaReady={mediaReady}
-                rtcJoined={rtcJoined}
-                connectionOffline={connectionOffline}
-                showHandle={false}
-                onRepPress={() => {
-                  bumpHud();
-                  handleHostRep();
-                }}
-                isLocal={hostUsesDeviceCamera}
-                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                isCameraOn={hostUsesDeviceCamera ? isCameraOn : true}
-                cameraFacing={cameraFacing}
-                micMuted={micMuted && hostUsesDeviceCamera}
-              />
-            </View>
-          </View>
-        )}
-      </View>
-
-      {/*
-        Production lock: DEV mock bar (RIVAL / SPECTATOR / SIMULATE REP) is not mounted.
-        If reintroduced for local testing, wrap the entire block in {__DEV__ ? ... : null}.
-      */}
-
-      {/*
-        Left header column — Host badge + CHALLENGERS stacked (gap 8, never overlap).
-        Root uses paddingTop: insets.top + 10, so top: 0 here sits in the safe band.
-      */}
-      <View
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 16,
-          gap: 8,
-          zIndex: 999,
-          maxWidth: '62%',
-          backgroundColor: 'transparent',
-        }}
-        pointerEvents="box-none"
-      >
-        <View style={styles.hostBadge} pointerEvents="none">
-          <AthleteHandlePill
-            handle={safeHostAthlete.handle}
-            flag={safeHostAthlete.flag}
-            tone="host"
-          />
+          ) : null}
         </View>
-        {isSpectator ? (
-          <TouchableOpacity
-            style={styles.challengersButton}
-            onPress={openChallengerRoster}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={`Challengers in queue ${challengersInQueueCount}`}
-          >
-            <Text style={styles.challengersText}>
-              CHALLENGERS ({challengersInQueueCount})
-            </Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
 
-      {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
+      {/* Optional chrome: brand / timer (does not own Host / Rival badges). */}
       <Animated.View
         style={[
           styles.hudChrome,
@@ -1900,7 +1758,10 @@ function Live1v1BattleScreenInner({
         ]}
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
-        <View style={styles.hudTopBlock} pointerEvents="box-none">
+        <View
+          style={[styles.hudTopBlock, { paddingTop: safeTop + 52 }]}
+          pointerEvents="box-none"
+        >
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.headerBrand}
@@ -1913,11 +1774,7 @@ function Live1v1BattleScreenInner({
             >
               <Text style={styles.brandTitle}>BAWAAL</Text>
               <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {isDualFocus
-                  ? 'DUAL FOCUS 1v1'
-                  : isSpectator
-                    ? 'HOST WARM-UP'
-                    : 'BATTLE BAWAAL ARENA'}
+                {isDualFocus ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
               </Text>
             </TouchableOpacity>
 
@@ -1953,7 +1810,7 @@ function Live1v1BattleScreenInner({
                     QUEUED ATHLETES ({queue.length})
                   </Text>
                 </TouchableOpacity>
-              ) : isDualFocus ? (
+              ) : (
                 <TouchableOpacity
                   style={styles.showChallengersPill}
                   onPress={openChallengerRoster}
@@ -1965,7 +1822,7 @@ function Live1v1BattleScreenInner({
                     ▦ SHOW CHALLENGERS
                   </Text>
                 </TouchableOpacity>
-              ) : null}
+              )}
             </View>
           ) : null}
 
@@ -2613,8 +2470,40 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
-    backgroundColor: PANEL_HOST,
+    backgroundColor: '#0A0E1A',
     zIndex: 0,
+  },
+  /** Strict 50/50 Host / Rival column filling the screen. */
+  arenaSplitColumn: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: '#0A0E1A',
+    width: '100%',
+  },
+  hostHalf: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#1F293D',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  rivalHalf: {
+    flex: 1,
+    position: 'relative',
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+  },
+  vsAbsoluteCenter: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    zIndex: 20,
+    transform: [{ translateX: -22 }, { translateY: -22 }],
+  },
+  rivalBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'transparent',
   },
   fullVideoColumn: {
     flex: 1,
@@ -2622,28 +2511,20 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: PANEL_HOST,
   },
-  /** Pure 1v1 — Host tile · VS · Rival tile (space-between column). */
   dualFocusColumn: {
     flex: 1,
     width: '100%',
     flexDirection: 'column',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-    backgroundColor: 'transparent',
+    backgroundColor: '#0A0E1A',
   },
   streamPaneShell: {
+    flex: 1,
     width: '100%',
-    height: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
   athleteTileWrap: {
-    width: '100%',
-    height: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
   spotlightHostWrap: {
@@ -2652,6 +2533,9 @@ const styles = StyleSheet.create({
     minHeight: 0,
     backgroundColor: 'transparent',
     overflow: 'hidden',
+  },
+  streamSurfaceFill: {
+    ...StyleSheet.absoluteFillObject,
   },
   panelHost: {
     backgroundColor: PANEL_HOST,

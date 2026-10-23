@@ -1,5 +1,5 @@
 /**
- * Athlete box inside Host / Rival (@SANTHOSH) tile.
+ * Full-bleed athlete video surface inside a 50% Host / Rival viewport.
  * Persistent wrapper (never unmounts on cam toggle):
  *   isCameraOn true  → RtcSurfaceView canvas={{ uid: 0 }} absolute fill
  *   isCameraOn false → flag + @handle + STANDBY
@@ -21,15 +21,13 @@ const VideoSourceType = AgoraSdk?.VideoSourceType;
 
 export type ArenaLocalVideoProps = {
   isCameraOn: boolean;
-  /** Alias used by Challenger Arena HUD. */
   isCamOn?: boolean;
   style?: StyleProp<ViewStyle>;
-  /** Athlete handle shown on STANDBY (e.g. @SANTHOSH). */
   handle?: string;
-  /** Flag emoji / glyph when camera is off. */
   flag?: string;
-  /** Optional custom STANDBY body (overrides built-in placeholder). */
   fallback?: ReactNode;
+  /** Remote Agora uid when rendering a remote athlete (omit / 0 = local). */
+  remoteUid?: number;
 };
 
 export function ArenaLocalVideo({
@@ -39,32 +37,35 @@ export function ArenaLocalVideo({
   handle = '@ATHLETE',
   flag = '🌐',
   fallback = null,
+  remoteUid,
 }: ArenaLocalVideoProps) {
   const on = typeof isCameraOn === 'boolean' ? isCameraOn : Boolean(isCamOn);
+  const uid = Number(remoteUid) || 0;
+  const isRemote = uid > 0;
 
   return (
-    <View style={[styles.athleteBox, style]} pointerEvents="none">
+    <View style={[styles.viewportFill, style]} pointerEvents="none">
       {on && RtcSurfaceView ? (
         <RtcSurfaceView
           canvas={{
-            uid: 0,
-            sourceType: VideoSourceType?.VideoSourceCamera ?? 0,
+            uid: isRemote ? uid : 0,
+            sourceType: isRemote
+              ? VideoSourceType?.VideoSourceRemote ?? 1
+              : VideoSourceType?.VideoSourceCamera ?? 0,
             renderMode: RenderModeType?.RenderModeHidden ?? 1,
           }}
-          style={styles.surface}
+          style={StyleSheet.absoluteFill}
           zOrderMediaOverlay
         />
       ) : on ? null : fallback ? (
         fallback
       ) : (
-        <View style={styles.standby}>
-          <Text style={styles.flag} accessibilityLabel="athlete flag">
-            {flag}
-          </Text>
-          <Text style={styles.handle} numberOfLines={1}>
+        <View style={styles.standbyPlaceholder}>
+          <Text style={styles.flagEmoji}>{flag}</Text>
+          <Text style={styles.standbyHandle} numberOfLines={1}>
             {handle}
           </Text>
-          <Text style={styles.standbyLabel}>STANDBY</Text>
+          <Text style={styles.standbySub}>STANDBY</Text>
         </View>
       )}
     </View>
@@ -72,43 +73,27 @@ export function ArenaLocalVideo({
 }
 
 const styles = StyleSheet.create({
-  athleteBox: {
-    position: 'relative',
-    width: '100%',
-    height: 180,
+  viewportFill: {
+    ...StyleSheet.absoluteFill,
     backgroundColor: '#0f172a',
-    borderRadius: 12,
     overflow: 'hidden',
   },
-  surface: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
-  },
-  standby: {
+  standbyPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
   },
-  flag: {
-    fontSize: 28,
-    width: 40,
-    height: 26,
+  flagEmoji: {
+    fontSize: 36,
     marginBottom: 8,
-    textAlign: 'center',
-    lineHeight: 26,
   },
-  handle: {
+  standbyHandle: {
     color: '#ffffff',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 16,
   },
-  standbyLabel: {
+  standbySub: {
     color: '#64748b',
     fontSize: 12,
     marginTop: 4,
