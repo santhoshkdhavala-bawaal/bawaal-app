@@ -21,14 +21,13 @@ const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const RenderModeType = AgoraSdk?.RenderModeType;
 const VideoSourceType = AgoraSdk?.VideoSourceType;
 
+/** Camera canvas — absolute fill of the 50% Host / Rival half (no collapse). */
 const FULL_BLEED = {
   position: 'absolute' as const,
   top: 0,
+  bottom: 0,
   left: 0,
   right: 0,
-  bottom: 0,
-  width: '100%' as const,
-  height: '100%' as const,
 };
 
 export type ArenaLocalVideoProps = {

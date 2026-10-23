@@ -1553,9 +1553,6 @@ function Live1v1BattleScreenInner({
   const rivalVotesLabel = formatVoteCount(rivalVotes);
   /** Status bar / notch clearance — paddingTop: insets.top + 10 on Host overlays. */
   const hostOverlayPadTop = insets.top + 10;
-  const bottomDockOffset = (insets.bottom || 0) + 12;
-  /** Spectator-only: REPS / LIVE / vote stats vanish completely for athletes. */
-  const repsVisible = isSpectator;
   const isDualFocus = Boolean(hasActiveRival);
 
   const rivalIsLocal = isLocalAthlete(rivalAthlete);
@@ -1564,22 +1561,40 @@ function Live1v1BattleScreenInner({
   const isRivalCamOn = rivalIsLocal ? isCameraOn : true;
   const rivalBadgeBottom = isAthlete ? 80 : 10;
 
+  // ─── ROLE ISOLATION (top of render) — spectator + athlete never mount together ───
+  // isAthlete / isSpectator already defined from userRole above.
+  const repsVisible = isSpectator;
+
   // Never return null/undefined — always mount a full arena tree.
   return (
-    <View style={styles.rootScreen}>
+    <View style={{ flex: 1, backgroundColor: '#0A0E1A' }}>
       <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" translucent />
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
       <Pressable
-        style={styles.tapStage}
+        style={{ flex: 1, backgroundColor: '#0A0E1A' }}
         onPress={toggleHud}
         accessibilityRole="button"
         accessibilityLabel="Toggle battle HUD"
       >
-      {/* STRICT 50/50 Host / Rival — flex:1 halves, no fixed-height cards */}
-      <View style={styles.arenaSplitColumn} pointerEvents="box-none">
+      {/* STRICT 50/50 Host / Rival — no fixed-height cards / no spill */}
+      <View
+        style={{ flex: 1, backgroundColor: '#0A0E1A' }}
+        pointerEvents="box-none"
+      >
         {/* TOP HALF: HOST (50%) */}
-        <View style={styles.hostHalf} pointerEvents="box-none">
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: '#1F293D',
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255,255,255,0.14)',
+          }}
+          pointerEvents="box-none"
+        >
           <StreamSurface
             streamId={safeHostAthlete.streamId}
             rtcUid={safeHostAthlete.rtcUid}
@@ -1675,7 +1690,16 @@ function Live1v1BattleScreenInner({
         </View>
 
         {/* BOTTOM HALF: RIVAL (50%) */}
-        <View style={styles.rivalHalf} pointerEvents="box-none">
+        <View
+          style={{
+            flex: 1,
+            width: '100%',
+            position: 'relative',
+            overflow: 'hidden',
+            backgroundColor: '#0f172a',
+          }}
+          pointerEvents="box-none"
+        >
           <StreamSurface
             streamId={rivalAthlete?.streamId}
             rtcUid={rivalAthlete?.rtcUid}
@@ -1848,13 +1872,16 @@ function Live1v1BattleScreenInner({
       ) : null}
       </Pressable>
 
-      {/* ATHLETE-ONLY — Flip / Mute / Cam. Never with vote / banter. */}
-      {isAthlete ? (
+      {/* ATHLETE CONTROLS — Flip / Mute / Cam ONLY */}
+      {isAthlete && (
         <View
-          style={[
-            styles.athleteControlsContainer,
-            { bottom: bottomDockOffset },
-          ]}
+          style={{
+            position: 'absolute',
+            bottom: insets.bottom + 10,
+            left: 0,
+            right: 0,
+            zIndex: 999,
+          }}
           pointerEvents="box-none"
         >
           <ParticipantHudToolbar
@@ -1875,15 +1902,18 @@ function Live1v1BattleScreenInner({
             }}
           />
         </View>
-      ) : null}
+      )}
 
-      {/* SPECTATOR-ONLY — Vote % + Banter / gloves. Never mounts for athletes. */}
-      {isSpectator ? (
+      {/* SPECTATOR HUD — Voting progress & buttons ONLY (vanishes for athletes) */}
+      {isSpectator && (
         <View
-          style={[
-            styles.spectatorBottomContainer,
-            { bottom: bottomDockOffset },
-          ]}
+          style={{
+            position: 'absolute',
+            bottom: insets.bottom + 10,
+            left: 0,
+            right: 0,
+            zIndex: 999,
+          }}
           pointerEvents="box-none"
         >
           <View style={styles.pollSection} pointerEvents="box-none">
@@ -1995,7 +2025,7 @@ function Live1v1BattleScreenInner({
             </TouchableOpacity>
           </View>
         </View>
-      ) : null}
+      )}
 
       <Modal
         visible={Boolean(isSpectator && banterOpen)}
