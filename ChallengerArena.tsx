@@ -6,11 +6,12 @@
  *
  * Dual 1v1 stage column:
  *   flex:1 · column · space-between · paddingVertical:16
- *   Host tile (h:210) → VS badge → Rival tile (h:210)
+ *   Host tile (h:180) → VS badge → Rival tile (h:180)
  *
- * Local camera tile (Host / Challenger) — persistent wrapper:
- *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} />
- *   isCameraOn false → Flag + @handle + STANDBY
+ * Athlete box (@SANTHOSH / Host) — persistent wrapper:
+ *   height 180 · borderRadius 12 · bg #0f172a
+ *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} /> absolute fill
+ *   isCameraOn false → flag + @handle + STANDBY
  *   Outer View does NOT unmount when toggling camera.
  *
  * handleCameraToggle / enableLocalCamera():

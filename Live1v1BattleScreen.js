@@ -482,13 +482,14 @@ function StreamSurface({
     />
   );
 
-  // Local athlete pane: persistent wrapper — children swap; wrapper never unmounts.
+  // Local athlete box (@SANTHOSH / Host): persistent 180px tile — surface vs STANDBY.
   if (isLocal) {
     return (
       <View
         style={[
           styles.streamSurface,
           role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
+          styles.athleteTileWrap,
           style,
         ]}
         accessibilityLabel={`stream-${streamId || rtcUid || label}`}
@@ -496,8 +497,8 @@ function StreamSurface({
         <ArenaLocalVideo
           isCameraOn={localCamOn}
           isCamOn={localCamOn}
-          style={styles.cameraLayer}
-          fallback={renderFallback('local-standby')}
+          handle={label}
+          flag={flag}
         />
       </View>
     );
@@ -1723,7 +1724,7 @@ function Live1v1BattleScreenInner({
             <View
               style={{
                 width: '100%',
-                height: 210,
+                height: 180,
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
@@ -1765,11 +1766,11 @@ function Live1v1BattleScreenInner({
               </View>
             </View>
 
-            {/* Bottom Tile: Rival */}
+            {/* Bottom Tile: Rival (@SANTHOSH) */}
             <View
               style={{
                 width: '100%',
-                height: 210,
+                height: 180,
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
@@ -2581,10 +2582,17 @@ const styles = StyleSheet.create({
   },
   streamPaneShell: {
     width: '100%',
-    height: 210,
+    height: 180,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  athleteTileWrap: {
+    width: '100%',
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   spotlightHostWrap: {
