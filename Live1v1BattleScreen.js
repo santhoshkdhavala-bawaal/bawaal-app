@@ -1,19 +1,18 @@
 /**
  * Live1v1BattleScreen — BAWAAL Multi-Challenger Arena Matrix
  *
- * LOCK-IN (role UI — route-driven, no DEV HUD overrides):
- *  - mode:'spectator' | role:'spectator' | WATCH → isParticipant=false
- *    → gloves + poll only; camera tools hidden.
- *  - mode:'athlete' | role:'host'|'challenger'|'athlete' | ACCEPT/HOST → isParticipant=true
- *    → Flip/Mute/Cam at bottom:24 only; gloves + poll hidden.
- *  - 9-tile challenger grid lives ONLY inside ChallengerRosterSheet (never on main stage).
+ * PRODUCTION LOCK-IN:
+ *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
+ *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
+ *  - CHALLENGERS (X): top 72 · left 16 (under Host handle). Top-right 16/16 = REPS + LIVE only.
  *
- * LOCK-IN (roster → 1v1):
- *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
- *    unmounts the tile grid, and streams only those two panes.
- *  - Spectator HUD: CHALLENGERS (N) under Host handle (top-left); top-right = REPS / LIVE only.
- *  - Solo spectator (no rival): Host 100% height, no VS / rival pane; gloves stay up.
- *  - Active 1v1 spectator: 50/50 Host|Rival with VS + live reps; SPECTATE switches focus.
+ * Role UI (route-driven):
+ *  - isParticipant=false (WATCH / spectator): gloves + poll; camera tools hidden.
+ *  - isParticipant=true (ACCEPT / HOST / athlete): Flip/Mute/Cam @ bottom 24; gloves + poll hidden.
+ *  - 9-tile grid ONLY inside ChallengerRosterSheet.
+ *
+ * Roster / view:
+ *  - Solo: Host full-bleed; Dual: 50/50 + VS; SPECTATE switches bottom rival focus.
  *
  * LOCK-IN (auto-queue matchmaking):
  *  - At battle start with Host live → promote queue[0] into dual 1v1.
@@ -636,10 +635,7 @@ function HostSpotlight({
         />
       </View>
       {overlaysVisible ? (
-        <View
-          style={[styles.statsAnchorHost, { top: Math.max(16, topInset) }]}
-          pointerEvents="box-none"
-        >
+        <View style={styles.statsAnchorHost} pointerEvents="box-none">
           {live ? (
             <View style={styles.paneLivePill}>
               <View style={styles.liveDot} />
@@ -676,9 +672,8 @@ function DualFocusPane({
 }) {
   const isHost = variant === 'host';
   const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
-  // Host clears the status bar; rival sits at top of its own bottom pane (under VS).
+  // Host handle clears status bar; Host REPS/LIVE stay locked at top:16 / right:16.
   const handleTop = isHost ? topInset : 12;
-  const statsTop = isHost ? Math.max(16, topInset) : 12;
   return (
     <View style={styles.dualPane} pointerEvents="box-none">
       <StreamSurface
@@ -706,7 +701,7 @@ function DualFocusPane({
       </View>
       {overlaysVisible ? (
         <View
-          style={[styles.statsAnchorHost, { top: statsTop }]}
+          style={isHost ? styles.statsAnchorHost : styles.statsAnchorRival}
           pointerEvents="box-none"
         >
           <TouchableOpacity
@@ -1649,16 +1644,14 @@ function Live1v1BattleScreenInner({
         )}
       </View>
 
-      {/* Spectator: CHALLENGERS under Host handle (top-left). Top-right stays REPS / LIVE. */}
+      {/*
+        Production lock: DEV mock bar (RIVAL / SPECTATOR / SIMULATE REP) is not mounted.
+        If reintroduced for local testing, wrap the entire block in {__DEV__ ? ... : null}.
+      */}
+
+      {/* Spectator: locked top-left under Host handle. Top-right = REPS / LIVE only. */}
       {!isParticipant ? (
-        <View
-          style={[
-            styles.spectatorChallengersAnchor,
-            // Host handle sits at stageTopInset; pill clears it with ~8px gap.
-            { top: stageTopInset + 56 },
-          ]}
-          pointerEvents="box-none"
-        >
+        <View style={styles.spectatorChallengersAnchor} pointerEvents="box-none">
           <TouchableOpacity
             style={styles.challengersQueuePill}
             onPress={openChallengerRoster}
@@ -2293,9 +2286,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Spectator CHALLENGERS — top-left under Host handle; never overlaps top-right REPS/LIVE. */
+  /** Production lock: CHALLENGERS under Host handle — top 72 · left 16. */
   spectatorChallengersAnchor: {
     position: 'absolute',
+    top: 72,
     left: 16,
     zIndex: 120,
     elevation: 120,
@@ -2493,9 +2487,21 @@ const styles = StyleSheet.create({
     maxWidth: '70%',
     backgroundColor: 'transparent',
   },
+  /** Production lock: Host REPS + LIVE — top 16 · right 16 only. */
   statsAnchorHost: {
     position: 'absolute',
     top: 16,
+    right: 16,
+    zIndex: 10,
+    elevation: 10,
+    alignItems: 'flex-end',
+    gap: 6,
+    backgroundColor: 'transparent',
+  },
+  /** Rival pane reps — top of bottom half; does not use Host top-right slot. */
+  statsAnchorRival: {
+    position: 'absolute',
+    top: 12,
     right: 16,
     zIndex: 10,
     elevation: 10,
