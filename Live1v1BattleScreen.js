@@ -17,6 +17,9 @@
  *  - 10s rival presence timeout → evict to standby, auto-calibrate queue[0] next.
  *  - Host "QUEUED ATHLETES (X)" + CALL OUT overrides auto order.
  *
+ * DEV mock bar (__DEV__ only): TOGGLE RIVAL · TOGGLE SPECTATOR · SIMULATE REP.
+ * Production styling tokens / HUD chrome are unchanged outside that overlay.
+ *
  * View modes:
  *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
  *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
@@ -710,8 +713,14 @@ function Live1v1BattleScreenInner({
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
   const arenaRole = route?.params?.role || 'spectator';
-  /** Host or challenger in the live workout — not a spectator. */
-  const isParticipant = arenaRole === 'host' || arenaRole === 'challenger';
+  /** Route-derived participant flag — production source of truth. */
+  const routeIsParticipant = arenaRole === 'host' || arenaRole === 'challenger';
+  /**
+   * DEV-only override for Athlete HUD vs Spectator gloves.
+   * Production builds always use routeIsParticipant (toggle bar is not mounted).
+   */
+  const [devIsParticipant, setDevIsParticipant] = useState(routeIsParticipant);
+  const isParticipant = __DEV__ ? devIsParticipant : routeIsParticipant;
   const isBroadcaster = isParticipant;
 
   const match = useMemo(() => {
@@ -772,9 +781,11 @@ function Live1v1BattleScreenInner({
 
   // --- Live arena UI state (local until fully mirrored via Supabase Realtime) ---
   // Host starts full-bleed until matchmaking promotes queue[0]; challenger enters dual.
-  const [viewMode, setViewMode] = useState(
-    arenaRole === 'challenger' ? VIEW_DUAL : VIEW_SPOTLIGHT
+  /** Solo (false) vs 50/50 Dual Split (true) — drives VIEW_DUAL / VIEW_SPOTLIGHT. */
+  const [hasActiveRival, setHasActiveRival] = useState(
+    () => arenaRole === 'challenger'
   );
+  const viewMode = hasActiveRival ? VIEW_DUAL : VIEW_SPOTLIGHT;
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
   /** FIFO checked-in queue — excludes the athlete currently in the duel. */
@@ -1219,7 +1230,7 @@ function Live1v1BattleScreenInner({
         return athlete;
       });
       setRivalVotes(Number(athlete.votes) || 500);
-      setViewMode(VIEW_DUAL);
+      setHasActiveRival(true);
       setRivalSlotStartedAt(Date.now());
       setRosterOpen(false);
       bumpHud();
@@ -1267,7 +1278,37 @@ function Live1v1BattleScreenInner({
   /** Optional full matrix browse from the sheet (leaves dual until a rival is re-picked). */
   const viewGridFromRoster = useCallback(() => {
     setRosterOpen(false);
-    setViewMode(VIEW_SPOTLIGHT);
+    setHasActiveRival(false);
+    bumpHud();
+  }, [bumpHud]);
+
+  /** DEV: Solo host ⟷ Dual 50/50 without touching production style tokens. */
+  const toggleDevRival = useCallback(() => {
+    setHasActiveRival((prev) => {
+      const next = !prev;
+      if (next) {
+        setFocusedRival((current) => {
+          if (current) return current;
+          const fallback =
+            queue[0] || challengers[0] || DEFAULT_CHALLENGERS[0];
+          setRivalVotes(Number(fallback?.votes) || 500);
+          setQueue((q) =>
+            q.filter((a) => athleteKey(a) !== athleteKey(fallback))
+          );
+          return fallback;
+        });
+        setRivalSlotStartedAt(Date.now());
+      } else {
+        setRivalSlotStartedAt(null);
+      }
+      return next;
+    });
+    bumpHud();
+  }, [bumpHud, challengers, queue]);
+
+  /** DEV: Athlete camera HUD ⟷ Spectator voting gloves. */
+  const toggleDevSpectator = useCallback(() => {
+    setDevIsParticipant((prev) => !prev);
     bumpHud();
   }, [bumpHud]);
 
@@ -1328,7 +1369,7 @@ function Live1v1BattleScreenInner({
       clearTimeout(rivalFailoverTimerRef.current);
       rivalFailoverTimerRef.current = null;
     }
-    if (!isHostRole || !focusedRival || viewMode !== VIEW_DUAL) return undefined;
+    if (!isHostRole || !focusedRival || !hasActiveRival) return undefined;
     if (!rivalSlotStartedAt) return undefined;
 
     // Without Agora we cannot observe remote publish — skip eviction in that mode.
@@ -1364,14 +1405,14 @@ function Live1v1BattleScreenInner({
         if (next) {
           setFocusedRival(next);
           setRivalVotes(Number(next.votes) || 500);
-          setViewMode(VIEW_DUAL);
+          setHasActiveRival(true);
           setRivalSlotStartedAt(Date.now());
           bumpHud();
           return waiting.slice(1);
         }
         setFocusedRival(null);
         setRivalSlotStartedAt(null);
-        setViewMode(VIEW_SPOTLIGHT);
+        setHasActiveRival(false);
         bumpHud();
         return waiting;
       });
@@ -1392,7 +1433,7 @@ function Live1v1BattleScreenInner({
     remoteUids,
     rivalSlotStartedAt,
     rtcJoined,
-    viewMode,
+    hasActiveRival,
   ]);
 
   const submitBanter = useCallback(() => {
@@ -1471,6 +1512,15 @@ function Live1v1BattleScreenInner({
     }
   }, [battleId, focusedRival]);
 
+  /** DEV: bump host (+ rival when dual) rep counters for HUD smoke tests. */
+  const simulateDevRep = useCallback(() => {
+    handleHostRep();
+    if (hasActiveRival) {
+      handleRivalRep();
+    }
+    bumpHud();
+  }, [bumpHud, handleHostRep, handleRivalRep, hasActiveRival]);
+
   const gridAthletes = (challengers?.length ? challengers : DEFAULT_CHALLENGERS).slice(0, 9);
   const safeHostAthlete = hostAthlete || DEFAULT_HOST;
   const rivalAthlete =
@@ -1482,14 +1532,62 @@ function Live1v1BattleScreenInner({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 10;
+  /** Extra clearance only in __DEV__ so the floating mock bar does not cover badges. */
+  const DEV_MOCK_BAR_H = 34;
+  const stageTopInset = __DEV__ ? hostTopInset + DEV_MOCK_BAR_H + 4 : hostTopInset;
   /** Reps stay up for athletes; spectators only see them with HUD chrome. */
   const repsVisible = isParticipant || showControls;
-  const isDualFocus = viewMode === VIEW_DUAL;
+  const isDualFocus = hasActiveRival;
 
   // Never return null/undefined — always mount a full arena tree.
   return (
     <View style={styles.rootScreen}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
+
+      {__DEV__ ? (
+        <View
+          style={[styles.devMockBar, { paddingTop: Math.max(insets.top, 4) }]}
+          pointerEvents="box-none"
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.devMockBarInner}
+          >
+            <TouchableOpacity
+              style={[
+                styles.devMockBtn,
+                hasActiveRival && styles.devMockBtnOn,
+              ]}
+              onPress={toggleDevRival}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.devMockBtnText}>
+                {hasActiveRival ? 'RIVAL ON' : 'TOGGLE RIVAL'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.devMockBtn,
+                !isParticipant && styles.devMockBtnSpectator,
+              ]}
+              onPress={toggleDevSpectator}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.devMockBtnText}>
+                {isParticipant ? 'TOGGLE SPECTATOR' : 'SPECTATOR ON'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.devMockBtn}
+              onPress={simulateDevRep}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.devMockBtnText}>SIMULATE REP</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      ) : null}
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
       <Pressable
@@ -1508,7 +1606,7 @@ function Live1v1BattleScreenInner({
                 variant="host"
                 overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
-                topInset={hostTopInset}
+                topInset={stageTopInset}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1556,7 +1654,7 @@ function Live1v1BattleScreenInner({
                 live
                 overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
-                topInset={hostTopInset}
+                topInset={stageTopInset}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1622,7 +1720,7 @@ function Live1v1BattleScreenInner({
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
         <View
-          style={[styles.hudTopBlock, { paddingTop: hostTopInset }]}
+          style={[styles.hudTopBlock, { paddingTop: stageTopInset }]}
           pointerEvents="box-none"
         >
           <View style={styles.header}>
@@ -1637,7 +1735,7 @@ function Live1v1BattleScreenInner({
             >
               <Text style={styles.brandTitle}>BAWAAL</Text>
               <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {isDualFocus ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
+                {viewMode === VIEW_DUAL ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
               </Text>
             </TouchableOpacity>
 
@@ -1954,6 +2052,47 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     overflow: 'hidden',
+  },
+  /** __DEV__ only — floating mock controls; never ships in release UI. */
+  devMockBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 200,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.18)',
+  },
+  devMockBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingBottom: 6,
+    paddingTop: 2,
+  },
+  devMockBtn: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  devMockBtnOn: {
+    borderColor: '#00E5FF',
+    backgroundColor: 'rgba(0,229,255,0.18)',
+  },
+  devMockBtnSpectator: {
+    borderColor: '#FF8A65',
+    backgroundColor: 'rgba(255,138,101,0.2)',
+  },
+  devMockBtnText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   tapStage: {
     flex: 1,
