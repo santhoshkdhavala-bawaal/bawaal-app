@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -25,9 +26,8 @@ const GRID_GAP = 8;
 const TILE_W = (SCREEN_W - 32 - GRID_GAP * 2) / 3;
 
 /**
- * Slide-up challenger roster — the ONLY place the 9-tile queue grid mounts.
- * Host mode: CALL OUT jumps the auto-queue and launches a duel immediately.
- * Selecting VS (spectator) → parent enters dual 1v1 (Host | Rival).
+ * Slide-up challenger roster — mounts over live A/V without tearing streams.
+ * Host: CALL OUT · Spectator: SPECTATE / UP NEXT · Athlete: VS
  */
 export default function ChallengerRosterSheet({
   visible,
@@ -35,8 +35,11 @@ export default function ChallengerRosterSheet({
   challengers = [],
   activeRivalId,
   hostMode = false,
+  spectatorMode = false,
   queuedCount,
+  nextUpId,
   onSelectRival,
+  onSpectate,
   onCallOut,
   onViewGrid,
   onClose,
@@ -47,7 +50,9 @@ export default function ChallengerRosterSheet({
     typeof queuedCount === 'number' ? queuedCount : challengers.length;
   const title = hostMode
     ? `QUEUED ATHLETES (${count})`
-    : 'LATEST CHALLENGERS';
+    : spectatorMode
+      ? `LIVE ROSTER (${count})`
+      : 'LATEST CHALLENGERS';
 
   const closeSheet = () => {
     setGridMode(false);
@@ -64,13 +69,103 @@ export default function ChallengerRosterSheet({
     return filled;
   })();
 
+  const isActive = (athlete) =>
+    athlete?.id === activeRivalId || athlete?.handle === activeRivalId;
+
+  const isNextUp = (athlete, index) => {
+    if (nextUpId != null) {
+      return athlete?.id === nextUpId || athlete?.handle === nextUpId;
+    }
+    return index === 0 && !isActive(athlete);
+  };
+
   const pickAthlete = (athlete) => {
-    if (hostMode) onCallOut?.(athlete);
-    else onSelectRival?.(athlete);
+    if (hostMode) {
+      onCallOut?.(athlete);
+      return;
+    }
+    if (spectatorMode) {
+      if (onSpectate) onSpectate(athlete);
+      else onSelectRival?.(athlete);
+      return;
+    }
+    onSelectRival?.(athlete);
+  };
+
+  const actionLabel = (athlete, index) => {
+    if (hostMode) return isActive(athlete) ? 'LIVE' : 'CALL OUT';
+    if (spectatorMode) {
+      if (isActive(athlete)) return 'WATCHING';
+      if (isNextUp(athlete, index)) return 'UP NEXT';
+      return 'SPECTATE';
+    }
+    return isActive(athlete) ? 'LIVE' : 'VS';
+  };
+
+  const renderActionButton = (athlete, index) => {
+    const active = isActive(athlete);
+    const next = isNextUp(athlete, index);
+    const label = actionLabel(athlete, index);
+
+    if (hostMode) {
+      return (
+        <TouchableOpacity
+          style={[styles.callOutBtn, active && styles.callOutBtnDisabled]}
+          activeOpacity={0.85}
+          disabled={active}
+          onPress={() => onCallOut?.(athlete)}
+        >
+          <Text style={styles.callOutBtnText}>{label}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (spectatorMode) {
+      return (
+        <View style={styles.spectatorActions}>
+          {next && !active ? (
+            <View style={styles.upNextBadge}>
+              <Text style={styles.upNextBadgeText}>UP NEXT</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity
+            style={[
+              styles.spectateBtn,
+              active && styles.spectateBtnActive,
+              next && !active && styles.spectateBtnNext,
+            ]}
+            activeOpacity={0.85}
+            disabled={active}
+            onPress={() => pickAthlete(athlete)}
+          >
+            <Text style={styles.spectateBtnText}>
+              {active ? 'WATCHING' : 'SPECTATE'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={styles.vsBtn}
+        activeOpacity={0.85}
+        onPress={() => onSelectRival?.(athlete)}
+      >
+        <Text style={styles.vsBtnText}>{label}</Text>
+      </TouchableOpacity>
+    );
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={closeSheet}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
+      statusBarTranslucent
+      onRequestClose={closeSheet}
+    >
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={closeSheet} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
@@ -79,6 +174,11 @@ export default function ChallengerRosterSheet({
           {hostMode ? (
             <Text style={styles.hostHint}>
               Tap CALL OUT to override the auto-queue and start a 1v1 duel.
+            </Text>
+          ) : null}
+          {spectatorMode ? (
+            <Text style={styles.hostHint}>
+              Tap SPECTATE to switch the bottom rival feed — live stream stays on.
             </Text>
           ) : null}
 
@@ -112,16 +212,24 @@ export default function ChallengerRosterSheet({
                   </View>
                 ) : (
                   gridAthletes.map((athlete, index) => {
-                    const active =
-                      athlete.id === activeRivalId ||
-                      athlete.handle === activeRivalId;
+                    const active = isActive(athlete);
+                    const next = isNextUp(athlete, index);
                     return (
                       <TouchableOpacity
                         key={`${athlete.id || athlete.handle || 'tile'}-${index}`}
-                        style={[styles.tile, active && styles.tileActive]}
+                        style={[
+                          styles.tile,
+                          active && styles.tileActive,
+                          next && !active && styles.tileNext,
+                        ]}
                         activeOpacity={0.85}
                         onPress={() => pickAthlete(athlete)}
                       >
+                        {next && !active ? (
+                          <View style={styles.tileUpNext}>
+                            <Text style={styles.tileUpNextText}>UP NEXT</Text>
+                          </View>
+                        ) : null}
                         <Text style={styles.tileFlag}>{athlete.flag || '🌐'}</Text>
                         <Text style={styles.tileHandle} numberOfLines={1}>
                           {athlete.handle || '@CONTENDER'}
@@ -131,7 +239,11 @@ export default function ChallengerRosterSheet({
                         </Text>
                         <Text style={styles.tileReps}>{athlete.reps ?? 0} REPS</Text>
                         <Text style={styles.tileAction}>
-                          {hostMode ? (active ? 'LIVE' : 'CALL OUT') : 'VS'}
+                          {spectatorMode
+                            ? active
+                              ? 'WATCHING'
+                              : 'SPECTATE'
+                            : actionLabel(athlete, index)}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -144,10 +256,9 @@ export default function ChallengerRosterSheet({
               </View>
             ) : (
               challengers.map((athlete, index) => {
-                const active =
-                  athlete.id === activeRivalId || athlete.handle === activeRivalId;
+                const active = isActive(athlete);
                 const country =
-                  athlete.label || athlete.country || athlete.handle || 'OPEN';
+                  athlete.label || athlete.country || 'OPEN';
                 return (
                   <View
                     key={athlete.id || athlete.handle || `q-${index}`}
@@ -164,26 +275,7 @@ export default function ChallengerRosterSheet({
                         REPS
                       </Text>
                     </View>
-                    {hostMode ? (
-                      <TouchableOpacity
-                        style={[styles.callOutBtn, active && styles.callOutBtnDisabled]}
-                        activeOpacity={0.85}
-                        disabled={active}
-                        onPress={() => onCallOut?.(athlete)}
-                      >
-                        <Text style={styles.callOutBtnText}>
-                          {active ? 'LIVE' : 'CALL OUT'}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.vsBtn}
-                        activeOpacity={0.85}
-                        onPress={() => onSelectRival?.(athlete)}
-                      >
-                        <Text style={styles.vsBtnText}>VS</Text>
-                      </TouchableOpacity>
-                    )}
+                    {renderActionButton(athlete, index)}
                   </View>
                 );
               })
@@ -215,7 +307,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   sheet: {
     maxHeight: '78%',
@@ -322,6 +414,24 @@ const styles = StyleSheet.create({
   tileActive: {
     borderColor: CYAN,
   },
+  tileNext: {
+    borderColor: CALL_OUT,
+  },
+  tileUpNext: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: CALL_OUT,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  tileUpNextText: {
+    color: '#000000',
+    fontSize: 7,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
   tileFlag: { fontSize: 22 },
   tileHandle: {
     color: WHITE,
@@ -381,6 +491,40 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 2,
+  },
+  spectatorActions: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  upNextBadge: {
+    backgroundColor: CALL_OUT,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  upNextBadgeText: {
+    color: '#000000',
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  spectateBtn: {
+    backgroundColor: CYAN,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  spectateBtnNext: {
+    backgroundColor: CALL_OUT,
+  },
+  spectateBtnActive: {
+    backgroundColor: 'rgba(0,229,255,0.35)',
+  },
+  spectateBtnText: {
+    color: '#000000',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   vsBtn: {
     backgroundColor: CYAN,

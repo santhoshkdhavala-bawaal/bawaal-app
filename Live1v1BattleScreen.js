@@ -11,7 +11,8 @@
  * LOCK-IN (roster → 1v1):
  *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
  *    unmounts the tile grid, and streams only those two panes.
- *  - In dual mode, "SHOW CHALLENGERS" opens the roster sheet without leaving 1v1 video.
+ *  - Spectator HUD: top-right ROSTER (N) opens ChallengerRosterSheet over live A/V.
+ *  - Spectator SPECTATE switches focusedRival in the bottom viewport (queue unchanged).
  *
  * LOCK-IN (auto-queue matchmaking):
  *  - At battle start with Host live → promote queue[0] into dual 1v1.
@@ -1274,11 +1275,30 @@ function Live1v1BattleScreenInner({
     [isHostRole, promoteRival]
   );
 
-  /** Open roster sheet over live 1v1 — does not kill dual-focus streams. */
+  /** Open roster sheet over live 1v1 — does not pause or tear down streams. */
   const openChallengerRoster = useCallback(() => {
     bumpHud();
     setRosterOpen(true);
   }, [bumpHud]);
+
+  /**
+   * Spectator stream switch — focus a queued athlete in the bottom viewport
+   * without mutating the host matchmaking queue / CALL OUT order.
+   */
+  const spectateRival = useCallback(
+    (athlete) => {
+      if (!athlete || isParticipant) return;
+      setFocusedRival(athlete);
+      setRivalVotes(Number(athlete.votes) || 500);
+      setHasActiveRival(true);
+      setRosterOpen(false);
+      bumpHud();
+      if (__DEV__) {
+        console.log('[spectate] focus rival', athlete.handle || athlete.id);
+      }
+    },
+    [bumpHud, isParticipant]
+  );
 
   const selectRivalFromRoster = useCallback(
     (athlete) => {
@@ -1286,9 +1306,13 @@ function Live1v1BattleScreenInner({
         callOutRival(athlete);
         return;
       }
+      if (!isParticipant) {
+        spectateRival(athlete);
+        return;
+      }
       focusChallenger(athlete);
     },
-    [callOutRival, focusChallenger, isHostRole]
+    [callOutRival, focusChallenger, isHostRole, isParticipant, spectateRival]
   );
 
   /** Grid browse stays inside ChallengerRosterSheet — never remount tiles on the main stage. */
@@ -1728,12 +1752,27 @@ function Live1v1BattleScreenInner({
               </Text>
             </View>
 
-            <View style={styles.liveBadge}>
-              <View style={styles.liveDot} />
-              <Text style={styles.liveText} numberOfLines={1}>
-                {rtcJoined ? 'LIVE' : match.spectatorsLabel}
-                {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
-              </Text>
+            <View style={styles.headerRightCluster}>
+              <View style={styles.liveBadge}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveText} numberOfLines={1}>
+                  {rtcJoined ? 'LIVE' : match.spectatorsLabel}
+                  {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
+                </Text>
+              </View>
+              {!isParticipant ? (
+                <TouchableOpacity
+                  style={styles.liveRosterPill}
+                  onPress={openChallengerRoster}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Live roster ${queue.length} waiting`}
+                >
+                  <Text style={styles.liveRosterPillText}>
+                    ROSTER ({queue.length})
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
@@ -1750,7 +1789,7 @@ function Live1v1BattleScreenInner({
                   QUEUED ATHLETES ({queue.length})
                 </Text>
               </TouchableOpacity>
-            ) : isDualFocus ? (
+            ) : isParticipant && isDualFocus ? (
               <TouchableOpacity
                 style={styles.showChallengersPill}
                 onPress={openChallengerRoster}
@@ -1762,15 +1801,7 @@ function Live1v1BattleScreenInner({
                   ▦ SHOW CHALLENGERS
                 </Text>
               </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[styles.watchRosterBtn, styles.watchRosterBtnGrow]}
-                onPress={openChallengerRoster}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.watchRosterBtnText}>👁️ WATCH ROSTER</Text>
-              </TouchableOpacity>
-            )}
+            ) : null}
           </View>
 
           {!isParticipant && voteHintVisible ? (
@@ -1998,7 +2029,9 @@ function Live1v1BattleScreenInner({
         visible={Boolean(rosterOpen)}
         host={safeHostAthlete}
         hostMode={isHostRole}
+        spectatorMode={!isParticipant}
         queuedCount={queue.length}
+        nextUpId={queue[0]?.id || queue[0]?.handle}
         challengers={
           isHostRole
             ? [
@@ -2007,12 +2040,20 @@ function Live1v1BattleScreenInner({
                   (a) => !queue.some((q) => athleteKey(q) === athleteKey(a))
                 ),
               ]
-            : challengers?.length
-              ? challengers
-              : DEFAULT_CHALLENGERS
+            : !isParticipant
+              ? queue.length
+                ? queue
+                : (challengers?.length ? challengers : DEFAULT_CHALLENGERS).filter(
+                    (a) =>
+                      athleteKey(a) !== athleteKey(focusedRival)
+                  )
+              : challengers?.length
+                ? challengers
+                : DEFAULT_CHALLENGERS
         }
         activeRivalId={focusedRival?.id || focusedRival?.handle}
         onSelectRival={selectRivalFromRoster}
+        onSpectate={spectateRival}
         onCallOut={callOutRival}
         onViewGrid={viewGridFromRoster}
         onClose={() => setRosterOpen(false)}
@@ -2260,8 +2301,15 @@ const styles = StyleSheet.create({
     fontSize: 7,
     fontWeight: '700',
   },
-  liveBadge: {
+  headerRightCluster: {
     flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '42%',
+  },
+  liveBadge: {
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 0, 0, 0.15)',
@@ -2270,7 +2318,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 14,
-    maxWidth: '28%',
   },
   liveDot: {
     width: 6,
@@ -2327,6 +2374,22 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginTop: 8,
     marginBottom: 4,
+  },
+  liveRosterPill: {
+    backgroundColor: 'rgba(0,229,255,0.14)',
+    borderWidth: 1,
+    borderColor: CYAN,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: 132,
+    alignItems: 'center',
+  },
+  liveRosterPillText: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   showChallengersPill: {
     flex: 1,
