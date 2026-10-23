@@ -232,17 +232,35 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
 }
 
 function AthleteHandlePill({ handle, flag, tone = 'host' }) {
+  const isRival = tone === 'rival';
   return (
     <View
       style={[
-        styles.handleBadge,
-        tone === 'rival' ? styles.handleBadgeRival : styles.handleBadgeHost,
+        styles.handlePillWrap,
+        isRival ? styles.handlePillWrapRival : styles.handlePillWrapHost,
       ]}
     >
-      {flag ? <Text style={styles.flagText}>{flag}</Text> : null}
-      <Text style={styles.handleText} numberOfLines={1}>
-        {handle || (tone === 'rival' ? '@RIVAL' : '@HOST')}
-      </Text>
+      <View style={styles.handlePillRow}>
+        {flag ? <Text style={styles.flagText}>{flag}</Text> : null}
+        <Text style={styles.handleText} numberOfLines={1}>
+          {handle || (isRival ? '@RIVAL' : '@HOST')}
+        </Text>
+      </View>
+      <View
+        style={[
+          styles.roleIdBadge,
+          isRival ? styles.roleIdBadgeRival : styles.roleIdBadgeHost,
+        ]}
+      >
+        <Text
+          style={[
+            styles.roleIdBadgeText,
+            isRival ? styles.roleIdBadgeTextRival : styles.roleIdBadgeTextHost,
+          ]}
+        >
+          {isRival ? '[RIVAL]' : '[HOST]'}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -1535,21 +1553,36 @@ function Live1v1BattleScreenInner({
       <FloatingReactionLayer reactions={floatingReactions || []} />
       </Pressable>
 
-      {/* Athlete camera tools — always on, never faded with spectator HUD */}
+      {/* Athlete camera tools — bottom center; fades with showControls / 5s timer */}
       {isParticipant ? (
-        <View
-          style={[styles.athleteToolsDock, { top: hostTopInset + 52 }]}
-          pointerEvents="box-none"
+        <Animated.View
+          style={[
+            styles.athleteToolsDock,
+            {
+              bottom: Math.max(30, insets.bottom || 0),
+              opacity: hudOpacity,
+            },
+          ]}
+          pointerEvents={showControls ? 'box-none' : 'none'}
         >
           <ParticipantHudToolbar
             visible
             micMuted={micMuted}
             cameraOff={cameraOff}
-            onFlip={handleFlipCamera}
-            onToggleMic={handleToggleMic}
-            onToggleCamera={handleToggleCamera}
+            onFlip={() => {
+              bumpHud();
+              handleFlipCamera();
+            }}
+            onToggleMic={() => {
+              bumpHud();
+              handleToggleMic();
+            }}
+            onToggleCamera={() => {
+              bumpHud();
+              handleToggleCamera();
+            }}
           />
-        </View>
+        </Animated.View>
       ) : null}
 
       {/* Spectator floating bar — hidden for active athletes */}
@@ -1781,9 +1814,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 30,
     zIndex: 90,
     elevation: 90,
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: 'transparent',
   },
   hudBottomBlock: {
@@ -2130,6 +2165,26 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 6,
   },
+  handlePillWrap: {
+    maxWidth: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 4,
+  },
+  handlePillWrapHost: {
+    borderColor: 'rgba(255,87,34,0.65)',
+  },
+  handlePillWrapRival: {
+    borderColor: 'rgba(0,229,255,0.65)',
+  },
+  handlePillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    maxWidth: '100%',
+  },
   handleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2145,6 +2200,29 @@ const styles = StyleSheet.create({
   },
   handleBadgeRival: {
     borderColor: 'rgba(0,229,255,0.65)',
+  },
+  roleIdBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  roleIdBadgeHost: {
+    backgroundColor: 'rgba(255,87,34,0.22)',
+  },
+  roleIdBadgeRival: {
+    backgroundColor: 'rgba(0,229,255,0.18)',
+  },
+  roleIdBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  roleIdBadgeTextHost: {
+    color: ORANGE,
+  },
+  roleIdBadgeTextRival: {
+    color: CYAN,
   },
   flagText: {
     fontSize: 13,
