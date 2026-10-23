@@ -12,6 +12,11 @@
  *    unmounts the tile grid, and streams only those two panes.
  *  - In dual mode, "SHOW CHALLENGERS" opens the roster sheet without leaving 1v1 video.
  *
+ * LOCK-IN (auto-queue matchmaking):
+ *  - At battle start with Host live → promote queue[0] into dual 1v1.
+ *  - 10s rival presence timeout → evict to standby, auto-calibrate queue[0] next.
+ *  - Host "QUEUED ATHLETES (X)" + CALL OUT overrides auto order.
+ *
  * View modes:
  *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
  *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
@@ -208,9 +213,19 @@ const DEFAULT_MATCH = Object.freeze({
   challengers: DEFAULT_CHALLENGERS,
   initialHostVotes: 1240,
   initialHype: 88,
+  /** ISO UTC start — null/past means matchmaking may arm as soon as Host is live. */
+  scheduledAtUTC: null,
+  status: 'live',
 });
 
+/** Rival must publish video within this window or get auto-evicted. */
+const RIVAL_PRESENCE_TIMEOUT_MS = 10000;
+
 let reactionSeq = 0;
+
+function athleteKey(athlete) {
+  return athlete?.id || athlete?.userId || athlete?.handle || athlete?.rtcUid || null;
+}
 
 function formatVoteCount(n) {
   const v = Math.max(0, Math.floor(Number(n) || 0));
@@ -756,13 +771,24 @@ function Live1v1BattleScreenInner({
   }, [arenaRole, match.challengers, match.host]);
 
   // --- Live arena UI state (local until fully mirrored via Supabase Realtime) ---
-  // Participants start in clean 1v1 (no 9-tile grid behind the dual panes).
+  // Host starts full-bleed until matchmaking promotes queue[0]; challenger enters dual.
   const [viewMode, setViewMode] = useState(
-    isParticipant ? VIEW_DUAL : VIEW_SPOTLIGHT
+    arenaRole === 'challenger' ? VIEW_DUAL : VIEW_SPOTLIGHT
   );
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
-  const [focusedRival, setFocusedRival] = useState(() => match.challengers[0]);
+  /** FIFO checked-in queue — excludes the athlete currently in the duel. */
+  const [queue, setQueue] = useState(() => {
+    const list = [...(match.challengers || [])];
+    if (arenaRole === 'challenger') return list.slice(1);
+    return list;
+  });
+  const [standbyPool, setStandbyPool] = useState([]);
+  const [focusedRival, setFocusedRival] = useState(() =>
+    arenaRole === 'challenger' ? match.challengers[0] : null
+  );
+  const [matchmakingActive, setMatchmakingActive] = useState(false);
+  const [rivalSlotStartedAt, setRivalSlotStartedAt] = useState(null);
   /** Crowd tallies — drive animated progress bar + glove vote actions. */
   const [hostVotes, setHostVotes] = useState(
     () => Number(match.initialHostVotes ?? 1240)
@@ -790,7 +816,9 @@ function Live1v1BattleScreenInner({
   const [hintOpacity] = useState(() => new Animated.Value(1));
   const hudHideTimerRef = useRef(null);
   const voteHintTimerRef = useRef(null);
+  const rivalFailoverTimerRef = useRef(null);
   const HUD_FADE_MS = 5000;
+  const isHostRole = arenaRole === 'host';
 
   const myRtcUid = useMemo(() => {
     if (arenaRole === 'host') return Number(match.host?.rtcUid) || 1001;
@@ -1168,15 +1196,56 @@ function Live1v1BattleScreenInner({
     return unsubscribe;
   }, [applyRemoteEvent, battleId]);
 
+  /**
+   * Promote athlete into active dual 1v1.
+   * Removes them from the waiting queue; optional prior rival returns to queue front.
+   */
+  const promoteRival = useCallback(
+    (athlete, { requeueCurrent = false } = {}) => {
+      if (!athlete) return;
+      const nextKey = athleteKey(athlete);
+      setFocusedRival((current) => {
+        if (requeueCurrent && current && athleteKey(current) !== nextKey) {
+          setQueue((q) => {
+            const withoutNext = q.filter((a) => athleteKey(a) !== nextKey);
+            const alreadyQueued = withoutNext.some(
+              (a) => athleteKey(a) === athleteKey(current)
+            );
+            return alreadyQueued ? withoutNext : [current, ...withoutNext];
+          });
+        } else {
+          setQueue((q) => q.filter((a) => athleteKey(a) !== nextKey));
+        }
+        return athlete;
+      });
+      setRivalVotes(Number(athlete.votes) || 500);
+      setViewMode(VIEW_DUAL);
+      setRivalSlotStartedAt(Date.now());
+      setRosterOpen(false);
+      bumpHud();
+    },
+    [bumpHud]
+  );
+
   /** Enter clean 50/50 Host|Rival — grid unmounts; only these two streams stay live. */
-  const focusChallenger = useCallback((athlete) => {
-    if (!athlete) return;
-    setFocusedRival(athlete);
-    setRivalVotes(Number(athlete.votes) || 500);
-    setViewMode(VIEW_DUAL);
-    setRosterOpen(false);
-    bumpHud();
-  }, [bumpHud]);
+  const focusChallenger = useCallback(
+    (athlete) => {
+      promoteRival(athlete, { requeueCurrent: false });
+    },
+    [promoteRival]
+  );
+
+  /** Host override — jump the queue and launch a duel with a specific athlete. */
+  const callOutRival = useCallback(
+    (athlete) => {
+      if (!isHostRole || !athlete) return;
+      promoteRival(athlete, { requeueCurrent: true });
+      if (__DEV__) {
+        console.log('[matchmaking] HOST CALL OUT', athlete.handle || athlete.id);
+      }
+    },
+    [isHostRole, promoteRival]
+  );
 
   /** Open roster sheet over live 1v1 — does not kill dual-focus streams. */
   const openChallengerRoster = useCallback(() => {
@@ -1186,9 +1255,13 @@ function Live1v1BattleScreenInner({
 
   const selectRivalFromRoster = useCallback(
     (athlete) => {
+      if (isHostRole) {
+        callOutRival(athlete);
+        return;
+      }
       focusChallenger(athlete);
     },
-    [focusChallenger]
+    [callOutRival, focusChallenger, isHostRole]
   );
 
   /** Optional full matrix browse from the sheet (leaves dual until a rival is re-picked). */
@@ -1197,6 +1270,130 @@ function Live1v1BattleScreenInner({
     setViewMode(VIEW_SPOTLIGHT);
     bumpHud();
   }, [bumpHud]);
+
+  // Arm auto-queue when scheduled time is due and Host is live.
+  useEffect(() => {
+    if (!isHostRole) return undefined;
+    const scheduled =
+      match.scheduledAtUTC ||
+      route?.params?.scheduledAtUTC ||
+      route?.params?.match?.scheduledAtUTC ||
+      null;
+
+    const tick = () => {
+      const due =
+        !scheduled ||
+        Number.isNaN(new Date(scheduled).getTime()) ||
+        Date.now() >= new Date(scheduled).getTime();
+      const hostLive =
+        Boolean(rtcJoined) ||
+        Boolean(mediaReady) ||
+        String(match.status || '').toLowerCase() === 'live';
+      if (due && hostLive) {
+        setMatchmakingActive(true);
+      }
+    };
+
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [
+    isHostRole,
+    match.scheduledAtUTC,
+    match.status,
+    mediaReady,
+    route?.params?.match?.scheduledAtUTC,
+    route?.params?.scheduledAtUTC,
+    rtcJoined,
+  ]);
+
+  // First-come: promote queue[0] into dual 1v1 when matchmaking arms and no rival is active.
+  useEffect(() => {
+    if (!isHostRole || !matchmakingActive) return undefined;
+    if (focusedRival) return undefined;
+    if (!queue.length) return undefined;
+    const first = queue[0];
+    const id = setTimeout(() => {
+      if (__DEV__) {
+        console.log('[matchmaking] auto-promote queue[0]', first.handle || first.id);
+      }
+      promoteRival(first, { requeueCurrent: false });
+    }, 0);
+    return () => clearTimeout(id);
+  }, [focusedRival, isHostRole, matchmakingActive, promoteRival, queue]);
+
+  // 10s camera/presence heartbeat — failover to next queued athlete.
+  useEffect(() => {
+    if (rivalFailoverTimerRef.current) {
+      clearTimeout(rivalFailoverTimerRef.current);
+      rivalFailoverTimerRef.current = null;
+    }
+    if (!isHostRole || !focusedRival || viewMode !== VIEW_DUAL) return undefined;
+    if (!rivalSlotStartedAt) return undefined;
+
+    // Without Agora we cannot observe remote publish — skip eviction in that mode.
+    if (!isAgoraConfigured() || !rtcJoined) return undefined;
+
+    const rivalUid = Number(focusedRival.rtcUid) || 0;
+    const present =
+      (rivalUid > 0 && hasRemoteUid(rivalUid)) || isLocalAthlete(focusedRival);
+    if (present) return undefined;
+
+    const slotId = athleteKey(focusedRival);
+    const elapsed = Date.now() - rivalSlotStartedAt;
+    const waitMs = Math.max(0, RIVAL_PRESENCE_TIMEOUT_MS - elapsed);
+
+    rivalFailoverTimerRef.current = setTimeout(() => {
+      const stillMissing =
+        rivalUid <= 0 || !remoteUids.includes(rivalUid);
+      if (!stillMissing) return;
+
+      const evicted = focusedRival;
+      if (__DEV__) {
+        console.warn(
+          '[matchmaking] rival presence timeout — failover',
+          evicted?.handle || slotId
+        );
+      }
+      setStandbyPool((prev) =>
+        prev.some((a) => athleteKey(a) === slotId) ? prev : [...prev, evicted]
+      );
+      setQueue((q) => {
+        const waiting = q.filter((a) => athleteKey(a) !== slotId);
+        const next = waiting[0];
+        if (next) {
+          setFocusedRival(next);
+          setRivalVotes(Number(next.votes) || 500);
+          setViewMode(VIEW_DUAL);
+          setRivalSlotStartedAt(Date.now());
+          bumpHud();
+          return waiting.slice(1);
+        }
+        setFocusedRival(null);
+        setRivalSlotStartedAt(null);
+        setViewMode(VIEW_SPOTLIGHT);
+        bumpHud();
+        return waiting;
+      });
+    }, waitMs);
+
+    return () => {
+      if (rivalFailoverTimerRef.current) {
+        clearTimeout(rivalFailoverTimerRef.current);
+        rivalFailoverTimerRef.current = null;
+      }
+    };
+  }, [
+    bumpHud,
+    focusedRival,
+    hasRemoteUid,
+    isHostRole,
+    isLocalAthlete,
+    remoteUids,
+    rivalSlotStartedAt,
+    rtcJoined,
+    viewMode,
+  ]);
 
   const submitBanter = useCallback(() => {
     const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
@@ -1461,7 +1658,19 @@ function Live1v1BattleScreenInner({
           </View>
 
           <View style={styles.rosterTriggerRow}>
-            {isDualFocus ? (
+            {isHostRole ? (
+              <TouchableOpacity
+                style={styles.queuedAthletesPill}
+                onPress={openChallengerRoster}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Queued athletes ${queue.length}`}
+              >
+                <Text style={styles.queuedAthletesPillText}>
+                  QUEUED ATHLETES ({queue.length})
+                </Text>
+              </TouchableOpacity>
+            ) : isDualFocus ? (
               <TouchableOpacity
                 style={styles.showChallengersPill}
                 onPress={openChallengerRoster}
@@ -1708,9 +1917,23 @@ function Live1v1BattleScreenInner({
       <ChallengerRosterSheet
         visible={Boolean(rosterOpen)}
         host={safeHostAthlete}
-        challengers={challengers?.length ? challengers : DEFAULT_CHALLENGERS}
+        hostMode={isHostRole}
+        queuedCount={queue.length}
+        challengers={
+          isHostRole
+            ? [
+                ...queue,
+                ...standbyPool.filter(
+                  (a) => !queue.some((q) => athleteKey(q) === athleteKey(a))
+                ),
+              ]
+            : challengers?.length
+              ? challengers
+              : DEFAULT_CHALLENGERS
+        }
         activeRivalId={focusedRival?.id || focusedRival?.handle}
         onSelectRival={selectRivalFromRoster}
+        onCallOut={callOutRival}
         onViewGrid={viewGridFromRoster}
         onClose={() => setRosterOpen(false)}
       />
@@ -1996,6 +2219,22 @@ const styles = StyleSheet.create({
   },
   showChallengersPillText: {
     color: ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  queuedAthletesPill: {
+    flex: 1,
+    backgroundColor: 'rgba(255,230,0,0.12)',
+    borderWidth: 1,
+    borderColor: '#FFE600',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  queuedAthletesPillText: {
+    color: '#FFE600',
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.5,

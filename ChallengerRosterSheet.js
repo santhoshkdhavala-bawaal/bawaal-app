@@ -17,10 +17,12 @@ const MUTED = '#888888';
 const ORANGE = '#FF5722';
 const CYAN = '#00E5FF';
 const BORDER = '#1F2937';
+const CALL_OUT = '#FFE600';
 
 /**
- * LATEST CHALLENGERS roster sheet.
- * Selecting VS → parent enters dual 1v1 (Host | Rival) without destroying the sheet host stream.
+ * LATEST CHALLENGERS / queued roster sheet.
+ * Host mode: CALL OUT jumps the auto-queue and launches a duel immediately.
+ * Selecting VS (spectator) → parent enters dual 1v1 (Host | Rival).
  * Opens over live dual-focus; does not require leaving 1v1 first.
  */
 export default function ChallengerRosterSheet({
@@ -28,11 +30,19 @@ export default function ChallengerRosterSheet({
   host,
   challengers = [],
   activeRivalId,
+  hostMode = false,
+  queuedCount,
   onSelectRival,
+  onCallOut,
   onViewGrid,
   onClose,
 }) {
   const insets = useSafeAreaInsets();
+  const count =
+    typeof queuedCount === 'number' ? queuedCount : challengers.length;
+  const title = hostMode
+    ? `QUEUED ATHLETES (${count})`
+    : 'LATEST CHALLENGERS';
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -40,7 +50,12 @@ export default function ChallengerRosterSheet({
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
           <View style={styles.pullBar} />
-          <Text style={styles.title}>LATEST CHALLENGERS</Text>
+          <Text style={styles.title}>{title}</Text>
+          {hostMode ? (
+            <Text style={styles.hostHint}>
+              Tap CALL OUT to override the auto-queue and start a 1v1 duel.
+            </Text>
+          ) : null}
 
           {host ? (
             <View style={styles.hostCard}>
@@ -53,7 +68,7 @@ export default function ChallengerRosterSheet({
                   {host.handle || '@HOST'}
                 </Text>
                 <Text style={styles.hostSub}>
-                  {host.label || 'INDIA'} · {host.reps ?? 0} REPS
+                  {host.label || host.country || 'INDIA'} · {host.reps ?? 0} REPS
                 </Text>
               </View>
             </View>
@@ -64,34 +79,56 @@ export default function ChallengerRosterSheet({
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           >
-            {challengers.map((athlete) => {
-              const active =
-                athlete.id === activeRivalId || athlete.handle === activeRivalId;
-              return (
-                <View
-                  key={athlete.id || athlete.handle}
-                  style={[styles.row, active && styles.rowActive]}
-                >
-                  <Text style={styles.rowFlag}>{athlete.flag || '🌐'}</Text>
-                  <View style={styles.rowMeta}>
-                    <Text style={styles.rowHandle} numberOfLines={1}>
-                      {athlete.handle || '@CONTENDER'}
-                    </Text>
-                    <Text style={styles.rowStats}>
-                      {athlete.label || athlete.country || 'OPEN'} · {athlete.reps ?? 0}{' '}
-                      REPS
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.vsBtn}
-                    activeOpacity={0.85}
-                    onPress={() => onSelectRival?.(athlete)}
+            {challengers.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>No athletes waiting in queue</Text>
+              </View>
+            ) : (
+              challengers.map((athlete, index) => {
+                const active =
+                  athlete.id === activeRivalId || athlete.handle === activeRivalId;
+                const country =
+                  athlete.label || athlete.country || athlete.handle || 'OPEN';
+                return (
+                  <View
+                    key={athlete.id || athlete.handle || `q-${index}`}
+                    style={[styles.row, active && styles.rowActive]}
                   >
-                    <Text style={styles.vsBtnText}>VS</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
+                    <Text style={styles.queuePos}>#{index + 1}</Text>
+                    <Text style={styles.rowFlag}>{athlete.flag || '🌐'}</Text>
+                    <View style={styles.rowMeta}>
+                      <Text style={styles.rowHandle} numberOfLines={1}>
+                        {country} {athlete.flag || ''}
+                      </Text>
+                      <Text style={styles.rowStats} numberOfLines={1}>
+                        {athlete.handle || '@CONTENDER'} · {athlete.reps ?? 0}{' '}
+                        REPS
+                      </Text>
+                    </View>
+                    {hostMode ? (
+                      <TouchableOpacity
+                        style={[styles.callOutBtn, active && styles.callOutBtnDisabled]}
+                        activeOpacity={0.85}
+                        disabled={active}
+                        onPress={() => onCallOut?.(athlete)}
+                      >
+                        <Text style={styles.callOutBtnText}>
+                          {active ? 'LIVE' : 'CALL OUT'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.vsBtn}
+                        activeOpacity={0.85}
+                        onPress={() => onSelectRival?.(athlete)}
+                      >
+                        <Text style={styles.vsBtnText}>VS</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
           </ScrollView>
 
           <TouchableOpacity
@@ -139,7 +176,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  hostHint: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
     marginBottom: 12,
+    lineHeight: 15,
   },
   hostCard: {
     flexDirection: 'row',
@@ -179,10 +223,23 @@ const styles = StyleSheet.create({
   },
   list: { flexGrow: 0 },
   listContent: { paddingBottom: 8, gap: 8 },
+  emptyCard: {
+    backgroundColor: SURFACE,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingVertical: 22,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: SURFACE,
     borderRadius: 10,
     borderWidth: 1,
@@ -192,6 +249,12 @@ const styles = StyleSheet.create({
   },
   rowActive: {
     borderColor: CYAN,
+  },
+  queuePos: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '900',
+    width: 22,
   },
   rowFlag: { fontSize: 18 },
   rowMeta: { flex: 1, minWidth: 0 },
@@ -216,6 +279,21 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 12,
     fontWeight: '900',
+  },
+  callOutBtn: {
+    backgroundColor: CALL_OUT,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  callOutBtnDisabled: {
+    backgroundColor: 'rgba(0,229,255,0.35)',
+  },
+  callOutBtnText: {
+    color: '#000000',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   gridBtn: {
     marginTop: 10,
