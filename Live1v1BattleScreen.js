@@ -1689,8 +1689,27 @@ function Live1v1BattleScreenInner({
       {/* Full-bleed video stage — 1v1 dual panes OR roster grid (never both) */}
       <View style={styles.stageContainer} pointerEvents="box-none">
         {isDualFocus ? (
-          <View style={styles.dualFocusColumn} pointerEvents="box-none">
-            <View style={styles.streamPaneShell} pointerEvents="box-none">
+          <View
+            style={{
+              flex: 1,
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              paddingVertical: 16,
+              width: '100%',
+            }}
+            pointerEvents="box-none"
+          >
+            {/* Top Tile: Host */}
+            <View
+              style={{
+                width: '100%',
+                height: 210,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+              pointerEvents="box-none"
+            >
               <DualFocusPane
                 athlete={safeHostAthlete}
                 variant="host"
@@ -1698,7 +1717,7 @@ function Live1v1BattleScreenInner({
                 mediaReady={mediaReady}
                 rtcJoined={rtcJoined}
                 connectionOffline={connectionOffline}
-                topInset={stageTopInset}
+                topInset={12}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1710,14 +1729,33 @@ function Live1v1BattleScreenInner({
                 micMuted={micMuted && hostUsesDeviceCamera}
               />
             </View>
-            <View style={styles.vsCenterSeam} pointerEvents="none">
-              <View style={styles.vsLine} />
-              <View style={styles.vsCircle}>
+
+            {/* Center VS Divider */}
+            <View
+              style={{
+                height: 40,
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 10,
+              }}
+              pointerEvents="none"
+            >
+              <View style={styles.vsBadge}>
                 <Text style={styles.vsText}>VS</Text>
               </View>
-              <View style={styles.vsLine} />
             </View>
-            <View style={styles.streamPaneShell} pointerEvents="box-none">
+
+            {/* Bottom Tile: Rival */}
+            <View
+              style={{
+                width: '100%',
+                height: 210,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+              pointerEvents="box-none"
+            >
               <DualFocusPane
                 athlete={rivalAthlete}
                 variant="rival"
@@ -2512,17 +2550,20 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: PANEL_HOST,
   },
-  /** Pure 1v1 — host + rival only, no roster grid mounted behind. */
+  /** Pure 1v1 — Host tile · VS · Rival tile (space-between column). */
   dualFocusColumn: {
     flex: 1,
     width: '100%',
-    height: '100%',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
     backgroundColor: 'transparent',
   },
   streamPaneShell: {
-    flex: 1,
     width: '100%',
-    minHeight: 0,
+    height: 210,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
     backgroundColor: 'transparent',
   },
@@ -2776,28 +2817,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   vsCenterSeam: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
-    height: 48,
-    marginTop: -24,
-    flexDirection: 'row',
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
     backgroundColor: 'transparent',
   },
-  vsLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: ORANGE,
-  },
-  vsCircle: {
+  vsBadge: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginHorizontal: 10,
     backgroundColor: 'transparent',
     borderWidth: 2,
     borderColor: ORANGE,
@@ -2807,7 +2836,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.7,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 10,
+    elevation: 8,
   },
   vsText: {
     color: ORANGE,

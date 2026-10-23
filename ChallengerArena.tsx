@@ -3,7 +3,10 @@
  *
  * Spectator HUD — CHALLENGERS drawer (Watch mode):
  *   style={{ position: 'absolute', top: 95, left: 16, zIndex: 999 }}
- *   (clear below @HOST badge; never overlaps REPS / LIVE)
+ *
+ * Dual 1v1 stage column:
+ *   flex:1 · column · space-between · paddingVertical:16
+ *   Host tile (h:210) → VS badge → Rival tile (h:210)
  *
  * Local camera tile (Host / Challenger) — persistent wrapper:
  *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} />
