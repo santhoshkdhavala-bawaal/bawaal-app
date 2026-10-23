@@ -51,7 +51,7 @@ export default function ChallengerRosterSheet({
   const title = hostMode
     ? `QUEUED ATHLETES (${count})`
     : spectatorMode
-      ? `LIVE ROSTER (${count})`
+      ? `CHALLENGERS IN QUEUE (${count})`
       : 'LATEST CHALLENGERS';
 
   const closeSheet = () => {

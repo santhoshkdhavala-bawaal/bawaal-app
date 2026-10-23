@@ -11,8 +11,9 @@
  * LOCK-IN (roster → 1v1):
  *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
  *    unmounts the tile grid, and streams only those two panes.
- *  - Spectator HUD: top-right ROSTER (N) opens ChallengerRosterSheet over live A/V.
- *  - Spectator SPECTATE switches focusedRival in the bottom viewport (queue unchanged).
+ *  - Spectator HUD: always-visible top-right CHALLENGERS (N) opens ChallengerRosterSheet.
+ *  - Solo spectator (no rival): Host 100% height, no VS / rival pane; gloves stay up.
+ *  - Active 1v1 spectator: 50/50 Host|Rival with VS + live reps; SPECTATE switches focus.
  *
  * LOCK-IN (auto-queue matchmaking):
  *  - At battle start with Host live → promote queue[0] into dual 1v1.
@@ -23,9 +24,9 @@
  *  - Host viewport mounts expo-camera CameraView (facing front) under transparent HUD.
  *  - Rival uses Agora remote when present; otherwise RivalSimFeed (simulated WebRTC).
  *
- * View modes:
- *  - SPOTLIGHT_GRID: Host spotlight (solo) until rival focus
- *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
+ * View modes (driven by hasActiveRival):
+ *  - Solo: Host full-bleed warm-up (no VS / rival pane)
+ *  - Dual: Host vs rival 50/50 with central VS
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -92,9 +93,6 @@ const CYAN = '#00E5FF';
 /** Arena viewport panels — visible even when camera / RTC tracks are offline. */
 const PANEL_HOST = '#090D16';
 const PANEL_RIVAL = '#121826';
-
-const VIEW_SPOTLIGHT = 'SPOTLIGHT_GRID';
-const VIEW_DUAL = 'DUAL_FOCUS';
 
 /**
  * Resolve arena seat from navigation.
@@ -808,11 +806,10 @@ function Live1v1BattleScreenInner({
 
   // --- Live arena UI state (local until fully mirrored via Supabase Realtime) ---
   // Host starts full-bleed until matchmaking promotes queue[0]; challenger enters dual.
-  /** Solo (false) vs 50/50 Dual Split (true) — drives VIEW_DUAL / VIEW_SPOTLIGHT. */
+  /** Solo (false) vs 50/50 Dual Split (true). */
   const [hasActiveRival, setHasActiveRival] = useState(
     () => arenaRole === 'challenger'
   );
-  const viewMode = hasActiveRival ? VIEW_DUAL : VIEW_SPOTLIGHT;
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
   /** FIFO checked-in queue — excludes the athlete currently in the duel. */
@@ -1542,6 +1539,16 @@ function Live1v1BattleScreenInner({
   const safeHostAthlete = hostAthlete || DEFAULT_HOST;
   const rivalAthlete =
     focusedRival || challengers?.[0] || DEFAULT_CHALLENGERS[0];
+  /** Waiting challengers for spectator roster badge + sheet (excludes active rival). */
+  const waitingChallengers = useMemo(() => {
+    const pool = challengers?.length ? challengers : DEFAULT_CHALLENGERS;
+    if (hasActiveRival && focusedRival) {
+      const liveKey = athleteKey(focusedRival);
+      return pool.filter((a) => athleteKey(a) !== liveKey);
+    }
+    return [...pool];
+  }, [challengers, focusedRival, hasActiveRival]);
+  const challengersInQueueCount = waitingChallengers.length;
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
   /** Keep host handle / top HUD clear of the status-bar clock. */
@@ -1552,7 +1559,8 @@ function Live1v1BattleScreenInner({
   const stageTopInset = hostTopInset;
   /** Reps stay up for athletes; spectators only see them with HUD chrome. */
   const repsVisible = isParticipant || showControls;
-  const isDualFocus = hasActiveRival;
+  /** Solo warm-up = full Host; active ring = 50/50 dual with VS. */
+  const isDualFocus = Boolean(hasActiveRival);
 
   // Never return null/undefined — always mount a full arena tree.
   return (
@@ -1640,6 +1648,30 @@ function Live1v1BattleScreenInner({
         )}
       </View>
 
+      {/* Spectator: always-visible CHALLENGERS badge (does not fade with HUD chrome). */}
+      {!isParticipant ? (
+        <View
+          style={[
+            styles.spectatorChallengersAnchor,
+            // Sit under the status/header row so LIVE badge and pill do not collide.
+            { top: stageTopInset + 52 },
+          ]}
+          pointerEvents="box-none"
+        >
+          <TouchableOpacity
+            style={styles.challengersQueuePill}
+            onPress={openChallengerRoster}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Challengers in queue ${challengersInQueueCount}`}
+          >
+            <Text style={styles.challengersQueuePillText}>
+              CHALLENGERS ({challengersInQueueCount})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
       <Animated.View
         style={[
@@ -1674,7 +1706,11 @@ function Live1v1BattleScreenInner({
             >
               <Text style={styles.brandTitle}>BAWAAL</Text>
               <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {viewMode === VIEW_DUAL ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
+                {isDualFocus
+                  ? 'DUAL FOCUS 1v1'
+                  : !isParticipant
+                    ? 'HOST WARM-UP'
+                    : 'BATTLE BAWAAL ARENA'}
               </Text>
             </TouchableOpacity>
 
@@ -1693,19 +1729,6 @@ function Live1v1BattleScreenInner({
                   {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
                 </Text>
               </View>
-              {!isParticipant ? (
-                <TouchableOpacity
-                  style={styles.liveRosterPill}
-                  onPress={openChallengerRoster}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Live roster ${queue.length} waiting`}
-                >
-                  <Text style={styles.liveRosterPillText}>
-                    ROSTER ({queue.length})
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
           </View>
 
@@ -1963,8 +1986,15 @@ function Live1v1BattleScreenInner({
         host={safeHostAthlete}
         hostMode={isHostRole}
         spectatorMode={!isParticipant}
-        queuedCount={queue.length}
-        nextUpId={queue[0]?.id || queue[0]?.handle}
+        queuedCount={
+          !isParticipant ? challengersInQueueCount : queue.length
+        }
+        nextUpId={
+          waitingChallengers[0]?.id ||
+          waitingChallengers[0]?.handle ||
+          queue[0]?.id ||
+          queue[0]?.handle
+        }
         challengers={
           isHostRole
             ? [
@@ -1974,12 +2004,7 @@ function Live1v1BattleScreenInner({
                 ),
               ]
             : !isParticipant
-              ? queue.length
-                ? queue
-                : (challengers?.length ? challengers : DEFAULT_CHALLENGERS).filter(
-                    (a) =>
-                      athleteKey(a) !== athleteKey(focusedRival)
-                  )
+              ? waitingChallengers
               : challengers?.length
                 ? challengers
                 : DEFAULT_CHALLENGERS
@@ -2267,17 +2292,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  liveRosterPill: {
-    backgroundColor: 'rgba(0,229,255,0.14)',
+  /** Persistent spectator access — outside HUD fade so roster stays tappable. */
+  spectatorChallengersAnchor: {
+    position: 'absolute',
+    right: 12,
+    zIndex: 120,
+    elevation: 120,
+    backgroundColor: 'transparent',
+  },
+  challengersQueuePill: {
+    backgroundColor: 'rgba(0,229,255,0.16)',
     borderWidth: 1,
     borderColor: CYAN,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    maxWidth: 132,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
-  liveRosterPillText: {
+  challengersQueuePillText: {
     color: CYAN,
     fontSize: 10,
     fontWeight: '900',
