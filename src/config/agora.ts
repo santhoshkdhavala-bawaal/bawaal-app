@@ -27,8 +27,17 @@ export type AgoraClientSettings = {
 const rawAppId = String(process.env.EXPO_PUBLIC_AGORA_APP_ID || '').trim();
 const rawToken = String(process.env.EXPO_PUBLIC_AGORA_TOKEN || '').trim();
 
-/** Agora App ID from console.agora.io */
-export const AGORA_APP_ID: string = rawAppId;
+/** Placeholder / empty values that must never be passed to native initialize(). */
+function isUsableAgoraAppId(id: string): boolean {
+  if (!id) return false;
+  const upper = id.toUpperCase();
+  if (upper === 'YOUR_AGORA_APP_ID') return false;
+  if (upper.includes('YOUR_') || upper.includes('REPLACE')) return false;
+  return true;
+}
+
+/** Agora App ID from console.agora.io (empty when unset / placeholder). */
+export const AGORA_APP_ID: string = isUsableAgoraAppId(rawAppId) ? rawAppId : '';
 
 /**
  * Temporary/channel token. Empty string is valid only when the Agora project
@@ -45,9 +54,9 @@ export const AGORA_CLIENT_SETTINGS: AgoraClientSettings = {
   maxReconnectAttempts: 5,
 };
 
-/** True when an App ID is present (native module availability checked separately). */
+/** True when a real App ID is present (native module availability checked separately). */
 export function hasAgoraAppId(): boolean {
-  return AGORA_APP_ID.length > 0;
+  return isUsableAgoraAppId(AGORA_APP_ID);
 }
 
 /**

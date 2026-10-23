@@ -240,7 +240,10 @@ export async function initAgoraEngine(appId = AGORA_APP_ID) {
   if (!isAgoraNativeAvailable()) {
     return { ok: false, reason: 'native-unavailable' };
   }
-  if (!appId) {
+  const id = String(appId || '').trim();
+  // Never call native initialize() with empty / placeholder — crashes startup.
+  if (!id || !hasAgoraAppId() || id.toUpperCase() === 'YOUR_AGORA_APP_ID') {
+    console.warn('[agora] App ID missing or placeholder — skipping engine init');
     return { ok: false, reason: 'missing-app-id' };
   }
   if (engine) {
@@ -250,13 +253,19 @@ export async function initAgoraEngine(appId = AGORA_APP_ID) {
   const { createAgoraRtcEngine, ChannelProfileType, ConnectionStateType } =
     Agora;
 
-  const rtc = createAgoraRtcEngine();
-  rtc.initialize({
-    appId,
-    channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
-  });
-  rtc.enableVideo();
-  rtc.enableAudio();
+  let rtc;
+  try {
+    rtc = createAgoraRtcEngine();
+    rtc.initialize({
+      appId: id,
+      channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+    });
+    rtc.enableVideo();
+    rtc.enableAudio();
+  } catch (err) {
+    console.warn('[agora] initAgoraEngine failed:', err?.message || err);
+    return { ok: false, reason: 'init-failed', error: err };
+  }
 
   rtc.registerEventHandler({
     onJoinChannelSuccess: (_connection, uid) => {

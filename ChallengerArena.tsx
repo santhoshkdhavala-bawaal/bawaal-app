@@ -1,8 +1,8 @@
 /**
  * ChallengerArena — clean 50/50 Host / Rival layout with strict role isolation.
- * Spectator vote HUD and Athlete media bar never mount together.
+ * Agora init is guarded: empty / YOUR_AGORA_APP_ID never calls native initialize().
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,22 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AGORA_APP_ID, hasAgoraAppId } from './src/config/agora';
 import {
+  destroyAgoraEngine,
   enableLocalCamera,
   getAgoraSdk,
   getEngine,
+  initAgoraEngine,
   setLocalCameraEnabled,
 } from './src/services/agoraService';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
+const ClientRoleType = AgoraSdk?.ClientRoleType;
+
+/** True when env has a real App ID (not empty / YOUR_AGORA_APP_ID). */
+const AGORA_CONFIGURED = Boolean(hasAgoraAppId() && AGORA_APP_ID);
 
 /** RN types prefer absoluteFill; keep explicit full-bleed for the camera canvas. */
 const ABSOLUTE_FILL = {
@@ -75,6 +82,8 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const [userRole] = useState<UserRole>(initialRole);
   const [isCamOn, setIsCamOn] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
+  const [isEngineReady, setIsEngineReady] = useState(false);
+  const agoraEngineRef = useRef<ReturnType<typeof getEngine>>(null);
 
   const hostHandle =
     (params.match as { host?: { handle?: string; flag?: string; reps?: number } })
@@ -104,8 +113,12 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
   const isSpectator = !isAthlete;
 
-  const showHostCam = Boolean(isCamOn && userRole === 'HOST' && RtcSurfaceView);
-  const showRivalCam = Boolean(isCamOn && userRole === 'RIVAL' && RtcSurfaceView);
+  const showHostCam = Boolean(
+    isCamOn && isEngineReady && userRole === 'HOST' && RtcSurfaceView
+  );
+  const showRivalCam = Boolean(
+    isCamOn && isEngineReady && userRole === 'RIVAL' && RtcSurfaceView
+  );
 
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -128,6 +141,70 @@ export default function ChallengerArena({ route, navigation }: Props) {
     return true;
   };
 
+  // Safe Agora boot — never initialize with empty / YOUR_AGORA_APP_ID (black-screen crash).
+  useEffect(() => {
+    let isMounted = true;
+
+    const initAgora = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          ]);
+        }
+
+        if (!AGORA_CONFIGURED) {
+          console.warn(
+            '[ChallengerArena] Agora App ID not configured — UI mounts without RTC'
+          );
+          if (isMounted) setIsEngineReady(true);
+          return;
+        }
+
+        const init = await initAgoraEngine(AGORA_APP_ID);
+        if (!init.ok) {
+          console.warn('[ChallengerArena] Agora init skipped:', init.reason);
+          if (isMounted) setIsEngineReady(true);
+          return;
+        }
+
+        agoraEngineRef.current = getEngine();
+        const engine = agoraEngineRef.current;
+        if (engine && isAthlete) {
+          try {
+            engine.enableVideo();
+            engine.startPreview();
+          } catch (e) {
+            console.warn('[ChallengerArena] preview warm-up', e);
+          }
+        }
+
+        if (isMounted) setIsEngineReady(true);
+      } catch (e) {
+        console.error('[ChallengerArena] Agora init error:', e);
+        if (isMounted) setIsEngineReady(true);
+      }
+    };
+
+    void initAgora();
+
+    return () => {
+      isMounted = false;
+      try {
+        const engine = agoraEngineRef.current || getEngine();
+        engine?.stopPreview?.();
+        engine?.leaveChannel?.();
+      } catch {
+        /* ignore */
+      }
+      agoraEngineRef.current = null;
+      void destroyAgoraEngine();
+    };
+    // Mount-once boot; role used only for optional preview warm-up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleCamera = useCallback(async () => {
     if (!isAthlete) return;
 
@@ -135,19 +212,45 @@ export default function ChallengerArena({ route, navigation }: Props) {
       const hasPermission = await requestPermissions();
       if (!hasPermission) return;
 
-      const result = await enableLocalCamera();
-      if (!result?.ok) return;
-
-      const engine = getEngine();
-      if (engine) {
-        engine.enableVideo();
-        engine.startPreview();
+      if (AGORA_CONFIGURED) {
+        const result = await enableLocalCamera();
+        if (!result?.ok && result?.reason !== 'missing-app-id') {
+          console.warn('[ChallengerArena] enableLocalCamera', result);
+        }
+        const engine = getEngine() || agoraEngineRef.current;
+        if (engine) {
+          try {
+            engine.enableLocalVideo(true);
+            engine.enableVideo();
+            engine.startPreview();
+            // Optional channel join when configured (token may be empty in cert-off projects).
+            engine.joinChannel?.('', 'bawaal_arena', 0, {
+              clientRoleType:
+                ClientRoleType?.ClientRoleBroadcaster ??
+                ClientRoleType?.clientRoleBroadcaster ??
+                1,
+            });
+          } catch (e) {
+            console.error('[ChallengerArena] Camera toggle error:', e);
+          }
+        }
       }
+      // Always flip UI — STANDBY ↔ surface; never crash on missing App ID.
       setIsCamOn(true);
       return;
     }
 
-    await setLocalCameraEnabled(false);
+    if (AGORA_CONFIGURED) {
+      const engine = getEngine() || agoraEngineRef.current;
+      try {
+        engine?.enableLocalVideo?.(false);
+        engine?.stopPreview?.();
+        engine?.leaveChannel?.();
+      } catch {
+        /* ignore */
+      }
+      await setLocalCameraEnabled(false);
+    }
     setIsCamOn(false);
   }, [isAthlete, isCamOn]);
 
