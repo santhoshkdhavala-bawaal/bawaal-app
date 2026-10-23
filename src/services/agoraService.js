@@ -420,13 +420,21 @@ export function enableLocalAudio(enabled = true) {
 
 /**
  * Canonical athlete camera switch (isCameraOn).
- * ON  → enableVideo + startPreview (local uid 0).
- * OFF → stop local publish/preview (does not call disableVideo — that would
- *       kill remote rival playback in dual 1v1).
+ * ON  → request permissions → enableVideo + startPreview (local uid 0).
+ * OFF → stop local publish/preview (keeps remote rival video alive).
  */
-export function setLocalCameraEnabled(isCameraOn) {
-  if (!engine) return { ok: false, isCameraOn: Boolean(isCameraOn) };
+export async function setLocalCameraEnabled(isCameraOn) {
   const on = Boolean(isCameraOn);
+  if (on) {
+    const permitted = await requestArenaMediaPermissions(true);
+    if (!permitted) {
+      return { ok: false, isCameraOn: false, reason: 'permissions-denied' };
+    }
+  }
+  if (!engine) {
+    // Engine not ready yet — still report intended state; join will start preview.
+    return { ok: false, isCameraOn: on, reason: 'engine-unavailable' };
+  }
   try {
     if (on) {
       engine.enableVideo();

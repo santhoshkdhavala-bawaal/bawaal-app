@@ -4,7 +4,7 @@
  * PRODUCTION LOCK-IN:
  *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
  *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
- *  - CHALLENGERS (X): top 70 · left 16 (under Host handle). Top-right 16/16 = REPS + LIVE only.
+ *  - CHALLENGERS (X): top 75 · left 16 (under Host handle). Top-right 16/16 = REPS + LIVE only.
  *  - isCameraOn true → RtcSurfaceView uid:0; false → flag + STANDBY (never "CAMERA OFF").
  *
  * Role UI (route-driven):
@@ -1267,13 +1267,19 @@ function Live1v1BattleScreenInner({
 
   const handleToggleCamera = useCallback(() => {
     if (!isParticipant) return;
-    setIsCameraOn((prev) => {
-      const next = !prev;
-      // Cam On tap → true + enableVideo/startPreview; Cam Off tap → false + stop local video.
-      setLocalCameraEnabled(next);
-      return next;
-    });
-  }, [isParticipant]);
+    const next = !isCameraOn;
+    setIsCameraOn(next);
+    // Cam On → permissions + enableVideo + startPreview; Cam Off → stop local video.
+    void (async () => {
+      const result = await setLocalCameraEnabled(next);
+      if (next && result?.ok) {
+        startBroadcasterPreview();
+      }
+      if (next && result?.reason === 'permissions-denied') {
+        setIsCameraOn(false);
+      }
+    })();
+  }, [isParticipant, isCameraOn]);
 
   useEffect(() => {
     if (!battleId) return undefined;
@@ -2389,10 +2395,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Spectator CHALLENGERS — below Host handle badge (top 70 · left 16). */
+  /** Spectator CHALLENGERS — below Host handle badge (top 75 · left 16). */
   spectatorChallengersAnchor: {
     position: 'absolute',
-    top: 70,
+    top: 75,
     left: 16,
     zIndex: 120,
     elevation: 120,
