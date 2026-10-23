@@ -11,7 +11,7 @@
  * LOCK-IN (roster → 1v1):
  *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
  *    unmounts the tile grid, and streams only those two panes.
- *  - Spectator HUD: always-visible top-right CHALLENGERS (N) opens ChallengerRosterSheet.
+ *  - Spectator HUD: CHALLENGERS (N) under Host handle (top-left); top-right = REPS / LIVE only.
  *  - Solo spectator (no rival): Host 100% height, no VS / rival pane; gloves stay up.
  *  - Active 1v1 spectator: 50/50 Host|Rival with VS + live reps; SPECTATE switches focus.
  *
@@ -626,7 +626,7 @@ function HostSpotlight({
       />
       {/* Host handle — top-left inside host viewport, below status bar */}
       <View
-        style={[styles.handleAnchorInPane, { top: topInset, left: 12 }]}
+        style={[styles.handleAnchorInPane, { top: topInset, left: 16 }]}
         pointerEvents="none"
       >
         <AthleteHandlePill
@@ -637,7 +637,7 @@ function HostSpotlight({
       </View>
       {overlaysVisible ? (
         <View
-          style={[styles.statsAnchorHost, { top: topInset }]}
+          style={[styles.statsAnchorHost, { top: Math.max(16, topInset) }]}
           pointerEvents="box-none"
         >
           {live ? (
@@ -678,6 +678,7 @@ function DualFocusPane({
   const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
   // Host clears the status bar; rival sits at top of its own bottom pane (under VS).
   const handleTop = isHost ? topInset : 12;
+  const statsTop = isHost ? Math.max(16, topInset) : 12;
   return (
     <View style={styles.dualPane} pointerEvents="box-none">
       <StreamSurface
@@ -694,7 +695,7 @@ function DualFocusPane({
         style={styles.cameraLayer}
       />
       <View
-        style={[styles.handleAnchorInPane, { top: handleTop, left: 12 }]}
+        style={[styles.handleAnchorInPane, { top: handleTop, left: 16 }]}
         pointerEvents="none"
       >
         <AthleteHandlePill
@@ -705,7 +706,7 @@ function DualFocusPane({
       </View>
       {overlaysVisible ? (
         <View
-          style={[styles.statsAnchorHost, { top: handleTop }]}
+          style={[styles.statsAnchorHost, { top: statsTop }]}
           pointerEvents="box-none"
         >
           <TouchableOpacity
@@ -1648,13 +1649,13 @@ function Live1v1BattleScreenInner({
         )}
       </View>
 
-      {/* Spectator: always-visible CHALLENGERS badge (does not fade with HUD chrome). */}
+      {/* Spectator: CHALLENGERS under Host handle (top-left). Top-right stays REPS / LIVE. */}
       {!isParticipant ? (
         <View
           style={[
             styles.spectatorChallengersAnchor,
-            // Sit under the status/header row so LIVE badge and pill do not collide.
-            { top: stageTopInset + 52 },
+            // Host handle sits at stageTopInset; pill clears it with ~8px gap.
+            { top: stageTopInset + 56 },
           ]}
           pointerEvents="box-none"
         >
@@ -2292,15 +2293,17 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Persistent spectator access — outside HUD fade so roster stays tappable. */
+  /** Spectator CHALLENGERS — top-left under Host handle; never overlaps top-right REPS/LIVE. */
   spectatorChallengersAnchor: {
     position: 'absolute',
-    right: 12,
+    left: 16,
     zIndex: 120,
     elevation: 120,
     backgroundColor: 'transparent',
+    maxWidth: '58%',
   },
   challengersQueuePill: {
+    alignSelf: 'flex-start',
     backgroundColor: 'rgba(0,229,255,0.16)',
     borderWidth: 1,
     borderColor: CYAN,
@@ -2492,7 +2495,8 @@ const styles = StyleSheet.create({
   },
   statsAnchorHost: {
     position: 'absolute',
-    right: 12,
+    top: 16,
+    right: 16,
     zIndex: 10,
     elevation: 10,
     alignItems: 'flex-end',
