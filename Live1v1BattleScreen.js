@@ -73,9 +73,9 @@ const WHITE = '#FFFFFF';
 const MUTED = '#888888';
 const ORANGE = '#FF5722';
 const CYAN = '#00E5FF';
-/** Slate viewport panels — never pure black when streams are offline. */
-const PANEL_HOST = '#0F172A';
-const PANEL_RIVAL = '#1E293B';
+/** Arena viewport panels — visible even when camera / RTC tracks are offline. */
+const PANEL_HOST = '#090D16';
+const PANEL_RIVAL = '#121826';
 
 const VIEW_SPOTLIGHT = 'SPOTLIGHT_GRID';
 const VIEW_DUAL = 'DUAL_FOCUS';
@@ -259,9 +259,49 @@ class StreamErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
-      return this.props.fallback;
+      return this.props.fallback || (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: PANEL_RIVAL }]} />
+      );
     }
-    return this.props.children;
+    return this.props.children ?? null;
+  }
+}
+
+/** Screen-level guard — Live1v1 never unmounts to a blank/null tree. */
+class ArenaSafeBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    console.warn('[Live1v1 ArenaSafeBoundary]', error?.message || error, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.safeCrashRoot}>
+          <View style={styles.safeCrashHostPane}>
+            <Text style={styles.safeCrashLabel}>HOST · STANDBY</Text>
+          </View>
+          <View style={styles.safeCrashRivalPane}>
+            <Text style={styles.safeCrashLabel}>RIVAL · STANDBY</Text>
+          </View>
+          <Text style={styles.safeCrashHint}>Arena recovering — tap back and re-enter</Text>
+        </View>
+      );
+    }
+    return this.props.children ?? (
+      <View style={styles.safeCrashRoot}>
+        <View style={styles.safeCrashHostPane} />
+        <View style={styles.safeCrashRivalPane} />
+      </View>
+    );
   }
 }
 
@@ -595,7 +635,7 @@ function DualFocusPane({
   );
 }
 
-export default function Live1v1BattleScreen({
+function Live1v1BattleScreenInner({
   navigation,
   route,
   onVote,
@@ -684,8 +724,8 @@ export default function Live1v1BattleScreen({
     () => Number(match.challengers[0]?.votes ?? 1060)
   );
   const [hypeCount, setHypeCount] = useState(() => Number(match.initialHype ?? 88));
-  /** Floating HUD chrome (timer/handles/poll bar) — 5s auto-fade. Gloves stay persistent. */
-  const [showControls, setShowControls] = useState(true);
+  /** Floating HUD chrome — starts visible; 5s auto-fade. Gloves stay persistent. */
+  const [showControls, setShowControls] = useState(true); // HUD visible on enter
   const [floatingReactions, setFloatingReactions] = useState([]);
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
@@ -1218,15 +1258,21 @@ export default function Live1v1BattleScreen({
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
 
+  // Never return null/undefined — always mount a full arena tree.
   return (
-    <View style={styles.container}>
+    <Pressable
+      style={styles.rootScreen}
+      onPress={toggleHud}
+      accessibilityRole="button"
+      accessibilityLabel="Toggle battle HUD"
+    >
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
       {/* Full-bleed video stage — slate panels always paint behind floating HUD */}
-      <View style={styles.stageContainer}>
+      <View style={styles.stageContainer} pointerEvents="box-none">
         {viewMode === VIEW_SPOTLIGHT ? (
-          <View style={styles.fullVideoColumn}>
-            <View style={styles.spotlightHostWrap}>
+          <View style={styles.fullVideoColumn} pointerEvents="box-none">
+            <View style={[styles.spotlightHostWrap, styles.panelHost]}>
               <HostSpotlight
                 host={safeHostAthlete}
                 live
@@ -1273,22 +1319,24 @@ export default function Live1v1BattleScreen({
             </ScrollView>
           </View>
         ) : (
-          <View style={styles.fullVideoColumn}>
-            <DualFocusPane
-              athlete={safeHostAthlete}
-              variant="host"
-              overlaysVisible={showControls}
-              mediaReady={mediaReady}
-              onRepPress={() => {
-                bumpHud();
-                handleHostRep();
-              }}
-              isLocal={isLocalHost}
-              hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-              cameraOff={cameraOff && isLocalHost}
-              cameraFacing={cameraFacing}
-              micMuted={micMuted && isLocalHost}
-            />
+          <View style={styles.fullVideoColumn} pointerEvents="box-none">
+            <View style={[styles.streamPaneShell, styles.panelHost]} pointerEvents="box-none">
+              <DualFocusPane
+                athlete={safeHostAthlete}
+                variant="host"
+                overlaysVisible={showControls}
+                mediaReady={mediaReady}
+                onRepPress={() => {
+                  bumpHud();
+                  handleHostRep();
+                }}
+                isLocal={isLocalHost}
+                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
+                cameraOff={cameraOff && isLocalHost}
+                cameraFacing={cameraFacing}
+                micMuted={micMuted && isLocalHost}
+              />
+            </View>
             <View style={styles.vsCenterSeam} pointerEvents="none">
               <View style={styles.vsLine} />
               <View style={styles.vsCircle}>
@@ -1296,24 +1344,26 @@ export default function Live1v1BattleScreen({
               </View>
               <View style={styles.vsLine} />
             </View>
-            <DualFocusPane
-              athlete={rivalAthlete}
-              variant="rival"
-              overlaysVisible={showControls}
-              mediaReady={mediaReady}
-              onRepPress={() => {
-                bumpHud();
-                handleRivalRep();
-              }}
-              isLocal={isLocalAthlete(rivalAthlete)}
-              hasRemote={
-                !isLocalAthlete(rivalAthlete) &&
-                hasRemoteUid(rivalAthlete?.rtcUid)
-              }
-              cameraOff={cameraOff && isLocalAthlete(rivalAthlete)}
-              cameraFacing={cameraFacing}
-              micMuted={micMuted && isLocalAthlete(rivalAthlete)}
-            />
+            <View style={[styles.streamPaneShell, styles.panelRival]} pointerEvents="box-none">
+              <DualFocusPane
+                athlete={rivalAthlete}
+                variant="rival"
+                overlaysVisible={showControls}
+                mediaReady={mediaReady}
+                onRepPress={() => {
+                  bumpHud();
+                  handleRivalRep();
+                }}
+                isLocal={isLocalAthlete(rivalAthlete)}
+                hasRemote={
+                  !isLocalAthlete(rivalAthlete) &&
+                  hasRemoteUid(rivalAthlete?.rtcUid)
+                }
+                cameraOff={cameraOff && isLocalAthlete(rivalAthlete)}
+                cameraFacing={cameraFacing}
+                micMuted={micMuted && isLocalAthlete(rivalAthlete)}
+              />
+            </View>
           </View>
         )}
 
@@ -1330,14 +1380,6 @@ export default function Live1v1BattleScreen({
           <View style={styles.voteHintSpacer} />
         )}
       </View>
-
-      {/* Root-level full-screen tap — toggles HUD on open video space */}
-      <Pressable
-        style={styles.rootTapCatcher}
-        onPress={toggleHud}
-        accessibilityRole="button"
-        accessibilityLabel="Toggle battle HUD"
-      />
 
       {/* Persistent floating HUD root — always above the background grid */}
       <View style={styles.hudOverlayRoot} pointerEvents="box-none">
@@ -1582,11 +1624,11 @@ export default function Live1v1BattleScreen({
         </View>
       </View>
 
-      <FloatingReactionLayer reactions={floatingReactions} />
+      <FloatingReactionLayer reactions={floatingReactions || []} />
       </View>
 
       <Modal
-        visible={banterOpen}
+        visible={Boolean(banterOpen)}
         transparent
         animationType="slide"
         onRequestClose={() => setBanterOpen(false)}
@@ -1632,19 +1674,32 @@ export default function Live1v1BattleScreen({
       />
 
       <ChallengerRosterSheet
-        visible={rosterOpen}
-        host={hostAthlete}
-        challengers={challengers}
+        visible={Boolean(rosterOpen)}
+        host={safeHostAthlete}
+        challengers={challengers?.length ? challengers : DEFAULT_CHALLENGERS}
         activeRivalId={focusedRival?.id || focusedRival?.handle}
         onSelectRival={selectRivalFromRoster}
         onViewGrid={viewGridFromRoster}
         onClose={() => setRosterOpen(false)}
       />
-    </View>
+    </Pressable>
+  );
+}
+
+export default function Live1v1BattleScreen(props) {
+  return (
+    <ArenaSafeBoundary>
+      <Live1v1BattleScreenInner {...props} />
+    </ArenaSafeBoundary>
   );
 }
 
 const styles = StyleSheet.create({
+  rootScreen: {
+    flex: 1,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
   container: {
     flex: 1,
     width: '100%',
@@ -1652,9 +1707,40 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
     overflow: 'hidden',
   },
-  rootTapCatcher: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
+  safeCrashRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+    paddingTop: 48,
+  },
+  safeCrashHostPane: {
+    flex: 1,
+    backgroundColor: PANEL_HOST,
+    margin: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  safeCrashRivalPane: {
+    flex: 1,
+    backgroundColor: PANEL_RIVAL,
+    margin: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  safeCrashLabel: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  safeCrashHint: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
   },
   hudOverlayRoot: {
     position: 'absolute',
@@ -1892,7 +1978,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   stageContainer: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     width: '100%',
     height: '100%',
     backgroundColor: PANEL_HOST,
@@ -1903,6 +1989,12 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: PANEL_HOST,
+  },
+  streamPaneShell: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
+    overflow: 'hidden',
   },
   spotlightHostWrap: {
     flex: 0.42,
