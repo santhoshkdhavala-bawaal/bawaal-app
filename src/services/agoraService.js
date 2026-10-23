@@ -418,6 +418,37 @@ export function enableLocalAudio(enabled = true) {
   return muteLocalAudioStream(!enabled);
 }
 
+/**
+ * Canonical athlete camera switch (isCameraOn).
+ * ON  → enableVideo + startPreview (local uid 0).
+ * OFF → stop local publish/preview (does not call disableVideo — that would
+ *       kill remote rival playback in dual 1v1).
+ */
+export function setLocalCameraEnabled(isCameraOn) {
+  if (!engine) return { ok: false, isCameraOn: Boolean(isCameraOn) };
+  const on = Boolean(isCameraOn);
+  try {
+    if (on) {
+      engine.enableVideo();
+      engine.enableLocalVideo(true);
+      engine.muteLocalVideoStream(false);
+      engine.startPreview();
+    } else {
+      engine.muteLocalVideoStream(true);
+      engine.enableLocalVideo(false);
+      try {
+        engine.stopPreview();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    return { ok: true, isCameraOn: on };
+  } catch (err) {
+    console.warn('[agora] setLocalCameraEnabled:', err?.message || err);
+    return { ok: false, isCameraOn: on, error: err };
+  }
+}
+
 /** @deprecated prefer buildArenaChannelName — kept for existing imports */
 export function battleChannelName(battleId) {
   return buildArenaChannelName(battleId);
@@ -443,6 +474,7 @@ export const agoraService = {
   muteLocalAudioStream,
   enableLocalVideo,
   enableLocalAudio,
+  setLocalCameraEnabled,
   switchCamera,
   battleChannelName,
   buildArenaChannelName,

@@ -1,6 +1,6 @@
 /**
  * Local Host / Rival Agora preview tile.
- * isCamOn → RtcSurfaceView canvas={{ uid: 0 }}; otherwise STANDBY fallback.
+ * isCameraOn → RtcSurfaceView canvas={{ uid: 0 }}; otherwise STANDBY fallback.
  */
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
@@ -10,25 +10,26 @@ const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 
 export type ArenaLocalVideoProps = {
-  isCamOn: boolean;
+  isCameraOn: boolean;
+  /** @deprecated use isCameraOn */
+  isCamOn?: boolean;
   style?: StyleProp<ViewStyle>;
   fallback?: React.ReactNode;
 };
 
 export function ArenaLocalVideo({
+  isCameraOn,
   isCamOn,
   style,
   fallback = null,
 }: ArenaLocalVideoProps) {
-  const canPreview = Boolean(isCamOn && isAgoraConfigured() && RtcSurfaceView);
+  const on = typeof isCameraOn === 'boolean' ? isCameraOn : Boolean(isCamOn);
+  const canPreview = Boolean(on && isAgoraConfigured() && RtcSurfaceView);
 
   if (canPreview) {
     return (
       <View style={[styles.cameraView, style]} pointerEvents="none">
-        <RtcSurfaceView
-          style={StyleSheet.absoluteFillObject}
-          canvas={{ uid: 0 }}
-        />
+        <RtcSurfaceView style={styles.surface} canvas={{ uid: 0 }} />
       </View>
     );
   }
@@ -42,6 +43,11 @@ const styles = StyleSheet.create({
     zIndex: 0,
     overflow: 'hidden',
     backgroundColor: 'transparent',
+  },
+  surface: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
 });
 

@@ -4,7 +4,8 @@
  * PRODUCTION LOCK-IN:
  *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
  *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
- *  - CHALLENGERS (X): top 72 · left 16 (under Host handle). Top-right 16/16 = REPS + LIVE only.
+ *  - CHALLENGERS (X): top 70 · left 16 (under Host handle). Top-right 16/16 = REPS + LIVE only.
+ *  - isCameraOn true → RtcSurfaceView uid:0; false → flag + STANDBY (never "CAMERA OFF").
  *
  * Role UI (route-driven):
  *  - isParticipant=false (WATCH / spectator): gloves + poll; camera tools hidden.
@@ -64,7 +65,6 @@ import { buildArenaChannelName } from './src/config/agora';
 import {
   destroyAgoraEngine,
   enableLocalAudio,
-  enableLocalVideo,
   getAgoraSdk,
   isAgoraConfigured,
   joinBattleChannel,
@@ -72,6 +72,7 @@ import {
   onConnectionStateChanged,
   onRemoteUsersChanged,
   requestArenaMediaPermissions,
+  setLocalCameraEnabled,
   startBroadcasterPreview,
   switchCamera,
 } from './src/services/agoraService';
@@ -274,21 +275,14 @@ function formatVoteCount(n) {
 }
 
 /**
- * Offline / camera-off placeholder — flag acts as avatar; handle stays readable
- * when Agora remote drops or local video is muted.
+ * Offline / camera-off placeholder — flag + STANDBY (never "CAMERA OFF" copy).
  */
 function StreamFallbackPanel({
-  cameraOff = false,
   offline = false,
   role = 'challenger',
   handle,
   flag,
 }) {
-  const status = cameraOff
-    ? 'CAMERA OFF'
-    : offline
-      ? 'RECONNECTING…'
-      : 'STANDBY';
   return (
     <View
       style={[
@@ -304,7 +298,7 @@ function StreamFallbackPanel({
         {handle || (role === 'host' ? '@HOST' : '@RIVAL')}
       </Text>
       <Text style={styles.streamHint} numberOfLines={1}>
-        {status}
+        {offline ? 'RECONNECTING…' : 'STANDBY'}
       </Text>
     </View>
   );
@@ -443,9 +437,8 @@ class ArenaSafeBoundary extends React.Component {
 }
 
 /**
- * Local Host/Rival → ArenaLocalVideo (RtcSurfaceView uid:0 when isCamOn).
- * Remote → Agora RtcSurfaceView for remoteUid; RivalSimFeed only when Agora is offline.
- * Camera layer sits at zIndex 0; pane HUD overlays float above at zIndex 10.
+ * Local Host/Rival → ArenaLocalVideo (RtcSurfaceView uid:0 when isCameraOn).
+ * Cam OFF → flag + STANDBY only (never "CAMERA OFF" text).
  */
 function StreamSurface({
   streamId,
@@ -455,7 +448,7 @@ function StreamSurface({
   role = 'challenger',
   isLocal = false,
   hasRemote = false,
-  cameraOff = false,
+  isCameraOn = true,
   cameraFacing = 'front',
   micMuted = false,
   mediaReady = false,
@@ -464,7 +457,7 @@ function StreamSurface({
   style,
 }) {
   const uid = Number(rtcUid) || 0;
-  const isCamOn = Boolean(isLocal && !cameraOff);
+  const localCamOn = Boolean(isLocal && isCameraOn);
   const agoraReady = Boolean(isAgoraConfigured() && RtcSurfaceView);
   const agoraLive = Boolean(agoraReady && rtcJoined);
   const showRemoteRtc = Boolean(
@@ -475,15 +468,13 @@ function StreamSurface({
     !showRemoteRtc &&
     role !== 'host' &&
     !isAgoraConfigured();
-  // Expo CameraView only when Agora native preview is unavailable.
   const showLocalCameraFallback = Boolean(
-    isCamOn && mediaReady && !agoraReady
+    localCamOn && mediaReady && !agoraReady
   );
 
   const renderFallback = (key) => (
     <StreamFallbackPanel
       key={key}
-      cameraOff={Boolean(cameraOff && isLocal)}
       offline={Boolean(
         connectionOffline || (!isLocal && !hasRemote && agoraLive)
       )}
@@ -495,10 +486,9 @@ function StreamSurface({
 
   let liveTrack = null;
   if (isLocal) {
-    // isCamOn → RtcSurfaceView uid:0; cam OFF → STANDBY fallback only.
     liveTrack = (
       <ArenaLocalVideo
-        isCamOn={isCamOn}
+        isCameraOn={localCamOn}
         style={styles.cameraLayer}
         fallback={
           showLocalCameraFallback ? (
@@ -551,7 +541,6 @@ function StreamSurface({
           {liveTrack}
         </StreamErrorBoundary>
       ) : null}
-      {/* Local cam OFF: ArenaLocalVideo returns null → STANDBY fallback stays visible. */}
     </View>
   );
 }
@@ -595,7 +584,7 @@ function FloatingReactionLayer({ reactions }) {
 function ParticipantHudToolbar({
   visible,
   micMuted,
-  cameraOff,
+  isCameraOn,
   onFlip,
   onToggleMic,
   onToggleCamera,
@@ -624,12 +613,15 @@ function ParticipantHudToolbar({
       </TouchableOpacity>
       <View style={styles.participantHudDivider} />
       <TouchableOpacity
-        style={[styles.participantHudBtn, cameraOff && styles.participantHudBtnActive]}
+        style={[styles.participantHudBtn, !isCameraOn && styles.participantHudBtnActive]}
         onPress={onToggleCamera}
         activeOpacity={0.85}
       >
-        <Text style={styles.participantHudIcon}>{cameraOff ? '📷' : '📹'}</Text>
-        <Text style={styles.participantHudLabel}>{cameraOff ? 'Cam On' : 'Cam Off'}</Text>
+        <Text style={styles.participantHudIcon}>{isCameraOn ? '📹' : '📷'}</Text>
+        {/* Label = action: Cam Off when on, Cam On when off */}
+        <Text style={styles.participantHudLabel}>
+          {isCameraOn ? 'Cam Off' : 'Cam On'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -641,7 +633,7 @@ function HostSpotlight({
   onRepPress,
   isLocal,
   hasRemote,
-  cameraOff,
+  isCameraOn = true,
   cameraFacing,
   micMuted,
   mediaReady = false,
@@ -661,7 +653,7 @@ function HostSpotlight({
         role="host"
         isLocal={isLocal}
         hasRemote={hasRemote}
-        cameraOff={cameraOff}
+        isCameraOn={isCameraOn}
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
@@ -709,7 +701,7 @@ function DualFocusPane({
   onRepPress,
   isLocal,
   hasRemote,
-  cameraOff,
+  isCameraOn = true,
   cameraFacing,
   micMuted,
   mediaReady = false,
@@ -732,7 +724,7 @@ function DualFocusPane({
         role={isHost ? 'host' : 'challenger'}
         isLocal={isLocal}
         hasRemote={hasRemote}
-        cameraOff={cameraOff}
+        isCameraOn={isCameraOn}
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
@@ -887,7 +879,8 @@ function Live1v1BattleScreenInner({
   /** Agora remote publisher uids currently in the channel. */
   const [remoteUids, setRemoteUids] = useState([]);
   const [micMuted, setMicMuted] = useState(false);
-  const [cameraOff, setCameraOff] = useState(false);
+  /** Canonical camera publish state — true shows RtcSurfaceView uid:0. */
+  const [isCameraOn, setIsCameraOn] = useState(true);
   const [cameraFacing, setCameraFacing] = useState('front');
   const [rtcJoined, setRtcJoined] = useState(false);
   const [rtcConnectionState, setRtcConnectionState] = useState('idle');
@@ -1274,14 +1267,10 @@ function Live1v1BattleScreenInner({
 
   const handleToggleCamera = useCallback(() => {
     if (!isParticipant) return;
-    setCameraOff((prev) => {
+    setIsCameraOn((prev) => {
       const next = !prev;
-      // Athlete HUD → Agora enableLocalVideo (inverse of cameraOff).
-      enableLocalVideo(!next);
-      if (!next) {
-        // Cam turned back ON — restart local preview for uid:0 surface.
-        startBroadcasterPreview();
-      }
+      // Cam On tap → true + enableVideo/startPreview; Cam Off tap → false + stop local video.
+      setLocalCameraEnabled(next);
       return next;
     });
   }, [isParticipant]);
@@ -1695,7 +1684,7 @@ function Live1v1BattleScreenInner({
                 }}
                 isLocal={hostUsesDeviceCamera}
                 hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                cameraOff={cameraOff && hostUsesDeviceCamera}
+                isCameraOn={hostUsesDeviceCamera ? isCameraOn : true}
                 cameraFacing={cameraFacing}
                 micMuted={micMuted && hostUsesDeviceCamera}
               />
@@ -1724,7 +1713,9 @@ function Live1v1BattleScreenInner({
                   !isLocalAthlete(rivalAthlete) &&
                   hasRemoteUid(rivalAthlete?.rtcUid)
                 }
-                cameraOff={cameraOff && isLocalAthlete(rivalAthlete)}
+                isCameraOn={
+                  isLocalAthlete(rivalAthlete) ? isCameraOn : true
+                }
                 cameraFacing={cameraFacing}
                 micMuted={micMuted && isLocalAthlete(rivalAthlete)}
               />
@@ -1747,7 +1738,7 @@ function Live1v1BattleScreenInner({
                 }}
                 isLocal={hostUsesDeviceCamera}
                 hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                cameraOff={cameraOff && hostUsesDeviceCamera}
+                isCameraOn={hostUsesDeviceCamera ? isCameraOn : true}
                 cameraFacing={cameraFacing}
                 micMuted={micMuted && hostUsesDeviceCamera}
               />
@@ -1966,7 +1957,7 @@ function Live1v1BattleScreenInner({
           <ParticipantHudToolbar
             visible
             micMuted={micMuted}
-            cameraOff={cameraOff}
+            isCameraOn={isCameraOn}
             onFlip={() => {
               bumpHud();
               handleFlipCamera();
@@ -2398,10 +2389,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Production lock: CHALLENGERS under Host handle — top 72 · left 16. */
+  /** Spectator CHALLENGERS — below Host handle badge (top 70 · left 16). */
   spectatorChallengersAnchor: {
     position: 'absolute',
-    top: 72,
+    top: 70,
     left: 16,
     zIndex: 120,
     elevation: 120,
