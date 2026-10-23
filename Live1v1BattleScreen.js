@@ -834,9 +834,6 @@ function Live1v1BattleScreenInner({
     [hostBarAnim]
   );
 
-  const trayBottomPad =
-    Math.max(insets.bottom, Platform.OS === 'android' ? 24 : 16) + 4;
-
   const clearHudHideTimer = useCallback(() => {
     if (hudHideTimerRef.current) {
       clearTimeout(hudHideTimerRef.current);
@@ -1407,7 +1404,7 @@ function Live1v1BattleScreenInner({
           </View>
         )}
 
-        {voteHintVisible ? (
+        {voteHintVisible && showControls ? (
           <Animated.View
             style={[styles.voteHintBanner, { opacity: hintOpacity }]}
             pointerEvents="none"
@@ -1421,9 +1418,22 @@ function Live1v1BattleScreenInner({
         )}
       </View>
 
-      {/* Floating HUD chrome (timer / live / poll) — above host handle */}
+      {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
       <Animated.View
-        style={[styles.hudChrome, { opacity: hudOpacity }]}
+        style={[
+          styles.hudChrome,
+          {
+            opacity: hudOpacity,
+            transform: [
+              {
+                translateY: hudOpacity.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [28, 0],
+                }),
+              },
+            ],
+          },
+        ]}
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
         <View
@@ -1617,11 +1627,11 @@ function Live1v1BattleScreenInner({
       <FloatingReactionLayer reactions={floatingReactions || []} />
       </Pressable>
 
-      {/* Gloves outside tap catcher — never covered by rival stream / HUD */}
+      {/* Floating gloves only — transparent, always visible in clean mode */}
       <View
         style={[
           styles.persistentGlovesDock,
-          { bottom: Math.max(20, trayBottomPad) },
+          { bottom: Math.max(15, insets.bottom || 0) },
         ]}
         pointerEvents="box-none"
       >
@@ -1629,14 +1639,12 @@ function Live1v1BattleScreenInner({
           <TouchableOpacity
             style={styles.persistentGloveBtn}
             onPress={handleVoteHost}
-            activeOpacity={0.85}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.75}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             accessibilityRole="button"
             accessibilityLabel="Vote host"
           >
-            <View style={[styles.gloveChip, styles.gloveChipHost]}>
-              <Text style={styles.gloveEmoji}>🥊</Text>
-            </View>
+            <Text style={styles.gloveEmojiFloat}>🥊</Text>
             <Text style={[styles.actionLabel, styles.actionLabelHost]}>
               VOTE HOST
             </Text>
@@ -1645,14 +1653,12 @@ function Live1v1BattleScreenInner({
           <TouchableOpacity
             style={styles.persistentGloveBtn}
             onPress={handleVoteRival}
-            activeOpacity={0.85}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.75}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
             accessibilityRole="button"
             accessibilityLabel="Vote rival"
           >
-            <View style={[styles.gloveChip, styles.gloveChipRival]}>
-              <Text style={styles.gloveEmoji}>🥊</Text>
-            </View>
+            <Text style={styles.gloveEmojiFloat}>🥊</Text>
             <Text style={[styles.actionLabel, styles.actionLabelRival]}>
               VOTE RIVAL
             </Text>
@@ -1789,29 +1795,29 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 20,
+    bottom: 15,
     zIndex: 100,
     elevation: 100,
+    backgroundColor: 'transparent',
     pointerEvents: 'box-none',
   },
   persistentGlovesTray: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-evenly',
     alignItems: 'center',
-    gap: 28,
-    marginHorizontal: 24,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
+    marginHorizontal: 28,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   persistentGloveBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 88,
+    minWidth: 96,
     zIndex: 101,
+    backgroundColor: 'transparent',
   },
   hudMidTapZone: {
     flex: 1,
@@ -1833,24 +1839,24 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 40,
     elevation: 40,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-    // Keep poll/actions clear of the absolute gloves dock
-    marginBottom: 88,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderTopWidth: 0,
+    shadowOpacity: 0,
+    // Float poll / tools just above the gloves
+    marginBottom: 78,
+    paddingBottom: 4,
   },
   voteHintBanner: {
     position: 'absolute',
     alignSelf: 'center',
-    bottom: '22%',
-    left: 24,
-    right: 24,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    bottom: '24%',
+    left: 32,
+    right: 32,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     zIndex: 12,
   },
   voteHintText: {
@@ -1935,14 +1941,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 22,
-    backgroundColor: 'rgba(18,18,18,0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    marginTop: 4,
+    marginBottom: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   participantHudBtn: {
     flexDirection: 'row',
@@ -2328,8 +2332,9 @@ const styles = StyleSheet.create({
   },
   pollSection: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4,
     backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   pollLabelRow: {
     flexDirection: 'row',
@@ -2467,25 +2472,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 3,
+    backgroundColor: 'transparent',
   },
   gloveChipHost: {
-    backgroundColor: 'rgba(255,87,34,0.28)',
-    borderWidth: 1.5,
-    borderColor: ORANGE,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   gloveChipRival: {
-    backgroundColor: 'rgba(0,229,255,0.35)',
-    borderWidth: 1.5,
-    borderColor: '#00E5FF',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   gloveEmoji: {
     fontSize: 18,
   },
+  gloveEmojiFloat: {
+    fontSize: 28,
+    marginBottom: 2,
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   actionLabel: {
     color: MUTED,
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.2,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    backgroundColor: 'transparent',
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   actionLabelHost: { color: ORANGE },
   actionLabelRival: { color: '#00E5FF' },
