@@ -214,7 +214,7 @@ function formatVoteCount(n) {
   return String(v);
 }
 
-/** Clean slate panel only — no letter circles or avatar artwork over the video. */
+/** Clean slate only — never render letter circles / initials over video. */
 function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
   return (
     <View
@@ -224,7 +224,11 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
       ]}
       pointerEvents="none"
     >
-      {cameraOff ? <Text style={styles.streamHint}>CAMERA OFF</Text> : null}
+      {cameraOff ? (
+        <Text style={styles.streamHint} numberOfLines={1}>
+          CAMERA OFF
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -503,9 +507,9 @@ function HostSpotlight({
         mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
-      {/* Always-visible host handle — top-left, clear of status bar */}
+      {/* Host handle — top-left inside host viewport, below status bar */}
       <View
-        style={[styles.handleAnchorHost, { paddingTop: topInset }]}
+        style={[styles.handleAnchorInPane, { top: topInset, left: 12 }]}
         pointerEvents="none"
       >
         <AthleteHandlePill
@@ -516,7 +520,7 @@ function HostSpotlight({
       </View>
       {overlaysVisible ? (
         <View
-          style={[styles.statsAnchorHost, { top: topInset + 4 }]}
+          style={[styles.statsAnchorHost, { top: topInset }]}
           pointerEvents="box-none"
         >
           {live ? (
@@ -600,8 +604,13 @@ function DualFocusPane({
 }) {
   const isHost = variant === 'host';
   const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
+  // Host clears the status bar; rival sits at top of its own bottom pane (under VS).
+  const handleTop = isHost ? topInset : 12;
   return (
-    <View style={[styles.dualPane, isHost ? styles.panelHost : styles.panelRival]}>
+    <View
+      style={[styles.dualPane, isHost ? styles.panelHost : styles.panelRival]}
+      pointerEvents="box-none"
+    >
       <StreamSurface
         streamId={safe.streamId}
         rtcUid={safe.rtcUid}
@@ -615,13 +624,8 @@ function DualFocusPane({
         mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
-      {/* Host: top-left · Rival: bottom-left — always visible in clean mode */}
       <View
-        style={
-          isHost
-            ? [styles.handleAnchorHost, { paddingTop: topInset }]
-            : styles.handleAnchorRival
-        }
+        style={[styles.handleAnchorInPane, { top: handleTop, left: 12 }]}
         pointerEvents="none"
       >
         <AthleteHandlePill
@@ -632,11 +636,7 @@ function DualFocusPane({
       </View>
       {overlaysVisible ? (
         <View
-          style={
-            isHost
-              ? [styles.statsAnchorHost, { top: topInset + 4 }]
-              : styles.statsAnchorRival
-          }
+          style={[styles.statsAnchorHost, { top: handleTop }]}
           pointerEvents="box-none"
         >
           <TouchableOpacity
@@ -1296,14 +1296,16 @@ function Live1v1BattleScreenInner({
 
   // Never return null/undefined — always mount a full arena tree.
   return (
-    <Pressable
-      style={styles.rootScreen}
-      onPress={toggleHud}
-      accessibilityRole="button"
-      accessibilityLabel="Toggle battle HUD"
-    >
+    <View style={styles.rootScreen}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
+      {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
+      <Pressable
+        style={styles.tapStage}
+        onPress={toggleHud}
+        accessibilityRole="button"
+        accessibilityLabel="Toggle battle HUD"
+      >
       {/* Full-bleed video stage — slate panels always paint behind floating HUD */}
       <View style={styles.stageContainer} pointerEvents="box-none">
         {viewMode === VIEW_SPOTLIGHT ? (
@@ -1419,9 +1421,7 @@ function Live1v1BattleScreenInner({
         )}
       </View>
 
-      {/* Persistent floating HUD root — always above the background grid */}
-      <View style={styles.hudOverlayRoot} pointerEvents="box-none">
-      {/* Absolute floating HUD — fades without resizing the video */}
+      {/* Floating HUD chrome (timer / live / poll) — above host handle */}
       <Animated.View
         style={[styles.hudChrome, { opacity: hudOpacity }]}
         pointerEvents={showControls ? 'box-none' : 'none'}
@@ -1494,13 +1494,7 @@ function Live1v1BattleScreenInner({
 
         <View style={styles.hudMidTapZone} pointerEvents="none" />
 
-        <View
-          style={[
-            styles.hudBottomBlock,
-            { paddingBottom: trayBottomPad + 64 },
-          ]}
-          pointerEvents="box-none"
-        >
+        <View style={styles.hudBottomBlock} pointerEvents="box-none">
           <ParticipantHudToolbar
             visible={isBroadcaster}
             micMuted={micMuted}
@@ -1620,16 +1614,25 @@ function Live1v1BattleScreenInner({
         </View>
       </Animated.View>
 
-      {/* Persistent voting gloves — always tappable in clean video mode */}
+      <FloatingReactionLayer reactions={floatingReactions || []} />
+      </Pressable>
+
+      {/* Gloves outside tap catcher — never covered by rival stream / HUD */}
       <View
-        style={[styles.persistentGlovesDock, { paddingBottom: trayBottomPad }]}
+        style={[
+          styles.persistentGlovesDock,
+          { bottom: Math.max(20, trayBottomPad) },
+        ]}
         pointerEvents="box-none"
       >
-        <View style={styles.persistentGlovesTray}>
+        <View style={styles.persistentGlovesTray} pointerEvents="auto">
           <TouchableOpacity
             style={styles.persistentGloveBtn}
             onPress={handleVoteHost}
             activeOpacity={0.85}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Vote host"
           >
             <View style={[styles.gloveChip, styles.gloveChipHost]}>
               <Text style={styles.gloveEmoji}>🥊</Text>
@@ -1643,6 +1646,9 @@ function Live1v1BattleScreenInner({
             style={styles.persistentGloveBtn}
             onPress={handleVoteRival}
             activeOpacity={0.85}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Vote rival"
           >
             <View style={[styles.gloveChip, styles.gloveChipRival]}>
               <Text style={styles.gloveEmoji}>🥊</Text>
@@ -1652,9 +1658,6 @@ function Live1v1BattleScreenInner({
             </Text>
           </TouchableOpacity>
         </View>
-      </View>
-
-      <FloatingReactionLayer reactions={floatingReactions || []} />
       </View>
 
       <Modal
@@ -1712,7 +1715,7 @@ function Live1v1BattleScreenInner({
         onViewGrid={viewGridFromRoster}
         onClose={() => setRosterOpen(false)}
       />
-    </Pressable>
+    </View>
   );
 }
 
@@ -1729,6 +1732,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     overflow: 'hidden',
+  },
+  tapStage: {
+    flex: 1,
+    backgroundColor: '#000',
   },
   container: {
     flex: 1,
@@ -1772,27 +1779,19 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 24,
   },
-  hudOverlayRoot: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    elevation: 100,
-  },
   hudChrome: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
-    zIndex: 10,
+    zIndex: 40,
+    elevation: 40,
   },
   persistentGlovesDock: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
-    zIndex: 99,
-    elevation: 99,
+    bottom: 20,
+    zIndex: 100,
+    elevation: 100,
     pointerEvents: 'box-none',
   },
   persistentGlovesTray: {
@@ -1812,6 +1811,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 88,
+    zIndex: 101,
   },
   hudMidTapZone: {
     flex: 1,
@@ -1822,18 +1822,22 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    zIndex: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    zIndex: 50,
+    elevation: 50,
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   hudBottomBlock: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    zIndex: 12,
+    zIndex: 40,
+    elevation: 40,
     backgroundColor: 'rgba(0,0,0,0.55)',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(255,255,255,0.1)',
+    // Keep poll/actions clear of the absolute gloves dock
+    marginBottom: 88,
   },
   voteHintBanner: {
     position: 'absolute',
@@ -2121,6 +2125,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    // Keep native video layers from stealing glove taps at the screen bottom
+    pointerEvents: 'none',
   },
   streamSurfaceHost: {
     backgroundColor: PANEL_HOST,
@@ -2147,33 +2153,19 @@ const styles = StyleSheet.create({
     width: 0,
     height: 0,
   },
-  handleAnchorHost: {
+  handleAnchorInPane: {
     position: 'absolute',
-    top: 0,
-    left: 12,
-    zIndex: 6,
-    maxWidth: '70%',
-  },
-  handleAnchorRival: {
-    position: 'absolute',
-    left: 12,
-    bottom: 72,
-    zIndex: 6,
+    zIndex: 8,
+    elevation: 8,
     maxWidth: '70%',
   },
   statsAnchorHost: {
     position: 'absolute',
     right: 12,
-    zIndex: 6,
+    zIndex: 8,
+    elevation: 8,
     alignItems: 'flex-end',
     gap: 6,
-  },
-  statsAnchorRival: {
-    position: 'absolute',
-    right: 12,
-    bottom: 72,
-    zIndex: 6,
-    alignItems: 'flex-end',
   },
   handleBadge: {
     flexDirection: 'row',
@@ -2292,8 +2284,9 @@ const styles = StyleSheet.create({
   },
   floatingLayer: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 50,
-    elevation: 50,
+    zIndex: 60,
+    elevation: 60,
+    pointerEvents: 'none',
   },
   floatingItem: {
     position: 'absolute',
