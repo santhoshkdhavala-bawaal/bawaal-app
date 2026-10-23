@@ -4,7 +4,7 @@
  * PRODUCTION LOCK-IN:
  *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
  *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
- *  - CHALLENGERS (X): top 90 · left 16 · zIndex 99 (clear of Host handle). Top-right = REPS + LIVE.
+ *  - CHALLENGERS (X): top 95 · left 16 · zIndex 999 (clear of Host handle). Top-right = REPS + LIVE.
  *  - isCameraOn true → RtcSurfaceView uid:0; false → flag + STANDBY (never "CAMERA OFF").
  *
  * Role UI (route-driven):
@@ -1775,9 +1775,9 @@ function Live1v1BattleScreenInner({
         <View
           style={{
             position: 'absolute',
-            top: 90, // Pushes it completely clear below the @MUMBAI_STRIKER box
+            top: 95, // Positioned clearly below the top host container
             left: 16,
-            zIndex: 99,
+            zIndex: 999,
             backgroundColor: 'transparent',
             maxWidth: '58%',
           }}
@@ -2420,9 +2420,9 @@ const styles = StyleSheet.create({
   /** Spectator CHALLENGERS — below Host pill (@MUMBAI_STRIKER). Inline style also applied in JSX. */
   challengersButton: {
     position: 'absolute',
-    top: 90, // Pushes it completely clear below the @MUMBAI_STRIKER box
+    top: 95, // Positioned clearly below the top host container
     left: 16,
-    zIndex: 99,
+    zIndex: 999,
     backgroundColor: 'transparent',
     maxWidth: '58%',
   },
