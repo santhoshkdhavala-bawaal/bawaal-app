@@ -481,16 +481,17 @@ function StreamSurface({
     />
   );
 
-  // Local athlete: full-bleed surface vs STANDBY inside 50% viewport.
+  // Full-bleed only — no fixed heights / centering wrappers (prevents card collapse).
+  const shellStyle = [
+    styles.streamSurfaceFill,
+    role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
+    style,
+  ];
+
   if (isLocal) {
     return (
       <View
-        style={[
-          styles.streamSurface,
-          styles.streamSurfaceFill,
-          role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
-          style,
-        ]}
+        style={shellStyle}
         accessibilityLabel={`stream-${streamId || rtcUid || label}`}
       >
         <ArenaLocalVideo
@@ -514,21 +515,12 @@ function StreamSurface({
       />
     );
   } else if (showRivalSim) {
-    liveTrack = (
-      <View style={styles.cameraLayer} pointerEvents="none">
-        <RivalSimFeed />
-      </View>
-    );
+    liveTrack = <RivalSimFeed />;
   }
 
   return (
     <View
-      style={[
-        styles.streamSurface,
-        styles.streamSurfaceFill,
-        role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
-        style,
-      ]}
+      style={shellStyle}
       accessibilityLabel={`stream-${streamId || rtcUid || label}`}
     >
       {renderFallback('base-fallback')}
@@ -1554,11 +1546,8 @@ function Live1v1BattleScreenInner({
   /** Status bar / notch clearance — paddingTop: insets.top + 10 on Host overlays. */
   const hostOverlayPadTop = insets.top + 10;
   const bottomDockOffset = (insets.bottom || 0) + 12;
-  /**
-   * Spectator: REPS + vote HUD. Athlete: media bar only (vote stats vanish).
-   * Viewport REPS stay for spectators; athletes keep REPS for bout awareness.
-   */
-  const repsVisible = true;
+  /** Spectator-only: REPS / LIVE / vote stats vanish completely for athletes. */
+  const repsVisible = isSpectator;
   const isDualFocus = Boolean(hasActiveRival);
 
   const rivalIsLocal = isLocalAthlete(rivalAthlete);
@@ -1570,7 +1559,7 @@ function Live1v1BattleScreenInner({
   // Never return null/undefined — always mount a full arena tree.
   return (
     <View style={styles.rootScreen}>
-      <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
+      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" translucent />
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
       <Pressable
@@ -1579,7 +1568,7 @@ function Live1v1BattleScreenInner({
         accessibilityRole="button"
         accessibilityLabel="Toggle battle HUD"
       >
-      {/* STRICT 50/50 Host / Rival viewport split */}
+      {/* STRICT 50/50 Host / Rival — flex:1 halves, no fixed-height cards */}
       <View style={styles.arenaSplitColumn} pointerEvents="box-none">
         {/* TOP HALF: HOST (50%) */}
         <View style={styles.hostHalf} pointerEvents="box-none">
@@ -1597,7 +1586,6 @@ function Live1v1BattleScreenInner({
             mediaReady={mediaReady}
             rtcJoined={rtcJoined}
             connectionOffline={connectionOffline}
-            style={styles.cameraLayer}
           />
 
           <View
@@ -1694,7 +1682,6 @@ function Live1v1BattleScreenInner({
             mediaReady={mediaReady}
             rtcJoined={rtcJoined}
             connectionOffline={connectionOffline}
-            style={styles.cameraLayer}
           />
 
           <View
@@ -2092,12 +2079,15 @@ export default function Live1v1BattleScreen(props) {
 const styles = StyleSheet.create({
   rootScreen: {
     flex: 1,
-    backgroundColor: '#000',
+    flexDirection: 'column',
+    backgroundColor: '#0A0E1A',
     overflow: 'hidden',
+    width: '100%',
   },
   tapStage: {
     flex: 1,
-    backgroundColor: '#000',
+    width: '100%',
+    backgroundColor: '#0A0E1A',
   },
   container: {
     flex: 1,
@@ -2484,9 +2474,12 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     backgroundColor: '#0A0E1A',
     width: '100%',
+    minHeight: 0,
   },
   hostHalf: {
     flex: 1,
+    width: '100%',
+    minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#1F293D',
@@ -2495,6 +2488,8 @@ const styles = StyleSheet.create({
   },
   rivalHalf: {
     flex: 1,
+    width: '100%',
+    minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#0f172a',
@@ -2539,8 +2534,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     overflow: 'hidden',
   },
+  /** Full-bleed stream shell — no centering (centering was collapsing video into cards). */
   streamSurfaceFill: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+    pointerEvents: 'none',
   },
   panelHost: {
     backgroundColor: PANEL_HOST,
@@ -2564,10 +2569,7 @@ const styles = StyleSheet.create({
   },
   streamSurface: {
     backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
-    // Keep native video layers from stealing glove taps at the screen bottom
     pointerEvents: 'none',
   },
   streamSurfaceHost: {
@@ -2576,13 +2578,14 @@ const styles = StyleSheet.create({
   streamSurfaceRival: {
     backgroundColor: 'transparent',
   },
-  /** Live camera / RTC / sim feed — fills the Host or Rival viewport under HUD. */
   cameraLayer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    width: '100%',
+    height: '100%',
     zIndex: 0,
     overflow: 'hidden',
     backgroundColor: 'transparent',
@@ -2595,7 +2598,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   streamFallback: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     zIndex: 0,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2619,14 +2628,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   rivalSimRoot: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: PANEL_RIVAL,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   rivalSimScan: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'rgba(0,229,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(0,229,255,0.18)',

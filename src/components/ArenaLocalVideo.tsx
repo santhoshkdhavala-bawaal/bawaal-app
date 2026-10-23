@@ -1,8 +1,6 @@
 /**
  * Full-bleed athlete video surface inside a 50% Host / Rival viewport.
- * Persistent wrapper (never unmounts on cam toggle):
- *   isCameraOn true  → RtcSurfaceView canvas={{ uid: 0 }} absolute fill
- *   isCameraOn false → flag + @handle + STANDBY
+ * Never uses fixed card heights — always absolute fill of the parent half.
  */
 import React, { type ReactNode } from 'react';
 import {
@@ -19,6 +17,17 @@ const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const RenderModeType = AgoraSdk?.RenderModeType;
 const VideoSourceType = AgoraSdk?.VideoSourceType;
 
+/** Full-bleed fill — prevents 0-height / card collapse inside flex halves. */
+const FULL_BLEED = {
+  position: 'absolute' as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  width: '100%' as const,
+  height: '100%' as const,
+};
+
 export type ArenaLocalVideoProps = {
   isCameraOn: boolean;
   isCamOn?: boolean;
@@ -26,7 +35,6 @@ export type ArenaLocalVideoProps = {
   handle?: string;
   flag?: string;
   fallback?: ReactNode;
-  /** Remote Agora uid when rendering a remote athlete (omit / 0 = local). */
   remoteUid?: number;
 };
 
@@ -54,7 +62,7 @@ export function ArenaLocalVideo({
               : VideoSourceType?.VideoSourceCamera ?? 0,
             renderMode: RenderModeType?.RenderModeHidden ?? 1,
           }}
-          style={styles.absoluteFillObject}
+          style={styles.fullBleed}
           zOrderMediaOverlay
         />
       ) : on ? null : fallback ? (
@@ -72,26 +80,17 @@ export function ArenaLocalVideo({
   );
 }
 
-/** Equivalent of StyleSheet.absoluteFillObject (RN types only expose absoluteFill). */
-const ABSOLUTE_FILL = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-};
-
 const styles = StyleSheet.create({
-  absoluteFillObject: {
-    ...ABSOLUTE_FILL,
+  fullBleed: {
+    ...FULL_BLEED,
   },
   viewportFill: {
-    ...ABSOLUTE_FILL,
+    ...FULL_BLEED,
     backgroundColor: '#0f172a',
     overflow: 'hidden',
   },
   standbyPlaceholder: {
-    ...ABSOLUTE_FILL,
+    ...FULL_BLEED,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
