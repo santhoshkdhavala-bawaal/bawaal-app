@@ -478,8 +478,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 999,
     backgroundColor: SURFACE,
     borderWidth: 1,
@@ -490,12 +490,14 @@ const styles = StyleSheet.create({
     borderColor: CORAL,
   },
   pillText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#F1F5F9',
+    fontSize: 14,
+    fontWeight: '700',
   },
   pillTextActive: {
     color: INK,
+    fontSize: 14,
+    fontWeight: '800',
   },
   input: {
     backgroundColor: SURFACE,
@@ -533,19 +535,21 @@ const styles = StyleSheet.create({
   },
   segmentBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   segmentBtnOn: {
     backgroundColor: CORAL,
   },
   segmentText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#F1F5F9',
+    fontSize: 15,
+    fontWeight: '700',
   },
   segmentTextOn: {
     color: INK,
+    fontSize: 15,
+    fontWeight: '800',
   },
   scheduleMeta: {
     marginTop: 10,
@@ -573,12 +577,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,138,101,0.18)',
   },
   offsetChipText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
+    color: '#F1F5F9',
+    fontSize: 14,
+    fontWeight: '700',
   },
   offsetChipTextOn: {
     color: CORAL_SOFT,
+    fontWeight: '800',
   },
   localTime: {
     color: WHITE,
@@ -610,8 +615,8 @@ const styles = StyleSheet.create({
   },
   launchBtnText: {
     color: INK,
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
 });
