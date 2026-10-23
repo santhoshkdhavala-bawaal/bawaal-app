@@ -76,7 +76,8 @@
           "imageWidth": 280
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-status-bar"
     ],
     "extra": {
       "eas": {
