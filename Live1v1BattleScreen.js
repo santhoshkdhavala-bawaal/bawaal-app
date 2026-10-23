@@ -1551,18 +1551,21 @@ function Live1v1BattleScreenInner({
   const challengersInQueueCount = waitingChallengers.length;
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
-  /** Status bar / notch clearance for Host badge, REPS, and CHALLENGERS. */
-  const safeTop = insets.top + 10;
-  /** Reps stay up for athletes; spectators only see them with HUD chrome. */
-  const repsVisible = isAthlete || showControls;
-  /** Solo warm-up = full Host; active ring = 50/50 dual with VS. */
+  /** Status bar / notch clearance — paddingTop: insets.top + 10 on Host overlays. */
+  const hostOverlayPadTop = insets.top + 10;
+  const bottomDockOffset = (insets.bottom || 0) + 12;
+  /**
+   * Spectator: REPS + vote HUD. Athlete: media bar only (vote stats vanish).
+   * Viewport REPS stay for spectators; athletes keep REPS for bout awareness.
+   */
+  const repsVisible = true;
   const isDualFocus = Boolean(hasActiveRival);
 
   const rivalIsLocal = isLocalAthlete(rivalAthlete);
   /** Local athlete uses isCameraOn; remote panes stay "live" and fall back to STANDBY if no track. */
   const isHostCamOn = hostUsesDeviceCamera ? isCameraOn : true;
   const isRivalCamOn = rivalIsLocal ? isCameraOn : true;
-  const rivalBadgeBottom = isAthlete ? 100 : 16;
+  const rivalBadgeBottom = isAthlete ? 80 : 10;
 
   // Never return null/undefined — always mount a full arena tree.
   return (
@@ -1600,8 +1603,9 @@ function Live1v1BattleScreenInner({
           <View
             style={{
               position: 'absolute',
-              top: safeTop,
+              top: 0,
               left: 16,
+              paddingTop: hostOverlayPadTop,
               gap: 8,
               zIndex: 8,
               maxWidth: '62%',
@@ -1634,8 +1638,9 @@ function Live1v1BattleScreenInner({
             <View
               style={{
                 position: 'absolute',
-                top: safeTop,
+                top: 0,
                 right: 16,
+                paddingTop: hostOverlayPadTop,
                 zIndex: 8,
                 alignItems: 'flex-end',
                 gap: 6,
@@ -1759,7 +1764,7 @@ function Live1v1BattleScreenInner({
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
         <View
-          style={[styles.hudTopBlock, { paddingTop: safeTop + 52 }]}
+          style={[styles.hudTopBlock, { paddingTop: hostOverlayPadTop + 52 }]}
           pointerEvents="box-none"
         >
           <View style={styles.header}>
@@ -1849,7 +1854,7 @@ function Live1v1BattleScreenInner({
         <View
           style={[
             styles.athleteControlsContainer,
-            { marginBottom: Math.max(0, insets.bottom || 0) },
+            { bottom: bottomDockOffset },
           ]}
           pointerEvents="box-none"
         >
@@ -1878,7 +1883,7 @@ function Live1v1BattleScreenInner({
         <View
           style={[
             styles.spectatorBottomContainer,
-            { paddingBottom: Math.max(0, insets.bottom || 0) },
+            { bottom: bottomDockOffset },
           ]}
           pointerEvents="box-none"
         >
@@ -2145,7 +2150,7 @@ const styles = StyleSheet.create({
   /** Spectator vote % + banter / gloves — never mounts with athlete controls. */
   spectatorBottomContainer: {
     position: 'absolute',
-    bottom: 20,
+    bottom: 12,
     left: 0,
     right: 0,
     zIndex: 1000,
@@ -2157,7 +2162,7 @@ const styles = StyleSheet.create({
   /** Athlete Flip / Mute / Cam — never mounts with spectator vote UI. */
   athleteControlsContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 12,
     left: 0,
     right: 0,
     zIndex: 1000,
@@ -2485,8 +2490,8 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
     backgroundColor: '#1F293D',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.14)',
   },
   rivalHalf: {
     flex: 1,
@@ -2498,8 +2503,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     left: '50%',
-    zIndex: 20,
-    transform: [{ translateX: -22 }, { translateY: -22 }],
+    zIndex: 100,
+    transform: [{ translateX: -20 }, { translateY: -20 }],
   },
   rivalBadge: {
     alignSelf: 'flex-start',

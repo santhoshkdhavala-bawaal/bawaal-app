@@ -54,7 +54,7 @@ export function ArenaLocalVideo({
               : VideoSourceType?.VideoSourceCamera ?? 0,
             renderMode: RenderModeType?.RenderModeHidden ?? 1,
           }}
-          style={StyleSheet.absoluteFill}
+          style={styles.absoluteFillObject}
           zOrderMediaOverlay
         />
       ) : on ? null : fallback ? (
@@ -72,14 +72,26 @@ export function ArenaLocalVideo({
   );
 }
 
+/** Equivalent of StyleSheet.absoluteFillObject (RN types only expose absoluteFill). */
+const ABSOLUTE_FILL = {
+  position: 'absolute' as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+};
+
 const styles = StyleSheet.create({
+  absoluteFillObject: {
+    ...ABSOLUTE_FILL,
+  },
   viewportFill: {
-    ...StyleSheet.absoluteFill,
+    ...ABSOLUTE_FILL,
     backgroundColor: '#0f172a',
     overflow: 'hidden',
   },
   standbyPlaceholder: {
-    flex: 1,
+    ...ABSOLUTE_FILL,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
