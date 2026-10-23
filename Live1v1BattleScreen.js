@@ -1135,12 +1135,11 @@ function Live1v1BattleScreenInner({
   }, [isParticipant]);
 
   /**
-   * Cam On  → Android perms → enableVideo() → startPreview() → isCameraOn true.
+   * Cam On  → PermissionsAndroid → enableVideo() → startPreview() → isCameraOn true.
    * Cam Off → stopPreview() + mute local only (never disableVideo — keeps remote rival).
    */
   const handleCameraToggle = useCallback(async () => {
-    if (!isParticipant) return;
-    const agoraEngine = getEngine();
+    if (!isAthlete) return;
 
     if (!isCameraOn) {
       if (Platform.OS === 'android') {
@@ -1149,19 +1148,21 @@ function Live1v1BattleScreenInner({
           PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
         ]);
       }
+      const result = await enableLocalCamera();
+      if (!result?.ok) {
+        if (result?.reason === 'permissions-denied') setIsCameraOn(false);
+        return;
+      }
+      const agoraEngine = getEngine();
       if (agoraEngine) {
         agoraEngine.enableVideo();
-        agoraEngine.enableLocalVideo(true);
-        agoraEngine.muteLocalVideoStream(false);
-        agoraEngine.startPreview(); // Required for hardware stream preview
-      } else {
-        const result = await enableLocalCamera();
-        if (!result?.ok) return;
+        agoraEngine.startPreview();
       }
       setIsCameraOn(true);
       return;
     }
 
+    const agoraEngine = getEngine();
     if (agoraEngine) {
       try {
         agoraEngine.stopPreview();
@@ -1173,8 +1174,15 @@ function Live1v1BattleScreenInner({
       agoraEngine.enableLocalVideo(false);
     }
     setIsCameraOn(false);
-  }, [isParticipant, isCameraOn]);
+  }, [isAthlete, isCameraOn]);
   const handleToggleCamera = handleCameraToggle;
+
+  // Keep preview alive while athlete has cam on (fixes black RtcSurfaceView after join).
+  useEffect(() => {
+    if (!isAthlete || !isCameraOn) return undefined;
+    void enableLocalCamera();
+    return undefined;
+  }, [isAthlete, isCameraOn, rtcJoined]);
 
   useEffect(() => {
     if (!battleId) return undefined;
@@ -1732,108 +1740,112 @@ function Live1v1BattleScreenInner({
         </View>
       </View>
 
-      {/* Optional chrome: brand / timer (does not own Host / Rival badges). */}
-      <Animated.View
-        style={[
-          styles.hudChrome,
-          {
-            opacity: hudOpacity,
-            transform: [
-              {
-                translateY: hudOpacity.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [28, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-        pointerEvents={showControls ? 'box-none' : 'none'}
-      >
+      {/* Athlete: minimal back only — no spectator stats chrome. */}
+      {isAthlete ? (
         <View
-          style={[styles.hudTopBlock, { paddingTop: hostOverlayPadTop + 52 }]}
+          style={[styles.athleteTopBack, { top: hostOverlayPadTop }]}
           pointerEvents="box-none"
         >
-          <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.headerBrand}
+            onPress={() => {
+              if (navigation?.canGoBack?.()) navigation.goBack();
+              else navigation?.navigate?.('Main', { tab: 'Battles' });
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.brandTitle}>BAWAAL</Text>
+          </TouchableOpacity>
+          {isHostRole ? (
             <TouchableOpacity
-              style={styles.headerBrand}
-              onPress={() => {
-                bumpHud();
-                if (navigation?.canGoBack?.()) navigation.goBack();
-                else navigation?.navigate?.('Main', { tab: 'Battles' });
-              }}
-              activeOpacity={0.8}
+              style={styles.queuedAthletesPill}
+              onPress={openChallengerRoster}
+              activeOpacity={0.85}
             >
-              <Text style={styles.brandTitle}>BAWAAL</Text>
-              <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {isDualFocus ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
+              <Text style={styles.queuedAthletesPillText}>
+                QUEUED ({queue.length})
               </Text>
             </TouchableOpacity>
-
-            <View style={styles.timerBadge}>
-              <Text style={styles.timerText}>{match.timerLabel}</Text>
-              <Text style={styles.categoryText} numberOfLines={1}>
-                {match.category}
-              </Text>
-            </View>
-
-            <View style={styles.headerRightCluster}>
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveText} numberOfLines={1}>
-                  {rtcJoined ? 'LIVE' : match.spectatorsLabel}
-                  {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {isAthlete ? (
-            <View style={styles.rosterTriggerRow}>
-              {isHostRole ? (
-                <TouchableOpacity
-                  style={styles.queuedAthletesPill}
-                  onPress={openChallengerRoster}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Queued athletes ${queue.length}`}
-                >
-                  <Text style={styles.queuedAthletesPillText}>
-                    QUEUED ATHLETES ({queue.length})
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.showChallengersPill}
-                  onPress={openChallengerRoster}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel="Show challengers roster"
-                >
-                  <Text style={styles.showChallengersPillText}>
-                    ▦ SHOW CHALLENGERS
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          ) : null}
-
-          {isSpectator && voteHintVisible ? (
-            <Animated.View
-              style={[styles.voteHintBanner, { opacity: hintOpacity }]}
-              pointerEvents="none"
-            >
-              <Text style={styles.voteHintText}>
-                TAP GLOVES TO VOTE · TAP SCREEN TO TOGGLE HUD
-              </Text>
-            </Animated.View>
           ) : null}
         </View>
+      ) : null}
 
-        <View style={styles.hudMidTapZone} pointerEvents="none" />
-      </Animated.View>
+      {/* SPECTATOR-ONLY chrome — timer / LIVE / vote hint (vanishes for athletes). */}
+      {isSpectator ? (
+        <Animated.View
+          style={[
+            styles.hudChrome,
+            {
+              opacity: hudOpacity,
+              transform: [
+                {
+                  translateY: hudOpacity.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [28, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+          pointerEvents={showControls ? 'box-none' : 'none'}
+        >
+          <View
+            style={[styles.hudTopBlock, { paddingTop: hostOverlayPadTop + 52 }]}
+            pointerEvents="box-none"
+          >
+            <View style={styles.header}>
+              <TouchableOpacity
+                style={styles.headerBrand}
+                onPress={() => {
+                  bumpHud();
+                  if (navigation?.canGoBack?.()) navigation.goBack();
+                  else navigation?.navigate?.('Main', { tab: 'Battles' });
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.brandTitle}>BAWAAL</Text>
+                <Text style={styles.brandSubtitle} numberOfLines={1}>
+                  {isDualFocus ? 'DUAL FOCUS 1v1' : 'WATCHING LIVE'}
+                </Text>
+              </TouchableOpacity>
 
-      <FloatingReactionLayer reactions={floatingReactions || []} />
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerText}>{match.timerLabel}</Text>
+                <Text style={styles.categoryText} numberOfLines={1}>
+                  {match.category}
+                </Text>
+              </View>
+
+              <View style={styles.headerRightCluster}>
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText} numberOfLines={1}>
+                    {rtcJoined ? 'LIVE' : match.spectatorsLabel}
+                    {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {voteHintVisible ? (
+              <Animated.View
+                style={[styles.voteHintBanner, { opacity: hintOpacity }]}
+                pointerEvents="none"
+              >
+                <Text style={styles.voteHintText}>
+                  TAP GLOVES TO VOTE · TAP SCREEN TO TOGGLE HUD
+                </Text>
+              </Animated.View>
+            ) : null}
+          </View>
+
+          <View style={styles.hudMidTapZone} pointerEvents="none" />
+        </Animated.View>
+      ) : null}
+
+      {isSpectator ? (
+        <FloatingReactionLayer reactions={floatingReactions || []} />
+      ) : null}
       </Pressable>
 
       {/* ATHLETE-ONLY — Flip / Mute / Cam. Never with vote / banter. */}
@@ -1865,7 +1877,7 @@ function Live1v1BattleScreenInner({
         </View>
       ) : null}
 
-      {/* SPECTATOR-ONLY — Vote % + Banter / gloves. Never with media controls. */}
+      {/* SPECTATOR-ONLY — Vote % + Banter / gloves. Never mounts for athletes. */}
       {isSpectator ? (
         <View
           style={[
@@ -2160,6 +2172,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
     pointerEvents: 'box-none',
+  },
+  athleteTopBack: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
   },
   persistentGlovesDock: {
     position: 'absolute',

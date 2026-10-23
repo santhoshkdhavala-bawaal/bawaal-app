@@ -1,8 +1,8 @@
 /**
- * Full-bleed athlete video surface inside a 50% Host / Rival viewport.
- * Never uses fixed card heights — always absolute fill of the parent half.
+ * Full-bleed local / remote Agora surface inside a 50% Host / Rival half.
+ * isCamOn → RtcSurfaceView absolute fill (uid 0 local); else STANDBY overlay.
  */
-import React, { type ReactNode } from 'react';
+import React, { useEffect, type ReactNode } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,14 +10,17 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { getAgoraSdk } from '../services/agoraService';
+import {
+  enableLocalCamera,
+  getAgoraSdk,
+  getEngine,
+} from '../services/agoraService';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const RenderModeType = AgoraSdk?.RenderModeType;
 const VideoSourceType = AgoraSdk?.VideoSourceType;
 
-/** Full-bleed fill — prevents 0-height / card collapse inside flex halves. */
 const FULL_BLEED = {
   position: 'absolute' as const,
   top: 0,
@@ -51,29 +54,58 @@ export function ArenaLocalVideo({
   const uid = Number(remoteUid) || 0;
   const isRemote = uid > 0;
 
+  // Local cam ON → reinforce enableVideo + startPreview (black screen without this).
+  useEffect(() => {
+    if (!on || isRemote) return undefined;
+    let cancelled = false;
+    (async () => {
+      const engine = getEngine();
+      if (engine) {
+        try {
+          engine.enableVideo();
+          engine.enableLocalVideo(true);
+          engine.muteLocalVideoStream(false);
+          engine.startPreview();
+        } catch {
+          if (!cancelled) await enableLocalCamera();
+        }
+      } else {
+        await enableLocalCamera();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [on, isRemote]);
+
   return (
     <View style={[styles.viewportFill, style]} pointerEvents="none">
       {on && RtcSurfaceView ? (
         <RtcSurfaceView
-          canvas={{
-            uid: isRemote ? uid : 0,
-            sourceType: isRemote
-              ? VideoSourceType?.VideoSourceRemote ?? 1
-              : VideoSourceType?.VideoSourceCamera ?? 0,
-            renderMode: RenderModeType?.RenderModeHidden ?? 1,
-          }}
-          style={styles.fullBleed}
+          canvas={
+            isRemote
+              ? {
+                  uid,
+                  sourceType: VideoSourceType?.VideoSourceRemote ?? 1,
+                  renderMode: RenderModeType?.RenderModeFit ?? 1,
+                }
+              : {
+                  uid: 0,
+                  renderMode: RenderModeType?.RenderModeFit ?? 1,
+                }
+          }
+          style={styles.rtcSurface}
           zOrderMediaOverlay
         />
       ) : on ? null : fallback ? (
         fallback
       ) : (
-        <View style={styles.standbyPlaceholder}>
+        <View style={styles.standbyOverlay}>
           <Text style={styles.flagEmoji}>{flag}</Text>
           <Text style={styles.standbyHandle} numberOfLines={1}>
             {handle}
           </Text>
-          <Text style={styles.standbySub}>STANDBY</Text>
+          <Text style={styles.standbyText}>STANDBY</Text>
         </View>
       )}
     </View>
@@ -81,16 +113,19 @@ export function ArenaLocalVideo({
 }
 
 const styles = StyleSheet.create({
-  fullBleed: {
-    ...FULL_BLEED,
-  },
   viewportFill: {
     ...FULL_BLEED,
     backgroundColor: '#0f172a',
     overflow: 'hidden',
+    zIndex: 0,
   },
-  standbyPlaceholder: {
+  rtcSurface: {
     ...FULL_BLEED,
+    zIndex: 1,
+  },
+  standbyOverlay: {
+    ...FULL_BLEED,
+    zIndex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
@@ -104,7 +139,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  standbySub: {
+  standbyText: {
     color: '#64748b',
     fontSize: 12,
     marginTop: 4,

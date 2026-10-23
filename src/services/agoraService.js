@@ -170,13 +170,22 @@ export async function enableLocalCamera() {
   }
 
   try {
-    // Order matches ChallengerArena contract: audio → video → startPreview.
+    // Permissions already granted → enableVideo then startPreview (required).
     engine.enableAudio();
     engine.enableVideo();
     engine.enableLocalAudio(true);
     engine.enableLocalVideo(true);
     engine.muteLocalAudioStream(false);
     engine.muteLocalVideoStream(false);
+    try {
+      // Bind local canvas uid 0 before preview (prevents black RtcSurfaceView).
+      engine.setupLocalVideo?.({
+        uid: 0,
+        renderMode: Agora?.RenderModeType?.RenderModeFit ?? 1,
+      });
+    } catch (_) {
+      /* optional on some SDK builds */
+    }
     engine.startPreview(); // MUST BE CALLED
     return { ok: true, engine };
   } catch (err) {
