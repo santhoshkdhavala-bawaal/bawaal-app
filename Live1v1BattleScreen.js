@@ -59,6 +59,7 @@ import {
   sendReaction,
   subscribeToBattle,
 } from './src/services/battleSyncService';
+import { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
 import { buildArenaChannelName } from './src/config/agora';
 import {
   destroyAgoraEngine,
@@ -70,6 +71,8 @@ import {
   leaveChannel,
   onConnectionStateChanged,
   onRemoteUsersChanged,
+  requestArenaMediaPermissions,
+  startBroadcasterPreview,
   switchCamera,
 } from './src/services/agoraService';
 import {
@@ -440,7 +443,7 @@ class ArenaSafeBoundary extends React.Component {
 }
 
 /**
- * Local Host/Athlete → Agora local RtcSurfaceView when joined, else expo CameraView.
+ * Local Host/Rival → ArenaLocalVideo (RtcSurfaceView uid:0 when isCamOn).
  * Remote → Agora RtcSurfaceView for remoteUid; RivalSimFeed only when Agora is offline.
  * Camera layer sits at zIndex 0; pane HUD overlays float above at zIndex 10.
  */
@@ -461,13 +464,9 @@ function StreamSurface({
   style,
 }) {
   const uid = Number(rtcUid) || 0;
-  const agoraLive = Boolean(isAgoraConfigured() && rtcJoined && RtcSurfaceView);
-  const showLocalAgora = Boolean(
-    isLocal && !cameraOff && agoraLive
-  );
-  const showLocalCamera = Boolean(
-    isLocal && !cameraOff && mediaReady && !showLocalAgora
-  );
+  const isCamOn = Boolean(isLocal && !cameraOff);
+  const agoraReady = Boolean(isAgoraConfigured() && RtcSurfaceView);
+  const agoraLive = Boolean(agoraReady && rtcJoined);
   const showRemoteRtc = Boolean(
     !isLocal && agoraLive && hasRemote && uid > 0
   );
@@ -476,31 +475,18 @@ function StreamSurface({
     !showRemoteRtc &&
     role !== 'host' &&
     !isAgoraConfigured();
-  const showOfflinePlaceholder =
-    !showLocalAgora &&
-    !showLocalCamera &&
-    !showRemoteRtc &&
-    !showRivalSim;
-
-  if (__DEV__ && showOfflinePlaceholder) {
-    console.log('[StreamSurface] offline placeholder', {
-      streamId,
-      rtcUid: uid,
-      role,
-      isLocal,
-      hasRemote,
-      cameraOff,
-      mediaReady,
-      rtcJoined,
-      agoraReady: Boolean(RtcSurfaceView),
-    });
-  }
+  // Expo CameraView only when Agora native preview is unavailable.
+  const showLocalCameraFallback = Boolean(
+    isCamOn && mediaReady && !agoraReady
+  );
 
   const renderFallback = (key) => (
     <StreamFallbackPanel
       key={key}
       cameraOff={Boolean(cameraOff && isLocal)}
-      offline={Boolean(connectionOffline || (!isLocal && !hasRemote && agoraLive))}
+      offline={Boolean(
+        connectionOffline || (!isLocal && !hasRemote && agoraLive)
+      )}
       role={role}
       handle={label}
       flag={flag}
@@ -508,38 +494,25 @@ function StreamSurface({
   );
 
   let liveTrack = null;
-  if (showLocalAgora) {
-    const localSource =
-      VideoSourceType.VideoSourceCamera ??
-      VideoSourceType.VideoSourceLocal ??
-      0;
+  if (isLocal) {
+    // isCamOn → RtcSurfaceView uid:0; cam OFF → STANDBY fallback only.
     liveTrack = (
-      <View style={styles.cameraLayer} pointerEvents="none">
-        <RtcSurfaceView
-          style={StyleSheet.absoluteFillObject}
-          canvas={{
-            uid: 0,
-            sourceType: localSource,
-            renderMode: RenderModeType.RenderModeHidden ?? 1,
-            mirrorMode:
-              (cameraFacing || 'front') === 'front'
-                ? 1
-                : 0,
-          }}
-          zOrderMediaOverlay
-        />
-      </View>
-    );
-  } else if (showLocalCamera) {
-    liveTrack = (
-      <View style={styles.cameraLayer} pointerEvents="none">
-        <CameraView
-          style={StyleSheet.absoluteFillObject}
-          facing={cameraFacing || 'front'}
-          mute={micMuted}
-          mirror={(cameraFacing || 'front') === 'front'}
-        />
-      </View>
+      <ArenaLocalVideo
+        isCamOn={isCamOn}
+        style={styles.cameraLayer}
+        fallback={
+          showLocalCameraFallback ? (
+            <View style={styles.cameraLayer} pointerEvents="none">
+              <CameraView
+                style={StyleSheet.absoluteFillObject}
+                facing={cameraFacing || 'front'}
+                mute={micMuted}
+                mirror={(cameraFacing || 'front') === 'front'}
+              />
+            </View>
+          ) : null
+        }
+      />
     );
   } else if (showRemoteRtc) {
     liveTrack = (
@@ -578,6 +551,7 @@ function StreamSurface({
           {liveTrack}
         </StreamErrorBoundary>
       ) : null}
+      {/* Local cam OFF: ArenaLocalVideo returns null → STANDBY fallback stays visible. */}
     </View>
   );
 }
@@ -1193,7 +1167,7 @@ function Live1v1BattleScreenInner({
     focusedRivalRef.current = focusedRival;
   }, [focusedRival]);
 
-  // Request camera (+ mic) permissions automatically on arena mount.
+  // Request camera (+ mic) on arena mount (hooks keep mediaReady in sync).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1205,7 +1179,6 @@ function Live1v1BattleScreenInner({
         if (__DEV__) {
           console.warn('[Live1v1] permission request failed', err?.message || err);
         }
-        // Fallback to hook requesters if static Camera API is unavailable.
         if (!cancelled && cameraPermission && !cameraPermission.granted) {
           await requestCameraPermission();
         }
@@ -1217,14 +1190,11 @@ function Live1v1BattleScreenInner({
     return () => {
       cancelled = true;
     };
-    // Mount-only — hooks refresh mediaReady via permission state.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount prompt
   }, []);
 
   useEffect(() => {
     if (!isAgoraConfigured()) return undefined;
-    // Broadcasters must have cam/mic before publishing; spectators join as Audience earlier.
-    if (isBroadcaster && !mediaReady) return undefined;
 
     let cancelled = false;
     const channel = buildArenaChannelName(battleId || 'featured-live');
@@ -1234,23 +1204,37 @@ function Live1v1BattleScreenInner({
     const unsubConn = onConnectionStateChanged((state) => {
       if (!cancelled) {
         setRtcConnectionState(state);
-        if (state === 'connected') setRtcJoined(true);
+        if (state === 'connected') {
+          setRtcJoined(true);
+          if (isBroadcaster) startBroadcasterPreview();
+        }
         if (state === 'failed' || state === 'disconnected') setRtcJoined(false);
       }
     });
 
     (async () => {
+      // Permissions again immediately before join (Host / Rival / Spectator).
+      const permitted = await requestArenaMediaPermissions(isBroadcaster);
+      if (cancelled) return;
+      if (isBroadcaster && !permitted) {
+        setRtcJoined(false);
+        setRtcConnectionState('failed');
+        return;
+      }
+
       const join = await joinBattleChannel(channel, myRtcUid, isBroadcaster);
-      if (!cancelled) {
-        setRtcJoined(Boolean(join?.ok));
-        if (__DEV__) {
-          console.log('[arena-rtc] join', {
-            channel,
-            role: join?.role || (isBroadcaster ? 'host' : 'audience'),
-            ok: join?.ok,
-            uid: join?.localUid ?? myRtcUid,
-          });
-        }
+      if (cancelled) return;
+      setRtcJoined(Boolean(join?.ok));
+      if (join?.ok && isBroadcaster) {
+        startBroadcasterPreview();
+      }
+      if (__DEV__) {
+        console.log('[arena-rtc] join', {
+          channel,
+          role: join?.role || (isBroadcaster ? 'host' : 'audience'),
+          ok: join?.ok,
+          uid: join?.localUid ?? myRtcUid,
+        });
       }
     })();
 
@@ -1262,7 +1246,7 @@ function Live1v1BattleScreenInner({
       setRtcConnectionState('idle');
       void leaveChannel();
     };
-  }, [battleId, isBroadcaster, mediaReady, myRtcUid]);
+  }, [battleId, isBroadcaster, myRtcUid]);
 
   useEffect(
     () => () => {
@@ -1294,6 +1278,10 @@ function Live1v1BattleScreenInner({
       const next = !prev;
       // Athlete HUD → Agora enableLocalVideo (inverse of cameraOff).
       enableLocalVideo(!next);
+      if (!next) {
+        // Cam turned back ON — restart local preview for uid:0 surface.
+        startBroadcasterPreview();
+      }
       return next;
     });
   }, [isParticipant]);

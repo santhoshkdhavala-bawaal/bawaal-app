@@ -104,8 +104,11 @@ export function onConnectionStateChanged(listener) {
   return () => connectionListeners.delete(listener);
 }
 
-async function ensureMediaPermissions(asBroadcaster) {
-  if (!asBroadcaster) return true;
+/**
+ * Always prompt cam + mic before channel join (Host, Rival, and Spectator).
+ * Broadcasters require both grants; audience may still join if denied.
+ */
+export async function requestArenaMediaPermissions(asBroadcaster = false) {
   try {
     const cam = await Camera.requestCameraPermissionsAsync();
     const mic = await Camera.requestMicrophonePermissionsAsync();
@@ -114,12 +117,30 @@ async function ensureMediaPermissions(asBroadcaster) {
       console.warn('[agora] Camera/mic permission not fully granted', {
         camera: cam?.granted,
         mic: mic?.granted,
+        asBroadcaster,
       });
     }
-    return granted;
+    if (asBroadcaster) return granted;
+    return true;
   } catch (err) {
     console.warn('[agora] Permission request failed:', err?.message || err);
-    return Platform.OS === 'ios';
+    return !asBroadcaster || Platform.OS === 'ios';
+  }
+}
+
+/** Host / Rival: enable video pipeline + local preview surface (uid 0). */
+export function startBroadcasterPreview() {
+  if (!engine) return { ok: false };
+  try {
+    engine.enableVideo();
+    engine.enableAudio();
+    engine.enableLocalVideo(true);
+    engine.enableLocalAudio(true);
+    engine.startPreview();
+    return { ok: true };
+  } catch (err) {
+    console.warn('[agora] startBroadcasterPreview:', err?.message || err);
+    return { ok: false, error: err };
   }
 }
 
@@ -175,6 +196,16 @@ export async function initAgoraEngine(appId = AGORA_APP_ID) {
       localUid = uid || localUid;
       reconnectAttempts = 0;
       clearReconnectTimer();
+      // Host / Rival: ensure preview is live after channel join.
+      if (joinedAsBroadcaster) {
+        try {
+          engine?.enableVideo();
+          engine?.enableLocalVideo(true);
+          engine?.startPreview();
+        } catch (err) {
+          console.warn('[agora] post-join preview:', err?.message || err);
+        }
+      }
       emitConnection('connected', { uid: localUid });
       if (__DEV__) {
         console.log('[agora] joined channel as', localUid, joinedChannel);
@@ -256,7 +287,8 @@ export async function joinBattleChannel(
   }
 
   const asBroadcaster = Boolean(isHost);
-  const permitted = await ensureMediaPermissions(asBroadcaster);
+  // 1) Request camera + mic BEFORE joining the channel.
+  const permitted = await requestArenaMediaPermissions(asBroadcaster);
   if (asBroadcaster && !permitted) {
     emitConnection('failed', { reason: 'permissions-denied' });
     return { ok: false, reason: 'permissions-denied' };
@@ -268,10 +300,9 @@ export async function joinBattleChannel(
   joinedAsBroadcaster = asBroadcaster;
   emitConnection('connecting', { channelName, asBroadcaster });
 
+  // 2) Host / Rival: enableVideo + startPreview before/around join.
   if (asBroadcaster) {
-    engine.enableLocalVideo(true);
-    engine.enableLocalAudio(true);
-    engine.startPreview();
+    startBroadcasterPreview();
   } else {
     engine.enableLocalVideo(false);
     engine.enableLocalAudio(false);
@@ -297,6 +328,9 @@ export async function joinBattleChannel(
   const ok = result === 0 || result === undefined;
   if (!ok) {
     emitConnection('failed', { code: result });
+  } else if (asBroadcaster) {
+    // Reinforce preview immediately after join returns.
+    startBroadcasterPreview();
   }
   return {
     ok,
@@ -399,6 +433,8 @@ export const agoraService = {
   getConnectionState,
   onRemoteUsersChanged,
   onConnectionStateChanged,
+  requestArenaMediaPermissions,
+  startBroadcasterPreview,
   initAgoraEngine,
   joinBattleChannel,
   leaveChannel,
