@@ -20,6 +20,10 @@
  * DEV mock bar (__DEV__ only): TOGGLE RIVAL · TOGGLE SPECTATOR · SIMULATE REP.
  * Production styling tokens / HUD chrome are unchanged outside that overlay.
  *
+ * Camera lock-in:
+ *  - Host viewport mounts expo-camera CameraView (facing front) under transparent HUD.
+ *  - Rival uses Agora remote when present; otherwise RivalSimFeed (simulated WebRTC).
+ *
  * View modes:
  *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
  *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
@@ -43,6 +47,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  Camera,
   CameraView,
   useCameraPermissions,
   useMicrophonePermissions,
@@ -245,7 +250,7 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
     <View
       style={[
         styles.streamFallback,
-        role === 'host' ? styles.panelHost : styles.panelRival,
+        role === 'host' ? styles.streamFallbackHost : styles.streamFallbackRival,
       ]}
       pointerEvents="none"
     >
@@ -254,6 +259,48 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
           CAMERA OFF
         </Text>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Simulated remote WebRTC layer for Rival when no Agora publish is present.
+ * Keeps dual 1v1 layout honest in solo / DEV testing without a second device.
+ */
+function RivalSimFeed({ label }) {
+  const [pulse] = useState(() => new Animated.Value(0.35));
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 0.85,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0.35,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  return (
+    <View style={styles.rivalSimRoot} pointerEvents="none">
+      <View style={styles.rivalSimScan} />
+      <Animated.View style={[styles.rivalSimCore, { opacity: pulse }]}>
+        <Text style={styles.rivalSimBadge}>LIVE FEED</Text>
+        <Text style={styles.rivalSimLabel} numberOfLines={1}>
+          {label || '@RIVAL'}
+        </Text>
+        <Text style={styles.rivalSimHint}>SIMULATED WEBRTC</Text>
+      </Animated.View>
     </View>
   );
 }
@@ -356,9 +403,9 @@ class ArenaSafeBoundary extends React.Component {
 }
 
 /**
- * Local tile → expo-camera CameraView.
- * Remote tile → Agora RtcSurfaceView when a stream is connected.
- * Always paints a clean slate fallback under any live track (no letter avatars).
+ * Local Host → expo-camera CameraView (front by default).
+ * Remote Rival → Agora RtcSurfaceView, or RivalSimFeed in simulation mode.
+ * Camera layer sits at zIndex 0; pane HUD overlays float above at zIndex 10.
  */
 function StreamSurface({
   streamId,
@@ -377,8 +424,9 @@ function StreamSurface({
   const showLocalCamera = Boolean(isLocal && !cameraOff && mediaReady);
   const showRemoteRtc =
     !isLocal && Boolean(RtcSurfaceView) && hasRemote && uid > 0;
+  const showRivalSim = !isLocal && !showRemoteRtc && role !== 'host';
 
-  if (__DEV__ && !showLocalCamera && !showRemoteRtc) {
+  if (__DEV__ && !showLocalCamera && !showRemoteRtc && !showRivalSim) {
     console.log('[StreamSurface] using fallback panel', {
       streamId,
       rtcUid: uid,
@@ -402,24 +450,34 @@ function StreamSurface({
   let liveTrack = null;
   if (showLocalCamera) {
     liveTrack = (
-      <CameraView
-        style={StyleSheet.absoluteFillObject}
-        facing={cameraFacing}
-        mute={micMuted}
-        mirror={cameraFacing === 'front'}
-      />
+      <View style={styles.cameraLayer} pointerEvents="none">
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing={cameraFacing || 'front'}
+          mute={micMuted}
+          mirror={(cameraFacing || 'front') === 'front'}
+        />
+      </View>
     );
   } else if (showRemoteRtc) {
     liveTrack = (
-      <RtcSurfaceView
-        style={StyleSheet.absoluteFillObject}
-        canvas={{
-          uid,
-          sourceType: VideoSourceType.VideoSourceRemote,
-          renderMode: RenderModeType.RenderModeHidden ?? 1,
-        }}
-        zOrderMediaOverlay
-      />
+      <View style={styles.cameraLayer} pointerEvents="none">
+        <RtcSurfaceView
+          style={StyleSheet.absoluteFillObject}
+          canvas={{
+            uid,
+            sourceType: VideoSourceType.VideoSourceRemote,
+            renderMode: RenderModeType.RenderModeHidden ?? 1,
+          }}
+          zOrderMediaOverlay
+        />
+      </View>
+    );
+  } else if (showRivalSim) {
+    liveTrack = (
+      <View style={styles.cameraLayer} pointerEvents="none">
+        <RivalSimFeed label={label} />
+      </View>
     );
   }
 
@@ -536,7 +594,7 @@ function HostSpotlight({
 }) {
   const safeHost = host || DEFAULT_HOST;
   return (
-    <View style={[styles.hostSpotlight, styles.panelHost]}>
+    <View style={styles.hostSpotlight}>
       <StreamSurface
         streamId={safeHost.streamId}
         rtcUid={safeHost.rtcUid}
@@ -548,7 +606,7 @@ function HostSpotlight({
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
-        style={StyleSheet.absoluteFillObject}
+        style={styles.cameraLayer}
       />
       {/* Host handle — top-left inside host viewport, below status bar */}
       <View
@@ -650,10 +708,7 @@ function DualFocusPane({
   // Host clears the status bar; rival sits at top of its own bottom pane (under VS).
   const handleTop = isHost ? topInset : 12;
   return (
-    <View
-      style={[styles.dualPane, isHost ? styles.panelHost : styles.panelRival]}
-      pointerEvents="box-none"
-    >
+    <View style={styles.dualPane} pointerEvents="box-none">
       <StreamSurface
         streamId={safe.streamId}
         rtcUid={safe.rtcUid}
@@ -665,7 +720,7 @@ function DualFocusPane({
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
-        style={StyleSheet.absoluteFillObject}
+        style={styles.cameraLayer}
       />
       <View
         style={[styles.handleAnchorInPane, { top: handleTop, left: 12 }]}
@@ -865,6 +920,14 @@ function Live1v1BattleScreenInner({
     (uid) => remoteUids.includes(Number(uid)),
     [remoteUids]
   );
+
+  /**
+   * Host viewport prefers the device front camera.
+   * In DEV / no remote host publish, always preview locally so solo testing works.
+   */
+  const hostUsesDeviceCamera =
+    isLocalHost ||
+    (__DEV__ && !hasRemoteUid(hostAthlete?.rtcUid));
 
   const totalVotes = Math.max(1, hostVotes + rivalVotes);
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
@@ -1088,27 +1151,33 @@ function Live1v1BattleScreenInner({
     focusedRivalRef.current = focusedRival;
   }, [focusedRival]);
 
-  // Explicit camera + mic prompts when entering the Battle Arena.
+  // Request camera (+ mic) permissions automatically on arena mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (cameraPermission && !cameraPermission.granted && cameraPermission.canAskAgain !== false) {
-        await requestCameraPermission();
-      }
-      if (cancelled) return;
-      if (micPermission && !micPermission.granted && micPermission.canAskAgain !== false) {
-        await requestMicPermission();
+      try {
+        await Camera.requestCameraPermissionsAsync();
+        if (cancelled) return;
+        await Camera.requestMicrophonePermissionsAsync();
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[Live1v1] permission request failed', err?.message || err);
+        }
+        // Fallback to hook requesters if static Camera API is unavailable.
+        if (!cancelled && cameraPermission && !cameraPermission.granted) {
+          await requestCameraPermission();
+        }
+        if (!cancelled && micPermission && !micPermission.granted) {
+          await requestMicPermission();
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [
-    cameraPermission,
-    micPermission,
-    requestCameraPermission,
-    requestMicPermission,
-  ]);
+    // Mount-only — hooks refresh mediaReady via permission state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount prompt
+  }, []);
 
   useEffect(() => {
     if (!isAgoraConfigured()) return undefined;
@@ -1600,7 +1669,7 @@ function Live1v1BattleScreenInner({
       <View style={styles.stageContainer} pointerEvents="box-none">
         {isDualFocus ? (
           <View style={styles.dualFocusColumn} pointerEvents="box-none">
-            <View style={[styles.streamPaneShell, styles.panelHost]} pointerEvents="box-none">
+            <View style={styles.streamPaneShell} pointerEvents="box-none">
               <DualFocusPane
                 athlete={safeHostAthlete}
                 variant="host"
@@ -1611,11 +1680,11 @@ function Live1v1BattleScreenInner({
                   bumpHud();
                   handleHostRep();
                 }}
-                isLocal={isLocalHost}
+                isLocal={hostUsesDeviceCamera}
                 hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                cameraOff={cameraOff && isLocalHost}
+                cameraOff={cameraOff && hostUsesDeviceCamera}
                 cameraFacing={cameraFacing}
-                micMuted={micMuted && isLocalHost}
+                micMuted={micMuted && hostUsesDeviceCamera}
               />
             </View>
             <View style={styles.vsCenterSeam} pointerEvents="none">
@@ -1625,7 +1694,7 @@ function Live1v1BattleScreenInner({
               </View>
               <View style={styles.vsLine} />
             </View>
-            <View style={[styles.streamPaneShell, styles.panelRival]} pointerEvents="box-none">
+            <View style={styles.streamPaneShell} pointerEvents="box-none">
               <DualFocusPane
                 athlete={rivalAthlete}
                 variant="rival"
@@ -1648,7 +1717,7 @@ function Live1v1BattleScreenInner({
           </View>
         ) : (
           <View style={styles.fullVideoColumn} pointerEvents="box-none">
-            <View style={[styles.spotlightHostWrap, styles.panelHost]}>
+            <View style={styles.spotlightHostWrap}>
               <HostSpotlight
                 host={safeHostAthlete}
                 live
@@ -1659,11 +1728,11 @@ function Live1v1BattleScreenInner({
                   bumpHud();
                   handleHostRep();
                 }}
-                isLocal={isLocalHost}
+                isLocal={hostUsesDeviceCamera}
                 hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                cameraOff={cameraOff && isLocalHost}
+                cameraOff={cameraOff && hostUsesDeviceCamera}
                 cameraFacing={cameraFacing}
-                micMuted={micMuted && isLocalHost}
+                micMuted={micMuted && hostUsesDeviceCamera}
               />
             </View>
             <ScrollView
@@ -2414,19 +2483,21 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
-    backgroundColor: PANEL_HOST,
+    backgroundColor: 'transparent',
   },
   streamPaneShell: {
     flex: 1,
     width: '100%',
     minHeight: 0,
     overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   spotlightHostWrap: {
     flex: 0.42,
     width: '100%',
     minHeight: 0,
-    backgroundColor: PANEL_HOST,
+    backgroundColor: 'transparent',
+    overflow: 'hidden',
   },
   panelHost: {
     backgroundColor: PANEL_HOST,
@@ -2437,7 +2508,7 @@ const styles = StyleSheet.create({
   hostSpotlight: {
     flex: 1,
     position: 'relative',
-    backgroundColor: PANEL_HOST,
+    backgroundColor: 'transparent',
     overflow: 'hidden',
   },
   gridScroll: {
@@ -2514,10 +2585,10 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: PANEL_HOST,
+    backgroundColor: 'transparent',
   },
   streamSurface: {
-    backgroundColor: PANEL_RIVAL,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -2525,10 +2596,21 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   streamSurfaceHost: {
-    backgroundColor: PANEL_HOST,
+    backgroundColor: 'transparent',
   },
   streamSurfaceRival: {
-    backgroundColor: PANEL_RIVAL,
+    backgroundColor: 'transparent',
+  },
+  /** Live camera / RTC / sim feed — fills the Host or Rival viewport under HUD. */
+  cameraLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   streamHint: {
     color: '#94A3B8',
@@ -2538,8 +2620,50 @@ const styles = StyleSheet.create({
   },
   streamFallback: {
     ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  streamFallbackHost: {
+    backgroundColor: PANEL_HOST,
+  },
+  streamFallbackRival: {
+    backgroundColor: PANEL_RIVAL,
+  },
+  rivalSimRoot: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: PANEL_RIVAL,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  rivalSimScan: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,229,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,229,255,0.22)',
+  },
+  rivalSimCore: {
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+  },
+  rivalSimBadge: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  rivalSimLabel: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  rivalSimHint: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   participantHudHidden: {
     height: 0,
@@ -2547,21 +2671,23 @@ const styles = StyleSheet.create({
   },
   handleAnchorInPane: {
     position: 'absolute',
-    zIndex: 8,
-    elevation: 8,
+    zIndex: 10,
+    elevation: 10,
     maxWidth: '70%',
+    backgroundColor: 'transparent',
   },
   statsAnchorHost: {
     position: 'absolute',
     right: 12,
-    zIndex: 8,
-    elevation: 8,
+    zIndex: 10,
+    elevation: 10,
     alignItems: 'flex-end',
     gap: 6,
+    backgroundColor: 'transparent',
   },
   handlePillWrap: {
     maxWidth: '100%',
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -2632,7 +2758,7 @@ const styles = StyleSheet.create({
   paneLivePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,0,0,0.2)',
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#FF0000',
     borderRadius: 999,
@@ -2646,7 +2772,7 @@ const styles = StyleSheet.create({
   },
   hostRepsBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: ORANGE,
     paddingHorizontal: 12,
@@ -2656,7 +2782,7 @@ const styles = StyleSheet.create({
   },
   challengerRepsBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'transparent',
     borderWidth: 1.5,
     borderColor: CYAN,
     paddingHorizontal: 12,
@@ -2689,7 +2815,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 12,
+    zIndex: 10,
+    backgroundColor: 'transparent',
   },
   vsLine: {
     flex: 1,
@@ -2701,7 +2828,7 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     marginHorizontal: 10,
-    backgroundColor: BG,
+    backgroundColor: 'transparent',
     borderWidth: 2,
     borderColor: ORANGE,
     alignItems: 'center',
