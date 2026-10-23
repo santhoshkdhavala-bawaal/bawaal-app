@@ -19,7 +19,10 @@ const SURFACE = '#121212';
 const BORDER = '#1F2937';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ORANGE = '#FF5722';
+/** Soft premium coral — replaces neon orange accents. */
+const CORAL = '#FF8A65';
+const CORAL_SOFT = '#FF9E80';
+const INK = '#0F172A';
 const OFF_WHITE = '#E8ECE9';
 
 const SPORTS = ['COMBAT', 'GYM', 'CRICKET', 'ATHLETICS', 'CROSSFIT'];
@@ -426,7 +429,7 @@ const styles = StyleSheet.create({
   },
   accentLine: {
     height: 3,
-    backgroundColor: ORANGE,
+    backgroundColor: CORAL,
     width: '100%',
   },
   pullBar: {
@@ -483,8 +486,8 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   pillActive: {
-    backgroundColor: ORANGE,
-    borderColor: ORANGE,
+    backgroundColor: CORAL,
+    borderColor: CORAL,
   },
   pillText: {
     color: MUTED,
@@ -492,7 +495,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   pillTextActive: {
-    color: '#000000',
+    color: INK,
   },
   input: {
     backgroundColor: SURFACE,
@@ -534,7 +537,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   segmentBtnOn: {
-    backgroundColor: ORANGE,
+    backgroundColor: CORAL,
   },
   segmentText: {
     color: MUTED,
@@ -542,7 +545,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   segmentTextOn: {
-    color: '#000000',
+    color: INK,
   },
   scheduleMeta: {
     marginTop: 10,
@@ -566,8 +569,8 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
   offsetChipOn: {
-    borderColor: ORANGE,
-    backgroundColor: 'rgba(255,87,34,0.15)',
+    borderColor: CORAL_SOFT,
+    backgroundColor: 'rgba(255,138,101,0.18)',
   },
   offsetChipText: {
     color: MUTED,
@@ -575,7 +578,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   offsetChipTextOn: {
-    color: ORANGE,
+    color: CORAL_SOFT,
   },
   localTime: {
     color: WHITE,
@@ -583,7 +586,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   countdown: {
-    color: ORANGE,
+    color: CORAL_SOFT,
     fontSize: 12,
     fontWeight: '900',
     marginTop: 6,
@@ -595,20 +598,20 @@ const styles = StyleSheet.create({
   },
   launchBtn: {
     marginTop: 20,
-    backgroundColor: ORANGE,
+    backgroundColor: CORAL,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: ORANGE,
-    shadowOpacity: 0.55,
+    shadowColor: CORAL,
+    shadowOpacity: 0.4,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
     elevation: 8,
   },
   launchBtnText: {
-    color: '#000000',
+    color: INK,
     fontSize: 14,
-    fontWeight: '900',
+    fontWeight: '700',
     letterSpacing: 0.8,
   },
 });
