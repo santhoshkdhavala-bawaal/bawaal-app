@@ -1,8 +1,9 @@
 /**
  * ChallengerArena — BAWAAL Live 1v1 Arena (production entry).
  *
- * Spectator HUD — CHALLENGERS drawer (Watch mode):
- *   style={{ position: 'absolute', top: 95, left: 16, zIndex: 999 }}
+ * Safe area: root paddingTop = insets.top + 10 (Host / REPS clear of notch).
+ * Left header column (absolute · top 0 · left 16 · gap 8 · zIndex 999):
+ *   Host badge → CHALLENGERS (spectator only) stacked — never overlaps.
  *
  * Dual 1v1 stage column:
  *   flex:1 · column · space-between · paddingVertical:16

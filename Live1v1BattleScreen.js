@@ -4,7 +4,8 @@
  * PRODUCTION LOCK-IN:
  *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
  *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
- *  - CHALLENGERS (X): top 95 · left 16 · zIndex 999 (clear of Host handle). Top-right = REPS + LIVE.
+ *  - Left header column: Host badge + CHALLENGERS (spectator) @ top insets.top+10 · left 16 · gap 8.
+ *  - Root paddingTop: insets.top + 10 — Host/REPS clear of status bar / notch.
  *  - isCameraOn true → RtcSurfaceView uid:0; false → flag + STANDBY (never "CAMERA OFF").
  *
  * Role UI (route-driven):
@@ -641,7 +642,8 @@ function HostSpotlight({
   rtcJoined = false,
   connectionOffline = false,
   overlaysVisible = true,
-  topInset = 50,
+  showHandle = true,
+  topInset = 12,
 }) {
   const safeHost = host || DEFAULT_HOST;
   return (
@@ -662,17 +664,18 @@ function HostSpotlight({
         connectionOffline={connectionOffline}
         style={styles.cameraLayer}
       />
-      {/* Host handle — top-left inside host viewport, below status bar */}
-      <View
-        style={[styles.handleAnchorInPane, { top: topInset, left: 16 }]}
-        pointerEvents="none"
-      >
-        <AthleteHandlePill
-          handle={safeHost.handle}
-          flag={safeHost.flag}
-          tone="host"
-        />
-      </View>
+      {showHandle ? (
+        <View
+          style={[styles.handleAnchorInPane, { top: topInset, left: 16 }]}
+          pointerEvents="none"
+        >
+          <AthleteHandlePill
+            handle={safeHost.handle}
+            flag={safeHost.flag}
+            tone="host"
+          />
+        </View>
+      ) : null}
       {overlaysVisible ? (
         <View style={styles.statsAnchorHost} pointerEvents="box-none">
           {live ? (
@@ -709,11 +712,12 @@ function DualFocusPane({
   rtcJoined = false,
   connectionOffline = false,
   overlaysVisible = true,
-  topInset = 50,
+  showHandle = true,
+  topInset = 12,
 }) {
   const isHost = variant === 'host';
   const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
-  // Host handle clears status bar; Host REPS/LIVE stay locked at top:16 / right:16.
+  // Host badge lives in the global left header column; rival keeps in-pane handle.
   const handleTop = isHost ? topInset : 12;
   return (
     <View style={styles.dualPane} pointerEvents="box-none">
@@ -733,16 +737,18 @@ function DualFocusPane({
         connectionOffline={connectionOffline}
         style={styles.cameraLayer}
       />
-      <View
-        style={[styles.handleAnchorInPane, { top: handleTop, left: 16 }]}
-        pointerEvents="none"
-      >
-        <AthleteHandlePill
-          handle={safe.handle}
-          flag={safe.flag}
-          tone={isHost ? 'host' : 'rival'}
-        />
-      </View>
+      {showHandle ? (
+        <View
+          style={[styles.handleAnchorInPane, { top: handleTop, left: 16 }]}
+          pointerEvents="none"
+        >
+          <AthleteHandlePill
+            handle={safe.handle}
+            flag={safe.flag}
+            tone={isHost ? 'host' : 'rival'}
+          />
+        </View>
+      ) : null}
       {overlaysVisible ? (
         <View
           style={isHost ? styles.statsAnchorHost : styles.statsAnchorRival}
@@ -1684,12 +1690,9 @@ function Live1v1BattleScreenInner({
   const challengersInQueueCount = waitingChallengers.length;
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
-  /** Keep host handle / top HUD clear of the status-bar clock. */
-  const hostTopInset =
-    (Platform.OS === 'android'
-      ? StatusBar.currentHeight || 40
-      : Math.max(insets.top, 44)) + 10;
-  const stageTopInset = hostTopInset;
+  /** Status bar / notch clearance for Host badge, REPS, and CHALLENGERS. */
+  const safeTop = insets.top + 10;
+  const isSpectator = !isParticipant;
   /** Reps stay up for athletes; spectators only see them with HUD chrome. */
   const repsVisible = isParticipant || showControls;
   /** Solo warm-up = full Host; active ring = 50/50 dual with VS. */
@@ -1697,7 +1700,7 @@ function Live1v1BattleScreenInner({
 
   // Never return null/undefined — always mount a full arena tree.
   return (
-    <View style={styles.rootScreen}>
+    <View style={[styles.rootScreen, { paddingTop: safeTop }]}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
@@ -1738,7 +1741,7 @@ function Live1v1BattleScreenInner({
                 mediaReady={mediaReady}
                 rtcJoined={rtcJoined}
                 connectionOffline={connectionOffline}
-                topInset={12}
+                showHandle={false}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1811,7 +1814,7 @@ function Live1v1BattleScreenInner({
                 mediaReady={mediaReady}
                 rtcJoined={rtcJoined}
                 connectionOffline={connectionOffline}
-                topInset={stageTopInset}
+                showHandle={false}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1832,32 +1835,43 @@ function Live1v1BattleScreenInner({
         If reintroduced for local testing, wrap the entire block in {__DEV__ ? ... : null}.
       */}
 
-      {/* Spectator: locked top-left under Host handle. Top-right = REPS / LIVE only. */}
-      {!isParticipant ? (
-        <View
-          style={{
-            position: 'absolute',
-            top: 95, // Positioned safely below the top host pill
-            left: 16,
-            zIndex: 999,
-            backgroundColor: 'transparent',
-            maxWidth: '58%',
-          }}
-          pointerEvents="box-none"
-        >
+      {/*
+        Left header column — Host badge + CHALLENGERS stacked (gap 8, never overlap).
+        Root uses paddingTop: insets.top + 10, so top: 0 here sits in the safe band.
+      */}
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 16,
+          gap: 8,
+          zIndex: 999,
+          maxWidth: '62%',
+          backgroundColor: 'transparent',
+        }}
+        pointerEvents="box-none"
+      >
+        <View style={styles.hostBadge} pointerEvents="none">
+          <AthleteHandlePill
+            handle={safeHostAthlete.handle}
+            flag={safeHostAthlete.flag}
+            tone="host"
+          />
+        </View>
+        {isSpectator ? (
           <TouchableOpacity
-            style={styles.challengersQueuePill}
+            style={styles.challengersButton}
             onPress={openChallengerRoster}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={`Challengers in queue ${challengersInQueueCount}`}
           >
-            <Text style={styles.challengersQueuePillText}>
+            <Text style={styles.challengersText}>
               CHALLENGERS ({challengersInQueueCount})
             </Text>
           </TouchableOpacity>
-        </View>
-      ) : null}
+        ) : null}
+      </View>
 
       {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
       <Animated.View
@@ -1877,10 +1891,7 @@ function Live1v1BattleScreenInner({
         ]}
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
-        <View
-          style={[styles.hudTopBlock, { paddingTop: stageTopInset }]}
-          pointerEvents="box-none"
-        >
+        <View style={styles.hudTopBlock} pointerEvents="box-none">
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.headerBrand}
@@ -2479,14 +2490,31 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Spectator CHALLENGERS — below Host pill (@MUMBAI_STRIKER). Inline style also applied in JSX. */
-  challengersButton: {
-    position: 'absolute',
-    top: 95, // Positioned safely below the top host pill
-    left: 16,
-    zIndex: 999,
+  /** Host badge in left header column (below safe-area padding). */
+  hostBadge: {
+    alignSelf: 'flex-start',
     backgroundColor: 'transparent',
-    maxWidth: '58%',
+  },
+  /** CHALLENGERS drawer — stacked under Host badge (not absolutely offset). */
+  challengersButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(0,229,255,0.16)',
+    borderWidth: 1,
+    borderColor: CYAN,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  challengersText: {
+    color: CYAN,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   challengersQueuePill: {
     alignSelf: 'flex-start',
@@ -2702,10 +2730,10 @@ const styles = StyleSheet.create({
     maxWidth: '70%',
     backgroundColor: 'transparent',
   },
-  /** Production lock: Host REPS + LIVE — top 16 · right 16 only. */
+  /** Host REPS + LIVE — top-right; root paddingTop clears the notch. */
   statsAnchorHost: {
     position: 'absolute',
-    top: 16,
+    top: 0,
     right: 16,
     zIndex: 10,
     elevation: 10,
