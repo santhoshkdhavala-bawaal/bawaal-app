@@ -1,11 +1,11 @@
 /**
  * Live1v1BattleScreen — BAWAAL Multi-Challenger Arena Matrix
  *
- * LOCK-IN (role UI):
- *  - Spectator (!isParticipant): transparent VOTE HOST · BANTER · VOTE RIVAL dock;
- *    floating poll bar; no camera tools.
- *  - Athlete (isParticipant): no vote UI / no poll; Flip/Mute/Cam at bottom:24;
- *    showControls 5s auto-fade; [HOST]/[RIVAL] handle badges.
+ * LOCK-IN (role UI — route-driven, no DEV HUD overrides):
+ *  - mode:'spectator' | role:'spectator' | WATCH → isParticipant=false
+ *    → gloves + poll only; camera tools hidden.
+ *  - mode:'athlete' | role:'host'|'challenger'|'athlete' | ACCEPT/HOST → isParticipant=true
+ *    → Flip/Mute/Cam at bottom:24 only; gloves + poll hidden.
  *  - 9-tile challenger grid lives ONLY inside ChallengerRosterSheet (never on main stage).
  *
  * LOCK-IN (roster → 1v1):
@@ -19,15 +19,12 @@
  *  - 10s rival presence timeout → evict to standby, auto-calibrate queue[0] next.
  *  - Host "QUEUED ATHLETES (X)" + CALL OUT overrides auto order.
  *
- * DEV mock bar (__DEV__ only): TOGGLE RIVAL · TOGGLE SPECTATOR · SIMULATE REP.
- * Production styling tokens / HUD chrome are unchanged outside that overlay.
- *
  * Camera lock-in:
  *  - Host viewport mounts expo-camera CameraView (facing front) under transparent HUD.
  *  - Rival uses Agora remote when present; otherwise RivalSimFeed (simulated WebRTC).
  *
  * View modes:
- *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
+ *  - SPOTLIGHT_GRID: Host spotlight (solo) until rival focus
  *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -45,7 +42,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Dimensions,
-  ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -99,6 +95,35 @@ const PANEL_RIVAL = '#121826';
 
 const VIEW_SPOTLIGHT = 'SPOTLIGHT_GRID';
 const VIEW_DUAL = 'DUAL_FOCUS';
+
+/**
+ * Resolve arena seat from navigation.
+ * Supports `mode: 'spectator'|'athlete'` and legacy `role: 'spectator'|'host'|'challenger'`.
+ */
+function resolveArenaRole(params = {}) {
+  const mode = String(params.mode || '').toLowerCase().trim();
+  const role = String(params.role || '').toLowerCase().trim();
+
+  if (
+    mode === 'spectator' ||
+    role === 'spectator' ||
+    role === 'watch' ||
+    mode === 'watch'
+  ) {
+    return 'spectator';
+  }
+
+  if (role === 'host') return 'host';
+  if (role === 'challenger') return 'challenger';
+
+  if (mode === 'athlete' || role === 'athlete' || mode === 'host') {
+    // Athlete entry defaults to challenger unless explicitly hosting.
+    return mode === 'host' || role === 'host' ? 'host' : 'challenger';
+  }
+
+  // Default safe seat — WATCH / unknown → spectator HUD.
+  return 'spectator';
+}
 
 const DEFAULT_HOST = Object.freeze({
   id: 'host-mumbai',
@@ -715,15 +740,14 @@ function Live1v1BattleScreenInner({
   const mediaReady =
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
-  const arenaRole = route?.params?.role || 'spectator';
-  /** Route-derived participant flag — production source of truth. */
-  const routeIsParticipant = arenaRole === 'host' || arenaRole === 'challenger';
-  /**
-   * DEV-only override for Athlete HUD vs Spectator gloves.
-   * Production builds always use routeIsParticipant (toggle bar is not mounted).
-   */
-  const [devIsParticipant, setDevIsParticipant] = useState(routeIsParticipant);
-  const isParticipant = __DEV__ ? devIsParticipant : routeIsParticipant;
+  /** Automatic role from navigation — never overridden by DEV toggles. */
+  const arenaRole = useMemo(
+    () => resolveArenaRole(route?.params || {}),
+    // Recompute when navigation mode/role changes (WATCH vs ACCEPT / HOST).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- params object identity churns
+    [route?.params?.mode, route?.params?.role]
+  );
+  const isParticipant = arenaRole === 'host' || arenaRole === 'challenger';
   const isBroadcaster = isParticipant;
 
   const match = useMemo(() => {
@@ -869,13 +893,8 @@ function Live1v1BattleScreenInner({
     [remoteUids]
   );
 
-  /**
-   * Host viewport prefers the device front camera.
-   * In DEV / no remote host publish, always preview locally so solo testing works.
-   */
-  const hostUsesDeviceCamera =
-    isLocalHost ||
-    (__DEV__ && !hasRemoteUid(hostAthlete?.rtcUid));
+  /** Host viewport uses device camera only when this client is the Host broadcaster. */
+  const hostUsesDeviceCamera = isLocalHost;
 
   const totalVotes = Math.max(1, hostVotes + rivalVotes);
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
@@ -1320,36 +1339,6 @@ function Live1v1BattleScreenInner({
     bumpHud();
   }, [bumpHud]);
 
-  /** DEV: Solo host ⟷ Dual 50/50 without touching production style tokens. */
-  const toggleDevRival = useCallback(() => {
-    setHasActiveRival((prev) => {
-      const next = !prev;
-      if (next) {
-        setFocusedRival((current) => {
-          if (current) return current;
-          const fallback =
-            queue[0] || challengers[0] || DEFAULT_CHALLENGERS[0];
-          setRivalVotes(Number(fallback?.votes) || 500);
-          setQueue((q) =>
-            q.filter((a) => athleteKey(a) !== athleteKey(fallback))
-          );
-          return fallback;
-        });
-        setRivalSlotStartedAt(Date.now());
-      } else {
-        setRivalSlotStartedAt(null);
-      }
-      return next;
-    });
-    bumpHud();
-  }, [bumpHud, challengers, queue]);
-
-  /** DEV: Athlete camera HUD ⟷ Spectator voting gloves. */
-  const toggleDevSpectator = useCallback(() => {
-    setDevIsParticipant((prev) => !prev);
-    bumpHud();
-  }, [bumpHud]);
-
   // Arm auto-queue when scheduled time is due and Host is live.
   useEffect(() => {
     if (!isHostRole) return undefined;
@@ -1550,15 +1539,6 @@ function Live1v1BattleScreenInner({
     }
   }, [battleId, focusedRival]);
 
-  /** DEV: bump host (+ rival when dual) rep counters for HUD smoke tests. */
-  const simulateDevRep = useCallback(() => {
-    handleHostRep();
-    if (hasActiveRival) {
-      handleRivalRep();
-    }
-    bumpHud();
-  }, [bumpHud, handleHostRep, handleRivalRep, hasActiveRival]);
-
   const safeHostAthlete = hostAthlete || DEFAULT_HOST;
   const rivalAthlete =
     focusedRival || challengers?.[0] || DEFAULT_CHALLENGERS[0];
@@ -1569,9 +1549,7 @@ function Live1v1BattleScreenInner({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 10;
-  /** Extra clearance only in __DEV__ so the floating mock bar does not cover badges. */
-  const DEV_MOCK_BAR_H = 34;
-  const stageTopInset = __DEV__ ? hostTopInset + DEV_MOCK_BAR_H + 4 : hostTopInset;
+  const stageTopInset = hostTopInset;
   /** Reps stay up for athletes; spectators only see them with HUD chrome. */
   const repsVisible = isParticipant || showControls;
   const isDualFocus = hasActiveRival;
@@ -1580,51 +1558,6 @@ function Live1v1BattleScreenInner({
   return (
     <View style={styles.rootScreen}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
-
-      {__DEV__ ? (
-        <View
-          style={[styles.devMockBar, { paddingTop: Math.max(insets.top, 4) }]}
-          pointerEvents="box-none"
-        >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.devMockBarInner}
-          >
-            <TouchableOpacity
-              style={[
-                styles.devMockBtn,
-                hasActiveRival && styles.devMockBtnOn,
-              ]}
-              onPress={toggleDevRival}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.devMockBtnText}>
-                {hasActiveRival ? 'RIVAL ON' : 'TOGGLE RIVAL'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.devMockBtn,
-                !isParticipant && styles.devMockBtnSpectator,
-              ]}
-              onPress={toggleDevSpectator}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.devMockBtnText}>
-                {isParticipant ? 'TOGGLE SPECTATOR' : 'SPECTATOR ON'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.devMockBtn}
-              onPress={simulateDevRep}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.devMockBtnText}>SIMULATE REP</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      ) : null}
 
       {/* Tap empty video space to toggle HUD — gloves live OUTSIDE this catcher */}
       <Pressable
@@ -2075,47 +2008,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     overflow: 'hidden',
-  },
-  /** __DEV__ only — floating mock controls; never ships in release UI. */
-  devMockBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 200,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.18)',
-  },
-  devMockBarInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingBottom: 6,
-    paddingTop: 2,
-  },
-  devMockBtn: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  devMockBtnOn: {
-    borderColor: '#00E5FF',
-    backgroundColor: 'rgba(0,229,255,0.18)',
-  },
-  devMockBtnSpectator: {
-    borderColor: '#FF8A65',
-    backgroundColor: 'rgba(255,138,101,0.2)',
-  },
-  devMockBtnText: {
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.3,
   },
   tapStage: {
     flex: 1,

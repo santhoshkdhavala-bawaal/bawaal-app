@@ -118,6 +118,7 @@ export default function BattlesScreen({ navigation }) {
       navigation?.navigate?.('Live1v1Battle', {
         match: battle.liveMatch,
         battleId: battle.id || battle.liveMatch.battleId || battle.liveMatch.id,
+        mode: 'spectator',
         role: 'spectator',
       });
       return;
@@ -160,6 +161,7 @@ export default function BattlesScreen({ navigation }) {
 
     navigation?.navigate?.('Live1v1Battle', {
       role,
+      mode: role === 'spectator' ? 'spectator' : 'athlete',
       battleId: featuredLive.battleId,
       participant: role === 'challenger' ? participant : undefined,
       rtcUid: role === 'challenger' ? participant.rtcUid : undefined,
@@ -184,6 +186,7 @@ export default function BattlesScreen({ navigation }) {
     setBattles((prev) => [battle, ...prev]);
     navigation?.navigate?.('Live1v1Battle', {
       match: battle.liveMatch,
+      mode: 'athlete',
       role: 'host',
       battleId: battle.id,
       notifications: battle.notifications,
