@@ -668,7 +668,9 @@ function Live1v1BattleScreenInner({
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
   const arenaRole = route?.params?.role || 'spectator';
-  const isBroadcaster = arenaRole === 'host' || arenaRole === 'challenger';
+  /** Host or challenger in the live workout — not a spectator. */
+  const isParticipant = arenaRole === 'host' || arenaRole === 'challenger';
+  const isBroadcaster = isParticipant;
 
   const match = useMemo(() => {
     const incoming = route?.params?.match || {};
@@ -727,8 +729,9 @@ function Live1v1BattleScreenInner({
   }, [arenaRole, match.challengers, match.host]);
 
   // --- Live arena UI state (local until fully mirrored via Supabase Realtime) ---
+  // Participants start in clean 1v1 (no 9-tile grid behind the dual panes).
   const [viewMode, setViewMode] = useState(
-    arenaRole === 'challenger' ? VIEW_DUAL : VIEW_SPOTLIGHT
+    isParticipant ? VIEW_DUAL : VIEW_SPOTLIGHT
   );
   const [hostAthlete, setHostAthlete] = useState(match.host);
   const [challengers, setChallengers] = useState(match.challengers);
@@ -1244,6 +1247,9 @@ function Live1v1BattleScreenInner({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 10;
+  /** Reps stay up for athletes; spectators only see them with HUD chrome. */
+  const repsVisible = isParticipant || showControls;
+  const isDualFocus = viewMode === VIEW_DUAL;
 
   // Never return null/undefined — always mount a full arena tree.
   return (
@@ -1257,15 +1263,63 @@ function Live1v1BattleScreenInner({
         accessibilityRole="button"
         accessibilityLabel="Toggle battle HUD"
       >
-      {/* Full-bleed video stage — slate panels always paint behind floating HUD */}
+      {/* Full-bleed video stage — 1v1 dual panes OR roster grid (never both) */}
       <View style={styles.stageContainer} pointerEvents="box-none">
-        {viewMode === VIEW_SPOTLIGHT ? (
+        {isDualFocus ? (
+          <View style={styles.dualFocusColumn} pointerEvents="box-none">
+            <View style={[styles.streamPaneShell, styles.panelHost]} pointerEvents="box-none">
+              <DualFocusPane
+                athlete={safeHostAthlete}
+                variant="host"
+                overlaysVisible={repsVisible}
+                mediaReady={mediaReady}
+                topInset={hostTopInset}
+                onRepPress={() => {
+                  bumpHud();
+                  handleHostRep();
+                }}
+                isLocal={isLocalHost}
+                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
+                cameraOff={cameraOff && isLocalHost}
+                cameraFacing={cameraFacing}
+                micMuted={micMuted && isLocalHost}
+              />
+            </View>
+            <View style={styles.vsCenterSeam} pointerEvents="none">
+              <View style={styles.vsLine} />
+              <View style={styles.vsCircle}>
+                <Text style={styles.vsText}>VS</Text>
+              </View>
+              <View style={styles.vsLine} />
+            </View>
+            <View style={[styles.streamPaneShell, styles.panelRival]} pointerEvents="box-none">
+              <DualFocusPane
+                athlete={rivalAthlete}
+                variant="rival"
+                overlaysVisible={repsVisible}
+                mediaReady={mediaReady}
+                onRepPress={() => {
+                  bumpHud();
+                  handleRivalRep();
+                }}
+                isLocal={isLocalAthlete(rivalAthlete)}
+                hasRemote={
+                  !isLocalAthlete(rivalAthlete) &&
+                  hasRemoteUid(rivalAthlete?.rtcUid)
+                }
+                cameraOff={cameraOff && isLocalAthlete(rivalAthlete)}
+                cameraFacing={cameraFacing}
+                micMuted={micMuted && isLocalAthlete(rivalAthlete)}
+              />
+            </View>
+          </View>
+        ) : (
           <View style={styles.fullVideoColumn} pointerEvents="box-none">
             <View style={[styles.spotlightHostWrap, styles.panelHost]}>
               <HostSpotlight
                 host={safeHostAthlete}
                 live
-                overlaysVisible={showControls}
+                overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
                 topInset={hostTopInset}
                 onRepPress={() => {
@@ -1311,56 +1365,7 @@ function Live1v1BattleScreenInner({
               </View>
             </ScrollView>
           </View>
-        ) : (
-          <View style={styles.fullVideoColumn} pointerEvents="box-none">
-            <View style={[styles.streamPaneShell, styles.panelHost]} pointerEvents="box-none">
-              <DualFocusPane
-                athlete={safeHostAthlete}
-                variant="host"
-                overlaysVisible={showControls}
-                mediaReady={mediaReady}
-                topInset={hostTopInset}
-                onRepPress={() => {
-                  bumpHud();
-                  handleHostRep();
-                }}
-                isLocal={isLocalHost}
-                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
-                cameraOff={cameraOff && isLocalHost}
-                cameraFacing={cameraFacing}
-                micMuted={micMuted && isLocalHost}
-              />
-            </View>
-            <View style={styles.vsCenterSeam} pointerEvents="none">
-              <View style={styles.vsLine} />
-              <View style={styles.vsCircle}>
-                <Text style={styles.vsText}>VS</Text>
-              </View>
-              <View style={styles.vsLine} />
-            </View>
-            <View style={[styles.streamPaneShell, styles.panelRival]} pointerEvents="box-none">
-              <DualFocusPane
-                athlete={rivalAthlete}
-                variant="rival"
-                overlaysVisible={showControls}
-                mediaReady={mediaReady}
-                onRepPress={() => {
-                  bumpHud();
-                  handleRivalRep();
-                }}
-                isLocal={isLocalAthlete(rivalAthlete)}
-                hasRemote={
-                  !isLocalAthlete(rivalAthlete) &&
-                  hasRemoteUid(rivalAthlete?.rtcUid)
-                }
-                cameraOff={cameraOff && isLocalAthlete(rivalAthlete)}
-                cameraFacing={cameraFacing}
-                micMuted={micMuted && isLocalAthlete(rivalAthlete)}
-              />
-            </View>
-          </View>
         )}
-
       </View>
 
       {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
@@ -1397,9 +1402,7 @@ function Live1v1BattleScreenInner({
             >
               <Text style={styles.brandTitle}>BAWAAL</Text>
               <Text style={styles.brandSubtitle} numberOfLines={1}>
-                {viewMode === VIEW_SPOTLIGHT
-                  ? 'BATTLE BAWAAL ARENA'
-                  : 'DUAL FOCUS 1v1'}
+                {isDualFocus ? 'DUAL FOCUS 1v1' : 'BATTLE BAWAAL ARENA'}
               </Text>
             </TouchableOpacity>
 
@@ -1420,7 +1423,7 @@ function Live1v1BattleScreenInner({
           </View>
 
           <View style={styles.rosterTriggerRow}>
-            {viewMode === VIEW_DUAL ? (
+            {isDualFocus ? (
               <TouchableOpacity
                 style={styles.showAllBtn}
                 onPress={() => {
@@ -1435,7 +1438,7 @@ function Live1v1BattleScreenInner({
             <TouchableOpacity
               style={[
                 styles.watchRosterBtn,
-                viewMode === VIEW_SPOTLIGHT && styles.watchRosterBtnGrow,
+                !isDualFocus && styles.watchRosterBtnGrow,
               ]}
               onPress={() => {
                 bumpHud();
@@ -1447,26 +1450,7 @@ function Live1v1BattleScreenInner({
             </TouchableOpacity>
           </View>
 
-          {/* Camera tools live in the top HUD — keep lower third clear */}
-          <ParticipantHudToolbar
-            visible={isBroadcaster}
-            micMuted={micMuted}
-            cameraOff={cameraOff}
-            onFlip={() => {
-              bumpHud();
-              handleFlipCamera();
-            }}
-            onToggleMic={() => {
-              bumpHud();
-              handleToggleMic();
-            }}
-            onToggleCamera={() => {
-              bumpHud();
-              handleToggleCamera();
-            }}
-          />
-
-          {voteHintVisible ? (
+          {!isParticipant && voteHintVisible ? (
             <Animated.View
               style={[styles.voteHintBanner, { opacity: hintOpacity }]}
               pointerEvents="none"
@@ -1480,129 +1464,151 @@ function Live1v1BattleScreenInner({
 
         <View style={styles.hudMidTapZone} pointerEvents="none" />
 
-        <View style={styles.hudBottomBlock} pointerEvents="box-none">
-          <View style={styles.pollSection}>
-            <View style={styles.pollLabelRow}>
-              <TouchableOpacity
-                style={styles.pollHandleHit}
-                activeOpacity={0.8}
-                onPress={() => {
-                  bumpHud();
-                  setProfileRole('HOST');
-                  setProfileAthlete(safeHostAthlete);
-                }}
-              >
-                <View style={styles.pollBadgeHost}>
-                  <Text style={styles.pollBadgeHostText}>[H]</Text>
-                </View>
-                <Text style={styles.pollHostText} numberOfLines={1}>
-                  {safeHostAthlete.handle || '@HOST'}
-                </Text>
-                <Text style={styles.pollTallyHost}>{hostVotesLabel}</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.pollPercentMid}>
-                ({hostPercent}%) ⚡ ({rivalPercent}%)
-              </Text>
-
-              <TouchableOpacity
-                style={[styles.pollHandleHit, styles.pollHandleHitRight]}
-                activeOpacity={0.8}
-                onPress={() => {
-                  bumpHud();
-                  setProfileRole('RIVAL');
-                  setProfileAthlete(rivalAthlete);
-                }}
-              >
-                <Text style={styles.pollTallyRival}>{rivalVotesLabel}</Text>
-                <Text style={styles.pollChallengerText} numberOfLines={1}>
-                  {rivalAthlete?.handle || '@RIVAL'}
-                </Text>
-                <View style={styles.pollBadgeRival}>
-                  <Text style={styles.pollBadgeRivalText}>[R]</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.pollBarTrack}>
-              <Animated.View style={[styles.pollBarHost, { width: hostBarWidth }]}>
-                {hostPercent >= 18 ? (
-                  <Text style={styles.pollBarPctHost}>
-                    {hostVotesLabel} · {hostPercent}%
+        {/* Spectator-only vote split — athletes must not vote their own bout */}
+        {!isParticipant ? (
+          <View style={styles.hudBottomBlock} pointerEvents="box-none">
+            <View style={styles.pollSection}>
+              <View style={styles.pollLabelRow}>
+                <TouchableOpacity
+                  style={styles.pollHandleHit}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    bumpHud();
+                    setProfileRole('HOST');
+                    setProfileAthlete(safeHostAthlete);
+                  }}
+                >
+                  <View style={styles.pollBadgeHost}>
+                    <Text style={styles.pollBadgeHostText}>[H]</Text>
+                  </View>
+                  <Text style={styles.pollHostText} numberOfLines={1}>
+                    {safeHostAthlete.handle || '@HOST'}
                   </Text>
-                ) : null}
-              </Animated.View>
-              <Animated.View
-                style={[styles.pollBarChallenger, { width: rivalBarWidth }]}
-              >
-                {rivalPercent >= 18 ? (
-                  <Text style={styles.pollBarPctRival}>
-                    {rivalPercent}% · {rivalVotesLabel}
+                  <Text style={styles.pollTallyHost}>{hostVotesLabel}</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.pollPercentMid}>
+                  ({hostPercent}%) ⚡ ({rivalPercent}%)
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.pollHandleHit, styles.pollHandleHitRight]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    bumpHud();
+                    setProfileRole('RIVAL');
+                    setProfileAthlete(rivalAthlete);
+                  }}
+                >
+                  <Text style={styles.pollTallyRival}>{rivalVotesLabel}</Text>
+                  <Text style={styles.pollChallengerText} numberOfLines={1}>
+                    {rivalAthlete?.handle || '@RIVAL'}
                   </Text>
-                ) : null}
-              </Animated.View>
+                  <View style={styles.pollBadgeRival}>
+                    <Text style={styles.pollBadgeRivalText}>[R]</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.pollBarTrack}>
+                <Animated.View style={[styles.pollBarHost, { width: hostBarWidth }]}>
+                  {hostPercent >= 18 ? (
+                    <Text style={styles.pollBarPctHost}>
+                      {hostVotesLabel} · {hostPercent}%
+                    </Text>
+                  ) : null}
+                </Animated.View>
+                <Animated.View
+                  style={[styles.pollBarChallenger, { width: rivalBarWidth }]}
+                >
+                  {rivalPercent >= 18 ? (
+                    <Text style={styles.pollBarPctRival}>
+                      {rivalPercent}% · {rivalVotesLabel}
+                    </Text>
+                  ) : null}
+                </Animated.View>
+              </View>
             </View>
           </View>
-        </View>
+        ) : null}
       </Animated.View>
 
       <FloatingReactionLayer reactions={floatingReactions || []} />
       </Pressable>
 
-      {/* Bottom dock: VOTE HOST · BANTER · VOTE RIVAL — transparent float */}
-      <View
-        style={[
-          styles.persistentGlovesDock,
-          { bottom: Math.max(15, insets.bottom || 0) },
-        ]}
-        pointerEvents="box-none"
-      >
-        <View style={styles.persistentGlovesTray} pointerEvents="auto">
-          <TouchableOpacity
-            style={styles.persistentGloveBtn}
-            onPress={handleVoteHost}
-            activeOpacity={0.75}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-            accessibilityRole="button"
-            accessibilityLabel="Vote host"
-          >
-            <Text style={styles.gloveEmojiFloat}>🥊</Text>
-            <Text style={[styles.actionLabel, styles.actionLabelHost]}>
-              VOTE HOST
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.persistentGloveBtn}
-            onPress={() => {
-              bumpHud();
-              setBanterOpen(true);
-            }}
-            activeOpacity={0.75}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-            accessibilityRole="button"
-            accessibilityLabel="Open banter"
-          >
-            <Text style={styles.banterEmojiFloat}>💬</Text>
-            <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
-              BANTER
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.persistentGloveBtn}
-            onPress={handleVoteRival}
-            activeOpacity={0.75}
-            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-            accessibilityRole="button"
-            accessibilityLabel="Vote rival"
-          >
-            <Text style={styles.gloveEmojiFloat}>🥊</Text>
-            <Text style={[styles.actionLabel, styles.actionLabelRival]}>
-              VOTE RIVAL
-            </Text>
-          </TouchableOpacity>
+      {/* Athlete camera tools — always on, never faded with spectator HUD */}
+      {isParticipant ? (
+        <View
+          style={[styles.athleteToolsDock, { top: hostTopInset + 52 }]}
+          pointerEvents="box-none"
+        >
+          <ParticipantHudToolbar
+            visible
+            micMuted={micMuted}
+            cameraOff={cameraOff}
+            onFlip={handleFlipCamera}
+            onToggleMic={handleToggleMic}
+            onToggleCamera={handleToggleCamera}
+          />
         </View>
-      </View>
+      ) : null}
+
+      {/* Spectator floating bar — hidden for active athletes */}
+      {!isParticipant ? (
+        <View
+          style={[
+            styles.persistentGlovesDock,
+            { bottom: Math.max(15, insets.bottom || 0) },
+          ]}
+          pointerEvents="box-none"
+        >
+          <View style={styles.persistentGlovesTray} pointerEvents="auto">
+            <TouchableOpacity
+              style={styles.persistentGloveBtn}
+              onPress={handleVoteHost}
+              activeOpacity={0.75}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              accessibilityRole="button"
+              accessibilityLabel="Vote host"
+            >
+              <Text style={styles.gloveEmojiFloat}>🥊</Text>
+              <Text style={[styles.actionLabel, styles.actionLabelHost]}>
+                VOTE HOST
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.persistentGloveBtn}
+              onPress={() => {
+                bumpHud();
+                setBanterOpen(true);
+              }}
+              activeOpacity={0.75}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              accessibilityRole="button"
+              accessibilityLabel="Open banter"
+            >
+              <Text style={styles.banterEmojiFloat}>💬</Text>
+              <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
+                BANTER
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.persistentGloveBtn}
+              onPress={handleVoteRival}
+              activeOpacity={0.75}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              accessibilityRole="button"
+              accessibilityLabel="Vote rival"
+            >
+              <Text style={styles.gloveEmojiFloat}>🥊</Text>
+              <Text style={[styles.actionLabel, styles.actionLabelRival]}>
+                VOTE RIVAL
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
 
       <Modal
         visible={Boolean(banterOpen)}
@@ -1770,6 +1776,15 @@ const styles = StyleSheet.create({
     zIndex: 50,
     elevation: 50,
     backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  athleteToolsDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 90,
+    elevation: 90,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   hudBottomBlock: {
     position: 'absolute',
@@ -1960,6 +1975,13 @@ const styles = StyleSheet.create({
     zIndex: 0,
   },
   fullVideoColumn: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: PANEL_HOST,
+  },
+  /** Pure 1v1 — host + rival only, no roster grid mounted behind. */
+  dualFocusColumn: {
     flex: 1,
     width: '100%',
     height: '100%',
