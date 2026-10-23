@@ -1778,7 +1778,7 @@ function Live1v1BattleScreenInner({
         <View
           style={{
             position: 'absolute',
-            top: 95, // Positioned clearly below the top host container
+            top: 95, // Positioned safely below the top host pill
             left: 16,
             zIndex: 999,
             backgroundColor: 'transparent',
@@ -2423,7 +2423,7 @@ const styles = StyleSheet.create({
   /** Spectator CHALLENGERS — below Host pill (@MUMBAI_STRIKER). Inline style also applied in JSX. */
   challengersButton: {
     position: 'absolute',
-    top: 95, // Positioned clearly below the top host container
+    top: 95, // Positioned safely below the top host pill
     left: 16,
     zIndex: 999,
     backgroundColor: 'transparent',
