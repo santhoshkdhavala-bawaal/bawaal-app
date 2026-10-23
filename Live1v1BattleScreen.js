@@ -19,9 +19,12 @@
  *  - 10s rival presence timeout → evict to standby, auto-calibrate queue[0] next.
  *  - Host "QUEUED ATHLETES (X)" + CALL OUT overrides auto order.
  *
- * Camera lock-in:
- *  - Host viewport mounts expo-camera CameraView (facing front) under transparent HUD.
- *  - Rival uses Agora remote when present; otherwise RivalSimFeed (simulated WebRTC).
+ * Agora RTC lock-in (src/config/agora.ts + agoraService):
+ *  - Channel: arena-1v1-<battleId>; Host/Athlete = Broadcaster; Spectator = Audience.
+ *  - Local tile prefers Agora RtcSurfaceView when joined; CameraView is preview fallback.
+ *  - Athlete Flip/Mute/Cam → switchCamera / enableLocalAudio / enableLocalVideo.
+ *  - Spectator SPECTATE switches focusedRival.remoteUid in the bottom pane.
+ *  - Offline / cam-off → avatar (flag) + handle placeholder; auto-reconnect on drop.
  *
  * View modes (driven by hasActiveRival):
  *  - Solo: Host full-bleed warm-up (no VS / rival pane)
@@ -56,15 +59,16 @@ import {
   sendReaction,
   subscribeToBattle,
 } from './src/services/battleSyncService';
+import { buildArenaChannelName } from './src/config/agora';
 import {
-  battleChannelName,
   destroyAgoraEngine,
+  enableLocalAudio,
+  enableLocalVideo,
   getAgoraSdk,
   isAgoraConfigured,
   joinBattleChannel,
   leaveChannel,
-  muteLocalAudioStream,
-  muteLocalVideoStream,
+  onConnectionStateChanged,
   onRemoteUsersChanged,
   switchCamera,
 } from './src/services/agoraService';
@@ -266,8 +270,22 @@ function formatVoteCount(n) {
   return String(v);
 }
 
-/** Clean slate only — never render letter circles / initials over video. */
-function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
+/**
+ * Offline / camera-off placeholder — flag acts as avatar; handle stays readable
+ * when Agora remote drops or local video is muted.
+ */
+function StreamFallbackPanel({
+  cameraOff = false,
+  offline = false,
+  role = 'challenger',
+  handle,
+  flag,
+}) {
+  const status = cameraOff
+    ? 'CAMERA OFF'
+    : offline
+      ? 'RECONNECTING…'
+      : 'STANDBY';
   return (
     <View
       style={[
@@ -276,11 +294,15 @@ function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
       ]}
       pointerEvents="none"
     >
-      {cameraOff ? (
-        <Text style={styles.streamHint} numberOfLines={1}>
-          CAMERA OFF
-        </Text>
-      ) : null}
+      <Text style={styles.offlineAvatar} accessibilityLabel="athlete avatar">
+        {flag || (role === 'host' ? '🇮🇳' : '🌐')}
+      </Text>
+      <Text style={styles.offlineHandle} numberOfLines={1}>
+        {handle || (role === 'host' ? '@HOST' : '@RIVAL')}
+      </Text>
+      <Text style={styles.streamHint} numberOfLines={1}>
+        {status}
+      </Text>
     </View>
   );
 }
@@ -418,14 +440,15 @@ class ArenaSafeBoundary extends React.Component {
 }
 
 /**
- * Local Host → expo-camera CameraView (front by default).
- * Remote Rival → Agora RtcSurfaceView, or RivalSimFeed in simulation mode.
+ * Local Host/Athlete → Agora local RtcSurfaceView when joined, else expo CameraView.
+ * Remote → Agora RtcSurfaceView for remoteUid; RivalSimFeed only when Agora is offline.
  * Camera layer sits at zIndex 0; pane HUD overlays float above at zIndex 10.
  */
 function StreamSurface({
   streamId,
   rtcUid,
   label,
+  flag,
   role = 'challenger',
   isLocal = false,
   hasRemote = false,
@@ -433,16 +456,34 @@ function StreamSurface({
   cameraFacing = 'front',
   micMuted = false,
   mediaReady = false,
+  rtcJoined = false,
+  connectionOffline = false,
   style,
 }) {
   const uid = Number(rtcUid) || 0;
-  const showLocalCamera = Boolean(isLocal && !cameraOff && mediaReady);
-  const showRemoteRtc =
-    !isLocal && Boolean(RtcSurfaceView) && hasRemote && uid > 0;
-  const showRivalSim = !isLocal && !showRemoteRtc && role !== 'host';
+  const agoraLive = Boolean(isAgoraConfigured() && rtcJoined && RtcSurfaceView);
+  const showLocalAgora = Boolean(
+    isLocal && !cameraOff && agoraLive
+  );
+  const showLocalCamera = Boolean(
+    isLocal && !cameraOff && mediaReady && !showLocalAgora
+  );
+  const showRemoteRtc = Boolean(
+    !isLocal && agoraLive && hasRemote && uid > 0
+  );
+  const showRivalSim =
+    !isLocal &&
+    !showRemoteRtc &&
+    role !== 'host' &&
+    !isAgoraConfigured();
+  const showOfflinePlaceholder =
+    !showLocalAgora &&
+    !showLocalCamera &&
+    !showRemoteRtc &&
+    !showRivalSim;
 
-  if (__DEV__ && !showLocalCamera && !showRemoteRtc && !showRivalSim) {
-    console.log('[StreamSurface] using fallback panel', {
+  if (__DEV__ && showOfflinePlaceholder) {
+    console.log('[StreamSurface] offline placeholder', {
       streamId,
       rtcUid: uid,
       role,
@@ -450,6 +491,7 @@ function StreamSurface({
       hasRemote,
       cameraOff,
       mediaReady,
+      rtcJoined,
       agoraReady: Boolean(RtcSurfaceView),
     });
   }
@@ -457,13 +499,38 @@ function StreamSurface({
   const renderFallback = (key) => (
     <StreamFallbackPanel
       key={key}
-      cameraOff={cameraOff && isLocal}
+      cameraOff={Boolean(cameraOff && isLocal)}
+      offline={Boolean(connectionOffline || (!isLocal && !hasRemote && agoraLive))}
       role={role}
+      handle={label}
+      flag={flag}
     />
   );
 
   let liveTrack = null;
-  if (showLocalCamera) {
+  if (showLocalAgora) {
+    const localSource =
+      VideoSourceType.VideoSourceCamera ??
+      VideoSourceType.VideoSourceLocal ??
+      0;
+    liveTrack = (
+      <View style={styles.cameraLayer} pointerEvents="none">
+        <RtcSurfaceView
+          style={StyleSheet.absoluteFillObject}
+          canvas={{
+            uid: 0,
+            sourceType: localSource,
+            renderMode: RenderModeType.RenderModeHidden ?? 1,
+            mirrorMode:
+              (cameraFacing || 'front') === 'front'
+                ? 1
+                : 0,
+          }}
+          zOrderMediaOverlay
+        />
+      </View>
+    );
+  } else if (showLocalCamera) {
     liveTrack = (
       <View style={styles.cameraLayer} pointerEvents="none">
         <CameraView
@@ -604,6 +671,8 @@ function HostSpotlight({
   cameraFacing,
   micMuted,
   mediaReady = false,
+  rtcJoined = false,
+  connectionOffline = false,
   overlaysVisible = true,
   topInset = 50,
 }) {
@@ -614,6 +683,7 @@ function HostSpotlight({
         streamId={safeHost.streamId}
         rtcUid={safeHost.rtcUid}
         label={safeHost.handle}
+        flag={safeHost.flag}
         role="host"
         isLocal={isLocal}
         hasRemote={hasRemote}
@@ -621,6 +691,8 @@ function HostSpotlight({
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
+        rtcJoined={rtcJoined}
+        connectionOffline={connectionOffline}
         style={styles.cameraLayer}
       />
       {/* Host handle — top-left inside host viewport, below status bar */}
@@ -667,6 +739,8 @@ function DualFocusPane({
   cameraFacing,
   micMuted,
   mediaReady = false,
+  rtcJoined = false,
+  connectionOffline = false,
   overlaysVisible = true,
   topInset = 50,
 }) {
@@ -680,6 +754,7 @@ function DualFocusPane({
         streamId={safe.streamId}
         rtcUid={safe.rtcUid}
         label={safe.handle}
+        flag={safe.flag}
         role={isHost ? 'host' : 'challenger'}
         isLocal={isLocal}
         hasRemote={hasRemote}
@@ -687,6 +762,8 @@ function DualFocusPane({
         cameraFacing={cameraFacing}
         micMuted={micMuted}
         mediaReady={mediaReady}
+        rtcJoined={rtcJoined}
+        connectionOffline={connectionOffline}
         style={styles.cameraLayer}
       />
       <View
@@ -839,6 +916,11 @@ function Live1v1BattleScreenInner({
   const [cameraOff, setCameraOff] = useState(false);
   const [cameraFacing, setCameraFacing] = useState('front');
   const [rtcJoined, setRtcJoined] = useState(false);
+  const [rtcConnectionState, setRtcConnectionState] = useState('idle');
+  const connectionOffline =
+    rtcConnectionState === 'reconnecting' ||
+    rtcConnectionState === 'failed' ||
+    rtcConnectionState === 'disconnected';
   const [profileAthlete, setProfileAthlete] = useState(null);
   const [profileRole, setProfileRole] = useState('ATHLETE');
   const [rosterOpen, setRosterOpen] = useState(false);
@@ -1141,24 +1223,43 @@ function Live1v1BattleScreenInner({
 
   useEffect(() => {
     if (!isAgoraConfigured()) return undefined;
-    // Broadcasters must have cam/mic before publishing; spectators can join as audience earlier.
+    // Broadcasters must have cam/mic before publishing; spectators join as Audience earlier.
     if (isBroadcaster && !mediaReady) return undefined;
 
     let cancelled = false;
-    const channel = battleChannelName(battleId || 'featured-live');
+    const channel = buildArenaChannelName(battleId || 'featured-live');
     const unsubRemote = onRemoteUsersChanged((uids) => {
       if (!cancelled) setRemoteUids(uids);
+    });
+    const unsubConn = onConnectionStateChanged((state) => {
+      if (!cancelled) {
+        setRtcConnectionState(state);
+        if (state === 'connected') setRtcJoined(true);
+        if (state === 'failed' || state === 'disconnected') setRtcJoined(false);
+      }
     });
 
     (async () => {
       const join = await joinBattleChannel(channel, myRtcUid, isBroadcaster);
-      if (!cancelled) setRtcJoined(Boolean(join?.ok));
+      if (!cancelled) {
+        setRtcJoined(Boolean(join?.ok));
+        if (__DEV__) {
+          console.log('[arena-rtc] join', {
+            channel,
+            role: join?.role || (isBroadcaster ? 'host' : 'audience'),
+            ok: join?.ok,
+            uid: join?.localUid ?? myRtcUid,
+          });
+        }
+      }
     })();
 
     return () => {
       cancelled = true;
       unsubRemote?.();
+      unsubConn?.();
       setRtcJoined(false);
+      setRtcConnectionState('idle');
       void leaveChannel();
     };
   }, [battleId, isBroadcaster, mediaReady, myRtcUid]);
@@ -1181,7 +1282,8 @@ function Live1v1BattleScreenInner({
     if (!isParticipant) return;
     setMicMuted((prev) => {
       const next = !prev;
-      muteLocalAudioStream(next);
+      // Athlete HUD → Agora enableLocalAudio (inverse of muted).
+      enableLocalAudio(!next);
       return next;
     });
   }, [isParticipant]);
@@ -1190,7 +1292,8 @@ function Live1v1BattleScreenInner({
     if (!isParticipant) return;
     setCameraOff((prev) => {
       const next = !prev;
-      muteLocalVideoStream(next);
+      // Athlete HUD → Agora enableLocalVideo (inverse of cameraOff).
+      enableLocalVideo(!next);
       return next;
     });
   }, [isParticipant]);
@@ -1294,22 +1397,37 @@ function Live1v1BattleScreenInner({
   }, [bumpHud]);
 
   /**
-   * Spectator stream switch — focus a queued athlete in the bottom viewport
+   * Spectator stream switch — bind bottom viewport to that contender's remoteUid
    * without mutating the host matchmaking queue / CALL OUT order.
    */
   const spectateRival = useCallback(
     (athlete) => {
       if (!athlete || isParticipant) return;
-      setFocusedRival(athlete);
+      const targetUid = Number(athlete.rtcUid) || 0;
+      // Prefer live channel presence: if athlete uid is in remotes, focus them;
+      // otherwise still switch the tile (offline placeholder until they publish).
+      const livePeer =
+        targetUid > 0
+          ? remoteUids.includes(targetUid)
+          : false;
+      setFocusedRival({
+        ...athlete,
+        rtcUid: targetUid || athlete.rtcUid,
+      });
       setRivalVotes(Number(athlete.votes) || 500);
       setHasActiveRival(true);
       setRosterOpen(false);
       bumpHud();
       if (__DEV__) {
-        console.log('[spectate] focus rival', athlete.handle || athlete.id);
+        console.log('[spectate] focus rival', {
+          handle: athlete.handle || athlete.id,
+          rtcUid: targetUid,
+          livePeer,
+          remotes: remoteUids,
+        });
       }
     },
-    [bumpHud, isParticipant]
+    [bumpHud, isParticipant, remoteUids]
   );
 
   const selectRivalFromRoster = useCallback(
@@ -1580,6 +1698,8 @@ function Live1v1BattleScreenInner({
                 variant="host"
                 overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
+                rtcJoined={rtcJoined}
+                connectionOffline={connectionOffline}
                 topInset={stageTopInset}
                 onRepPress={() => {
                   bumpHud();
@@ -1605,6 +1725,8 @@ function Live1v1BattleScreenInner({
                 variant="rival"
                 overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
+                rtcJoined={rtcJoined}
+                connectionOffline={connectionOffline}
                 onRepPress={() => {
                   bumpHud();
                   handleRivalRep();
@@ -1628,6 +1750,8 @@ function Live1v1BattleScreenInner({
                 live
                 overlaysVisible={repsVisible}
                 mediaReady={mediaReady}
+                rtcJoined={rtcJoined}
+                connectionOffline={connectionOffline}
                 topInset={stageTopInset}
                 onRepPress={() => {
                   bumpHud();
@@ -2450,18 +2574,31 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
+    marginTop: 6,
   },
   streamFallback: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   streamFallbackHost: {
     backgroundColor: PANEL_HOST,
   },
   streamFallbackRival: {
     backgroundColor: PANEL_RIVAL,
+  },
+  offlineAvatar: {
+    fontSize: 42,
+    marginBottom: 8,
+  },
+  offlineHandle: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    textAlign: 'center',
   },
   rivalSimRoot: {
     ...StyleSheet.absoluteFillObject,

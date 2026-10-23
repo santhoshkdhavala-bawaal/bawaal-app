@@ -1,9 +1,17 @@
 /**
- * Agora RTC helpers for BATTLE BAWAAL live arena.
+ * Agora RTC engine for BAWAAL Live Arena.
  * Requires a development build (`expo-dev-client`) — not available in Expo Go.
  */
 import { Platform } from 'react-native';
 import { Camera } from 'expo-camera';
+import {
+  AGORA_APP_ID,
+  AGORA_CLIENT_SETTINGS,
+  AGORA_TOKEN,
+  buildArenaChannelName,
+  getAgoraJoinCredentials,
+  hasAgoraAppId,
+} from '../config/agora';
 
 let Agora = null;
 try {
@@ -12,15 +20,20 @@ try {
   console.warn('[agora] Native module unavailable:', err?.message || err);
 }
 
-const DEFAULT_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID || '';
-const DEFAULT_TOKEN = process.env.EXPO_PUBLIC_AGORA_TOKEN || null;
-
 /** @type {import('react-native-agora').IRtcEngine | null} */
 let engine = null;
 let joinedChannel = null;
 let localUid = 0;
+let joinedAsBroadcaster = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+let lastJoinArgs = null;
+
 const remoteUidListeners = new Set();
+const connectionListeners = new Set();
 let remoteUids = [];
+/** @type {'idle'|'connecting'|'connected'|'reconnecting'|'failed'|'disconnected'} */
+let connectionState = 'idle';
 
 function emitRemoteUids(next) {
   remoteUids = next;
@@ -33,12 +46,30 @@ function emitRemoteUids(next) {
   });
 }
 
+function emitConnection(state, meta = {}) {
+  connectionState = state;
+  connectionListeners.forEach((fn) => {
+    try {
+      fn(state, meta);
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
 export function isAgoraNativeAvailable() {
   return Boolean(Agora?.createAgoraRtcEngine);
 }
 
 export function isAgoraConfigured() {
-  return Boolean(DEFAULT_APP_ID && isAgoraNativeAvailable());
+  return Boolean(hasAgoraAppId() && isAgoraNativeAvailable());
 }
 
 export function getAgoraSdk() {
@@ -57,10 +88,20 @@ export function getRemoteUids() {
   return [...remoteUids];
 }
 
+export function getConnectionState() {
+  return connectionState;
+}
+
 export function onRemoteUsersChanged(listener) {
   remoteUidListeners.add(listener);
   listener([...remoteUids]);
   return () => remoteUidListeners.delete(listener);
+}
+
+export function onConnectionStateChanged(listener) {
+  connectionListeners.add(listener);
+  listener(connectionState, {});
+  return () => connectionListeners.delete(listener);
 }
 
 async function ensureMediaPermissions(asBroadcaster) {
@@ -68,18 +109,46 @@ async function ensureMediaPermissions(asBroadcaster) {
   try {
     const cam = await Camera.requestCameraPermissionsAsync();
     const mic = await Camera.requestMicrophonePermissionsAsync();
-    return cam?.granted !== false && mic?.granted !== false;
+    const granted = cam?.granted === true && mic?.granted === true;
+    if (!granted && __DEV__) {
+      console.warn('[agora] Camera/mic permission not fully granted', {
+        camera: cam?.granted,
+        mic: mic?.granted,
+      });
+    }
+    return granted;
   } catch (err) {
     console.warn('[agora] Permission request failed:', err?.message || err);
     return Platform.OS === 'ios';
   }
 }
 
+function scheduleReconnect(reason) {
+  if (!lastJoinArgs) return;
+  if (reconnectAttempts >= AGORA_CLIENT_SETTINGS.maxReconnectAttempts) {
+    emitConnection('failed', { reason: 'max-reconnects', detail: reason });
+    return;
+  }
+  clearReconnectTimer();
+  reconnectAttempts += 1;
+  emitConnection('reconnecting', {
+    attempt: reconnectAttempts,
+    reason,
+  });
+  reconnectTimer = setTimeout(() => {
+    const { channelName, uid, isHost, options } = lastJoinArgs;
+    void joinBattleChannel(channelName, uid, isHost, {
+      ...options,
+      force: true,
+    });
+  }, AGORA_CLIENT_SETTINGS.reconnectDelayMs);
+}
+
 /**
  * Initialize (or reuse) the RTC engine.
  * @param {string} [appId]
  */
-export async function initAgoraEngine(appId = DEFAULT_APP_ID) {
+export async function initAgoraEngine(appId = AGORA_APP_ID) {
   if (!isAgoraNativeAvailable()) {
     return { ok: false, reason: 'native-unavailable' };
   }
@@ -90,10 +159,8 @@ export async function initAgoraEngine(appId = DEFAULT_APP_ID) {
     return { ok: true, engine, reused: true };
   }
 
-  const {
-    createAgoraRtcEngine,
-    ChannelProfileType,
-  } = Agora;
+  const { createAgoraRtcEngine, ChannelProfileType, ConnectionStateType } =
+    Agora;
 
   const rtc = createAgoraRtcEngine();
   rtc.initialize({
@@ -106,7 +173,12 @@ export async function initAgoraEngine(appId = DEFAULT_APP_ID) {
   rtc.registerEventHandler({
     onJoinChannelSuccess: (_connection, uid) => {
       localUid = uid || localUid;
-      console.log('[agora] joined channel as', localUid);
+      reconnectAttempts = 0;
+      clearReconnectTimer();
+      emitConnection('connected', { uid: localUid });
+      if (__DEV__) {
+        console.log('[agora] joined channel as', localUid, joinedChannel);
+      }
     },
     onUserJoined: (_connection, uid) => {
       emitRemoteUids(
@@ -116,8 +188,33 @@ export async function initAgoraEngine(appId = DEFAULT_APP_ID) {
     onUserOffline: (_connection, uid) => {
       emitRemoteUids(remoteUids.filter((id) => id !== uid));
     },
+    onConnectionStateChanged: (_connection, state, reason) => {
+      if (state === ConnectionStateType?.ConnectionStateConnecting) {
+        emitConnection('connecting', { reason });
+      } else if (state === ConnectionStateType?.ConnectionStateConnected) {
+        reconnectAttempts = 0;
+        clearReconnectTimer();
+        emitConnection('connected', { reason });
+      } else if (state === ConnectionStateType?.ConnectionStateReconnecting) {
+        emitConnection('reconnecting', { reason });
+      } else if (
+        state === ConnectionStateType?.ConnectionStateFailed ||
+        state === ConnectionStateType?.ConnectionStateDisconnected
+      ) {
+        emitConnection(
+          state === ConnectionStateType?.ConnectionStateFailed
+            ? 'failed'
+            : 'disconnected',
+          { reason }
+        );
+        if (joinedChannel) {
+          scheduleReconnect(reason);
+        }
+      }
+    },
     onError: (err, msg) => {
       console.warn('[agora] error', err, msg);
+      emitConnection('failed', { err, msg });
     },
   });
 
@@ -130,7 +227,7 @@ export async function initAgoraEngine(appId = DEFAULT_APP_ID) {
  * @param {string} channelName
  * @param {number} [uid]
  * @param {boolean} [isHost] broadcaster when true (host/challenger); audience when false
- * @param {{ token?: string|null }} [options]
+ * @param {{ token?: string|null, force?: boolean }} [options]
  */
 export async function joinBattleChannel(
   channelName,
@@ -142,25 +239,34 @@ export async function joinBattleChannel(
     return { ok: false, reason: 'missing-channel' };
   }
 
-  const init = await initAgoraEngine();
+  const creds = getAgoraJoinCredentials(channelName);
+  const init = await initAgoraEngine(creds.appId);
   if (!init.ok || !engine) {
     return init;
   }
 
-  if (joinedChannel === channelName) {
+  lastJoinArgs = { channelName, uid, isHost, options };
+
+  if (joinedChannel === channelName && !options.force) {
     return { ok: true, reused: true, channelName, localUid };
   }
 
   if (joinedChannel) {
-    await leaveChannel();
+    await leaveChannel({ keepLastJoin: true });
   }
 
   const asBroadcaster = Boolean(isHost);
-  await ensureMediaPermissions(asBroadcaster);
+  const permitted = await ensureMediaPermissions(asBroadcaster);
+  if (asBroadcaster && !permitted) {
+    emitConnection('failed', { reason: 'permissions-denied' });
+    return { ok: false, reason: 'permissions-denied' };
+  }
 
   const { ClientRoleType, ChannelProfileType } = Agora;
-  const token = options.token ?? DEFAULT_TOKEN ?? '';
+  const token = options.token ?? creds.token ?? AGORA_TOKEN ?? '';
   localUid = Number(uid) || 0;
+  joinedAsBroadcaster = asBroadcaster;
+  emitConnection('connecting', { channelName, asBroadcaster });
 
   if (asBroadcaster) {
     engine.enableLocalVideo(true);
@@ -169,6 +275,11 @@ export async function joinBattleChannel(
   } else {
     engine.enableLocalVideo(false);
     engine.enableLocalAudio(false);
+    try {
+      engine.stopPreview();
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   const result = engine.joinChannel(token, channelName, localUid, {
@@ -178,18 +289,35 @@ export async function joinBattleChannel(
       : ClientRoleType.ClientRoleAudience,
     publishCameraTrack: asBroadcaster,
     publishMicrophoneTrack: asBroadcaster,
-    autoSubscribeAudio: true,
-    autoSubscribeVideo: true,
+    autoSubscribeAudio: AGORA_CLIENT_SETTINGS.autoSubscribeAudio,
+    autoSubscribeVideo: AGORA_CLIENT_SETTINGS.autoSubscribeVideo,
   });
 
   joinedChannel = channelName;
-  return { ok: result === 0 || result === undefined, channelName, localUid, code: result };
+  const ok = result === 0 || result === undefined;
+  if (!ok) {
+    emitConnection('failed', { code: result });
+  }
+  return {
+    ok,
+    channelName,
+    localUid,
+    code: result,
+    role: asBroadcaster ? 'host' : 'audience',
+  };
 }
 
-export async function leaveChannel() {
+export async function leaveChannel(options = {}) {
+  clearReconnectTimer();
+  if (!options.keepLastJoin) {
+    lastJoinArgs = null;
+    reconnectAttempts = 0;
+  }
   if (!engine) {
     joinedChannel = null;
+    joinedAsBroadcaster = false;
     emitRemoteUids([]);
+    emitConnection('disconnected', {});
     return { ok: true };
   }
   try {
@@ -199,7 +327,9 @@ export async function leaveChannel() {
     console.warn('[agora] leaveChannel:', err?.message || err);
   }
   joinedChannel = null;
+  joinedAsBroadcaster = false;
   emitRemoteUids([]);
+  emitConnection('disconnected', {});
   return { ok: true };
 }
 
@@ -207,7 +337,6 @@ export async function destroyAgoraEngine() {
   await leaveChannel();
   if (engine) {
     try {
-      engine.unregisterEventHandler?.({});
       engine.release();
     } catch (_) {
       /* ignore */
@@ -218,24 +347,25 @@ export async function destroyAgoraEngine() {
   return { ok: true };
 }
 
-/** Toggle local camera publish (true = muted/off). */
+/** Toggle local camera publish (true = muted/off). Uses enableLocalVideo. */
 export function muteLocalVideoStream(muted) {
   if (!engine) return { ok: false };
-  engine.muteLocalVideoStream(Boolean(muted));
-  if (muted) {
-    engine.enableLocalVideo(false);
-  } else {
-    engine.enableLocalVideo(true);
+  const off = Boolean(muted);
+  engine.muteLocalVideoStream(off);
+  engine.enableLocalVideo(!off);
+  if (!off && joinedAsBroadcaster) {
     engine.startPreview();
   }
-  return { ok: true, muted: Boolean(muted) };
+  return { ok: true, muted: off };
 }
 
-/** Toggle local mic (true = muted). */
+/** Toggle local mic (true = muted). Uses enableLocalAudio / muteLocalAudioStream. */
 export function muteLocalAudioStream(muted) {
   if (!engine) return { ok: false };
-  engine.muteLocalAudioStream(Boolean(muted));
-  return { ok: true, muted: Boolean(muted) };
+  const off = Boolean(muted);
+  engine.muteLocalAudioStream(off);
+  engine.enableLocalAudio(!off);
+  return { ok: true, muted: off };
 }
 
 /** Flip front/back camera. */
@@ -245,9 +375,18 @@ export function switchCamera() {
   return { ok: code === 0 || code === undefined, code };
 }
 
+/** Explicit enable helpers for Athlete HUD bindings. */
+export function enableLocalVideo(enabled = true) {
+  return muteLocalVideoStream(!enabled);
+}
+
+export function enableLocalAudio(enabled = true) {
+  return muteLocalAudioStream(!enabled);
+}
+
+/** @deprecated prefer buildArenaChannelName — kept for existing imports */
 export function battleChannelName(battleId) {
-  const raw = String(battleId || 'demo-arena').replace(/[^a-zA-Z0-9_-]/g, '');
-  return `bawaal_${raw}`.slice(0, 64);
+  return buildArenaChannelName(battleId);
 }
 
 export const agoraService = {
@@ -257,15 +396,20 @@ export const agoraService = {
   getEngine,
   getLocalUid,
   getRemoteUids,
+  getConnectionState,
   onRemoteUsersChanged,
+  onConnectionStateChanged,
   initAgoraEngine,
   joinBattleChannel,
   leaveChannel,
   destroyAgoraEngine,
   muteLocalVideoStream,
   muteLocalAudioStream,
+  enableLocalVideo,
+  enableLocalAudio,
   switchCamera,
   battleChannelName,
+  buildArenaChannelName,
 };
 
 export default agoraService;
