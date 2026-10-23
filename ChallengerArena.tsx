@@ -1,25 +1,23 @@
 /**
  * ChallengerArena — BAWAAL Live 1v1 Arena (production entry).
  *
- * Safe area: root paddingTop = insets.top + 10 (Host / REPS clear of notch).
- * Left header column (absolute · top 0 · left 16 · gap 8 · zIndex 999):
- *   Host badge → CHALLENGERS (spectator only) stacked — never overlaps.
+ * Role decoupling (never mount spectator + athlete overlays together):
+ *   const userRole = HOST | RIVAL | SPECTATOR
+ *   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL'
+ *   const isSpectator = !isAthlete
  *
- * Dual 1v1 stage column:
- *   flex:1 · column · space-between · paddingVertical:16
- *   Host tile (h:180) → VS badge → Rival tile (h:180)
+ * isSpectator → spectatorBottomContainer (bottom: 20, zIndex: 1000)
+ *   Vote % bar + Banter / gloves ONLY
  *
- * Athlete box (@SANTHOSH / Host) — persistent wrapper:
- *   height 180 · borderRadius 12 · bg #0f172a
- *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} /> absolute fill
- *   isCameraOn false → flag + @handle + STANDBY
- *   Outer View does NOT unmount when toggling camera.
+ * isAthlete → athleteControlsContainer (bottom: 30, zIndex: 1000)
+ *   Flip / Mute / Cam On|Off ONLY
  *
- * handleCameraToggle / enableLocalCamera():
- *   Android: PermissionsAndroid.requestMultiple([CAMERA, RECORD_AUDIO])
- *   then: enableVideo() → startPreview()  // startPreview MUST run
+ * Rival card: marginBottom 60 so controls never cover handle / STANDBY.
  *
- * Requires Dev Client / EAS development build (not Expo Go).
+ * Safe area: root paddingTop = insets.top + 10
+ * Left header: Host badge + CHALLENGERS (spectator) stacked gap 8
+ *
+ * Implementation lives in Live1v1BattleScreen.js (default export).
  */
 export { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
 export type { ArenaLocalVideoProps } from './src/components/ArenaLocalVideo';
