@@ -4,7 +4,7 @@
  * PRODUCTION LOCK-IN:
  *  - No DEV toggle bar in release (mock HUD must stay behind __DEV__ if ever re-added).
  *  - HUD over camera: containers backgroundColor transparent, camera layer zIndex 0, overlays zIndex 10+.
- *  - CHALLENGERS (X): top 75 · left 15 (under Host handle). Top-right 16/16 = REPS + LIVE only.
+ *  - CHALLENGERS (X): top 85 · left 15 · zIndex 99 (under Host handle). Top-right = REPS + LIVE.
  *  - isCameraOn true → RtcSurfaceView uid:0; false → flag + STANDBY (never "CAMERA OFF").
  *
  * Role UI (route-driven):
@@ -22,7 +22,7 @@
  *
  * Agora RTC lock-in (src/config/agora.ts + agoraService):
  *  - Channel: arena-1v1-<battleId>; Host/Athlete = Broadcaster; Spectator = Audience.
- *  - Local tile prefers Agora RtcSurfaceView when joined; CameraView is preview fallback.
+ *  - Local tile: isCamOn → RtcSurfaceView uid:0; isCamOff → flag + STANDBY.
  *  - Athlete Flip/Mute/Cam → switchCamera / enableLocalAudio / enableLocalVideo.
  *  - Spectator SPECTATE switches focusedRival.remoteUid in the bottom pane.
  *  - Offline / cam-off → avatar (flag) + handle placeholder; auto-reconnect on drop.
@@ -50,7 +50,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
-  CameraView,
   useCameraPermissions,
   useMicrophonePermissions,
 } from 'expo-camera';
@@ -437,8 +436,9 @@ class ArenaSafeBoundary extends React.Component {
 }
 
 /**
- * Local Host/Rival → ArenaLocalVideo (RtcSurfaceView uid:0 when isCameraOn).
- * Cam OFF → flag + STANDBY only (never "CAMERA OFF" text).
+ * Local Host/Rival:
+ *   isCamOn true  → RtcSurfaceView uid:0 only (no "Preview reconnecting…" / STANDBY).
+ *   isCamOn false → flag + handle + STANDBY only.
  */
 function StreamSurface({
   streamId,
@@ -468,9 +468,6 @@ function StreamSurface({
     !showRemoteRtc &&
     role !== 'host' &&
     !isAgoraConfigured();
-  const showLocalCameraFallback = Boolean(
-    localCamOn && mediaReady && !agoraReady
-  );
 
   const renderFallback = (key) => (
     <StreamFallbackPanel
@@ -484,31 +481,36 @@ function StreamSurface({
     />
   );
 
-  let liveTrack = null;
+  // Local athlete pane: exclusive Cam On (surface) vs Cam Off (STANDBY).
   if (isLocal) {
-    liveTrack = (
-      <ArenaLocalVideo
-        isCameraOn={localCamOn}
-        style={styles.cameraLayer}
-        fallback={
-          showLocalCameraFallback ? (
-            <View style={styles.cameraLayer} pointerEvents="none">
-              <CameraView
-                style={StyleSheet.absoluteFillObject}
-                facing={cameraFacing || 'front'}
-                mute={micMuted}
-                mirror={(cameraFacing || 'front') === 'front'}
-              />
-            </View>
-          ) : null
-        }
-      />
+    return (
+      <View
+        style={[
+          styles.streamSurface,
+          role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
+          style,
+        ]}
+        accessibilityLabel={`stream-${streamId || rtcUid || label}`}
+      >
+        {localCamOn ? (
+          <ArenaLocalVideo
+            isCameraOn
+            isCamOn
+            style={styles.cameraLayer}
+          />
+        ) : (
+          renderFallback('local-standby')
+        )}
+      </View>
     );
-  } else if (showRemoteRtc) {
+  }
+
+  let liveTrack = null;
+  if (showRemoteRtc) {
     liveTrack = (
       <View style={styles.cameraLayer} pointerEvents="none">
         <RtcSurfaceView
-          style={StyleSheet.absoluteFillObject}
+          style={{ flex: 1, width: '100%', height: '100%' }}
           canvas={{
             uid,
             sourceType: VideoSourceType.VideoSourceRemote,
@@ -1760,7 +1762,17 @@ function Live1v1BattleScreenInner({
 
       {/* Spectator: locked top-left under Host handle. Top-right = REPS / LIVE only. */}
       {!isParticipant ? (
-        <View style={styles.challengersButton} pointerEvents="box-none">
+        <View
+          style={{
+            position: 'absolute',
+            top: 85, // Moves it safely below @MUMBAI_STRIKER host container
+            left: 15,
+            zIndex: 99,
+            backgroundColor: 'transparent',
+            maxWidth: '58%',
+          }}
+          pointerEvents="box-none"
+        >
           <TouchableOpacity
             style={styles.challengersQueuePill}
             onPress={openChallengerRoster}
@@ -2395,12 +2407,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  /** Spectator CHALLENGERS — below Host pill (@MUMBAI_STRIKER). */
+  /** Spectator CHALLENGERS — below Host pill (@MUMBAI_STRIKER). Inline style also applied in JSX. */
   challengersButton: {
     position: 'absolute',
-    top: 75, // Lowered from top:15 so it sits clearly under @MUMBAI_STRIKER
+    top: 85, // Moves it safely below @MUMBAI_STRIKER host container
     left: 15,
-    zIndex: 10,
+    zIndex: 99,
     backgroundColor: 'transparent',
     maxWidth: '58%',
   },

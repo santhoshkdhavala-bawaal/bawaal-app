@@ -419,8 +419,29 @@ export function enableLocalAudio(enabled = true) {
 }
 
 /**
- * Canonical athlete camera switch (isCameraOn).
- * ON  → request permissions → enableVideo + startPreview (local uid 0).
+ * Ensure engine exists, then enableVideo + startPreview (Host / Challenger Cam On).
+ * Mirrors ChallengerArena initAgora contract.
+ */
+export async function ensureLocalPreview() {
+  const init = await initAgoraEngine();
+  if (!init.ok || !engine) {
+    return { ok: false, reason: init.reason || 'engine-unavailable' };
+  }
+  try {
+    engine.enableVideo();
+    engine.enableLocalVideo(true);
+    engine.muteLocalVideoStream(false);
+    engine.startPreview();
+    return { ok: true, engine };
+  } catch (err) {
+    console.warn('[agora] ensureLocalPreview:', err?.message || err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * Canonical athlete camera switch (isCameraOn / isCamOn).
+ * ON  → permissions → init engine → enableVideo + startPreview (local uid 0).
  * OFF → stop local publish/preview (keeps remote rival video alive).
  */
 export async function setLocalCameraEnabled(isCameraOn) {
@@ -430,30 +451,32 @@ export async function setLocalCameraEnabled(isCameraOn) {
     if (!permitted) {
       return { ok: false, isCameraOn: false, reason: 'permissions-denied' };
     }
-  }
-  if (!engine) {
-    // Engine not ready yet — still report intended state; join will start preview.
-    return { ok: false, isCameraOn: on, reason: 'engine-unavailable' };
-  }
-  try {
-    if (on) {
-      engine.enableVideo();
-      engine.enableLocalVideo(true);
-      engine.muteLocalVideoStream(false);
-      engine.startPreview();
-    } else {
-      engine.muteLocalVideoStream(true);
-      engine.enableLocalVideo(false);
-      try {
-        engine.stopPreview();
-      } catch (_) {
-        /* ignore */
-      }
+    const preview = await ensureLocalPreview();
+    if (!preview.ok) {
+      return {
+        ok: false,
+        isCameraOn: on,
+        reason: preview.reason || 'preview-failed',
+        error: preview.error,
+      };
     }
     return { ok: true, isCameraOn: on };
+  }
+  if (!engine) {
+    return { ok: true, isCameraOn: false, reason: 'engine-unavailable' };
+  }
+  try {
+    engine.muteLocalVideoStream(true);
+    engine.enableLocalVideo(false);
+    try {
+      engine.stopPreview();
+    } catch (_) {
+      /* ignore */
+    }
+    return { ok: true, isCameraOn: false };
   } catch (err) {
     console.warn('[agora] setLocalCameraEnabled:', err?.message || err);
-    return { ok: false, isCameraOn: on, error: err };
+    return { ok: false, isCameraOn: false, error: err };
   }
 }
 
@@ -473,6 +496,7 @@ export const agoraService = {
   onRemoteUsersChanged,
   onConnectionStateChanged,
   requestArenaMediaPermissions,
+  ensureLocalPreview,
   startBroadcasterPreview,
   initAgoraEngine,
   joinBattleChannel,
