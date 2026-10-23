@@ -39,6 +39,7 @@ import {
   TouchableOpacity,
   StatusBar,
   Platform,
+  PermissionsAndroid,
   Animated,
   Easing,
   Modal,
@@ -64,15 +65,15 @@ import { buildArenaChannelName } from './src/config/agora';
 import {
   destroyAgoraEngine,
   enableLocalAudio,
+  enableLocalCamera,
   getAgoraSdk,
+  getEngine,
   isAgoraConfigured,
   joinBattleChannel,
   leaveChannel,
   onConnectionStateChanged,
   onRemoteUsersChanged,
-  enableLocalCamera,
   requestArenaMediaPermissions,
-  setLocalCameraEnabled,
   switchCamera,
 } from './src/services/agoraService';
 import {
@@ -1274,25 +1275,44 @@ function Live1v1BattleScreenInner({
   }, [isParticipant]);
 
   /**
-   * Cam On → PermissionsAndroid.requestMultiple + enableVideo() + startPreview().
-   * Cam Off → stop local preview; isCameraOn false shows STANDBY (wrapper stays mounted).
-   * State is NEVER inverted: true = camera publishing / surface visible.
+   * Cam On  → Android perms → enableVideo() → startPreview() → isCameraOn true.
+   * Cam Off → stopPreview() + mute local only (never disableVideo — keeps remote rival).
    */
-  const handleCameraToggle = useCallback(() => {
+  const handleCameraToggle = useCallback(async () => {
     if (!isParticipant) return;
-    const next = !isCameraOn;
-    setIsCameraOn(next);
-    void (async () => {
-      if (next) {
-        // enableLocalCamera: Android CAMERA/MIC → enableAudio → enableVideo → startPreview
-        const result = await enableLocalCamera();
-        if (!result?.ok && result?.reason === 'permissions-denied') {
-          setIsCameraOn(false);
-        }
-        return;
+    const agoraEngine = getEngine();
+
+    if (!isCameraOn) {
+      if (Platform.OS === 'android') {
+        await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ]);
       }
-      await setLocalCameraEnabled(false);
-    })();
+      if (agoraEngine) {
+        agoraEngine.enableVideo();
+        agoraEngine.enableLocalVideo(true);
+        agoraEngine.muteLocalVideoStream(false);
+        agoraEngine.startPreview(); // Required for hardware stream preview
+      } else {
+        const result = await enableLocalCamera();
+        if (!result?.ok) return;
+      }
+      setIsCameraOn(true);
+      return;
+    }
+
+    if (agoraEngine) {
+      try {
+        agoraEngine.stopPreview();
+      } catch (_) {
+        /* ignore */
+      }
+      // Local mute only — do NOT call disableVideo() (kills remote rival in dual 1v1).
+      agoraEngine.muteLocalVideoStream(true);
+      agoraEngine.enableLocalVideo(false);
+    }
+    setIsCameraOn(false);
   }, [isParticipant, isCameraOn]);
   const handleToggleCamera = handleCameraToggle;
 
