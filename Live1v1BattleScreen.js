@@ -1,11 +1,15 @@
 /**
  * Live1v1BattleScreen — BAWAAL Multi-Challenger Arena Matrix
  *
- * View modes:
- *  - SPOTLIGHT_GRID (default): Host spotlight 40% + 3×3 challenger matrix 60%
- *  - DUAL_FOCUS: Host vs tapped challenger 50/50 vertical split
+ * LOCK-IN (role UI):
+ *  - Spectator (!isParticipant): transparent VOTE HOST · BANTER · VOTE RIVAL dock;
+ *    floating poll bar; no camera tools.
+ *  - Athlete (isParticipant): no vote UI; Flip/Mute/Cam at bottom:30 on local stream only;
+ *    showControls 5s auto-fade; [HOST]/[RIVAL] handle badges; dual-focus has no 9-tile grid.
  *
- * WebRTC-ready: StreamSurface accepts `streamId` / `rtcUid` for Agora / 100ms wiring.
+ * View modes:
+ *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
+ *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

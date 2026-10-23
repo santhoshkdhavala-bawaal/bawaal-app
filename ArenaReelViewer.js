@@ -41,8 +41,10 @@ function isPlayableUri(uri) {
 }
 
 /**
- * Full-screen general Arena reel — banter comments + floating GIF overlays.
- * No battle / challenge CTAs.
+ * Full-screen Arena Reel — banter = text & GIF audience chat (not audio).
+ *
+ * LOCK-IN layout: single safe top header; right rail bottom:180 (HYPE/BANTER/MORE);
+ * emoji quick-reactions above caption, hidden while Banter drawer is open.
  */
 export default function ArenaReelViewer({ visible, reel, onClose }) {
   const insets = useSafeAreaInsets();

@@ -70,6 +70,9 @@ function formatLocalSchedule(isoUTC) {
 
 /**
  * Create Battle bottom sheet — UTC scheduling + notification payload schema.
+ *
+ * LOCK-IN accents: soft coral #FF8A65 / #FF9E80; selected labels #0F172A (800);
+ * unselected labels #FFFFFF (700); LAUNCH CTA 17/800 coral + dark ink.
  */
 export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
   const insets = useSafeAreaInsets();
@@ -490,7 +493,7 @@ const styles = StyleSheet.create({
     borderColor: CORAL,
   },
   pillText: {
-    color: '#F1F5F9',
+    color: WHITE,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -542,7 +545,7 @@ const styles = StyleSheet.create({
     backgroundColor: CORAL,
   },
   segmentText: {
-    color: '#F1F5F9',
+    color: WHITE,
     fontSize: 15,
     fontWeight: '700',
   },
@@ -577,7 +580,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,138,101,0.18)',
   },
   offsetChipText: {
-    color: '#F1F5F9',
+    color: WHITE,
     fontSize: 14,
     fontWeight: '700',
   },
