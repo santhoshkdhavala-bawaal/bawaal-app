@@ -12,10 +12,7 @@ import {
   Dimensions,
   StatusBar,
 } from 'react-native';
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 const BG = '#000000';
@@ -52,7 +49,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const [hype, setHype] = useState(0);
   const [banter, setBanter] = useState(DEMO_BANTER);
   const [draft, setDraft] = useState('');
-  const [showBanter, setShowBanter] = useState(true);
+  const [showBanter, setShowBanter] = useState(false);
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [activeGifs, setActiveGifs] = useState([
@@ -78,7 +75,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setHype(reel.hypeCount || 0);
     setBanter(reel.banter?.length ? reel.banter : DEMO_BANTER);
     setDraft('');
-    setShowBanter(true);
+    setShowBanter(false);
     setMoreOpen(false);
     let cancelled = false;
     (async () => {
@@ -133,8 +130,13 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setDraft('');
   };
 
-  // Keep right rail clear of the horizontal emoji quick-reaction row.
-  const actionStackBottom = 120 + Math.max(insets.bottom, 0);
+  const topPad =
+    (Platform.OS === 'android'
+      ? StatusBar.currentHeight || 40
+      : Math.max(insets.top, 44)) + 8;
+  // Clear captions, emoji row, and open banter drawer.
+  const actionStackBottom = 180 + Math.max(insets.bottom, 0);
+  const bottomStackPad = Math.max(insets.bottom, 12);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
@@ -148,13 +150,10 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
             nativeControls={false}
           />
         ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderLabel}>{handle}</Text>
-            <Text style={styles.placeholderSub}>ARENA REEL</Text>
-          </View>
+          <View style={styles.placeholder} />
         )}
 
-        {/* Floating GIF overlays */}
+        {/* Floating GIF overlays on the video (not the header) */}
         {activeGifs.map((g) => (
           <Text
             key={g.id}
@@ -167,18 +166,9 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </Text>
         ))}
 
-        <SafeAreaView edges={['top']} style={styles.topSafe}>
-          <View
-            style={[
-              styles.topBar,
-              {
-                paddingTop:
-                  Platform.OS === 'android'
-                    ? Math.max(StatusBar.currentHeight || 0, 8)
-                    : 4,
-              },
-            ]}
-          >
+        {/* Single top header — StatusBar.currentHeight + 8 clears the clock */}
+        <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
+          <View style={styles.topBar}>
             <View style={styles.topTitleBlock}>
               <Text style={styles.topHandle} numberOfLines={1}>
                 {handle}
@@ -189,15 +179,15 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
               <Text style={styles.closeText}>✕</Text>
             </TouchableOpacity>
           </View>
-        </SafeAreaView>
+        </View>
 
         {!!toast && (
-          <View style={[styles.toast, { top: Math.max(insets.top, 12) + 56 }]}>
+          <View style={[styles.toast, { top: topPad + 52 }]}>
             <Text style={styles.toastText}>{toast}</Text>
           </View>
         )}
 
-        {/* Right action stack — above emoji tray; secondary actions in ⋮ menu */}
+        {/* Right action stack — elevated clear of bottom chrome */}
         <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
           {moreOpen ? (
             <>
@@ -254,40 +244,38 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom-left creator + caption */}
-        <View
-          style={[
-            styles.bottomLeft,
-            { bottom: Math.max(insets.bottom, 16) + (showBanter ? 150 : 72) },
-          ]}
-        >
-          <Text style={styles.handle}>{handle}</Text>
-          <Text style={styles.caption} numberOfLines={3}>
-            {reel.caption || reel.title || ''}
-          </Text>
-        </View>
-
-        {/* GIF sticker tray + banter drawer */}
+        {/* Bottom stack: emoji (above caption) → caption → banter drawer */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.banterWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+          style={[styles.bottomStack, { paddingBottom: bottomStackPad }]}
+          pointerEvents="box-none"
         >
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.gifTray}
-          >
-            {GIF_STICKERS.map((emoji) => (
-              <TouchableOpacity
-                key={emoji}
-                style={styles.gifChip}
-                onPress={() => dropGif(emoji)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.gifChipText}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* Hide quick reactions while typing banter so they never cover the input */}
+          {!showBanter ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.gifTray}
+              keyboardShouldPersistTaps="handled"
+            >
+              {GIF_STICKERS.map((emoji) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={styles.gifChip}
+                  onPress={() => dropGif(emoji)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.gifChipText}>{emoji}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : null}
+
+          <View style={styles.captionBlock}>
+            <Text style={styles.caption} numberOfLines={3}>
+              {reel.caption || reel.title || ''}
+            </Text>
+          </View>
 
           {showBanter ? (
             <View style={styles.banterPanel}>
@@ -332,20 +320,6 @@ const styles = StyleSheet.create({
   placeholder: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: CARD,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholderLabel: {
-    color: WHITE,
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  placeholderSub: {
-    color: MUTED,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginTop: 8,
   },
   gifFloat: {
     position: 'absolute',
@@ -415,7 +389,7 @@ const styles = StyleSheet.create({
   actionStack: {
     position: 'absolute',
     right: 12,
-    bottom: 120,
+    bottom: 180,
     zIndex: 15,
     alignItems: 'center',
     gap: 14,
@@ -438,30 +412,26 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 2,
   },
-  bottomLeft: {
+  bottomStack: {
     position: 'absolute',
-    left: 16,
-    right: 90,
-    zIndex: 12,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 25,
   },
-  handle: {
-    color: WHITE,
-    fontSize: 16,
-    fontWeight: '900',
-    marginBottom: 4,
+  captionBlock: {
+    paddingHorizontal: 16,
+    paddingRight: 90,
+    paddingBottom: 8,
   },
   caption: {
     color: WHITE,
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
-  },
-  banterWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 25,
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   gifTray: {
     paddingHorizontal: 12,
