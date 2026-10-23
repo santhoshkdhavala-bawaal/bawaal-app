@@ -73,6 +73,9 @@ const WHITE = '#FFFFFF';
 const MUTED = '#888888';
 const ORANGE = '#FF5722';
 const CYAN = '#00E5FF';
+/** Slate viewport panels — never pure black when streams are offline. */
+const PANEL_HOST = '#0F172A';
+const PANEL_RIVAL = '#1E293B';
 
 const VIEW_SPOTLIGHT = 'SPOTLIGHT_GRID';
 const VIEW_DUAL = 'DUAL_FOCUS';
@@ -211,27 +214,61 @@ function formatVoteCount(n) {
   return String(v);
 }
 
-function AthleteAvatarPlaceholder({ handle, flag, cameraOff }) {
+function AthleteAvatarPlaceholder({ handle, flag, cameraOff, role = 'challenger' }) {
   const initial = String(handle || '?')
     .replace(/^@/, '')
     .charAt(0)
     .toUpperCase();
   return (
-    <View style={styles.avatarPlaceholder}>
-      <View style={styles.avatarCircle}>
+    <View
+      style={[
+        styles.avatarPlaceholder,
+        role === 'host' ? styles.avatarPlaceholderHost : styles.avatarPlaceholderRival,
+      ]}
+    >
+      <View
+        style={[
+          styles.avatarCircle,
+          role === 'host' ? styles.avatarCircleHost : styles.avatarCircleRival,
+        ]}
+      >
         <Text style={styles.avatarInitial}>{initial}</Text>
       </View>
       <Text style={styles.avatarFlag}>{flag || '🌐'}</Text>
       <Text style={styles.streamHint}>
-        {cameraOff ? 'CAMERA OFF' : 'STANDBY'}
+        {cameraOff ? 'CAMERA OFF' : 'WAITING FOR STREAM'}
       </Text>
     </View>
   );
 }
 
+/** Catches native/view crashes in CameraView / RtcSurfaceView so the arena never goes blank. */
+class StreamErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    console.warn('[Live1v1 StreamErrorBoundary]', error?.message || error, info?.componentStack);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
 /**
  * Local tile → expo-camera CameraView.
  * Remote tile → Agora RtcSurfaceView when a stream is connected.
+ * Always paints a slate fallback panel + avatar under any live track.
  */
 function StreamSurface({
   streamId,
@@ -244,43 +281,76 @@ function StreamSurface({
   cameraOff = false,
   cameraFacing = 'front',
   micMuted = false,
+  mediaReady = false,
   style,
 }) {
-  const showLocalCamera = isLocal && !cameraOff;
+  const uid = Number(rtcUid) || 0;
+  const showLocalCamera = Boolean(isLocal && !cameraOff && mediaReady);
   const showRemoteRtc =
-    !isLocal && Boolean(RtcSurfaceView) && hasRemote && Number(rtcUid) > 0;
+    !isLocal && Boolean(RtcSurfaceView) && hasRemote && uid > 0;
+
+  if (__DEV__ && !showLocalCamera && !showRemoteRtc) {
+    console.log('[StreamSurface] using fallback panel', {
+      streamId,
+      rtcUid: uid,
+      role,
+      isLocal,
+      hasRemote,
+      cameraOff,
+      mediaReady,
+      agoraReady: Boolean(RtcSurfaceView),
+    });
+  }
+
+  const renderFallback = (key) => (
+    <AthleteAvatarPlaceholder
+      key={key}
+      handle={label}
+      flag={flag}
+      cameraOff={cameraOff && isLocal}
+      role={role}
+    />
+  );
+
+  let liveTrack = null;
+  if (showLocalCamera) {
+    liveTrack = (
+      <CameraView
+        style={StyleSheet.absoluteFillObject}
+        facing={cameraFacing}
+        mute={micMuted}
+        mirror={cameraFacing === 'front'}
+      />
+    );
+  } else if (showRemoteRtc) {
+    liveTrack = (
+      <RtcSurfaceView
+        style={StyleSheet.absoluteFillObject}
+        canvas={{
+          uid,
+          sourceType: VideoSourceType.VideoSourceRemote,
+          renderMode: RenderModeType.RenderModeHidden ?? 1,
+        }}
+        zOrderMediaOverlay
+      />
+    );
+  }
 
   return (
     <View
-      style={[styles.streamSurface, role === 'host' && styles.streamSurfaceHost, style]}
+      style={[
+        styles.streamSurface,
+        role === 'host' ? styles.streamSurfaceHost : styles.streamSurfaceRival,
+        style,
+      ]}
       accessibilityLabel={`stream-${streamId || rtcUid || label}`}
     >
-      {showLocalCamera ? (
-        <CameraView
-          style={StyleSheet.absoluteFillObject}
-          facing={cameraFacing}
-          mute={micMuted}
-          mirror={cameraFacing === 'front'}
-        />
-      ) : showRemoteRtc ? (
-        <RtcSurfaceView
-          style={StyleSheet.absoluteFillObject}
-          canvas={{
-            uid: Number(rtcUid) || 0,
-            sourceType: VideoSourceType.VideoSourceRemote,
-            renderMode: RenderModeType.RenderModeHidden ?? 1,
-          }}
-          zOrderMediaOverlay
-        />
-      ) : isLocal || cameraOff ? (
-        <AthleteAvatarPlaceholder
-          handle={label}
-          flag={flag}
-          cameraOff={cameraOff && isLocal}
-        />
-      ) : (
-        <Text style={styles.streamHint}>STANDBY</Text>
-      )}
+      {renderFallback('base-fallback')}
+      {liveTrack ? (
+        <StreamErrorBoundary fallback={renderFallback('error-fallback')}>
+          {liveTrack}
+        </StreamErrorBoundary>
+      ) : null}
     </View>
   );
 }
@@ -326,7 +396,9 @@ function ParticipantHudToolbar({
   onToggleMic,
   onToggleCamera,
 }) {
-  if (!visible) return null;
+  if (!visible) {
+    return <View style={styles.participantHudHidden} />;
+  }
   return (
     <View style={styles.participantHud}>
       <TouchableOpacity
@@ -368,29 +440,32 @@ function HostSpotlight({
   cameraOff,
   cameraFacing,
   micMuted,
+  mediaReady = false,
   overlaysVisible = true,
 }) {
+  const safeHost = host || DEFAULT_HOST;
   return (
-    <View style={styles.hostSpotlight}>
+    <View style={[styles.hostSpotlight, styles.panelHost]}>
       <StreamSurface
-        streamId={host.streamId}
-        rtcUid={host.rtcUid}
-        label={host.handle}
-        flag={host.flag}
+        streamId={safeHost.streamId}
+        rtcUid={safeHost.rtcUid}
+        label={safeHost.handle}
+        flag={safeHost.flag}
         role="host"
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
         micMuted={micMuted}
+        mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
       {overlaysVisible ? (
         <View style={styles.overlayRow} pointerEvents="box-none">
           <View style={styles.handleBadge}>
-            <Text style={styles.flagText}>{host.flag}</Text>
+            <Text style={styles.flagText}>{safeHost.flag}</Text>
             <Text style={styles.handleText} numberOfLines={1}>
-              {host.handle}
+              {safeHost.handle}
             </Text>
           </View>
           <View style={styles.hostMetaCol}>
@@ -407,7 +482,7 @@ function HostSpotlight({
               hitSlop={8}
             >
               <Text style={styles.repsLabel}>REPS</Text>
-              <Text style={styles.repsCountHost}>{host.reps}</Text>
+              <Text style={styles.repsCountHost}>{safeHost.reps ?? 0}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -424,34 +499,37 @@ function ChallengerTile({
   cameraOff,
   cameraFacing,
   micMuted,
+  mediaReady = false,
 }) {
+  const safe = athlete || DEFAULT_CHALLENGERS[0];
   return (
     <TouchableOpacity
-      style={[styles.tile, isLocal && styles.tileLocal]}
+      style={[styles.tile, styles.panelRival, isLocal && styles.tileLocal]}
       activeOpacity={0.88}
-      onPress={() => onPress?.(athlete)}
+      onPress={() => onPress?.(safe)}
     >
       <StreamSurface
-        streamId={athlete.streamId}
-        rtcUid={athlete.rtcUid}
-        label={athlete.handle}
-        flag={athlete.flag}
+        streamId={safe.streamId}
+        rtcUid={safe.rtcUid}
+        label={safe.handle}
+        flag={safe.flag}
         role="challenger"
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
         micMuted={micMuted}
+        mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
       <View style={styles.tileTop}>
-        <Text style={styles.tileFlag}>{athlete.flag}</Text>
+        <Text style={styles.tileFlag}>{safe.flag}</Text>
         <Text style={styles.tileHandle} numberOfLines={1}>
-          {athlete.handle}
+          {safe.handle}
         </Text>
       </View>
       <View style={styles.tileReps}>
-        <Text style={styles.tileRepsText}>{athlete.reps}</Text>
+        <Text style={styles.tileRepsText}>{safe.reps ?? 0}</Text>
       </View>
       {isLocal ? (
         <View style={styles.tileYouPill}>
@@ -471,30 +549,33 @@ function DualFocusPane({
   cameraOff,
   cameraFacing,
   micMuted,
+  mediaReady = false,
   overlaysVisible = true,
 }) {
   const isHost = variant === 'host';
+  const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
   return (
-    <View style={styles.dualPane}>
+    <View style={[styles.dualPane, isHost ? styles.panelHost : styles.panelRival]}>
       <StreamSurface
-        streamId={athlete.streamId}
-        rtcUid={athlete.rtcUid}
-        label={athlete.handle}
-        flag={athlete.flag}
+        streamId={safe.streamId}
+        rtcUid={safe.rtcUid}
+        label={safe.handle}
+        flag={safe.flag}
         role={isHost ? 'host' : 'challenger'}
         isLocal={isLocal}
         hasRemote={hasRemote}
         cameraOff={cameraOff}
         cameraFacing={cameraFacing}
         micMuted={micMuted}
+        mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
       {overlaysVisible ? (
         <View style={styles.overlayRow} pointerEvents="box-none">
           <View style={styles.handleBadge}>
-            <Text style={styles.flagText}>{athlete.flag}</Text>
+            <Text style={styles.flagText}>{safe.flag}</Text>
             <Text style={styles.handleText} numberOfLines={1}>
-              {athlete.handle}
+              {safe.handle}
             </Text>
           </View>
           <TouchableOpacity
@@ -505,7 +586,7 @@ function DualFocusPane({
           >
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={isHost ? styles.repsCountHost : styles.repsCountChallenger}>
-              {athlete.reps}
+              {safe.reps ?? 0}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1130,8 +1211,10 @@ export default function Live1v1BattleScreen({
     }
   }, [hostAthlete.handle, onShare]);
 
-  const gridAthletes = challengers.slice(0, 9);
-  const rivalAthlete = focusedRival || challengers[0];
+  const gridAthletes = (challengers?.length ? challengers : DEFAULT_CHALLENGERS).slice(0, 9);
+  const safeHostAthlete = hostAthlete || DEFAULT_HOST;
+  const rivalAthlete =
+    focusedRival || challengers?.[0] || DEFAULT_CHALLENGERS[0];
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
 
@@ -1139,21 +1222,22 @@ export default function Live1v1BattleScreen({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
 
-      {/* Full-bleed video stage — fills entire screen behind floating HUD */}
+      {/* Full-bleed video stage — slate panels always paint behind floating HUD */}
       <View style={styles.stageContainer}>
         {viewMode === VIEW_SPOTLIGHT ? (
           <View style={styles.fullVideoColumn}>
             <View style={styles.spotlightHostWrap}>
               <HostSpotlight
-                host={hostAthlete}
+                host={safeHostAthlete}
                 live
                 overlaysVisible={showControls}
+                mediaReady={mediaReady}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
                 }}
                 isLocal={isLocalHost}
-                hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
+                hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
                 cameraOff={cameraOff && isLocalHost}
                 cameraFacing={cameraFacing}
                 micMuted={micMuted && isLocalHost}
@@ -1165,18 +1249,20 @@ export default function Live1v1BattleScreen({
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.grid}>
-                {gridAthletes.map((athlete) => {
-                  const localTile = isLocalAthlete(athlete);
+                {gridAthletes.map((athlete, index) => {
+                  const tile = athlete || DEFAULT_CHALLENGERS[index % DEFAULT_CHALLENGERS.length];
+                  const localTile = isLocalAthlete(tile);
                   return (
                     <ChallengerTile
-                      key={athlete.id}
-                      athlete={athlete}
+                      key={tile.id || `tile-${index}`}
+                      athlete={tile}
+                      mediaReady={mediaReady}
                       onPress={(a) => {
                         bumpHud();
                         focusChallenger(a);
                       }}
                       isLocal={localTile}
-                      hasRemote={!localTile && hasRemoteUid(athlete.rtcUid)}
+                      hasRemote={!localTile && hasRemoteUid(tile.rtcUid)}
                       cameraOff={cameraOff && localTile}
                       cameraFacing={cameraFacing}
                       micMuted={micMuted && localTile}
@@ -1189,15 +1275,16 @@ export default function Live1v1BattleScreen({
         ) : (
           <View style={styles.fullVideoColumn}>
             <DualFocusPane
-              athlete={hostAthlete}
+              athlete={safeHostAthlete}
               variant="host"
               overlaysVisible={showControls}
+              mediaReady={mediaReady}
               onRepPress={() => {
                 bumpHud();
                 handleHostRep();
               }}
               isLocal={isLocalHost}
-              hasRemote={hasRemoteUid(hostAthlete.rtcUid)}
+              hasRemote={hasRemoteUid(safeHostAthlete.rtcUid)}
               cameraOff={cameraOff && isLocalHost}
               cameraFacing={cameraFacing}
               micMuted={micMuted && isLocalHost}
@@ -1213,6 +1300,7 @@ export default function Live1v1BattleScreen({
               athlete={rivalAthlete}
               variant="rival"
               overlaysVisible={showControls}
+              mediaReady={mediaReady}
               onRepPress={() => {
                 bumpHud();
                 handleRivalRep();
@@ -1238,7 +1326,9 @@ export default function Live1v1BattleScreen({
               TAP GLOVES TO VOTE · TAP SCREEN TO SHOW HUD
             </Text>
           </Animated.View>
-        ) : null}
+        ) : (
+          <View style={styles.voteHintSpacer} />
+        )}
       </View>
 
       {/* Root-level full-screen tap — toggles HUD on open video space */}
@@ -1249,6 +1339,8 @@ export default function Live1v1BattleScreen({
         accessibilityLabel="Toggle battle HUD"
       />
 
+      {/* Persistent floating HUD root — always above the background grid */}
+      <View style={styles.hudOverlayRoot} pointerEvents="box-none">
       {/* Absolute floating HUD — fades without resizing the video */}
       <Animated.View
         style={[styles.hudChrome, { opacity: hudOpacity }]}
@@ -1363,14 +1455,14 @@ export default function Live1v1BattleScreen({
                 onPress={() => {
                   bumpHud();
                   setProfileRole('HOST');
-                  setProfileAthlete(hostAthlete);
+                  setProfileAthlete(safeHostAthlete);
                 }}
               >
                 <View style={styles.pollBadgeHost}>
                   <Text style={styles.pollBadgeHostText}>[H]</Text>
                 </View>
                 <Text style={styles.pollHostText} numberOfLines={1}>
-                  {hostAthlete.handle || '@HOST'}
+                  {safeHostAthlete.handle || '@HOST'}
                 </Text>
                 <Text style={styles.pollTallyHost}>{hostVotesLabel}</Text>
               </TouchableOpacity>
@@ -1491,6 +1583,7 @@ export default function Live1v1BattleScreen({
       </View>
 
       <FloatingReactionLayer reactions={floatingReactions} />
+      </View>
 
       <Modal
         visible={banterOpen}
@@ -1562,6 +1655,15 @@ const styles = StyleSheet.create({
   rootTapCatcher: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 1,
+  },
+  hudOverlayRoot: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    elevation: 100,
   },
   hudChrome: {
     ...StyleSheet.absoluteFillObject,
@@ -1793,30 +1895,38 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: BG,
+    backgroundColor: PANEL_HOST,
     zIndex: 0,
   },
   fullVideoColumn: {
     flex: 1,
     width: '100%',
     height: '100%',
+    backgroundColor: PANEL_HOST,
   },
   spotlightHostWrap: {
     flex: 0.42,
     width: '100%',
     minHeight: 0,
+    backgroundColor: PANEL_HOST,
+  },
+  panelHost: {
+    backgroundColor: PANEL_HOST,
+  },
+  panelRival: {
+    backgroundColor: PANEL_RIVAL,
   },
   hostSpotlight: {
     flex: 1,
     position: 'relative',
-    backgroundColor: '#080808',
+    backgroundColor: PANEL_HOST,
     overflow: 'hidden',
   },
   gridScroll: {
     flex: 0.58,
     width: '100%',
     minHeight: 0,
-    backgroundColor: BG,
+    backgroundColor: PANEL_RIVAL,
   },
   gridContent: {
     padding: GRID_GAP,
@@ -1829,7 +1939,7 @@ const styles = StyleSheet.create({
   tile: {
     width: TILE_W,
     height: TILE_W * 1.15,
-    backgroundColor: SURFACE,
+    backgroundColor: PANEL_RIVAL,
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
@@ -1895,18 +2005,22 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#080808',
+    backgroundColor: PANEL_HOST,
   },
   streamSurface: {
-    backgroundColor: SURFACE,
+    backgroundColor: PANEL_RIVAL,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   streamSurfaceHost: {
-    backgroundColor: '#0D0D0D',
+    backgroundColor: PANEL_HOST,
+  },
+  streamSurfaceRival: {
+    backgroundColor: PANEL_RIVAL,
   },
   streamHint: {
-    color: '#444444',
+    color: '#94A3B8',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.8,
@@ -1915,8 +2029,14 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: PANEL_RIVAL,
     gap: 6,
+  },
+  avatarPlaceholderHost: {
+    backgroundColor: PANEL_HOST,
+  },
+  avatarPlaceholderRival: {
+    backgroundColor: PANEL_RIVAL,
   },
   avatarCircle: {
     width: 64,
@@ -1927,6 +2047,20 @@ const styles = StyleSheet.create({
     borderColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarCircleHost: {
+    borderColor: ORANGE,
+  },
+  avatarCircleRival: {
+    borderColor: CYAN,
+  },
+  participantHudHidden: {
+    height: 0,
+    overflow: 'hidden',
+  },
+  voteHintSpacer: {
+    width: 0,
+    height: 0,
   },
   avatarInitial: {
     color: WHITE,
