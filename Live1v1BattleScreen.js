@@ -7,6 +7,11 @@
  *  - Athlete (isParticipant): no vote UI; Flip/Mute/Cam at bottom:30 on local stream only;
  *    showControls 5s auto-fade; [HOST]/[RIVAL] handle badges; dual-focus has no 9-tile grid.
  *
+ * LOCK-IN (roster → 1v1):
+ *  - Selecting a rival from the roster / grid immediately enters DUAL_FOCUS (50/50 Host|Rival),
+ *    unmounts the tile grid, and streams only those two panes.
+ *  - In dual mode, "SHOW CHALLENGERS" opens the roster sheet without leaving 1v1 video.
+ *
  * View modes:
  *  - SPOTLIGHT_GRID: Host spotlight + challenger matrix
  *  - DUAL_FOCUS: Host vs rival 50/50 (no grid behind)
@@ -1163,28 +1168,35 @@ function Live1v1BattleScreenInner({
     return unsubscribe;
   }, [applyRemoteEvent, battleId]);
 
+  /** Enter clean 50/50 Host|Rival — grid unmounts; only these two streams stay live. */
   const focusChallenger = useCallback((athlete) => {
+    if (!athlete) return;
     setFocusedRival(athlete);
-    setRivalVotes(athlete.votes ?? 500);
+    setRivalVotes(Number(athlete.votes) || 500);
     setViewMode(VIEW_DUAL);
-  }, []);
+    setRosterOpen(false);
+    bumpHud();
+  }, [bumpHud]);
 
+  /** Open roster sheet over live 1v1 — does not kill dual-focus streams. */
   const openChallengerRoster = useCallback(() => {
+    bumpHud();
     setRosterOpen(true);
-  }, []);
+  }, [bumpHud]);
 
   const selectRivalFromRoster = useCallback(
     (athlete) => {
       focusChallenger(athlete);
-      setRosterOpen(false);
     },
     [focusChallenger]
   );
 
+  /** Optional full matrix browse from the sheet (leaves dual until a rival is re-picked). */
   const viewGridFromRoster = useCallback(() => {
     setRosterOpen(false);
     setViewMode(VIEW_SPOTLIGHT);
-  }, []);
+    bumpHud();
+  }, [bumpHud]);
 
   const submitBanter = useCallback(() => {
     const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
@@ -1451,29 +1463,25 @@ function Live1v1BattleScreenInner({
           <View style={styles.rosterTriggerRow}>
             {isDualFocus ? (
               <TouchableOpacity
-                style={styles.showAllBtn}
-                onPress={() => {
-                  bumpHud();
-                  setViewMode(VIEW_SPOTLIGHT);
-                }}
+                style={styles.showChallengersPill}
+                onPress={openChallengerRoster}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Show challengers roster"
+              >
+                <Text style={styles.showChallengersPillText}>
+                  ▦ SHOW CHALLENGERS
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.watchRosterBtn, styles.watchRosterBtnGrow]}
+                onPress={openChallengerRoster}
                 activeOpacity={0.85}
               >
-                <Text style={styles.showAllBtnText}>▦ SHOW ALL CHALLENGERS</Text>
+                <Text style={styles.watchRosterBtnText}>👁️ WATCH ROSTER</Text>
               </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              style={[
-                styles.watchRosterBtn,
-                !isDualFocus && styles.watchRosterBtnGrow,
-              ]}
-              onPress={() => {
-                bumpHud();
-                openChallengerRoster();
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
-            </TouchableOpacity>
+            )}
           </View>
 
           {!isParticipant && voteHintVisible ? (
@@ -1976,23 +1984,29 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
-  showAllBtn: {
+  showChallengersPill: {
     flex: 1,
-    backgroundColor: SURFACE,
+    backgroundColor: 'rgba(255,87,34,0.14)',
     borderWidth: 1,
     borderColor: ORANGE,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     alignItems: 'center',
+  },
+  showChallengersPillText: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   watchRosterBtn: {
     backgroundColor: 'rgba(0,229,255,0.12)',
     borderWidth: 1,
     borderColor: CYAN,
-    borderRadius: 8,
+    borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 9,
   },
   watchRosterBtnGrow: {
     flex: 1,
@@ -2003,12 +2017,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.3,
-  },
-  showAllBtnText: {
-    color: ORANGE,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.4,
   },
   stageContainer: {
     flex: 1,

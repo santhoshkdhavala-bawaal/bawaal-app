@@ -19,7 +19,9 @@ const CYAN = '#00E5FF';
 const BORDER = '#1F2937';
 
 /**
- * LATEST CHALLENGERS roster — pick a rival or jump to full grid.
+ * LATEST CHALLENGERS roster sheet.
+ * Selecting VS → parent enters dual 1v1 (Host | Rival) without destroying the sheet host stream.
+ * Opens over live dual-focus; does not require leaving 1v1 first.
  */
 export default function ChallengerRosterSheet({
   visible,
@@ -97,7 +99,7 @@ export default function ChallengerRosterSheet({
             activeOpacity={0.85}
             onPress={onViewGrid}
           >
-            <Text style={styles.gridBtnText}>▦ VIEW GRID</Text>
+            <Text style={styles.gridBtnText}>▦ BROWSE FULL GRID</Text>
           </TouchableOpacity>
         </View>
       </View>
