@@ -1,7 +1,7 @@
 /**
  * Local athlete Agora preview.
- * isCamOn / isCameraOn true  → RtcSurfaceView canvas={{ uid: 0 }} only (no placeholder copy).
- * false → caller-provided STANDBY (flag + handle) via `fallback`.
+ * isCamOn true  → RtcSurfaceView canvas={{ uid: 0 }} (requires enableLocalCamera → startPreview).
+ * isCamOn false → caller STANDBY fallback.
  */
 import React, { type ReactNode } from 'react';
 import {
@@ -14,6 +14,8 @@ import { getAgoraSdk } from '../services/agoraService';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
+const RenderModeType = AgoraSdk?.RenderModeType;
+const VideoSourceType = AgoraSdk?.VideoSourceType;
 
 export type ArenaLocalVideoProps = {
   isCameraOn: boolean;
@@ -36,7 +38,7 @@ export function ArenaLocalVideo({
     return <>{fallback}</>;
   }
 
-  // Camera ON: always mount local surface (uid 0). Never show "Preview reconnecting…".
+  // Camera ON: mount local surface only after enableLocalCamera() called startPreview().
   if (!RtcSurfaceView) {
     return <View style={[styles.cameraView, style]} pointerEvents="none" />;
   }
@@ -45,7 +47,12 @@ export function ArenaLocalVideo({
     <View style={[styles.cameraView, style]} pointerEvents="none">
       <RtcSurfaceView
         style={styles.surface}
-        canvas={{ uid: 0 }}
+        canvas={{
+          uid: 0,
+          sourceType: VideoSourceType?.VideoSourceCamera ?? 0,
+          renderMode: RenderModeType?.RenderModeHidden ?? 1,
+        }}
+        zOrderMediaOverlay
       />
     </View>
   );
@@ -56,7 +63,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 0,
     overflow: 'hidden',
-    backgroundColor: '#0A1018',
+    backgroundColor: '#000000',
   },
   surface: {
     flex: 1,

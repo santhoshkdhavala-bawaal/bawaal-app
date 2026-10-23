@@ -70,9 +70,9 @@ import {
   leaveChannel,
   onConnectionStateChanged,
   onRemoteUsersChanged,
+  enableLocalCamera,
   requestArenaMediaPermissions,
   setLocalCameraEnabled,
-  startBroadcasterPreview,
   switchCamera,
 } from './src/services/agoraService';
 import {
@@ -1201,27 +1201,36 @@ function Live1v1BattleScreenInner({
         setRtcConnectionState(state);
         if (state === 'connected') {
           setRtcJoined(true);
-          if (isBroadcaster) startBroadcasterPreview();
+          if (isBroadcaster) void enableLocalCamera();
         }
         if (state === 'failed' || state === 'disconnected') setRtcJoined(false);
       }
     });
 
     (async () => {
-      // Permissions again immediately before join (Host / Rival / Spectator).
-      const permitted = await requestArenaMediaPermissions(isBroadcaster);
-      if (cancelled) return;
-      if (isBroadcaster && !permitted) {
-        setRtcJoined(false);
-        setRtcConnectionState('failed');
-        return;
+      // Enter Arena: Android CAMERA/MIC + enableAudio/Video + startPreview.
+      if (isBroadcaster) {
+        const cam = await enableLocalCamera();
+        if (cancelled) return;
+        if (!cam?.ok && cam?.reason === 'permissions-denied') {
+          setRtcJoined(false);
+          setRtcConnectionState('failed');
+          setIsCameraOn(false);
+          return;
+        }
+      } else {
+        const permitted = await requestArenaMediaPermissions(false);
+        if (cancelled) return;
+        if (!permitted) {
+          /* audience may still join */
+        }
       }
 
       const join = await joinBattleChannel(channel, myRtcUid, isBroadcaster);
       if (cancelled) return;
       setRtcJoined(Boolean(join?.ok));
       if (join?.ok && isBroadcaster) {
-        startBroadcasterPreview();
+        await enableLocalCamera();
       }
       if (__DEV__) {
         console.log('[arena-rtc] join', {
@@ -1271,15 +1280,16 @@ function Live1v1BattleScreenInner({
     if (!isParticipant) return;
     const next = !isCameraOn;
     setIsCameraOn(next);
-    // Cam On → permissions + enableVideo + startPreview; Cam Off → stop local video.
+    // Cam On → PermissionsAndroid + enableAudio/Video + startPreview (MUST).
     void (async () => {
-      const result = await setLocalCameraEnabled(next);
-      if (next && result?.ok) {
-        startBroadcasterPreview();
+      if (next) {
+        const result = await enableLocalCamera();
+        if (!result?.ok && result?.reason === 'permissions-denied') {
+          setIsCameraOn(false);
+        }
+        return;
       }
-      if (next && result?.reason === 'permissions-denied') {
-        setIsCameraOn(false);
-      }
+      await setLocalCameraEnabled(false);
     })();
   }, [isParticipant, isCameraOn]);
 

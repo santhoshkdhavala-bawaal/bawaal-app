@@ -2,7 +2,7 @@
  * Agora RTC engine for BAWAAL Live Arena.
  * Requires a development build (`expo-dev-client`) — not available in Expo Go.
  */
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import { Camera } from 'expo-camera';
 import {
   AGORA_APP_ID,
@@ -105,11 +105,30 @@ export function onConnectionStateChanged(listener) {
 }
 
 /**
- * Always prompt cam + mic before channel join (Host, Rival, and Spectator).
- * Broadcasters require both grants; audience may still join if denied.
+ * Android runtime CAMERA + RECORD_AUDIO (required for Agora native preview).
+ * Always also prompts via Expo Camera APIs for iOS / unified grant state.
  */
 export async function requestArenaMediaPermissions(asBroadcaster = false) {
   try {
+    if (Platform.OS === 'android') {
+      const result = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ]);
+      const camOk =
+        result[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+      const micOk =
+        result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+        PermissionsAndroid.RESULTS.GRANTED;
+      if ((!camOk || !micOk) && asBroadcaster) {
+        if (__DEV__) {
+          console.warn('[agora] Android permissions denied', result);
+        }
+        return false;
+      }
+    }
+
     const cam = await Camera.requestCameraPermissionsAsync();
     const mic = await Camera.requestMicrophonePermissionsAsync();
     const granted = cam?.granted === true && mic?.granted === true;
@@ -128,15 +147,54 @@ export async function requestArenaMediaPermissions(asBroadcaster = false) {
   }
 }
 
+/**
+ * Runtime permission + local preview enforcement (Arena enter / Cam On).
+ * MUST call startPreview() or RtcSurfaceView uid:0 stays black.
+ */
+export async function enableLocalCamera() {
+  if (Platform.OS === 'android') {
+    await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+  }
+
+  const permitted = await requestArenaMediaPermissions(true);
+  if (!permitted) {
+    return { ok: false, reason: 'permissions-denied' };
+  }
+
+  const init = await initAgoraEngine();
+  if (!init.ok || !engine) {
+    return { ok: false, reason: init.reason || 'engine-unavailable' };
+  }
+
+  try {
+    // Order matches ChallengerArena contract: audio → video → startPreview.
+    engine.enableAudio();
+    engine.enableVideo();
+    engine.enableLocalAudio(true);
+    engine.enableLocalVideo(true);
+    engine.muteLocalAudioStream(false);
+    engine.muteLocalVideoStream(false);
+    engine.startPreview(); // MUST BE CALLED
+    return { ok: true, engine };
+  } catch (err) {
+    console.warn('[agora] enableLocalCamera:', err?.message || err);
+    return { ok: false, error: err };
+  }
+}
+
 /** Host / Rival: enable video pipeline + local preview surface (uid 0). */
 export function startBroadcasterPreview() {
   if (!engine) return { ok: false };
   try {
-    engine.enableVideo();
     engine.enableAudio();
+    engine.enableVideo();
     engine.enableLocalVideo(true);
     engine.enableLocalAudio(true);
-    engine.startPreview();
+    engine.muteLocalVideoStream(false);
+    engine.startPreview(); // MUST BE CALLED
     return { ok: true };
   } catch (err) {
     console.warn('[agora] startBroadcasterPreview:', err?.message || err);
@@ -418,49 +476,29 @@ export function enableLocalAudio(enabled = true) {
   return muteLocalAudioStream(!enabled);
 }
 
-/**
- * Ensure engine exists, then enableVideo + startPreview (Host / Challenger Cam On).
- * Mirrors ChallengerArena initAgora contract.
- */
+/** @deprecated prefer enableLocalCamera — kept for ChallengerArena imports */
 export async function ensureLocalPreview() {
-  const init = await initAgoraEngine();
-  if (!init.ok || !engine) {
-    return { ok: false, reason: init.reason || 'engine-unavailable' };
-  }
-  try {
-    engine.enableVideo();
-    engine.enableLocalVideo(true);
-    engine.muteLocalVideoStream(false);
-    engine.startPreview();
-    return { ok: true, engine };
-  } catch (err) {
-    console.warn('[agora] ensureLocalPreview:', err?.message || err);
-    return { ok: false, error: err };
-  }
+  return enableLocalCamera();
 }
 
 /**
  * Canonical athlete camera switch (isCameraOn / isCamOn).
- * ON  → permissions → init engine → enableVideo + startPreview (local uid 0).
+ * ON  → enableLocalCamera (Android perms + enableAudio/Video + startPreview).
  * OFF → stop local publish/preview (keeps remote rival video alive).
  */
 export async function setLocalCameraEnabled(isCameraOn) {
   const on = Boolean(isCameraOn);
   if (on) {
-    const permitted = await requestArenaMediaPermissions(true);
-    if (!permitted) {
-      return { ok: false, isCameraOn: false, reason: 'permissions-denied' };
-    }
-    const preview = await ensureLocalPreview();
+    const preview = await enableLocalCamera();
     if (!preview.ok) {
       return {
         ok: false,
-        isCameraOn: on,
+        isCameraOn: preview.reason === 'permissions-denied' ? false : on,
         reason: preview.reason || 'preview-failed',
         error: preview.error,
       };
     }
-    return { ok: true, isCameraOn: on };
+    return { ok: true, isCameraOn: true };
   }
   if (!engine) {
     return { ok: true, isCameraOn: false, reason: 'engine-unavailable' };
@@ -496,6 +534,7 @@ export const agoraService = {
   onRemoteUsersChanged,
   onConnectionStateChanged,
   requestArenaMediaPermissions,
+  enableLocalCamera,
   ensureLocalPreview,
   startBroadcasterPreview,
   initAgoraEngine,
