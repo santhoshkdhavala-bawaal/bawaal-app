@@ -1,12 +1,18 @@
 /**
- * ChallengerArena — Live 1v1 arena entry.
+ * ChallengerArena — BAWAAL Live 1v1 Arena (production entry).
  *
- * Local camera (enter Arena / Cam On) → `enableLocalCamera()`:
+ * Spectator HUD — CHALLENGERS drawer (Watch mode):
+ *   style={{ position: 'absolute', top: 95, left: 16, zIndex: 999 }}
+ *   (clear below @HOST badge; never overlaps REPS / LIVE)
+ *
+ * Local camera tile (Host / Challenger) — persistent wrapper:
+ *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} />
+ *   isCameraOn false → Flag + @handle + STANDBY
+ *   Outer View does NOT unmount when toggling camera.
+ *
+ * handleCameraToggle / enableLocalCamera():
  *   Android: PermissionsAndroid.requestMultiple([CAMERA, RECORD_AUDIO])
- *   then: enableAudio() → enableVideo() → startPreview()  // startPreview MUST run
- *   then: <RtcSurfaceView canvas={{ uid: 0 }} />
- *
- * Cam Off → Flag + @handle + STANDBY
+ *   then: enableVideo() → startPreview()  // startPreview MUST run
  *
  * Requires Dev Client / EAS development build (not Expo Go).
  */

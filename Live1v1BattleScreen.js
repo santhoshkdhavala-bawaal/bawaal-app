@@ -481,7 +481,7 @@ function StreamSurface({
     />
   );
 
-  // Local athlete pane: exclusive Cam On (surface) vs Cam Off (STANDBY).
+  // Local athlete pane: persistent wrapper — children swap; wrapper never unmounts.
   if (isLocal) {
     return (
       <View
@@ -492,15 +492,12 @@ function StreamSurface({
         ]}
         accessibilityLabel={`stream-${streamId || rtcUid || label}`}
       >
-        {localCamOn ? (
-          <ArenaLocalVideo
-            isCameraOn
-            isCamOn
-            style={styles.cameraLayer}
-          />
-        ) : (
-          renderFallback('local-standby')
-        )}
+        <ArenaLocalVideo
+          isCameraOn={localCamOn}
+          isCamOn={localCamOn}
+          style={styles.cameraLayer}
+          fallback={renderFallback('local-standby')}
+        />
       </View>
     );
   }
@@ -1276,13 +1273,18 @@ function Live1v1BattleScreenInner({
     });
   }, [isParticipant]);
 
-  const handleToggleCamera = useCallback(() => {
+  /**
+   * Cam On → PermissionsAndroid.requestMultiple + enableVideo() + startPreview().
+   * Cam Off → stop local preview; isCameraOn false shows STANDBY (wrapper stays mounted).
+   * State is NEVER inverted: true = camera publishing / surface visible.
+   */
+  const handleCameraToggle = useCallback(() => {
     if (!isParticipant) return;
     const next = !isCameraOn;
     setIsCameraOn(next);
-    // Cam On → PermissionsAndroid + enableAudio/Video + startPreview (MUST).
     void (async () => {
       if (next) {
+        // enableLocalCamera: Android CAMERA/MIC → enableAudio → enableVideo → startPreview
         const result = await enableLocalCamera();
         if (!result?.ok && result?.reason === 'permissions-denied') {
           setIsCameraOn(false);
@@ -1292,6 +1294,7 @@ function Live1v1BattleScreenInner({
       await setLocalCameraEnabled(false);
     })();
   }, [isParticipant, isCameraOn]);
+  const handleToggleCamera = handleCameraToggle;
 
   useEffect(() => {
     if (!battleId) return undefined;

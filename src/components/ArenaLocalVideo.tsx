@@ -1,7 +1,8 @@
 /**
- * Local athlete Agora preview.
- * isCamOn true  → RtcSurfaceView canvas={{ uid: 0 }} (requires enableLocalCamera → startPreview).
- * isCamOn false → caller STANDBY fallback.
+ * Persistent local athlete video wrapper.
+ * Outer View never unmounts on Cam On/Off — only children swap:
+ *   isCameraOn true  → <RtcSurfaceView canvas={{ uid: 0 }} />
+ *   isCameraOn false → STANDBY placeholder (flag + handle) via `fallback`
  */
 import React, { type ReactNode } from 'react';
 import {
@@ -22,7 +23,7 @@ export type ArenaLocalVideoProps = {
   /** Alias used by Challenger Arena HUD. */
   isCamOn?: boolean;
   style?: StyleProp<ViewStyle>;
-  /** Flag + handle + STANDBY — only used when camera is OFF. */
+  /** Flag + handle + STANDBY — rendered inside the same wrapper when camera is OFF. */
   fallback?: ReactNode;
 };
 
@@ -34,26 +35,21 @@ export function ArenaLocalVideo({
 }: ArenaLocalVideoProps) {
   const on = typeof isCameraOn === 'boolean' ? isCameraOn : Boolean(isCamOn);
 
-  if (!on) {
-    return <>{fallback}</>;
-  }
-
-  // Camera ON: mount local surface only after enableLocalCamera() called startPreview().
-  if (!RtcSurfaceView) {
-    return <View style={[styles.cameraView, style]} pointerEvents="none" />;
-  }
-
   return (
     <View style={[styles.cameraView, style]} pointerEvents="none">
-      <RtcSurfaceView
-        style={styles.surface}
-        canvas={{
-          uid: 0,
-          sourceType: VideoSourceType?.VideoSourceCamera ?? 0,
-          renderMode: RenderModeType?.RenderModeHidden ?? 1,
-        }}
-        zOrderMediaOverlay
-      />
+      {on && RtcSurfaceView ? (
+        <RtcSurfaceView
+          style={styles.surface}
+          canvas={{
+            uid: 0,
+            sourceType: VideoSourceType?.VideoSourceCamera ?? 0,
+            renderMode: RenderModeType?.RenderModeHidden ?? 1,
+          }}
+          zOrderMediaOverlay
+        />
+      ) : on ? null : (
+        fallback
+      )}
     </View>
   );
 }
