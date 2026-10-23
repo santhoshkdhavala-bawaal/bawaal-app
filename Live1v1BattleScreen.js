@@ -214,29 +214,32 @@ function formatVoteCount(n) {
   return String(v);
 }
 
-function AthleteAvatarPlaceholder({ handle, flag, cameraOff, role = 'challenger' }) {
-  const initial = String(handle || '?')
-    .replace(/^@/, '')
-    .charAt(0)
-    .toUpperCase();
+/** Clean slate panel only — no letter circles or avatar artwork over the video. */
+function StreamFallbackPanel({ cameraOff, role = 'challenger' }) {
   return (
     <View
       style={[
-        styles.avatarPlaceholder,
-        role === 'host' ? styles.avatarPlaceholderHost : styles.avatarPlaceholderRival,
+        styles.streamFallback,
+        role === 'host' ? styles.panelHost : styles.panelRival,
+      ]}
+      pointerEvents="none"
+    >
+      {cameraOff ? <Text style={styles.streamHint}>CAMERA OFF</Text> : null}
+    </View>
+  );
+}
+
+function AthleteHandlePill({ handle, flag, tone = 'host' }) {
+  return (
+    <View
+      style={[
+        styles.handleBadge,
+        tone === 'rival' ? styles.handleBadgeRival : styles.handleBadgeHost,
       ]}
     >
-      <View
-        style={[
-          styles.avatarCircle,
-          role === 'host' ? styles.avatarCircleHost : styles.avatarCircleRival,
-        ]}
-      >
-        <Text style={styles.avatarInitial}>{initial}</Text>
-      </View>
-      <Text style={styles.avatarFlag}>{flag || '🌐'}</Text>
-      <Text style={styles.streamHint}>
-        {cameraOff ? 'CAMERA OFF' : 'WAITING FOR STREAM'}
+      {flag ? <Text style={styles.flagText}>{flag}</Text> : null}
+      <Text style={styles.handleText} numberOfLines={1}>
+        {handle || (tone === 'rival' ? '@RIVAL' : '@HOST')}
       </Text>
     </View>
   );
@@ -308,13 +311,12 @@ class ArenaSafeBoundary extends React.Component {
 /**
  * Local tile → expo-camera CameraView.
  * Remote tile → Agora RtcSurfaceView when a stream is connected.
- * Always paints a slate fallback panel + avatar under any live track.
+ * Always paints a clean slate fallback under any live track (no letter avatars).
  */
 function StreamSurface({
   streamId,
   rtcUid,
   label,
-  flag,
   role = 'challenger',
   isLocal = false,
   hasRemote = false,
@@ -343,10 +345,8 @@ function StreamSurface({
   }
 
   const renderFallback = (key) => (
-    <AthleteAvatarPlaceholder
+    <StreamFallbackPanel
       key={key}
-      handle={label}
-      flag={flag}
       cameraOff={cameraOff && isLocal}
       role={role}
     />
@@ -398,31 +398,34 @@ function StreamSurface({
 function FloatingReactionLayer({ reactions }) {
   return (
     <View style={styles.floatingLayer} pointerEvents="none">
-      {reactions.map((rx) => (
-        <Animated.View
-          key={rx.id}
-          style={[
-            rx.placement === 'toast' ? styles.floatingToastItem : styles.floatingItem,
-            rx.text ? styles.floatingPill : null,
-            rx.placement === 'toast' ? styles.floatingToastPill : null,
-            {
-              left: rx.left,
-              opacity: rx.opacity,
-              transform: [{ translateY: rx.translateY }],
-            },
-          ]}
-        >
-          <Animated.Text
+      {(reactions || []).map((rx) => {
+        const isGloveToast = rx.placement === 'toast';
+        return (
+          <Animated.View
+            key={rx.id}
             style={[
-              rx.text ? styles.floatingPillEmoji : styles.floatingEmoji,
-              rx.scale ? { transform: [{ scale: rx.scale }] } : null,
+              isGloveToast ? styles.floatingToastItem : styles.floatingItem,
+              rx.text ? styles.floatingPill : null,
+              isGloveToast ? styles.floatingToastPill : null,
+              {
+                left: rx.left,
+                opacity: rx.opacity,
+                transform: [{ translateY: rx.translateY }],
+              },
             ]}
           >
-            {rx.emoji}
-          </Animated.Text>
-          {!!rx.text && <Text style={styles.floatingPillText}>{rx.text}</Text>}
-        </Animated.View>
-      ))}
+            <Animated.Text
+              style={[
+                rx.text ? styles.floatingPillEmoji : styles.floatingEmoji,
+                rx.scale ? { transform: [{ scale: rx.scale }] } : null,
+              ]}
+            >
+              {rx.emoji}
+            </Animated.Text>
+            {!!rx.text && <Text style={styles.floatingPillText}>{rx.text}</Text>}
+          </Animated.View>
+        );
+      })}
     </View>
   );
 }
@@ -482,6 +485,7 @@ function HostSpotlight({
   micMuted,
   mediaReady = false,
   overlaysVisible = true,
+  topInset = 50,
 }) {
   const safeHost = host || DEFAULT_HOST;
   return (
@@ -490,7 +494,6 @@ function HostSpotlight({
         streamId={safeHost.streamId}
         rtcUid={safeHost.rtcUid}
         label={safeHost.handle}
-        flag={safeHost.flag}
         role="host"
         isLocal={isLocal}
         hasRemote={hasRemote}
@@ -500,31 +503,37 @@ function HostSpotlight({
         mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
+      {/* Always-visible host handle — top-left, clear of status bar */}
+      <View
+        style={[styles.handleAnchorHost, { paddingTop: topInset }]}
+        pointerEvents="none"
+      >
+        <AthleteHandlePill
+          handle={safeHost.handle}
+          flag={safeHost.flag}
+          tone="host"
+        />
+      </View>
       {overlaysVisible ? (
-        <View style={styles.overlayRow} pointerEvents="box-none">
-          <View style={styles.handleBadge}>
-            <Text style={styles.flagText}>{safeHost.flag}</Text>
-            <Text style={styles.handleText} numberOfLines={1}>
-              {safeHost.handle}
-            </Text>
-          </View>
-          <View style={styles.hostMetaCol}>
-            {live ? (
-              <View style={styles.paneLivePill}>
-                <View style={styles.liveDot} />
-                <Text style={styles.paneLiveText}>LIVE</Text>
-              </View>
-            ) : null}
-            <TouchableOpacity
-              style={styles.hostRepsBadge}
-              onPress={onRepPress}
-              activeOpacity={0.85}
-              hitSlop={8}
-            >
-              <Text style={styles.repsLabel}>REPS</Text>
-              <Text style={styles.repsCountHost}>{safeHost.reps ?? 0}</Text>
-            </TouchableOpacity>
-          </View>
+        <View
+          style={[styles.statsAnchorHost, { top: topInset + 4 }]}
+          pointerEvents="box-none"
+        >
+          {live ? (
+            <View style={styles.paneLivePill}>
+              <View style={styles.liveDot} />
+              <Text style={styles.paneLiveText}>LIVE</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity
+            style={styles.hostRepsBadge}
+            onPress={onRepPress}
+            activeOpacity={0.85}
+            hitSlop={8}
+          >
+            <Text style={styles.repsLabel}>REPS</Text>
+            <Text style={styles.repsCountHost}>{safeHost.reps ?? 0}</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
     </View>
@@ -552,7 +561,6 @@ function ChallengerTile({
         streamId={safe.streamId}
         rtcUid={safe.rtcUid}
         label={safe.handle}
-        flag={safe.flag}
         role="challenger"
         isLocal={isLocal}
         hasRemote={hasRemote}
@@ -562,11 +570,8 @@ function ChallengerTile({
         mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
-      <View style={styles.tileTop}>
-        <Text style={styles.tileFlag}>{safe.flag}</Text>
-        <Text style={styles.tileHandle} numberOfLines={1}>
-          {safe.handle}
-        </Text>
+      <View style={styles.tileTop} pointerEvents="none">
+        <AthleteHandlePill handle={safe.handle} flag={safe.flag} tone="rival" />
       </View>
       <View style={styles.tileReps}>
         <Text style={styles.tileRepsText}>{safe.reps ?? 0}</Text>
@@ -591,6 +596,7 @@ function DualFocusPane({
   micMuted,
   mediaReady = false,
   overlaysVisible = true,
+  topInset = 50,
 }) {
   const isHost = variant === 'host';
   const safe = athlete || (isHost ? DEFAULT_HOST : DEFAULT_CHALLENGERS[0]);
@@ -600,7 +606,6 @@ function DualFocusPane({
         streamId={safe.streamId}
         rtcUid={safe.rtcUid}
         label={safe.handle}
-        flag={safe.flag}
         role={isHost ? 'host' : 'challenger'}
         isLocal={isLocal}
         hasRemote={hasRemote}
@@ -610,14 +615,30 @@ function DualFocusPane({
         mediaReady={mediaReady}
         style={StyleSheet.absoluteFillObject}
       />
+      {/* Host: top-left · Rival: bottom-left — always visible in clean mode */}
+      <View
+        style={
+          isHost
+            ? [styles.handleAnchorHost, { paddingTop: topInset }]
+            : styles.handleAnchorRival
+        }
+        pointerEvents="none"
+      >
+        <AthleteHandlePill
+          handle={safe.handle}
+          flag={safe.flag}
+          tone={isHost ? 'host' : 'rival'}
+        />
+      </View>
       {overlaysVisible ? (
-        <View style={styles.overlayRow} pointerEvents="box-none">
-          <View style={styles.handleBadge}>
-            <Text style={styles.flagText}>{safe.flag}</Text>
-            <Text style={styles.handleText} numberOfLines={1}>
-              {safe.handle}
-            </Text>
-          </View>
+        <View
+          style={
+            isHost
+              ? [styles.statsAnchorHost, { top: topInset + 4 }]
+              : styles.statsAnchorRival
+          }
+          pointerEvents="box-none"
+        >
           <TouchableOpacity
             style={isHost ? styles.hostRepsBadge : styles.challengerRepsBadge}
             onPress={onRepPress}
@@ -904,12 +925,17 @@ function Live1v1BattleScreenInner({
   const spawnFloatingReaction = useCallback((emoji, options = {}) => {
     const id = `rx-${Date.now()}-${reactionSeq++}`;
     const isToast = options.placement === 'toast';
-    const left = isToast
-      ? Math.max(24, (SCREEN_W - 220) / 2)
-      : options.left ?? Math.max(12, Math.random() * (SCREEN_W - 56));
+    // Vote toasts rise from glove columns; other floats stay mid-lower.
+    let left = options.left;
+    if (left == null) {
+      if (isToast && options.side === 'host') left = SCREEN_W * 0.12;
+      else if (isToast && options.side === 'rival') left = SCREEN_W * 0.52;
+      else if (isToast) left = Math.max(24, (SCREEN_W - 200) / 2);
+      else left = Math.max(12, Math.random() * (SCREEN_W - 56));
+    }
     const opacity = new Animated.Value(0);
-    const translateY = new Animated.Value(isToast ? -8 : 0);
-    const scale = new Animated.Value(0.6);
+    const translateY = new Animated.Value(0);
+    const scale = new Animated.Value(0.7);
 
     setFloatingReactions((prev) => [
       ...prev.slice(-22),
@@ -926,25 +952,26 @@ function Live1v1BattleScreenInner({
     ]);
 
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: 140, useNativeDriver: true }),
       Animated.spring(scale, {
         toValue: options.burst ? 1.35 : 1,
         friction: 5,
         useNativeDriver: true,
       }),
       Animated.timing(translateY, {
+        // Glove toasts stream UP from the bottom bar (never park on upper video).
         toValue: isToast
-          ? 10
+          ? -110 - Math.random() * 36
           : options.burst
             ? -180 - Math.random() * 40
             : -150,
-        duration: isToast ? 900 : options.burst ? 1200 : 1500,
+        duration: isToast ? 1100 : options.burst ? 1200 : 1500,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       Animated.sequence([
-        Animated.delay(isToast ? 1100 : options.burst ? 700 : 900),
-        Animated.timing(opacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+        Animated.delay(isToast ? 900 : options.burst ? 700 : 900),
+        Animated.timing(opacity, { toValue: 0, duration: 420, useNativeDriver: true }),
       ]),
     ]).start(() => {
       setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
@@ -965,8 +992,9 @@ function Live1v1BattleScreenInner({
       if (type === 'VOTE_HOST') {
         setHostVotes((n) => n + 1);
         spawnFloatingReaction('🥊', {
-          left: SCREEN_W * 0.18,
-          text: `VOTED ${hostAthlete.label}`,
+          placement: 'toast',
+          side: 'host',
+          text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
         });
         return;
       }
@@ -980,12 +1008,13 @@ function Live1v1BattleScreenInner({
           )
         );
         spawnFloatingReaction('🥊', {
-          left: SCREEN_W * 0.55,
+          placement: 'toast',
+          side: 'rival',
           text: 'VOTED RIVAL',
         });
       }
     },
-    [hostAthlete.label, spawnFloatingReaction]
+    [hostAthlete.handle, hostAthlete.label, spawnFloatingReaction]
   );
 
   const focusedRivalRef = useRef(focusedRival);
@@ -1184,6 +1213,7 @@ function Live1v1BattleScreenInner({
     onVote?.('host', focusedRival?.id);
     spawnFloatingReaction('🥊', {
       placement: 'toast',
+      side: 'host',
       text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
     });
     if (battleId) {
@@ -1207,6 +1237,7 @@ function Live1v1BattleScreenInner({
     onVote?.('challenger', rivalId);
     spawnFloatingReaction('🥊', {
       placement: 'toast',
+      side: 'rival',
       text: `VOTED ${focusedRival?.handle || focusedRival?.label || 'RIVAL'}`,
     });
     if (battleId) {
@@ -1257,6 +1288,11 @@ function Live1v1BattleScreenInner({
     focusedRival || challengers?.[0] || DEFAULT_CHALLENGERS[0];
   const hostVotesLabel = formatVoteCount(hostVotes);
   const rivalVotesLabel = formatVoteCount(rivalVotes);
+  /** Keep host handle / top HUD clear of the status-bar clock. */
+  const hostTopInset =
+    (Platform.OS === 'android'
+      ? StatusBar.currentHeight || 40
+      : Math.max(insets.top, 44)) + 10;
 
   // Never return null/undefined — always mount a full arena tree.
   return (
@@ -1278,6 +1314,7 @@ function Live1v1BattleScreenInner({
                 live
                 overlaysVisible={showControls}
                 mediaReady={mediaReady}
+                topInset={hostTopInset}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1326,6 +1363,7 @@ function Live1v1BattleScreenInner({
                 variant="host"
                 overlaysVisible={showControls}
                 mediaReady={mediaReady}
+                topInset={hostTopInset}
                 onRepPress={() => {
                   bumpHud();
                   handleHostRep();
@@ -1389,15 +1427,7 @@ function Live1v1BattleScreenInner({
         pointerEvents={showControls ? 'box-none' : 'none'}
       >
         <View
-          style={[
-            styles.hudTopBlock,
-            {
-              paddingTop:
-                Platform.OS === 'android'
-                  ? StatusBar.currentHeight || 40
-                  : 50,
-            },
-          ]}
+          style={[styles.hudTopBlock, { paddingTop: hostTopInset }]}
           pointerEvents="box-none"
         >
           <View style={styles.header}>
@@ -2062,20 +2092,7 @@ const styles = StyleSheet.create({
     top: 6,
     left: 6,
     right: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 3,
-  },
-  tileFlag: { fontSize: 11 },
-  tileHandle: {
-    color: WHITE,
-    fontSize: 9,
-    fontWeight: '800',
-    flexShrink: 1,
+    zIndex: 4,
   },
   tileReps: {
     position: 'absolute',
@@ -2117,34 +2134,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.8,
   },
-  avatarPlaceholder: {
+  streamFallback: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PANEL_RIVAL,
-    gap: 6,
-  },
-  avatarPlaceholderHost: {
-    backgroundColor: PANEL_HOST,
-  },
-  avatarPlaceholderRival: {
-    backgroundColor: PANEL_RIVAL,
-  },
-  avatarCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: SURFACE,
-    borderWidth: 2,
-    borderColor: ORANGE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarCircleHost: {
-    borderColor: ORANGE,
-  },
-  avatarCircleRival: {
-    borderColor: CYAN,
   },
   participantHudHidden: {
     height: 0,
@@ -2154,48 +2147,60 @@ const styles = StyleSheet.create({
     width: 0,
     height: 0,
   },
-  avatarInitial: {
-    color: WHITE,
-    fontSize: 26,
-    fontWeight: '900',
-  },
-  avatarFlag: {
-    fontSize: 18,
-  },
-  overlayRow: {
+  handleAnchorHost: {
     position: 'absolute',
-    top: 12,
+    top: 0,
     left: 12,
+    zIndex: 6,
+    maxWidth: '70%',
+  },
+  handleAnchorRival: {
+    position: 'absolute',
+    left: 12,
+    bottom: 72,
+    zIndex: 6,
+    maxWidth: '70%',
+  },
+  statsAnchorHost: {
+    position: 'absolute',
     right: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    zIndex: 5,
+    zIndex: 6,
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  statsAnchorRival: {
+    position: 'absolute',
+    right: 12,
+    bottom: 72,
+    zIndex: 6,
+    alignItems: 'flex-end',
   },
   handleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '58%',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    maxWidth: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
     borderWidth: 1,
-    borderColor: '#333333',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 999,
+  },
+  handleBadgeHost: {
+    borderColor: 'rgba(255,87,34,0.65)',
+  },
+  handleBadgeRival: {
+    borderColor: 'rgba(0,229,255,0.65)',
   },
   flagText: {
-    fontSize: 14,
+    fontSize: 13,
     marginRight: 6,
   },
   handleText: {
     color: WHITE,
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 12,
     flexShrink: 1,
-  },
-  hostMetaCol: {
-    alignItems: 'flex-end',
-    gap: 6,
+    letterSpacing: 0.2,
   },
   paneLivePill: {
     flexDirection: 'row',
@@ -2292,12 +2297,11 @@ const styles = StyleSheet.create({
   },
   floatingItem: {
     position: 'absolute',
-    bottom: '28%',
+    bottom: '22%',
   },
   floatingToastItem: {
     position: 'absolute',
-    top: '35%',
-    alignSelf: 'center',
+    bottom: 118,
   },
   floatingEmoji: {
     fontSize: 34,
