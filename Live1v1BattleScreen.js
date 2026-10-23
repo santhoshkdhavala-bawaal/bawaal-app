@@ -17,7 +17,6 @@ import {
   Platform,
   Animated,
   Easing,
-  Share,
   Modal,
   TextInput,
   Pressable,
@@ -34,7 +33,6 @@ import {
 import {
   castVote,
   incrementReps,
-  sendHype,
   sendReaction,
   subscribeToBattle,
 } from './src/services/battleSyncService';
@@ -660,9 +658,7 @@ function Live1v1BattleScreenInner({
   navigation,
   route,
   onVote,
-  onHype,
   onBanter,
-  onShare,
 }) {
   const insets = useSafeAreaInsets();
   const senderIdRef = useRef('spectator-local');
@@ -806,7 +802,6 @@ function Live1v1BattleScreenInner({
   const rivalPercent = 100 - hostPercent;
 
   const [hostBarAnim] = useState(() => new Animated.Value(hostPercent));
-  const [hypeBurstScale] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     Animated.timing(hostBarAnim, {
@@ -1162,35 +1157,6 @@ function Live1v1BattleScreenInner({
     setViewMode(VIEW_SPOTLIGHT);
   }, []);
 
-  const handleHype = useCallback(() => {
-    bumpHud();
-    setHypeCount((n) => n + 1);
-    onHype?.();
-    Animated.sequence([
-      Animated.timing(hypeBurstScale, {
-        toValue: 1.18,
-        duration: 90,
-        useNativeDriver: true,
-      }),
-      Animated.spring(hypeBurstScale, {
-        toValue: 1,
-        friction: 4,
-        useNativeDriver: true,
-      }),
-    ]).start();
-    for (let i = 0; i < 6; i += 1) {
-      setTimeout(() => {
-        spawnFloatingReaction('🔥', {
-          burst: true,
-          left: 20 + Math.random() * (SCREEN_W - 64),
-        });
-      }, i * 55);
-    }
-    if (battleId) {
-      void sendHype(battleId, senderIdRef.current);
-    }
-  }, [battleId, bumpHud, hypeBurstScale, onHype, spawnFloatingReaction]);
-
   const submitBanter = useCallback(() => {
     const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
     setBanterOpen(false);
@@ -1267,18 +1233,6 @@ function Live1v1BattleScreenInner({
     }
   }, [battleId, focusedRival]);
 
-  const handleShare = useCallback(async () => {
-    onShare?.();
-    try {
-      await Share.share({
-        message: `Watch BATTLE BAWAAL live — ${hostAthlete.handle} arena on BAWAAL!`,
-        title: 'BAWAAL Live Arena',
-      });
-    } catch (_) {
-      /* dismissed */
-    }
-  }, [hostAthlete.handle, onShare]);
-
   const gridAthletes = (challengers?.length ? challengers : DEFAULT_CHALLENGERS).slice(0, 9);
   const safeHostAthlete = hostAthlete || DEFAULT_HOST;
   const rivalAthlete =
@@ -1327,7 +1281,10 @@ function Live1v1BattleScreenInner({
             </View>
             <ScrollView
               style={styles.gridScroll}
-              contentContainerStyle={styles.gridContent}
+              contentContainerStyle={[
+                styles.gridContent,
+                styles.gridContentBottomClearance,
+              ]}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.grid}>
@@ -1404,18 +1361,6 @@ function Live1v1BattleScreenInner({
           </View>
         )}
 
-        {voteHintVisible && showControls ? (
-          <Animated.View
-            style={[styles.voteHintBanner, { opacity: hintOpacity }]}
-            pointerEvents="none"
-          >
-            <Text style={styles.voteHintText}>
-              TAP GLOVES TO VOTE · TAP SCREEN TO SHOW HUD
-            </Text>
-          </Animated.View>
-        ) : (
-          <View style={styles.voteHintSpacer} />
-        )}
       </View>
 
       {/* Floating HUD chrome — transparent stack above gloves (no dark patches) */}
@@ -1469,6 +1414,7 @@ function Live1v1BattleScreenInner({
               <View style={styles.liveDot} />
               <Text style={styles.liveText} numberOfLines={1}>
                 {rtcJoined ? 'LIVE' : match.spectatorsLabel}
+                {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
               </Text>
             </View>
           </View>
@@ -1500,11 +1446,8 @@ function Live1v1BattleScreenInner({
               <Text style={styles.watchRosterBtnText}>👁️ WATCH</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        <View style={styles.hudMidTapZone} pointerEvents="none" />
-
-        <View style={styles.hudBottomBlock} pointerEvents="box-none">
+          {/* Camera tools live in the top HUD — keep lower third clear */}
           <ParticipantHudToolbar
             visible={isBroadcaster}
             micMuted={micMuted}
@@ -1523,6 +1466,21 @@ function Live1v1BattleScreenInner({
             }}
           />
 
+          {voteHintVisible ? (
+            <Animated.View
+              style={[styles.voteHintBanner, { opacity: hintOpacity }]}
+              pointerEvents="none"
+            >
+              <Text style={styles.voteHintText}>
+                TAP GLOVES TO VOTE · TAP SCREEN TO TOGGLE HUD
+              </Text>
+            </Animated.View>
+          ) : null}
+        </View>
+
+        <View style={styles.hudMidTapZone} pointerEvents="none" />
+
+        <View style={styles.hudBottomBlock} pointerEvents="box-none">
           <View style={styles.pollSection}>
             <View style={styles.pollLabelRow}>
               <TouchableOpacity
@@ -1584,50 +1542,13 @@ function Live1v1BattleScreenInner({
               </Animated.View>
             </View>
           </View>
-
-          <View style={styles.actionTray}>
-            <Animated.View style={{ transform: [{ scale: hypeBurstScale }] }}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleHype}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.actionIcon}>🔥</Text>
-                <Text style={styles.actionLabel}>HYPE ({hypeCount})</Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                bumpHud();
-                setBanterOpen(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionIcon}>💬</Text>
-              <Text style={styles.actionLabel}>BANTER</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                bumpHud();
-                handleShare();
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.actionIcon}>🚀</Text>
-              <Text style={styles.actionLabel}>SHARE</Text>
-            </TouchableOpacity>
-          </View>
         </View>
       </Animated.View>
 
       <FloatingReactionLayer reactions={floatingReactions || []} />
       </Pressable>
 
-      {/* Floating gloves only — transparent, always visible in clean mode */}
+      {/* Bottom dock: VOTE HOST · BANTER · VOTE RIVAL — transparent float */}
       <View
         style={[
           styles.persistentGlovesDock,
@@ -1647,6 +1568,23 @@ function Live1v1BattleScreenInner({
             <Text style={styles.gloveEmojiFloat}>🥊</Text>
             <Text style={[styles.actionLabel, styles.actionLabelHost]}>
               VOTE HOST
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.persistentGloveBtn}
+            onPress={() => {
+              bumpHud();
+              setBanterOpen(true);
+            }}
+            activeOpacity={0.75}
+            hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+            accessibilityRole="button"
+            accessibilityLabel="Open banter"
+          >
+            <Text style={styles.banterEmojiFloat}>💬</Text>
+            <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
+              BANTER
             </Text>
           </TouchableOpacity>
 
@@ -1803,9 +1741,9 @@ const styles = StyleSheet.create({
   },
   persistentGlovesTray: {
     flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    marginHorizontal: 28,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginHorizontal: 36,
     paddingVertical: 4,
     backgroundColor: 'transparent',
     borderWidth: 0,
@@ -1815,7 +1753,8 @@ const styles = StyleSheet.create({
   persistentGloveBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 96,
+    minWidth: 84,
+    maxWidth: 110,
     zIndex: 101,
     backgroundColor: 'transparent',
   },
@@ -1843,28 +1782,26 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderTopWidth: 0,
     shadowOpacity: 0,
-    // Float poll / tools just above the gloves
-    marginBottom: 78,
+    // Poll sits above the 3-item floating dock
+    marginBottom: 96,
     paddingBottom: 4,
   },
   voteHintBanner: {
-    position: 'absolute',
     alignSelf: 'center',
-    bottom: '24%',
-    left: 32,
-    right: 32,
+    marginTop: 8,
+    marginBottom: 4,
+    marginHorizontal: 16,
     backgroundColor: 'transparent',
     borderWidth: 0,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    zIndex: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
   },
   voteHintText: {
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '800',
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 9,
+    fontWeight: '700',
     textAlign: 'center',
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
   },
   header: {
     flexDirection: 'row',
@@ -1941,10 +1878,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'center',
-    marginTop: 4,
-    marginBottom: 6,
+    marginTop: 6,
+    marginBottom: 2,
     paddingHorizontal: 6,
-    paddingVertical: 4,
+    paddingVertical: 2,
     backgroundColor: 'transparent',
     borderWidth: 0,
   },
@@ -2061,6 +1998,10 @@ const styles = StyleSheet.create({
   gridContent: {
     padding: GRID_GAP,
   },
+  gridContentBottomClearance: {
+    // Keep challenger tiles / rep numbers out of the floating vote dock
+    paddingBottom: 120,
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2152,10 +2093,6 @@ const styles = StyleSheet.create({
   participantHudHidden: {
     height: 0,
     overflow: 'hidden',
-  },
-  voteHintSpacer: {
-    width: 0,
-    height: 0,
   },
   handleAnchorInPane: {
     position: 'absolute',
@@ -2492,6 +2429,13 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  banterEmojiFloat: {
+    fontSize: 26,
+    marginBottom: 2,
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   actionLabel: {
     color: MUTED,
     fontSize: 9,
@@ -2504,6 +2448,7 @@ const styles = StyleSheet.create({
   },
   actionLabelHost: { color: ORANGE },
   actionLabelRival: { color: '#00E5FF' },
+  actionLabelBanter: { color: WHITE },
   banterOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
