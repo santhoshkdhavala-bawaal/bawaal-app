@@ -1,7 +1,7 @@
 /**
  * ChallengerArena — Agora-backed Live Arena entry + local camera tile helpers.
  *
- * Spectator HUD: CHALLENGERS pill at top:75 / left:16 (below Host handle).
+ * Spectator HUD: CHALLENGERS pill at top:75 / left:15 (below Host handle).
  * Local video:
  * - isCameraOn === true  → permissions → enableVideo + startPreview + RtcSurfaceView uid:0
  * - isCameraOn === false → STANDBY flag placeholder
