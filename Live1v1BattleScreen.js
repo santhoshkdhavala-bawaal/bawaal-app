@@ -1093,26 +1093,30 @@ function Live1v1BattleScreenInner({
     []
   );
 
+  /** Local hardware only — host/rival never mutate the other athlete's stream. */
   const handleFlipCamera = useCallback(() => {
+    if (!isParticipant) return;
     setCameraFacing((prev) => (prev === 'front' ? 'back' : 'front'));
     switchCamera();
-  }, []);
+  }, [isParticipant]);
 
   const handleToggleMic = useCallback(() => {
+    if (!isParticipant) return;
     setMicMuted((prev) => {
       const next = !prev;
       muteLocalAudioStream(next);
       return next;
     });
-  }, []);
+  }, [isParticipant]);
 
   const handleToggleCamera = useCallback(() => {
+    if (!isParticipant) return;
     setCameraOff((prev) => {
       const next = !prev;
       muteLocalVideoStream(next);
       return next;
     });
-  }, []);
+  }, [isParticipant]);
 
   useEffect(() => {
     if (!battleId) return undefined;

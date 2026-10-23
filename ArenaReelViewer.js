@@ -12,7 +12,10 @@ import {
   Dimensions,
   StatusBar,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 const BG = '#000000';
@@ -51,6 +54,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const [draft, setDraft] = useState('');
   const [showBanter, setShowBanter] = useState(true);
   const [toast, setToast] = useState('');
+  const [moreOpen, setMoreOpen] = useState(false);
   const [activeGifs, setActiveGifs] = useState([
     { id: 'g1', emoji: '🔥', x: 0.72, y: 0.28 },
     { id: 'g2', emoji: '💪', x: 0.18, y: 0.42 },
@@ -69,10 +73,13 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
 
   useEffect(() => {
     if (!visible || !reel) return undefined;
+    // Sync reel props into local UI when the viewer opens / switches clips.
+    /* eslint-disable react-hooks/set-state-in-effect, react-hooks/immutability -- reel open reset + expo-video player API */
     setHype(reel.hypeCount || 0);
     setBanter(reel.banter?.length ? reel.banter : DEMO_BANTER);
     setDraft('');
     setShowBanter(true);
+    setMoreOpen(false);
     let cancelled = false;
     (async () => {
       try {
@@ -87,6 +94,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
         /* ignore */
       }
     })();
+    /* eslint-enable react-hooks/set-state-in-effect, react-hooks/immutability */
     return () => {
       cancelled = true;
       try {
@@ -125,9 +133,12 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setDraft('');
   };
 
+  // Keep right rail clear of the horizontal emoji quick-reaction row.
+  const actionStackBottom = 120 + Math.max(insets.bottom, 0);
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <StatusBar barStyle="light-content" backgroundColor={BG} />
+      <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
         {uri ? (
           <VideoView
@@ -156,21 +167,65 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </Text>
         ))}
 
-        <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 12) }]}>
-          <Text style={styles.topHint}>IMMERSIVE · BANTER + GIFS</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-            <Text style={styles.closeText}>✕</Text>
-          </TouchableOpacity>
-        </View>
+        <SafeAreaView edges={['top']} style={styles.topSafe}>
+          <View
+            style={[
+              styles.topBar,
+              {
+                paddingTop:
+                  Platform.OS === 'android'
+                    ? Math.max(StatusBar.currentHeight || 0, 8)
+                    : 4,
+              },
+            ]}
+          >
+            <View style={styles.topTitleBlock}>
+              <Text style={styles.topHandle} numberOfLines={1}>
+                {handle}
+              </Text>
+              <Text style={styles.topHint}>ARENA REEL</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+              <Text style={styles.closeText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
 
         {!!toast && (
-          <View style={[styles.toast, { top: Math.max(insets.top, 12) + 48 }]}>
+          <View style={[styles.toast, { top: Math.max(insets.top, 12) + 56 }]}>
             <Text style={styles.toastText}>{toast}</Text>
           </View>
         )}
 
-        {/* Right action stack — Fire, Banter, Reshare, Repost */}
-        <View style={[styles.actionStack, { bottom: Math.max(insets.bottom, 16) + 120 }]}>
+        {/* Right action stack — above emoji tray; secondary actions in ⋮ menu */}
+        <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
+          {moreOpen ? (
+            <>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setMoreOpen(false);
+                  flashToast('RESHARED TO ARENA');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.actionEmoji}>🚀</Text>
+                <Text style={styles.actionCount}>RESHARE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setMoreOpen(false);
+                  flashToast('REPOSTED');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.actionEmoji}>♻️</Text>
+                <Text style={styles.actionCount}>REPOST</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => setHype((n) => n + 1)}
@@ -189,24 +244,23 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => flashToast('RESHARED TO ARENA')}
+            onPress={() => setMoreOpen((v) => !v)}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="More actions"
           >
-            <Text style={styles.actionEmoji}>🚀</Text>
-            <Text style={styles.actionCount}>RESHARE</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => flashToast('REPOSTED')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.actionEmoji}>♻️</Text>
-            <Text style={styles.actionCount}>REPOST</Text>
+            <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
+            <Text style={styles.actionCount}>MORE</Text>
           </TouchableOpacity>
         </View>
 
         {/* Bottom-left creator + caption */}
-        <View style={[styles.bottomLeft, { bottom: Math.max(insets.bottom, 16) + (showBanter ? 150 : 24) }]}>
+        <View
+          style={[
+            styles.bottomLeft,
+            { bottom: Math.max(insets.bottom, 16) + (showBanter ? 150 : 72) },
+          ]}
+        >
           <Text style={styles.handle}>{handle}</Text>
           <Text style={styles.caption} numberOfLines={3}>
             {reel.caption || reel.title || ''}
@@ -298,23 +352,37 @@ const styles = StyleSheet.create({
     fontSize: 36,
     zIndex: 5,
   },
-  topBar: {
+  topSafe: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     zIndex: 20,
+    backgroundColor: 'transparent',
+  },
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 10,
+  },
+  topTitleBlock: {
+    flexShrink: 1,
+    paddingRight: 12,
+  },
+  topHandle: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.2,
   },
   topHint: {
     color: MUTED,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.4,
+    marginTop: 2,
   },
   toast: {
     position: 'absolute',
@@ -347,15 +415,22 @@ const styles = StyleSheet.create({
   actionStack: {
     position: 'absolute',
     right: 12,
+    bottom: 120,
     zIndex: 15,
     alignItems: 'center',
-    gap: 16,
+    gap: 14,
   },
   actionBtn: {
     alignItems: 'center',
   },
   actionEmoji: {
     fontSize: 28,
+  },
+  moreDots: {
+    color: WHITE,
+    fontSize: 28,
+    fontWeight: '900',
+    lineHeight: 30,
   },
   actionCount: {
     color: WHITE,
