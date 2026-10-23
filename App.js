@@ -8,7 +8,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import MainTabs from './MainTabs';
 import ChallengeScreen from './ChallengeScreen';
 import LeaderboardScreen from './LeaderboardScreen';
-import Live1v1BattleScreen from './Live1v1BattleScreen';
+import Live1v1BattleScreen from './ChallengerArena';
 import RoleSelection from './RoleSelection';
 import AthleteDashboard from './AthleteDashboard';
 import { COLORS } from './theme';
