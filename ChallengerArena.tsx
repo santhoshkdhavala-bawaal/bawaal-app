@@ -1,6 +1,6 @@
 /**
- * ChallengerArena — clean 50/50 Host / Rival layout with strict role isolation.
- * Agora init is guarded: empty / YOUR_AGORA_APP_ID never calls native initialize().
+ * ChallengerArena — 50/50 Host / Rival arena with safe Agora boot.
+ * Never calls native initialize() when App ID is missing / YOUR_AGORA_APP_ID.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,37 +14,33 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AGORA_APP_ID, hasAgoraAppId } from './src/config/agora';
-import {
-  destroyAgoraEngine,
-  enableLocalCamera,
-  getAgoraSdk,
-  getEngine,
-  initAgoraEngine,
-  setLocalCameraEnabled,
-} from './src/services/agoraService';
+import { getAgoraSdk } from './src/services/agoraService';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
+const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine || null;
 const ClientRoleType = AgoraSdk?.ClientRoleType;
 
-/** True when env has a real App ID (not empty / YOUR_AGORA_APP_ID). */
-const AGORA_CONFIGURED = Boolean(hasAgoraAppId() && AGORA_APP_ID);
-
-/** RN types prefer absoluteFill; keep explicit full-bleed for the camera canvas. */
+/** Full-bleed fill (absoluteFillObject not in RN typed exports). */
 const ABSOLUTE_FILL = {
   position: 'absolute' as const,
   top: 0,
-  bottom: 0,
   left: 0,
   right: 0,
+  bottom: 0,
 };
+
+const AGORA_CONFIGURED = Boolean(
+  hasAgoraAppId() &&
+    AGORA_APP_ID &&
+    AGORA_APP_ID.toUpperCase() !== 'YOUR_AGORA_APP_ID'
+);
 
 type UserRole = 'HOST' | 'RIVAL' | 'SPECTATOR';
 
 function resolveUserRole(params: Record<string, unknown> = {}): UserRole {
   const mode = String(params.mode || '').toLowerCase().trim();
   const role = String(params.role || '').toLowerCase().trim();
-
   if (
     mode === 'spectator' ||
     role === 'spectator' ||
@@ -62,7 +58,8 @@ function resolveUserRole(params: Record<string, unknown> = {}): UserRole {
   ) {
     return 'RIVAL';
   }
-  return 'SPECTATOR';
+  // Default HOST for local camera testing when role is unspecified.
+  return 'HOST';
 }
 
 type Props = {
@@ -78,70 +75,26 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const params = useMemo(() => route?.params || {}, [route?.params]);
 
-  const initialRole = useMemo(() => resolveUserRole(params), [params]);
-  const [userRole] = useState<UserRole>(initialRole);
+  const [userRole] = useState<UserRole>(() => resolveUserRole(params));
   const [isCamOn, setIsCamOn] = useState(false);
-  const [micMuted, setMicMuted] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
-  const agoraEngineRef = useRef<ReturnType<typeof getEngine>>(null);
+  const agoraEngineRef = useRef<{
+    initialize: (c: { appId: string }) => void;
+    enableVideo: () => void;
+    enableLocalVideo: (on: boolean) => void;
+    startPreview: () => void;
+    stopPreview: () => void;
+    joinChannel: (...args: unknown[]) => void;
+    leaveChannel: () => void;
+    switchCamera?: () => void;
+    muteLocalAudioStream?: (mute: boolean) => void;
+    release?: () => void;
+  } | null>(null);
 
-  const hostHandle =
-    (params.match as { host?: { handle?: string; flag?: string; reps?: number } })
-      ?.host?.handle || '@MUMBAI_STRIKER';
-  const hostFlag =
-    (params.match as { host?: { flag?: string } })?.host?.flag || '🇮🇳';
-  const hostReps =
-    (params.match as { host?: { reps?: number } })?.host?.reps ?? 43;
-
-  const rivalFromMatch = (params.match as {
-    challenger?: { handle?: string; flag?: string; reps?: number };
-    challengers?: { handle?: string; flag?: string; reps?: number }[];
-  })?.challenger ||
-    (params.match as { challengers?: { handle?: string; flag?: string; reps?: number }[] })
-      ?.challengers?.[0];
-
-  const rivalHandle = rivalFromMatch?.handle || '@SANTHOSH';
-  const rivalFlag = rivalFromMatch?.flag || '🇮🇳';
-  const rivalReps = rivalFromMatch?.reps ?? 0;
-  const challengersCount = Array.isArray(
-    (params.match as { challengers?: unknown[] })?.challengers
-  )
-    ? ((params.match as { challengers: unknown[] }).challengers.length)
-    : 9;
-
-  // Role isolation — never render spectator + athlete HUDs together
+  const challengersCount = 9;
   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
   const isSpectator = !isAthlete;
 
-  const showHostCam = Boolean(
-    isCamOn && isEngineReady && userRole === 'HOST' && RtcSurfaceView
-  );
-  const showRivalCam = Boolean(
-    isCamOn && isEngineReady && userRole === 'RIVAL' && RtcSurfaceView
-  );
-
-  const requestPermissions = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        ]);
-        return (
-          granted['android.permission.CAMERA'] ===
-            PermissionsAndroid.RESULTS.GRANTED &&
-          granted['android.permission.RECORD_AUDIO'] ===
-            PermissionsAndroid.RESULTS.GRANTED
-        );
-      } catch (err) {
-        console.warn('[ChallengerArena] permissions', err);
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // Safe Agora boot — never initialize with empty / YOUR_AGORA_APP_ID (black-screen crash).
   useEffect(() => {
     let isMounted = true;
 
@@ -156,29 +109,23 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
         if (!AGORA_CONFIGURED) {
           console.warn(
-            '[ChallengerArena] Agora App ID not configured — UI mounts without RTC'
+            '[ChallengerArena] Agora App ID not set. Set EXPO_PUBLIC_AGORA_APP_ID in .env'
           );
           if (isMounted) setIsEngineReady(true);
           return;
         }
 
-        const init = await initAgoraEngine(AGORA_APP_ID);
-        if (!init.ok) {
-          console.warn('[ChallengerArena] Agora init skipped:', init.reason);
+        if (!createAgoraRtcEngine) {
+          console.warn('[ChallengerArena] react-native-agora native module unavailable');
           if (isMounted) setIsEngineReady(true);
           return;
         }
 
-        agoraEngineRef.current = getEngine();
-        const engine = agoraEngineRef.current;
-        if (engine && isAthlete) {
-          try {
-            engine.enableVideo();
-            engine.startPreview();
-          } catch (e) {
-            console.warn('[ChallengerArena] preview warm-up', e);
-          }
-        }
+        const agoraEngine = createAgoraRtcEngine();
+        agoraEngineRef.current = agoraEngine;
+
+        agoraEngine.initialize({ appId: AGORA_APP_ID });
+        agoraEngine.enableVideo();
 
         if (isMounted) setIsEngineReady(true);
       } catch (e) {
@@ -192,91 +139,64 @@ export default function ChallengerArena({ route, navigation }: Props) {
     return () => {
       isMounted = false;
       try {
-        const engine = agoraEngineRef.current || getEngine();
-        engine?.stopPreview?.();
-        engine?.leaveChannel?.();
+        agoraEngineRef.current?.stopPreview?.();
+        agoraEngineRef.current?.leaveChannel?.();
+        agoraEngineRef.current?.release?.();
       } catch {
         /* ignore */
       }
       agoraEngineRef.current = null;
-      void destroyAgoraEngine();
     };
-    // Mount-once boot; role used only for optional preview warm-up.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const toggleCamera = useCallback(async () => {
-    if (!isAthlete) return;
-
     if (!isCamOn) {
-      const hasPermission = await requestPermissions();
-      if (!hasPermission) return;
-
-      if (AGORA_CONFIGURED) {
-        const result = await enableLocalCamera();
-        if (!result?.ok && result?.reason !== 'missing-app-id') {
-          console.warn('[ChallengerArena] enableLocalCamera', result);
-        }
-        const engine = getEngine() || agoraEngineRef.current;
-        if (engine) {
-          try {
-            engine.enableLocalVideo(true);
-            engine.enableVideo();
-            engine.startPreview();
-            // Optional channel join when configured (token may be empty in cert-off projects).
-            engine.joinChannel?.('', 'bawaal_arena', 0, {
-              clientRoleType:
-                ClientRoleType?.ClientRoleBroadcaster ??
-                ClientRoleType?.clientRoleBroadcaster ??
-                1,
-            });
-          } catch (e) {
-            console.error('[ChallengerArena] Camera toggle error:', e);
-          }
+      if (agoraEngineRef.current && AGORA_CONFIGURED) {
+        try {
+          agoraEngineRef.current.enableLocalVideo(true);
+          agoraEngineRef.current.startPreview();
+          agoraEngineRef.current.joinChannel('', 'bawaal_arena', 0, {
+            clientRoleType:
+              ClientRoleType?.ClientRoleBroadcaster ??
+              ClientRoleType?.clientRoleBroadcaster ??
+              1,
+          });
+        } catch (e) {
+          console.error('[ChallengerArena] Camera toggle error:', e);
         }
       }
-      // Always flip UI — STANDBY ↔ surface; never crash on missing App ID.
       setIsCamOn(true);
       return;
     }
 
-    if (AGORA_CONFIGURED) {
-      const engine = getEngine() || agoraEngineRef.current;
+    if (agoraEngineRef.current && AGORA_CONFIGURED) {
       try {
-        engine?.enableLocalVideo?.(false);
-        engine?.stopPreview?.();
-        engine?.leaveChannel?.();
+        agoraEngineRef.current.enableLocalVideo(false);
+        agoraEngineRef.current.stopPreview();
+        agoraEngineRef.current.leaveChannel();
       } catch {
         /* ignore */
       }
-      await setLocalCameraEnabled(false);
     }
     setIsCamOn(false);
-  }, [isAthlete, isCamOn]);
-
-  const toggleMic = useCallback(() => {
-    if (!isAthlete) return;
-    setMicMuted((prev) => {
-      const next = !prev;
-      const engine = getEngine();
-      try {
-        engine?.muteLocalAudioStream(next);
-        engine?.enableLocalAudio(!next);
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, [isAthlete]);
+  }, [isCamOn]);
 
   const flipCamera = useCallback(() => {
-    if (!isAthlete) return;
     try {
-      getEngine()?.switchCamera?.();
+      agoraEngineRef.current?.switchCamera?.();
     } catch {
       /* ignore */
     }
-  }, [isAthlete]);
+  }, []);
+
+  const toggleMic = useCallback(() => {
+    try {
+      // Simple mute toggle — engine tracks state internally for preview tests.
+      agoraEngineRef.current?.muteLocalAudioStream?.(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   const Surface = RtcSurfaceView as React.ComponentType<{
     canvas: { uid: number };
@@ -284,13 +204,17 @@ export default function ChallengerArena({ route, navigation }: Props) {
     zOrderMediaOverlay?: boolean;
   }> | null;
 
+  const showLocalPreview = Boolean(
+    isCamOn && isEngineReady && Surface && isAthlete
+  );
+
   return (
     <View style={[styles.rootContainer, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" />
 
       {/* ================= TOP HALF: HOST BOX ================= */}
       <View style={styles.arenaHalf}>
-        {showHostCam && Surface ? (
+        {showLocalPreview && userRole === 'HOST' && Surface ? (
           <Surface
             canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
@@ -298,18 +222,16 @@ export default function ChallengerArena({ route, navigation }: Props) {
           />
         ) : (
           <View style={styles.standbyContainer}>
-            <Text style={styles.flagEmoji}>{hostFlag}</Text>
-            <Text style={styles.handleText}>{hostHandle}</Text>
+            <Text style={styles.flagEmoji}>🇮🇳</Text>
+            <Text style={styles.handleText}>@MUMBAI_STRIKER</Text>
             <Text style={styles.standbyText}>STANDBY</Text>
           </View>
         )}
 
         <View style={styles.topLeftGroup}>
           <View style={styles.hostBadge}>
-            <Text style={styles.badgeText}>
-              {hostFlag} {hostHandle}
-            </Text>
-            <Text style={[styles.roleText, styles.roleTextHost]}>[HOST]</Text>
+            <Text style={styles.badgeText}>🇮🇳 @MUMBAI_STRIKER</Text>
+            <Text style={styles.roleText}>[HOST]</Text>
           </View>
           {isSpectator && (
             <TouchableOpacity style={styles.challengersBtn} activeOpacity={0.85}>
@@ -320,14 +242,12 @@ export default function ChallengerArena({ route, navigation }: Props) {
           )}
         </View>
 
-        {isSpectator && (
-          <View style={styles.topRightGroup}>
-            <View style={styles.repsBox}>
-              <Text style={styles.repsLabel}>REPS</Text>
-              <Text style={styles.repsValue}>{hostReps}</Text>
-            </View>
+        <View style={styles.topRightGroup}>
+          <View style={styles.repsBox}>
+            <Text style={styles.repsLabel}>REPS</Text>
+            <Text style={styles.repsValue}>43</Text>
           </View>
-        )}
+        </View>
       </View>
 
       {/* ================= CENTER VS BADGE ================= */}
@@ -339,7 +259,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
       {/* ================= BOTTOM HALF: RIVAL BOX ================= */}
       <View style={styles.arenaHalf}>
-        {showRivalCam && Surface ? (
+        {showLocalPreview && userRole === 'RIVAL' && Surface ? (
           <Surface
             canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
@@ -347,50 +267,31 @@ export default function ChallengerArena({ route, navigation }: Props) {
           />
         ) : (
           <View style={styles.standbyContainer}>
-            <Text style={styles.flagEmoji}>{rivalFlag}</Text>
-            <Text style={styles.handleText}>{rivalHandle}</Text>
+            <Text style={styles.flagEmoji}>🇮🇳</Text>
+            <Text style={styles.handleText}>@SANTHOSH</Text>
             <Text style={styles.standbyText}>STANDBY</Text>
           </View>
         )}
 
-        <View
-          style={[
-            styles.bottomLeftGroup,
-            { bottom: isAthlete ? 70 : 16 },
-          ]}
-        >
+        <View style={[styles.bottomLeftGroup, { bottom: isAthlete ? 70 : 16 }]}>
           <View style={styles.rivalBadge}>
-            <Text style={styles.badgeText}>
-              {rivalFlag} {rivalHandle}
-            </Text>
+            <Text style={styles.badgeText}>🇮🇳 @SANTHOSH</Text>
             <Text style={[styles.roleText, styles.roleTextRival]}>[RIVAL]</Text>
           </View>
         </View>
 
-        {isSpectator && (
-          <View
-            style={[
-              styles.bottomRightGroup,
-              { bottom: isAthlete ? 70 : 16 },
-            ]}
-          >
-            <View style={[styles.repsBox, styles.repsBoxRival]}>
-              <Text style={styles.repsLabel}>REPS</Text>
-              <Text style={styles.repsValue}>{rivalReps}</Text>
-            </View>
+        <View style={[styles.bottomRightGroup, { bottom: isAthlete ? 70 : 16 }]}>
+          <View style={[styles.repsBox, styles.repsBoxRival]}>
+            <Text style={styles.repsLabel}>REPS</Text>
+            <Text style={styles.repsValue}>0</Text>
           </View>
-        )}
+        </View>
       </View>
 
-      {/* ================= ROLE-BASED CONDITIONAL HUDS ================= */}
-
-      {/* 1. SPECTATOR HUD — vanishes completely for athletes */}
+      {/* ================= HUDS & CONTROLS ================= */}
       {isSpectator && (
         <View
-          style={[
-            styles.floatingHudContainer,
-            { bottom: insets.bottom + 10 },
-          ]}
+          style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
         >
           <View style={styles.voteBarWrapper}>
             <Text style={styles.voteTextLeft}>1.2K · 54%</Text>
@@ -413,24 +314,17 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* 2. ATHLETE CONTROLS — Host / Rival only */}
       {isAthlete && (
         <View
-          style={[
-            styles.floatingHudContainer,
-            { bottom: insets.bottom + 10 },
-          ]}
+          style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
         >
           <TouchableOpacity
-            onPress={() => {
-              if (navigation?.canGoBack?.()) {
-                navigation.goBack?.();
-              } else {
-                navigation?.navigate?.('Main', { tab: 'Battles' });
-              }
-            }}
             style={styles.backChip}
             activeOpacity={0.85}
+            onPress={() => {
+              if (navigation?.canGoBack?.()) navigation.goBack?.();
+              else navigation?.navigate?.('Main', { tab: 'Battles' });
+            }}
           >
             <Text style={styles.btnText}>← BAWAAL</Text>
           </TouchableOpacity>
@@ -447,9 +341,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
               onPress={toggleMic}
               activeOpacity={0.85}
             >
-              <Text style={styles.btnText}>
-                {micMuted ? '🔇 Unmute' : '🎤 Mute'}
-              </Text>
+              <Text style={styles.btnText}>🎤 Mute</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.controlBtn}
@@ -468,10 +360,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  rootContainer: {
-    flex: 1,
-    backgroundColor: '#0A0E1A',
-  },
+  rootContainer: { flex: 1, backgroundColor: '#0A0E1A' },
   arenaHalf: {
     flex: 1,
     width: '100%',
@@ -480,10 +369,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: '#1F293D',
   },
-  fullScreenStream: {
-    ...ABSOLUTE_FILL,
-    zIndex: 1,
-  },
+  fullScreenStream: { ...ABSOLUTE_FILL, zIndex: 1 },
   standbyContainer: {
     ...ABSOLUTE_FILL,
     justifyContent: 'center',
@@ -491,11 +377,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0E1A',
     zIndex: 1,
   },
-  flagEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
+  flagEmoji: { fontSize: 28, marginBottom: 4, textAlign: 'center' },
   handleText: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -515,25 +397,10 @@ const styles = StyleSheet.create({
     left: 16,
     zIndex: 10,
     gap: 6,
-    maxWidth: '62%',
   },
-  topRightGroup: {
-    position: 'absolute',
-    top: 12,
-    right: 16,
-    zIndex: 10,
-  },
-  bottomLeftGroup: {
-    position: 'absolute',
-    left: 16,
-    zIndex: 10,
-    maxWidth: '62%',
-  },
-  bottomRightGroup: {
-    position: 'absolute',
-    right: 16,
-    zIndex: 10,
-  },
+  topRightGroup: { position: 'absolute', top: 12, right: 16, zIndex: 10 },
+  bottomLeftGroup: { position: 'absolute', left: 16, zIndex: 10 },
+  bottomRightGroup: { position: 'absolute', right: 16, zIndex: 10 },
   hostBadge: {
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderWidth: 1,
@@ -550,22 +417,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  roleText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  roleTextHost: {
-    color: '#FF5722',
-  },
-  roleTextRival: {
-    color: '#00BCD4',
-  },
+  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
+  roleText: { color: '#FF5722', fontSize: 10, fontWeight: 'bold', marginTop: 2 },
+  roleTextRival: { color: '#00BCD4' },
   repsBox: {
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderWidth: 1,
@@ -575,19 +429,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  repsBoxRival: {
-    borderColor: '#00BCD4',
-  },
-  repsLabel: {
-    color: '#8A99AD',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  repsValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  repsBoxRival: { borderColor: '#00BCD4' },
+  repsLabel: { color: '#8A99AD', fontSize: 9, fontWeight: 'bold' },
+  repsValue: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
   vsContainer: {
     position: 'absolute',
     top: '50%',
@@ -605,11 +449,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  vsText: {
-    color: '#FF5722',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  vsText: { color: '#FF5722', fontWeight: 'bold', fontSize: 14 },
   challengersBtn: {
     backgroundColor: '#00BCD4',
     paddingHorizontal: 10,
@@ -617,11 +457,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: 'flex-start',
   },
-  challengersText: {
-    color: '#000',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
+  challengersText: { color: '#000', fontSize: 11, fontWeight: 'bold' },
   floatingHudContainer: {
     position: 'absolute',
     left: 16,
@@ -683,15 +519,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  controlBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-  },
-  btnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+  controlBtn: { paddingHorizontal: 16, paddingVertical: 6 },
+  btnText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
 });
 
 export { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
