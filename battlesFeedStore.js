@@ -60,8 +60,9 @@ function prependBattle(card) {
 
 /** Push an async Battle Rewind challenge — prepends to battlesList. */
 export function pushBattleChallenge(battle) {
-  if (!battle) return null;
-  const timestamp = battle.timestamp || Date.now();
+  if (!battle || typeof battle !== 'object') return null;
+  const timestamp = Number(battle.timestamp) || Date.now();
+  const title = String(battle.title || battle.target || 'Open Challenge');
   const card = {
     responses: 0,
     status: 'OPEN',
@@ -70,14 +71,14 @@ export function pushBattleChallenge(battle) {
     isHotFeature: false,
     host: '@MUMBAI_STRIKER',
     ...battle,
-    id: battle.id || `rewind-${timestamp}`,
-    title: battle.title || battle.target || 'Open Challenge',
-    target: battle.target || battle.title || 'Open Challenge',
+    id: String(battle.id || `rewind-${timestamp}`),
+    title,
+    target: String(battle.target || title),
     description: battle.description ?? null,
-    videoUri: battle.videoUri || null,
-    targetReps: battle.targetReps,
-    timeLimit: battle.timeLimit ?? battle.timeLimitSec,
-    timeLimitSec: battle.timeLimitSec ?? battle.timeLimit,
+    videoUri: typeof battle.videoUri === 'string' ? battle.videoUri : null,
+    targetReps: Number(battle.targetReps) || 0,
+    timeLimit: Number(battle.timeLimit ?? battle.timeLimitSec) || 30,
+    timeLimitSec: Number(battle.timeLimitSec ?? battle.timeLimit) || 30,
     timestamp,
   };
   return prependBattle(card);

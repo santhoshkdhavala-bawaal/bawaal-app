@@ -17,7 +17,15 @@ function emit(post) {
 
 /** Prepend a reel/challenge to the Arena feed and notify subscribers. */
 export function pushArenaPost(post) {
-  if (!post) return null;
+  if (!post || typeof post !== 'object') return null;
+  const ts = Number(post.timestamp || post.createdAt) || Date.now();
+  const id = String(post.id || `arena-${ts}`);
+  const videoUri =
+    (typeof post.videoUri === 'string' && post.videoUri) ||
+    (typeof post.recordedVideoUri === 'string' && post.recordedVideoUri) ||
+    (typeof post.uri === 'string' && post.uri) ||
+    (typeof post.localVideoUri === 'string' && post.localVideoUri) ||
+    null;
   const normalized = {
     type: 'reel',
     sport: post.category || post.sport || 'GYM',
@@ -29,17 +37,17 @@ export function pushArenaPost(post) {
           ? `@${String(post.creator).replace(/^@/, '')}`
           : '@you'),
     caption: post.caption || post.title || post.target || 'Arena drop',
-    hypeCount: post.hypeCount || 0,
-    createdAt: post.timestamp || post.createdAt || Date.now(),
+    hypeCount: Number(post.hypeCount) || 0,
+    createdAt: ts,
     ...post,
-    id: post.id || `arena-${Date.now()}`,
-    videoUri:
-      post.videoUri || post.recordedVideoUri || post.uri || post.localVideoUri || null,
-    uri: post.uri || post.videoUri || post.recordedVideoUri || null,
-    recordedVideoUri: post.recordedVideoUri || post.videoUri || post.uri || null,
+    id,
+    timestamp: ts,
+    videoUri,
+    uri: videoUri,
+    recordedVideoUri: videoUri,
   };
 
-  arenaPosts = [normalized, ...arenaPosts.filter((p) => p.id !== normalized.id)];
+  arenaPosts = [normalized, ...arenaPosts.filter((p) => p && p.id !== normalized.id)];
   emit(normalized);
   return normalized;
 }

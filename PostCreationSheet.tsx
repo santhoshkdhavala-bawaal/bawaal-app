@@ -1,6 +1,6 @@
 /**
- * PostCreationSheet — publishes SPARKS/JOSH → Arena, REWIND/BAWAAL → Battles.
- * Always prepends into persistent feed stores and returns `newPost` via onSuccess.
+ * PostCreationSheet — Arena / Battles dispatch + branded BAWAAL success modal.
+ * Closes itself before calling onSuccess so navigation cannot crash on open modals.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -10,9 +10,10 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pushArenaPost } from './arenaFeedStore';
@@ -60,9 +61,10 @@ export type PostCreationPayload = {
   timeLimitSec?: number;
   slowMoEnabled?: boolean;
   slowMoRate?: number;
+  slowMoStartSec?: number;
+  slowMoEndSec?: number;
   durationSec?: number;
   feedTarget?: 'ARENA' | 'BATTLES';
-  /** Fully constructed card that was prepended to the feed store */
   newPost?: FeedPostCard;
 };
 
@@ -71,13 +73,21 @@ export type PostCreationSheetProps = {
   videoUri: string | null;
   slowMoEnabled?: boolean;
   slowMoRate?: number;
+  slowMoStartSec?: number;
+  slowMoEndSec?: number;
   durationSec?: number;
   onClose: () => void;
-  /** Called with payload including `newPost` so Arena / Battles can refresh immediately */
   onSuccess: (payload?: PostCreationPayload) => void;
 };
 
 const NEON_ORANGE = '#FF5722';
+
+const MODE_DISPLAY: Record<CreationMode, string> = {
+  SPARKS: '⚡ SPARKS',
+  JOSH: '🔥 JOSH',
+  BATTLE_REWIND: '🥊 BATTLE REWIND',
+  BATTLE_BAWAAL: '⚔️ BATTLE BAWAAL',
+};
 
 function headerForMode(mode: CreationMode): string {
   switch (mode) {
@@ -109,14 +119,26 @@ function titlePlaceholder(mode: CreationMode): string {
   }
 }
 
-/**
- * Build + prepend feed cards, then return payload with `newPost` for navigation refresh.
- */
+function safeStr(v: unknown, fallback = ''): string {
+  if (typeof v === 'string' && v.trim()) return v;
+  return fallback;
+}
+
+function safeNum(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Build + prepend feed cards with non-null fallbacks (crash shield). */
 export function dispatchToFeeds(
   payload: PostCreationPayload
 ): PostCreationPayload {
   const timestamp = Date.now();
-  const videoUri = payload.videoUri || null;
+  const videoUri =
+    typeof payload.videoUri === 'string' && payload.videoUri.length > 0
+      ? payload.videoUri
+      : null;
+  const title = safeStr(payload.title, 'BAWAAL Drop');
 
   if (payload.mode === 'SPARKS' || payload.mode === 'JOSH') {
     const arenaCard = pushArenaPost({
@@ -127,88 +149,88 @@ export function dispatchToFeeds(
       videoUri,
       recordedVideoUri: videoUri,
       localVideoUri: videoUri,
-      title: payload.title,
-      caption: payload.tagline
-        ? `${payload.title} ${payload.tagline}`
-        : payload.title,
-      tagline: payload.tagline,
+      title,
+      caption: payload.tagline ? `${title} ${payload.tagline}` : title,
+      tagline: payload.tagline || '#DailyGrind',
       creator: 'You',
       author: '@you',
       category: 'GYM',
       sport: 'GYM',
-      target: payload.title,
+      target: title,
       timestamp,
       createdAt: timestamp,
-      durationSec: payload.durationSec || 30,
+      durationSec: safeNum(payload.durationSec, 30),
       slowMoEnabled: !!payload.slowMoEnabled,
-      slowMoRate: payload.slowMoRate ?? 1,
+      slowMoRate: safeNum(payload.slowMoRate, 1),
+      slowMoStartSec: safeNum(payload.slowMoStartSec, 0),
+      slowMoEndSec: safeNum(payload.slowMoEndSec, safeNum(payload.durationSec, 30)),
       hypeCount: 0,
       feed: 'ARENA',
     });
 
     const newPost: FeedPostCard = {
-      ...(arenaCard as object),
-      id: arenaCard?.id || `arena-${timestamp}`,
+      id: safeStr(arenaCard?.id, `arena-${timestamp}`),
       mode: payload.mode,
       videoUri,
-      title: payload.title,
-      caption: arenaCard?.caption || payload.title,
+      title,
+      caption: safeStr(arenaCard?.caption, title),
       tagline: payload.tagline,
       timestamp,
       feedTarget: 'ARENA',
+      ...(arenaCard || {}),
     };
 
-    return { ...payload, feedTarget: 'ARENA', newPost };
+    return { ...payload, title, videoUri, feedTarget: 'ARENA', newPost };
   }
 
   if (payload.mode === 'BATTLE_REWIND') {
     const battleCard = pushBattleChallenge({
       id: `rewind-${timestamp}`,
       sport: 'GYM',
-      title: payload.title,
-      target: payload.title,
+      title,
+      target: title,
       description: payload.tagline || null,
       host: '@MUMBAI_STRIKER',
       responses: 0,
       status: 'OPEN',
       videoUri: videoUri || undefined,
-      targetReps: payload.targetReps,
-      timeLimit: payload.timeLimitSec,
-      timeLimitSec: payload.timeLimitSec,
+      targetReps: safeNum(payload.targetReps, 50),
+      timeLimit: safeNum(payload.timeLimitSec, 30),
+      timeLimitSec: safeNum(payload.timeLimitSec, 30),
       timestamp,
       source: 'BATTLE_REWIND',
       isHotFeature: false,
     });
 
     const newPost: FeedPostCard = {
-      ...(battleCard as object),
-      id: battleCard?.id || `rewind-${timestamp}`,
+      id: safeStr(battleCard?.id, `rewind-${timestamp}`),
       mode: 'BATTLE_REWIND',
       videoUri,
-      title: payload.title,
-      targetReps: payload.targetReps,
-      timeLimit: payload.timeLimitSec,
-      timeLimitSec: payload.timeLimitSec,
+      title,
+      targetReps: safeNum(payload.targetReps, 50),
+      timeLimit: safeNum(payload.timeLimitSec, 30),
+      timeLimitSec: safeNum(payload.timeLimitSec, 30),
       timestamp,
       feedTarget: 'BATTLES',
+      ...(battleCard || {}),
     };
 
-    return { ...payload, feedTarget: 'BATTLES', newPost };
+    return { ...payload, title, videoUri, feedTarget: 'BATTLES', newPost };
   }
 
   if (payload.mode === 'BATTLE_BAWAAL') {
     const hotCard = pushHotFeatureBattle({
       id: `live-bawaal-${timestamp}`,
-      challengeTitle: payload.title,
-      title: payload.title,
-      target: payload.title,
+      challengeTitle: title,
+      title,
+      target: title,
       host: '@MUMBAI_STRIKER',
       hostFlag: '🇮🇳',
       hostLabel: 'INDIA',
       videoUri: videoUri || undefined,
-      targetReps: payload.targetReps,
-      timeLimit: payload.timeLimitSec,
-      timeLimitSec: payload.timeLimitSec,
+      targetReps: safeNum(payload.targetReps, 50),
+      timeLimit: safeNum(payload.timeLimitSec, 30),
+      timeLimitSec: safeNum(payload.timeLimitSec, 30),
       timestamp,
       status: 'LIVE',
       isHotFeature: true,
@@ -216,22 +238,81 @@ export function dispatchToFeeds(
     });
 
     const newPost: FeedPostCard = {
-      ...(hotCard as object),
-      id: hotCard?.id || `live-bawaal-${timestamp}`,
+      id: safeStr(hotCard?.id, `live-bawaal-${timestamp}`),
       mode: 'BATTLE_BAWAAL',
       videoUri,
-      title: payload.title,
-      targetReps: payload.targetReps,
-      timeLimit: payload.timeLimitSec,
-      timeLimitSec: payload.timeLimitSec,
+      title,
+      targetReps: safeNum(payload.targetReps, 50),
+      timeLimit: safeNum(payload.timeLimitSec, 30),
+      timeLimitSec: safeNum(payload.timeLimitSec, 30),
       timestamp,
       feedTarget: 'BATTLES',
+      ...(hotCard || {}),
     };
 
-    return { ...payload, feedTarget: 'BATTLES', newPost };
+    return { ...payload, title, videoUri, feedTarget: 'BATTLES', newPost };
   }
 
-  return payload;
+  return {
+    ...payload,
+    title,
+    videoUri,
+    newPost: {
+      id: `post-${timestamp}`,
+      mode: payload.mode,
+      videoUri,
+      title,
+      timestamp,
+      feedTarget: 'ARENA',
+    },
+  };
+}
+
+function BawaalSuccessModal({
+  visible,
+  mode,
+  onDone,
+}: {
+  visible: boolean;
+  mode: CreationMode;
+  onDone: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDone}>
+      <View style={styles.successOverlay}>
+        <View style={styles.successCard}>
+          <Image
+            source={require('./assets/bawaal-full-logo.png')}
+            style={styles.successLogo}
+            resizeMode="contain"
+          />
+          <Text style={styles.successEyebrow}>BAWAAL</Text>
+          <Text style={styles.successTitle}>
+            🔥 Success! Your video is posted in {MODE_DISPLAY[mode]}
+          </Text>
+          <Text style={styles.successSub}>
+            It will appear at the top of your feed.
+          </Text>
+          <TouchableOpacity
+            style={styles.successBtn}
+            onPress={onDone}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.successBtnText}>CONTINUE</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function InlineError({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  if (!message) return null;
+  return (
+    <TouchableOpacity style={styles.inlineError} onPress={onDismiss} activeOpacity={0.9}>
+      <Text style={styles.inlineErrorText}>{message}</Text>
+    </TouchableOpacity>
+  );
 }
 
 function PostCreationSheet({
@@ -239,6 +320,8 @@ function PostCreationSheet({
   videoUri,
   slowMoEnabled = false,
   slowMoRate = 0.5,
+  slowMoStartSec = 0,
+  slowMoEndSec,
   durationSec,
   onClose,
   onSuccess,
@@ -249,6 +332,11 @@ function PostCreationSheet({
   const [targetReps, setTargetReps] = useState('50');
   const [timeLimit, setTimeLimit] = useState(
     String(durationSec && durationSec > 0 ? durationSec : 30)
+  );
+  const [formError, setFormError] = useState('');
+  const [successVisible, setSuccessVisible] = useState(false);
+  const [pendingPayload, setPendingPayload] = useState<PostCreationPayload | null>(
+    null
   );
 
   const showTaglines = mode === 'SPARKS' || mode === 'JOSH';
@@ -261,58 +349,70 @@ function PostCreationSheet({
     return short.length > 42 ? `${short.slice(0, 39)}…` : short;
   }, [videoUri]);
 
+  const finishSuccess = () => {
+    const payload = pendingPayload;
+    setSuccessVisible(false);
+    setPendingPayload(null);
+    // Close the sheet first, then hand off — avoids unmount crash with stacked modals
+    onClose();
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        onSuccess(payload || undefined);
+      }, 40);
+    });
+  };
+
   const handlePost = () => {
+    setFormError('');
     const trimmed = title.trim();
     if (!trimmed) {
-      Alert.alert('Missing Title', 'Please give your post a quick title!');
+      setFormError('Please give your post a quick title!');
       return;
     }
-
     if (!videoUri && mode !== 'BATTLE_BAWAAL') {
-      Alert.alert('Missing Clip', 'Record a video before posting.');
+      setFormError('Record a video before posting.');
       return;
     }
 
     const payload: PostCreationPayload = {
       mode,
-      videoUri,
+      videoUri: videoUri || null,
       title: trimmed,
-      slowMoEnabled,
-      slowMoRate: slowMoEnabled ? slowMoRate : 1,
-      durationSec,
+      slowMoEnabled: !!slowMoEnabled,
+      slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
+      slowMoStartSec: safeNum(slowMoStartSec, 0),
+      slowMoEndSec: safeNum(
+        slowMoEndSec,
+        safeNum(durationSec, 30)
+      ),
+      durationSec: safeNum(durationSec, 30),
     };
 
-    if (showTaglines) {
-      payload.tagline = tagline;
-    }
+    if (showTaglines) payload.tagline = tagline;
 
     if (showBattleFields) {
       const reps = Number.parseInt(targetReps.replace(/[^0-9]/g, ''), 10);
       const secs = Number.parseInt(timeLimit.replace(/[^0-9]/g, ''), 10);
       if (!Number.isFinite(reps) || reps <= 0) {
-        Alert.alert('Target Reps', 'Enter a valid target reps number.');
+        setFormError('Enter a valid target reps number.');
         return;
       }
       if (!Number.isFinite(secs) || secs <= 0) {
-        Alert.alert('Time Limit', 'Enter a valid time limit in seconds.');
+        setFormError('Enter a valid time limit in seconds.');
         return;
       }
       payload.targetReps = reps;
       payload.timeLimitSec = secs;
     }
 
-    const dispatched = dispatchToFeeds(payload);
-    const destination =
-      dispatched.feedTarget === 'BATTLES'
-        ? 'BAWAAL Battles'
-        : 'BAWAAL Arena';
-
-    Alert.alert('🔥 Success!', `${mode} posted to ${destination}!`, [
-      {
-        text: 'OK',
-        onPress: () => onSuccess(dispatched),
-      },
-    ]);
+    try {
+      const dispatched = dispatchToFeeds(payload);
+      setPendingPayload(dispatched);
+      setSuccessVisible(true);
+    } catch (err) {
+      console.error('[PostCreationSheet] dispatch failed:', err);
+      setFormError('Could not post. Please try again.');
+    }
   };
 
   return (
@@ -348,6 +448,8 @@ function PostCreationSheet({
           🎬 {clipHint}
           {slowMoEnabled ? ' · SLOW-MO ON' : ''}
         </Text>
+
+        <InlineError message={formError} onDismiss={() => setFormError('')} />
 
         <ScrollView
           contentContainerStyle={styles.formContent}
@@ -426,6 +528,12 @@ function PostCreationSheet({
           </TouchableOpacity>
         </ScrollView>
       </View>
+
+      <BawaalSuccessModal
+        visible={successVisible}
+        mode={mode}
+        onDone={finishSuccess}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -479,7 +587,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   closeText: { color: '#94A3B8', fontSize: 18, fontWeight: '700' },
-  clipHint: { color: '#64748B', fontSize: 11, marginBottom: 14 },
+  clipHint: { color: '#64748B', fontSize: 11, marginBottom: 10 },
+  inlineError: {
+    backgroundColor: 'rgba(255,59,48,0.18)',
+    borderColor: '#FF3B30',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  inlineErrorText: { color: '#FF8A80', fontSize: 12, fontWeight: '700' },
   formContent: { gap: 14, paddingBottom: 8 },
   label: {
     color: '#94A3B8',
@@ -526,6 +644,65 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  successOverlay: {
+    ...ABSOLUTE_FILL,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+  },
+  successCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#0F172A',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: NEON_ORANGE,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 20,
+    alignItems: 'center',
+  },
+  successLogo: {
+    width: 120,
+    height: 48,
+    marginBottom: 8,
+  },
+  successEyebrow: {
+    color: NEON_ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  successTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  successSub: {
+    color: '#8A99AD',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 18,
+  },
+  successBtn: {
+    backgroundColor: NEON_ORANGE,
+    borderRadius: 12,
+    paddingVertical: 13,
+    paddingHorizontal: 28,
+    width: '100%',
+    alignItems: 'center',
+  },
+  successBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
     letterSpacing: 0.6,
   },
 });

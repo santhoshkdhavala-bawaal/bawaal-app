@@ -1,6 +1,6 @@
 /**
  * UniversalCamera — BAWAAL Universal Creation Engine.
- * Modes: ⚡ SPARKS · 🔥 JOSH · 🥊 BATTLE REWIND · ⚔️ BATTLE BAWAAL
+ * Time pill above red shutter · neon-orange mode strip · slow-mo film-strip preview.
  */
 import React, {
   useCallback,
@@ -14,13 +14,14 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Modal,
-  Alert,
   StatusBar,
   ActivityIndicator,
   Animated,
   Easing,
-  Switch,
+  LayoutChangeEvent,
+  type GestureResponderEvent,
 } from 'react-native';
 import {
   CameraView,
@@ -42,6 +43,8 @@ export type { CreationMode, PostCreationPayload };
 const NEON_ORANGE = '#FF5722';
 const SHUTTER_RED = '#FF3B30';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
+const PILL_HIDE_MS = 5000;
+const MIN_TRIM_SPAN = 0.4;
 
 type NavLike = {
   goBack?: () => void;
@@ -108,31 +111,23 @@ const ABSOLUTE_FILL = {
   bottom: 0,
 };
 
-/** Animated recording progress ring around the shutter (no SVG dependency). */
 function ShutterProgressRing({ progress }: { progress: number }) {
   const [spin] = useState(() => new Animated.Value(0));
-
   useEffect(() => {
     spin.setValue(Math.min(1, Math.max(0, progress)));
   }, [progress, spin]);
-
   const rotate = spin.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
-
   return (
     <View style={ringStyles.track} pointerEvents="none">
       <Animated.View
         style={[
           ringStyles.arc,
-          {
-            transform: [{ rotate }],
-            opacity: progress > 0 ? 1 : 0,
-          },
+          { transform: [{ rotate }], opacity: progress > 0 ? 1 : 0 },
         ]}
       />
-      <View style={ringStyles.hole} />
     </View>
   );
 }
@@ -142,57 +137,274 @@ const ringStyles = StyleSheet.create({
     ...ABSOLUTE_FILL,
     borderRadius: 48,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.22)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderColor: 'rgba(255,255,255,0.28)',
   },
   arc: {
-    position: 'absolute',
-    width: 96,
-    height: 96,
+    ...ABSOLUTE_FILL,
     borderRadius: 48,
     borderWidth: 3,
     borderColor: 'transparent',
     borderTopColor: NEON_ORANGE,
     borderRightColor: NEON_ORANGE,
   },
-  hole: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+});
+
+/** Film-strip trimmer with start/end handles + playhead. */
+function FilmStripTrimmer({
+  duration,
+  startSec,
+  endSec,
+  playheadSec,
+  onChangeRange,
+}: {
+  duration: number;
+  startSec: number;
+  endSec: number;
+  playheadSec: number;
+  onChangeRange: (start: number, end: number) => void;
+}) {
+  const dragKind = useRef<'start' | 'end' | null>(null);
+  const widthRef = useRef(1);
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    widthRef.current = Math.max(1, e.nativeEvent.layout.width);
+  };
+
+  const xToSec = (evt: GestureResponderEvent) => {
+    const w = Math.max(1, widthRef.current);
+    const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
+    return Math.max(
+      0,
+      Math.min(maxDur, (evt.nativeEvent.locationX / w) * maxDur)
+    );
+  };
+
+  const onGrant = (evt: GestureResponderEvent) => {
+    const sec = xToSec(evt);
+    const mid = (startSec + endSec) / 2;
+    dragKind.current = sec < mid ? 'start' : 'end';
+  };
+
+  const onMove = (evt: GestureResponderEvent) => {
+    const sec = xToSec(evt);
+    const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
+    if (dragKind.current === 'start') {
+      onChangeRange(Math.max(0, Math.min(sec, endSec - MIN_TRIM_SPAN)), endSec);
+    } else if (dragKind.current === 'end') {
+      onChangeRange(
+        startSec,
+        Math.min(maxDur, Math.max(sec, startSec + MIN_TRIM_SPAN))
+      );
+    }
+  };
+
+  const dur = Math.max(MIN_TRIM_SPAN, duration || 1);
+  const leftPct = (startSec / dur) * 100;
+  const rightPct = (endSec / dur) * 100;
+  const playPct = Math.max(0, Math.min(100, (playheadSec / dur) * 100));
+  const frames = 12;
+
+  return (
+    <View
+      style={trimStyles.wrap}
+      onLayout={onLayout}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={onGrant}
+      onResponderMove={onMove}
+      onResponderRelease={() => {
+        dragKind.current = null;
+      }}
+    >
+      <View style={trimStyles.film}>
+        {Array.from({ length: frames }).map((_, i) => (
+          <View
+            key={`f-${i}`}
+            style={[
+              trimStyles.frame,
+              i % 2 === 0 ? trimStyles.frameA : trimStyles.frameB,
+            ]}
+          />
+        ))}
+        <View
+          style={[
+            trimStyles.selection,
+            { left: `${leftPct}%`, width: `${Math.max(2, rightPct - leftPct)}%` },
+          ]}
+        />
+        <View style={[trimStyles.handle, { left: `${leftPct}%` }]}>
+          <View style={trimStyles.handleBar} />
+        </View>
+        <View style={[trimStyles.handle, { left: `${rightPct}%` }]}>
+          <View style={trimStyles.handleBar} />
+        </View>
+        <View style={[trimStyles.playhead, { left: `${playPct}%` }]} />
+      </View>
+      <View style={trimStyles.labels}>
+        <Text style={trimStyles.label}>{formatClock(startSec)}</Text>
+        <Text style={trimStyles.label}>TRIM</Text>
+        <Text style={trimStyles.label}>{formatClock(endSec)}</Text>
+      </View>
+    </View>
+  );
+}
+
+const trimStyles = StyleSheet.create({
+  wrap: { width: '100%', marginTop: 10 },
+  film: {
+    height: 48,
+    borderRadius: 10,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    backgroundColor: '#0A0E1A',
+    borderWidth: 1,
+    borderColor: '#334155',
   },
+  frame: { flex: 1, borderRightWidth: 1, borderRightColor: '#1F293D' },
+  frameA: { backgroundColor: '#1A2336' },
+  frameB: { backgroundColor: '#121A2A' },
+  selection: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,87,34,0.28)',
+    borderColor: NEON_ORANGE,
+    borderWidth: 1.5,
+  },
+  handle: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 18,
+    marginLeft: -9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  handleBar: {
+    width: 4,
+    height: '70%',
+    borderRadius: 2,
+    backgroundColor: NEON_ORANGE,
+  },
+  playhead: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: '#FFFFFF',
+  },
+  labels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  label: { color: '#8A99AD', fontSize: 10, fontWeight: '700' },
 });
 
 function ClipPreviewModal({
   visible,
   uri,
+  fallbackDuration,
   onRetake,
   onNext,
 }: {
   visible: boolean;
   uri: string | null;
+  fallbackDuration: number;
   onRetake: () => void;
-  onNext: (opts: { slowMoEnabled: boolean; slowMoRate: number }) => void;
+  onNext: (opts: {
+    slowMoEnabled: boolean;
+    slowMoRate: number;
+    slowMoStartSec: number;
+    slowMoEndSec: number;
+  }) => void;
 }) {
-  const [slowMoEnabled, setSlowMoEnabled] = useState(false);
+  const bootDur = Math.max(1, fallbackDuration || 15);
+  const [playing, setPlaying] = useState(true);
   const [slowMoRate, setSlowMoRate] = useState(0.5);
+  const [duration, setDuration] = useState(bootDur);
+  const [startSec, setStartSec] = useState(0);
+  const [endSec, setEndSec] = useState(bootDur);
+  const [playheadSec, setPlayheadSec] = useState(0);
+  const startSecRef = useRef(0);
+  const endSecRef = useRef(bootDur);
+
+  useEffect(() => {
+    startSecRef.current = startSec;
+    endSecRef.current = endSec;
+  }, [startSec, endSec]);
+
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
-    p.loop = true;
+    p.loop = false;
     p.muted = false;
+    try {
+      p.timeUpdateEventInterval = 0.05;
+    } catch {
+      /* ignore */
+    }
   });
 
   useEffect(() => {
-    if (!player) return;
+    if (!player || !visible) return;
     try {
-      /* expo-video player is a mutable native handle */
       // eslint-disable-next-line react-hooks/immutability -- VideoPlayer API
-      player.playbackRate = slowMoEnabled ? slowMoRate : 1;
-      if (visible) player.play();
+      player.playbackRate = slowMoRate;
+      if (playing) player.play();
       else player.pause();
     } catch {
       /* ignore */
     }
-  }, [player, slowMoEnabled, slowMoRate, visible]);
+  }, [player, slowMoRate, playing, visible]);
+
+  useEffect(() => {
+    if (!player || !visible) return;
+    let sub: { remove?: () => void } | null = null;
+    let statusSub: { remove?: () => void } | null = null;
+    let durTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const syncDuration = () => {
+        const nativeDur = Number(player.duration);
+        if (Number.isFinite(nativeDur) && nativeDur > 0.2) {
+          setDuration(nativeDur);
+          setEndSec((e) => Math.min(Math.max(e, MIN_TRIM_SPAN), nativeDur));
+        }
+      };
+      durTimer = setTimeout(syncDuration, 120);
+      statusSub = player.addListener?.('statusChange', syncDuration);
+      sub = player.addListener?.('timeUpdate', (payload: { currentTime?: number }) => {
+        const t =
+          typeof payload?.currentTime === 'number'
+            ? payload.currentTime
+            : Number(player.currentTime) || 0;
+        setPlayheadSec(t);
+        const s = startSecRef.current;
+        const e = endSecRef.current;
+        if (t >= e - 0.05 || t < s - 0.05) {
+          try {
+            player.currentTime = s;
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      if (durTimer) clearTimeout(durTimer);
+      try {
+        sub?.remove?.();
+        statusSub?.remove?.();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [player, visible]);
+
+  const togglePlay = () => {
+    setPlaying((p) => !p);
+  };
 
   if (!visible || !uri) return null;
 
@@ -200,7 +412,8 @@ function ClipPreviewModal({
     <Modal visible animationType="slide" onRequestClose={onRetake}>
       <View style={previewStyles.root}>
         <StatusBar barStyle="light-content" />
-        <Text style={previewStyles.title}>Preview Clip</Text>
+        <Text style={previewStyles.title}>Slow-Mo Preview</Text>
+
         <View style={previewStyles.videoWrap}>
           <VideoView
             style={previewStyles.video}
@@ -208,51 +421,61 @@ function ClipPreviewModal({
             contentFit="cover"
             nativeControls={false}
           />
-        </View>
-
-        <View style={previewStyles.slowMoRow}>
-          <View style={previewStyles.slowMoCopy}>
-            <Text style={previewStyles.slowMoTitle}>Slow-Mo Effect</Text>
-            <Text style={previewStyles.slowMoSub}>
-              {slowMoEnabled
-                ? `Playback ${slowMoRate.toFixed(1)}x`
-                : 'Normal speed'}
+          <TouchableOpacity
+            style={previewStyles.playFab}
+            onPress={togglePlay}
+            activeOpacity={0.85}
+          >
+            <Text style={previewStyles.playFabText}>
+              {playing ? '⏸' : '▶️'}
             </Text>
-          </View>
-          <Switch
-            value={slowMoEnabled}
-            onValueChange={setSlowMoEnabled}
-            trackColor={{ false: '#334155', true: NEON_ORANGE }}
-            thumbColor="#FFFFFF"
-          />
+          </TouchableOpacity>
         </View>
 
-        {slowMoEnabled && (
-          <View style={previewStyles.rateRow}>
-            {[0.25, 0.5, 0.75].map((rate) => {
-              const active = slowMoRate === rate;
-              return (
-                <TouchableOpacity
-                  key={rate}
+        <FilmStripTrimmer
+          duration={duration}
+          startSec={startSec}
+          endSec={endSec}
+          playheadSec={playheadSec}
+          onChangeRange={(s, e) => {
+            setStartSec(s);
+            setEndSec(e);
+            try {
+              if (player) {
+                // eslint-disable-next-line react-hooks/immutability -- VideoPlayer seek API
+                player.currentTime = s;
+              }
+            } catch {
+              /* ignore */
+            }
+          }}
+        />
+
+        <Text style={previewStyles.rateLabel}>Playback speed</Text>
+        <View style={previewStyles.rateRow}>
+          {[0.25, 0.5, 0.75].map((rate) => {
+            const active = slowMoRate === rate;
+            return (
+              <TouchableOpacity
+                key={rate}
+                style={[
+                  previewStyles.rateChip,
+                  active && previewStyles.rateChipActive,
+                ]}
+                onPress={() => setSlowMoRate(rate)}
+              >
+                <Text
                   style={[
-                    previewStyles.rateChip,
-                    active && previewStyles.rateChipActive,
+                    previewStyles.rateText,
+                    active && previewStyles.rateTextActive,
                   ]}
-                  onPress={() => setSlowMoRate(rate)}
                 >
-                  <Text
-                    style={[
-                      previewStyles.rateText,
-                      active && previewStyles.rateTextActive,
-                    ]}
-                  >
-                    {rate}x
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+                  {rate}x
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         <View style={previewStyles.actions}>
           <TouchableOpacity
@@ -264,7 +487,14 @@ function ClipPreviewModal({
           </TouchableOpacity>
           <TouchableOpacity
             style={previewStyles.primaryBtn}
-            onPress={() => onNext({ slowMoEnabled, slowMoRate })}
+            onPress={() =>
+              onNext({
+                slowMoEnabled: slowMoRate < 1,
+                slowMoRate,
+                slowMoStartSec: startSec,
+                slowMoEndSec: endSec,
+              })
+            }
             activeOpacity={0.9}
           >
             <Text style={previewStyles.primaryText}>NEXT TO POST</Text>
@@ -298,16 +528,26 @@ const previewStyles = StyleSheet.create({
     borderColor: '#1F293D',
   },
   video: { flex: 1 },
-  slowMoRow: {
-    flexDirection: 'row',
+  playFab: {
+    position: 'absolute',
+    bottom: 12,
+    alignSelf: 'center',
+    left: '42%',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    paddingVertical: 10,
+    justifyContent: 'center',
   },
-  slowMoCopy: { flex: 1, paddingRight: 12 },
-  slowMoTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  slowMoSub: { color: '#8A99AD', fontSize: 12, marginTop: 2 },
+  playFabText: { fontSize: 18 },
+  rateLabel: {
+    color: '#8A99AD',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 6,
+  },
   rateRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   rateChip: {
     paddingHorizontal: 14,
@@ -362,25 +602,29 @@ export default function UniversalCamera({
   const [selectedDuration, setSelectedDuration] = useState(() =>
     defaultDuration(bootMode)
   );
-  const [showTimeChips, setShowTimeChips] = useState(true);
-  const [timeChipsOpacity] = useState(() => new Animated.Value(1));
+  const [showTimePill, setShowTimePill] = useState(true);
+  const [timePillOpacity] = useState(() => new Animated.Value(1));
 
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
+  const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showPostSheet, setShowPostSheet] = useState(false);
   const [slowMoEnabled, setSlowMoEnabled] = useState(false);
   const [slowMoRate, setSlowMoRate] = useState(0.5);
+  const [slowMoStartSec, setSlowMoStartSec] = useState(0);
+  const [slowMoEndSec, setSlowMoEndSec] = useState(15);
 
   const cameraRef = useRef<CameraView>(null);
   const recordingLockRef = useRef(false);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hideChipsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hidePillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigatingRef = useRef(false);
 
   const ceiling = useMemo(
     () => modeCeiling(mode, joshUnlocked3m),
@@ -398,29 +642,50 @@ export default function UniversalCamera({
 
   const recordLimit = Math.min(selectedDuration, ceiling || selectedDuration);
 
-  const fadeTimeChips = useCallback(
+  const fadeTimePill = useCallback(
     (hide: boolean) => {
-      Animated.timing(timeChipsOpacity, {
-        toValue: hide ? 0 : 1,
-        duration: 220,
+      if (!hide) {
+        setShowTimePill(true);
+        Animated.timing(timePillOpacity, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }).start();
+        return;
+      }
+      Animated.timing(timePillOpacity, {
+        toValue: 0,
+        duration: 280,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }).start(({ finished }) => {
-        if (finished && hide) setShowTimeChips(false);
+        if (finished) setShowTimePill(false);
       });
-      if (!hide) setShowTimeChips(true);
     },
-    [timeChipsOpacity]
+    [timePillOpacity]
   );
 
-  const scheduleHideChips = useCallback(() => {
-    if (hideChipsTimerRef.current) clearTimeout(hideChipsTimerRef.current);
-    hideChipsTimerRef.current = setTimeout(() => fadeTimeChips(true), 450);
-  }, [fadeTimeChips]);
+  const scheduleHidePill = useCallback(() => {
+    if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
+    hidePillTimerRef.current = setTimeout(() => {
+      fadeTimePill(true);
+    }, PILL_HIDE_MS);
+  }, [fadeTimePill]);
+
+  const revealTimePill = useCallback(() => {
+    if (mode === 'BATTLE_BAWAAL' || isRecording) return;
+    fadeTimePill(false);
+    scheduleHidePill();
+  }, [mode, isRecording, fadeTimePill, scheduleHidePill]);
 
   useEffect(() => {
-    if (!cameraPermission?.granted) void requestCameraPermission();
-    if (!micPermission?.granted) void requestMicPermission();
+    if (cameraPermission && !cameraPermission.granted) {
+      void requestCameraPermission();
+    }
+    if (micPermission && !micPermission.granted) {
+      void requestMicPermission();
+    }
   }, [
     cameraPermission,
     micPermission,
@@ -429,10 +694,14 @@ export default function UniversalCamera({
   ]);
 
   useEffect(() => {
+    // Auto-schedule first hide after boot
+    if (bootMode !== 'BATTLE_BAWAAL') scheduleHidePill();
     return () => {
       if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
-      if (hideChipsTimerRef.current) clearTimeout(hideChipsTimerRef.current);
+      if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
     };
+    // Intentionally once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const clearElapsedTimer = useCallback(() => {
@@ -450,6 +719,32 @@ export default function UniversalCamera({
     }, 1000);
   }, [clearElapsedTimer]);
 
+  const safeNavigateHome = useCallback(
+    (params: Record<string, unknown>) => {
+      if (navigatingRef.current) return;
+      navigatingRef.current = true;
+      setShowPreview(false);
+      setShowPostSheet(false);
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try {
+            navigation?.navigate?.('Main', params);
+          } catch (err) {
+            console.warn('[UniversalCamera] navigate failed:', err);
+            try {
+              if (navigation?.canGoBack?.()) navigation.goBack?.();
+            } catch {
+              /* ignore */
+            }
+          } finally {
+            navigatingRef.current = false;
+          }
+        }, 60);
+      });
+    },
+    [navigation]
+  );
+
   const handleClose = useCallback(() => {
     if (isRecording) {
       try {
@@ -458,8 +753,14 @@ export default function UniversalCamera({
         /* ignore */
       }
     }
-    if (navigation?.canGoBack?.()) navigation.goBack?.();
-    else navigation?.navigate?.('Main', { tab: 'Arena' });
+    setShowPreview(false);
+    setShowPostSheet(false);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (navigation?.canGoBack?.()) navigation.goBack?.();
+        else navigation?.navigate?.('Main', { tab: 'Arena' });
+      }, 40);
+    });
   }, [isRecording, navigation]);
 
   const handleModeChange = useCallback(
@@ -467,25 +768,29 @@ export default function UniversalCamera({
       if (isRecording || recordingLockRef.current) return;
       setMode(next);
       if (next === 'BATTLE_BAWAAL') {
-        setShowTimeChips(false);
+        setShowTimePill(false);
+        if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
         return;
       }
-      const nextDur = Math.min(defaultDuration(next), modeCeiling(next, joshUnlocked3m));
+      const nextDur = Math.min(
+        defaultDuration(next),
+        modeCeiling(next, joshUnlocked3m)
+      );
       setSelectedDuration(nextDur);
-      setShowTimeChips(true);
-      timeChipsOpacity.setValue(1);
-      scheduleHideChips();
+      fadeTimePill(false);
+      scheduleHidePill();
     },
-    [isRecording, joshUnlocked3m, scheduleHideChips, timeChipsOpacity]
+    [isRecording, joshUnlocked3m, fadeTimePill, scheduleHidePill]
   );
 
   const handleTimeSelect = useCallback(
     (sec: number) => {
       if (isRecording) return;
       setSelectedDuration(sec);
-      scheduleHideChips();
+      fadeTimePill(false);
+      scheduleHidePill();
     },
-    [isRecording, scheduleHideChips]
+    [isRecording, fadeTimePill, scheduleHidePill]
   );
 
   const handleToggle3mExtension = useCallback(() => {
@@ -495,30 +800,11 @@ export default function UniversalCamera({
       setSelectedDuration((d) => Math.min(d, 60));
       return;
     }
-    Alert.alert(
-      '🔥 Unlock 3-Minute Josh Reel',
-      'Extend your reel limit to 180 seconds for 10 BAWAAL Coins.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Unlock (10 Coins)',
-          onPress: () => {
-            setJoshUnlocked3m(true);
-            setSelectedDuration(180);
-            setShowTimeChips(true);
-            timeChipsOpacity.setValue(1);
-            scheduleHideChips();
-          },
-        },
-      ]
-    );
-  }, [
-    isRecording,
-    mode,
-    joshUnlocked3m,
-    scheduleHideChips,
-    timeChipsOpacity,
-  ]);
+    setJoshUnlocked3m(true);
+    setSelectedDuration(180);
+    fadeTimePill(false);
+    scheduleHidePill();
+  }, [isRecording, mode, joshUnlocked3m, fadeTimePill, scheduleHidePill]);
 
   const launchBattleBawaal = useCallback(() => {
     const card = pushHotFeatureBattle({
@@ -530,12 +816,17 @@ export default function UniversalCamera({
       isHotFeature: true,
       source: 'BATTLE_BAWAAL',
     });
-
-    navigation?.navigate?.('ChallengerArena', {
-      mode: 'athlete',
-      role: 'host',
-      battleId: card?.id,
-      match: card?.liveMatch,
+    setShowPreview(false);
+    setShowPostSheet(false);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        navigation?.navigate?.('ChallengerArena', {
+          mode: 'athlete',
+          role: 'host',
+          battleId: card?.id || `live-${Date.now()}`,
+          match: card?.liveMatch || null,
+        });
+      }, 40);
     });
   }, [navigation]);
 
@@ -544,7 +835,6 @@ export default function UniversalCamera({
       launchBattleBawaal();
       return;
     }
-
     if (
       !cameraRef.current ||
       !isCameraReady ||
@@ -556,26 +846,32 @@ export default function UniversalCamera({
 
     recordingLockRef.current = true;
     setIsRecording(true);
-    fadeTimeChips(true);
+    fadeTimePill(true);
     startElapsedTimer();
 
     try {
       const video = await cameraRef.current.recordAsync({
         maxDuration: recordLimit,
       });
-      const uri = video?.uri ?? null;
+      const uri =
+        typeof video?.uri === 'string' && video.uri.length > 0
+          ? video.uri
+          : null;
       clearElapsedTimer();
       setIsRecording(false);
       recordingLockRef.current = false;
 
-      if (!uri) return;
+      if (!uri) {
+        setCameraError('Recording finished without a clip. Try again.');
+        return;
+      }
 
       setRecordedVideoUri(uri);
+      setSlowMoEndSec(recordLimit);
 
       if (mode === 'SPARKS' || mode === 'JOSH') {
         setShowPreview(true);
       } else {
-        // BATTLE_REWIND → straight to post sheet (Battles dispatch)
         setShowPostSheet(true);
       }
     } catch (e) {
@@ -583,14 +879,14 @@ export default function UniversalCamera({
       clearElapsedTimer();
       setIsRecording(false);
       recordingLockRef.current = false;
-      Alert.alert('Recording failed', 'Could not save this clip. Try again.');
+      setCameraError('Could not save this clip. Try again.');
     }
   }, [
     mode,
     isCameraReady,
     isRecording,
     recordLimit,
-    fadeTimeChips,
+    fadeTimePill,
     startElapsedTimer,
     clearElapsedTimer,
     launchBattleBawaal,
@@ -618,12 +914,6 @@ export default function UniversalCamera({
     if (isRecording) return;
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
   }, [isRecording]);
-
-  const revealTimeChips = useCallback(() => {
-    if (mode === 'BATTLE_BAWAAL' || isRecording) return;
-    setShowTimeChips(true);
-    timeChipsOpacity.setValue(1);
-  }, [mode, isRecording, timeChipsOpacity]);
 
   const progress =
     isRecording && recordLimit > 0
@@ -677,16 +967,21 @@ export default function UniversalCamera({
         mute={false}
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(err) => {
-          console.warn('[UniversalCamera] mount error:', err?.message);
-          Alert.alert('Camera Error', err?.message || 'Could not start camera.');
+          setCameraError(err?.message || 'Could not start camera.');
         }}
+      />
+
+      {/* Tap viewfinder to restore time pill */}
+      <Pressable
+        style={styles.viewfinderTap}
+        onPress={revealTimePill}
+        disabled={isRecording || mode === 'BATTLE_BAWAAL'}
       />
 
       <View
         pointerEvents="box-none"
         style={[styles.absoluteFill, styles.overlayRoot]}
       >
-        {/* Header / live timer */}
         <View
           style={[styles.topBar, { paddingTop: Math.max(insets.top, 12) }]}
         >
@@ -731,16 +1026,25 @@ export default function UniversalCamera({
           </TouchableOpacity>
         )}
 
-        {/* Bottom: time chips → shutter → mode strip */}
+        {!!cameraError && (
+          <TouchableOpacity
+            style={styles.errorBanner}
+            onPress={() => setCameraError('')}
+          >
+            <Text style={styles.errorBannerText}>{cameraError}</Text>
+          </TouchableOpacity>
+        )}
+
         <View
           style={[
             styles.bottomControls,
-            { paddingBottom: Math.max(insets.bottom, 16) },
+            { paddingBottom: Math.max(insets.bottom, 14) },
           ]}
         >
-          {mode !== 'BATTLE_BAWAAL' && showTimeChips && (
+          {/* Dark rounded duration pill (button1 style) */}
+          {mode !== 'BATTLE_BAWAAL' && showTimePill && (
             <Animated.View
-              style={[styles.timeChipRow, { opacity: timeChipsOpacity }]}
+              style={[styles.timePill, { opacity: timePillOpacity }]}
             >
               {availableTimes.map((sec) => {
                 const active = selectedDuration === sec;
@@ -765,19 +1069,9 @@ export default function UniversalCamera({
             </Animated.View>
           )}
 
-          {mode !== 'BATTLE_BAWAAL' && !showTimeChips && !isRecording && (
-            <TouchableOpacity onPress={revealTimeChips} style={styles.timeHint}>
-              <Text style={styles.timeHintText}>
-                {recordLimit}s · tap to change
-              </Text>
-            </TouchableOpacity>
-          )}
-
+          {/* Red shutter in circular track */}
           <TouchableOpacity
-            style={[
-              styles.shutterWrap,
-              mode === 'BATTLE_BAWAAL' && styles.shutterWrapLive,
-            ]}
+            style={styles.shutterWrap}
             onPress={handleShutter}
             activeOpacity={0.85}
             accessibilityLabel={
@@ -798,13 +1092,14 @@ export default function UniversalCamera({
             />
           </TouchableOpacity>
 
+          {/* Neon-orange mode strip on dark glass */}
           <View style={styles.modeStrip}>
             {MODE_STRIP.map((item) => {
               const active = mode === item.id;
               return (
                 <TouchableOpacity
                   key={item.id}
-                  style={styles.modeChip}
+                  style={[styles.modeChip, active && styles.modeChipActive]}
                   onPress={() => handleModeChange(item.id)}
                   disabled={isRecording}
                   activeOpacity={0.85}
@@ -812,7 +1107,7 @@ export default function UniversalCamera({
                   <Text
                     style={[
                       styles.modeText,
-                      active && styles.activeModeText,
+                      active && styles.modeTextActive,
                       isRecording && !active && styles.modeTextDim,
                     ]}
                     numberOfLines={1}
@@ -820,7 +1115,6 @@ export default function UniversalCamera({
                   >
                     {item.label}
                   </Text>
-                  {active ? <View style={styles.modeUnderline} /> : null}
                 </TouchableOpacity>
               );
             })}
@@ -832,19 +1126,26 @@ export default function UniversalCamera({
         key={recordedVideoUri || 'preview'}
         visible={showPreview}
         uri={recordedVideoUri}
+        fallbackDuration={recordLimit}
         onRetake={() => {
           setShowPreview(false);
           setRecordedVideoUri(null);
           setSlowMoEnabled(false);
           setSlowMoRate(0.5);
-          setShowTimeChips(true);
-          timeChipsOpacity.setValue(1);
+          revealTimePill();
         }}
-        onNext={({ slowMoEnabled: sm, slowMoRate: rate }) => {
+        onNext={({
+          slowMoEnabled: sm,
+          slowMoRate: rate,
+          slowMoStartSec: s,
+          slowMoEndSec: e,
+        }) => {
           setSlowMoEnabled(sm);
           setSlowMoRate(rate);
+          setSlowMoStartSec(s);
+          setSlowMoEndSec(e);
           setShowPreview(false);
-          setShowPostSheet(true);
+          requestAnimationFrame(() => setShowPostSheet(true));
         }}
       />
 
@@ -859,22 +1160,26 @@ export default function UniversalCamera({
           videoUri={recordedVideoUri}
           slowMoEnabled={slowMoEnabled}
           slowMoRate={slowMoRate}
+          slowMoStartSec={slowMoStartSec}
+          slowMoEndSec={slowMoEndSec}
           durationSec={recordLimit}
           onClose={() => setShowPostSheet(false)}
           onSuccess={(payload) => {
-            setShowPostSheet(false);
             if (payload) onPublished?.(payload);
             const tab =
               payload?.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
-            // Pass newPost so frozen/remounted feeds refresh immediately
-            navigation?.navigate?.('Main', {
+            const safePost = payload?.newPost || {
+              id: `fallback-${Date.now()}`,
+              mode,
+              videoUri: recordedVideoUri,
+              title: 'BAWAAL Drop',
+              timestamp: Date.now(),
+              feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
+            };
+            safeNavigateHome({
               tab,
-              ...(tab === 'Arena' && payload?.newPost
-                ? { newArenaPost: payload.newPost }
-                : {}),
-              ...(tab === 'Battles' && payload?.newPost
-                ? { newBattlePost: payload.newPost }
-                : {}),
+              ...(tab === 'Arena' ? { newArenaPost: safePost } : {}),
+              ...(tab === 'Battles' ? { newBattlePost: safePost } : {}),
             });
           }}
         />
@@ -887,6 +1192,11 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
   absoluteFill: { ...ABSOLUTE_FILL },
   camera: { ...ABSOLUTE_FILL },
+  viewfinderTap: {
+    ...ABSOLUTE_FILL,
+    top: 90,
+    bottom: 220,
+  },
   overlayRoot: { justifyContent: 'space-between' },
   permissionContainer: {
     flex: 1,
@@ -949,50 +1259,62 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   paidToggleText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
-  bottomControls: { alignItems: 'center', paddingHorizontal: 6 },
-  timeChipRow: {
+  errorBanner: {
+    alignSelf: 'center',
+    marginTop: 10,
+    backgroundColor: 'rgba(255,59,48,0.2)',
+    borderColor: '#FF3B30',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: '88%',
+  },
+  errorBannerText: { color: '#FF8A80', fontSize: 12, fontWeight: '700' },
+  bottomControls: {
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  timePill: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15, 18, 28, 0.92)',
+    borderRadius: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
   timeChip: {
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
-    backgroundColor: 'rgba(10,14,26,0.55)',
+    borderRadius: 16,
+    backgroundColor: 'transparent',
   },
   timeChipActive: {
     backgroundColor: NEON_ORANGE,
-    borderColor: NEON_ORANGE,
   },
-  timeChipText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  timeChipText: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   timeChipTextActive: { color: '#FFFFFF' },
-  timeHint: { marginBottom: 10 },
-  timeHintText: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
-    fontWeight: '700',
-  },
   shutterWrap: {
     width: 96,
     height: 96,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  shutterWrapLive: {
-    borderRadius: 48,
+    marginBottom: 14,
   },
   shutterInner: {
     width: 68,
     height: 68,
     borderRadius: 34,
     backgroundColor: SHUTTER_RED,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
   },
   shutterSquare: {
     width: 32,
@@ -1002,36 +1324,40 @@ const styles = StyleSheet.create({
   },
   shutterInnerLive: {
     backgroundColor: SHUTTER_RED,
+    borderWidth: 3,
     borderColor: NEON_ORANGE,
-    borderWidth: 4,
   },
   modeStrip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     width: '100%',
-    paddingHorizontal: 2,
+    backgroundColor: 'rgba(10, 14, 26, 0.82)',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255,87,34,0.35)',
     gap: 2,
   },
   modeChip: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderRadius: 10,
+  },
+  modeChipActive: {
+    backgroundColor: 'rgba(255,87,34,0.18)',
   },
   modeText: {
-    color: '#8A99AD',
+    color: NEON_ORANGE,
     fontSize: 10,
     fontWeight: '800',
     textAlign: 'center',
   },
-  activeModeText: {
+  modeTextActive: {
     color: NEON_ORANGE,
+    textShadowColor: 'rgba(255,87,34,0.55)',
+    textShadowRadius: 6,
   },
-  modeUnderline: {
-    marginTop: 4,
-    height: 2,
-    width: '70%',
-    backgroundColor: NEON_ORANGE,
-    borderRadius: 1,
-  },
-  modeTextDim: { opacity: 0.4 },
+  modeTextDim: { opacity: 0.45 },
 });
