@@ -1,6 +1,5 @@
 /**
  * ChallengerArena — 50/50 Host / Rival arena with safe Agora boot.
- * Never calls native initialize() when App ID is missing / YOUR_AGORA_APP_ID.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -13,13 +12,47 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AGORA_APP_ID, hasAgoraAppId } from './src/config/agora';
-import { getAgoraSdk } from './src/services/agoraService';
 
-const AgoraSdk = getAgoraSdk();
+// Load Agora SDK dynamically (dev client / Expo Go safe)
+let AgoraSdk: {
+  RtcSurfaceView?: React.ComponentType<{
+    canvas: { uid: number };
+    style?: object;
+    zOrderMediaOverlay?: boolean;
+  }>;
+  createAgoraRtcEngine?: () => {
+    initialize: (c: { appId: string }) => void;
+    enableVideo: () => void;
+    enableLocalVideo: (on: boolean) => void;
+    startPreview: () => void;
+    stopPreview: () => void;
+    joinChannel: (...args: unknown[]) => void;
+    leaveChannel: () => void;
+    switchCamera?: () => void;
+    muteLocalAudioStream?: (mute: boolean) => void;
+    release?: () => void;
+  };
+  ClientRoleType?: {
+    clientRoleBroadcaster?: number;
+    ClientRoleBroadcaster?: number;
+  };
+} | null = null;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  AgoraSdk = require('react-native-agora');
+} catch {
+  console.warn('[ChallengerArena] Agora SDK not installed or loaded');
+}
+
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine || null;
 const ClientRoleType = AgoraSdk?.ClientRoleType;
+
+const AGORA_APP_ID = '256476d4e1db410e9f72b9196287fd29';
+const AGORA_CONFIGURED = Boolean(
+  AGORA_APP_ID && AGORA_APP_ID.length > 10 && createAgoraRtcEngine
+);
 
 /** Full-bleed fill (absoluteFillObject not in RN typed exports). */
 const ABSOLUTE_FILL = {
@@ -29,12 +62,6 @@ const ABSOLUTE_FILL = {
   right: 0,
   bottom: 0,
 };
-
-const AGORA_CONFIGURED = Boolean(
-  hasAgoraAppId() &&
-    AGORA_APP_ID &&
-    AGORA_APP_ID.trim().length > 0
-);
 
 type UserRole = 'HOST' | 'RIVAL' | 'SPECTATOR';
 
@@ -78,18 +105,9 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const [userRole] = useState<UserRole>(() => resolveUserRole(params));
   const [isCamOn, setIsCamOn] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
-  const agoraEngineRef = useRef<{
-    initialize: (c: { appId: string }) => void;
-    enableVideo: () => void;
-    enableLocalVideo: (on: boolean) => void;
-    startPreview: () => void;
-    stopPreview: () => void;
-    joinChannel: (...args: unknown[]) => void;
-    leaveChannel: () => void;
-    switchCamera?: () => void;
-    muteLocalAudioStream?: (mute: boolean) => void;
-    release?: () => void;
-  } | null>(null);
+  const agoraEngineRef = useRef<ReturnType<
+    NonNullable<typeof createAgoraRtcEngine>
+  > | null>(null);
 
   const challengersCount = 9;
   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
@@ -107,16 +125,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
           ]);
         }
 
-        if (!AGORA_CONFIGURED) {
-          console.warn(
-            '[ChallengerArena] Agora App ID not set. Set EXPO_PUBLIC_AGORA_APP_ID in .env'
-          );
-          if (isMounted) setIsEngineReady(true);
-          return;
-        }
-
-        if (!createAgoraRtcEngine) {
-          console.warn('[ChallengerArena] react-native-agora native module unavailable');
+        if (!AGORA_CONFIGURED || !createAgoraRtcEngine) {
           if (isMounted) setIsEngineReady(true);
           return;
         }
@@ -155,12 +164,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
         try {
           agoraEngineRef.current.enableLocalVideo(true);
           agoraEngineRef.current.startPreview();
-          agoraEngineRef.current.joinChannel('', 'bawaal_arena', 0, {
-            clientRoleType:
-              ClientRoleType?.ClientRoleBroadcaster ??
-              ClientRoleType?.clientRoleBroadcaster ??
-              1,
-          });
+          if (ClientRoleType) {
+            agoraEngineRef.current.joinChannel('', 'bawaal_arena', 0, {
+              clientRoleType:
+                ClientRoleType.clientRoleBroadcaster ??
+                ClientRoleType.ClientRoleBroadcaster ??
+                1,
+            });
+          }
         } catch (e) {
           console.error('[ChallengerArena] Camera toggle error:', e);
         }
@@ -191,31 +202,24 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
   const toggleMic = useCallback(() => {
     try {
-      // Simple mute toggle — engine tracks state internally for preview tests.
       agoraEngineRef.current?.muteLocalAudioStream?.(true);
     } catch {
       /* ignore */
     }
   }, []);
 
-  const Surface = RtcSurfaceView as React.ComponentType<{
-    canvas: { uid: number };
-    style?: object;
-    zOrderMediaOverlay?: boolean;
-  }> | null;
-
   const showLocalPreview = Boolean(
-    isCamOn && isEngineReady && Surface && isAthlete
+    isCamOn && isEngineReady && RtcSurfaceView && isAthlete
   );
 
   return (
     <View style={[styles.rootContainer, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" />
 
-      {/* ================= TOP HALF: HOST BOX ================= */}
+      {/* TOP HALF: HOST BOX */}
       <View style={styles.arenaHalf}>
-        {showLocalPreview && userRole === 'HOST' && Surface ? (
-          <Surface
+        {showLocalPreview && userRole === 'HOST' && RtcSurfaceView ? (
+          <RtcSurfaceView
             canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
             zOrderMediaOverlay
@@ -250,17 +254,17 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* ================= CENTER VS BADGE ================= */}
+      {/* CENTER VS BADGE */}
       <View style={styles.vsContainer} pointerEvents="none">
         <View style={styles.vsCircle}>
           <Text style={styles.vsText}>VS</Text>
         </View>
       </View>
 
-      {/* ================= BOTTOM HALF: RIVAL BOX ================= */}
+      {/* BOTTOM HALF: RIVAL BOX */}
       <View style={styles.arenaHalf}>
-        {showLocalPreview && userRole === 'RIVAL' && Surface ? (
-          <Surface
+        {showLocalPreview && userRole === 'RIVAL' && RtcSurfaceView ? (
+          <RtcSurfaceView
             canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
             zOrderMediaOverlay
@@ -288,7 +292,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* ================= HUDS & CONTROLS ================= */}
+      {/* ROLE-BASED HUDS */}
       {isSpectator && (
         <View
           style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
@@ -349,7 +353,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
               activeOpacity={0.85}
             >
               <Text style={styles.btnText}>
-                {isCamOn ? '📹 Cam Off' : '📷 Cam On'}
+                {isCamOn ? '📹 Cam Off' : '📹 Cam On'}
               </Text>
             </TouchableOpacity>
           </View>
