@@ -190,6 +190,12 @@ export default function App() {
                 component={Live1v1BattleScreen}
                 options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
               />
+              {/* Alias used by UniversalCamera BATTLE_BAWAAL shutter */}
+              <Stack.Screen
+                name="ChallengerArena"
+                component={Live1v1BattleScreen}
+                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+              />
               <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
               {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
               <Stack.Screen
