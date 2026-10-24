@@ -1,6 +1,6 @@
 /**
  * ChallengerArena — 50/50 Host / Rival arena.
- * Android permissions complete before Agora initialize(); preview gated by isPreviewActive.
+ * Spectator vs Athlete HUDs are mutually exclusive; action handlers wired.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   PermissionsAndroid,
   Platform,
+  Alert,
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,8 +37,8 @@ let AgoraSdk: {
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   AgoraSdk = require('react-native-agora');
-} catch (e) {
-  console.warn('[ChallengerArena] Agora SDK load error', e);
+} catch {
+  console.warn('[ChallengerArena] Agora SDK not loaded');
 }
 
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -91,11 +92,7 @@ async function ensureAndroidMediaPermissions(): Promise<boolean> {
     const micOk =
       result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
       PermissionsAndroid.RESULTS.GRANTED;
-    if (!camOk || !micOk) {
-      console.warn('[ChallengerArena] Android camera/mic permission denied', result);
-      return false;
-    }
-    return true;
+    return camOk && micOk;
   } catch (err) {
     console.error('[ChallengerArena] Permission request error:', err);
     return false;
@@ -118,15 +115,25 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const [userRole] = useState<UserRole>(() => resolveUserRole(params));
   const [isCamOn, setIsCamOn] = useState(false);
   const [isPreviewActive, setIsPreviewActive] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [hostVotes, setHostVotes] = useState(1200);
+  const [rivalVotes, setRivalVotes] = useState(1100);
+  const [challengersCount] = useState(9);
   const [isEngineReady, setIsEngineReady] = useState(false);
+
   const agoraEngineRef = useRef<ReturnType<
     NonNullable<typeof createAgoraRtcEngine>
   > | null>(null);
   const mountedRef = useRef(true);
 
-  const challengersCount = 9;
   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
   const isSpectator = !isAthlete;
+  const totalVotes = Math.max(hostVotes + rivalVotes, 1);
+  const hostPercent = Math.round((hostVotes / totalVotes) * 100);
+  const rivalPercent = 100 - hostPercent;
+
+  /** Keep rival badges clear of the floating athlete HUD */
+  const rivalBadgeBottom = isAthlete ? 120 : 80;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -134,22 +141,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
     const initEngine = async () => {
       try {
-        // 1) Runtime permissions MUST finish before native initialize()
         const permitted = await ensureAndroidMediaPermissions();
         if (cancelled || !mountedRef.current) return;
 
-        if (!permitted) {
-          // Still mark ready so UI does not stay black / hung
+        if (!permitted || !createAgoraRtcEngine || !AGORA_APP_ID) {
           if (mountedRef.current) setIsEngineReady(true);
           return;
         }
 
-        if (!createAgoraRtcEngine || !AGORA_APP_ID) {
-          if (mountedRef.current) setIsEngineReady(true);
-          return;
-        }
-
-        // 2) Create + initialize only after permissions resolve
         const engine = createAgoraRtcEngine();
         if (cancelled || !mountedRef.current) {
           try {
@@ -168,7 +167,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
           setIsEngineReady(true);
         }
       } catch (err) {
-        console.error('[ChallengerArena] Agora init caught error:', err);
+        console.error('[ChallengerArena] Agora init error:', err);
         if (mountedRef.current && !cancelled) {
           setIsEngineReady(true);
         }
@@ -185,16 +184,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
         agoraEngineRef.current?.leaveChannel?.();
         agoraEngineRef.current?.release?.();
       } catch {
-        /* ignore cleanup crashes */
+        /* ignore */
       }
       agoraEngineRef.current = null;
     };
   }, []);
 
-  const toggleCamera = useCallback(async () => {
+  const handleToggleCam = useCallback(async () => {
     const engine = agoraEngineRef.current;
-
-    // Soft UI toggle when engine missing — never crash the mount tree
     if (!engine || !isEngineReady) {
       setIsCamOn((prev) => !prev);
       setIsPreviewActive(false);
@@ -203,13 +200,9 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
     try {
       if (!isCamOn) {
-        // Re-check Android perms before starting preview (user may have denied earlier)
         const permitted = await ensureAndroidMediaPermissions();
         if (!mountedRef.current) return;
-        if (!permitted) {
-          console.warn('[ChallengerArena] Cannot start preview without permissions');
-          return;
-        }
+        if (!permitted) return;
 
         engine.enableLocalVideo(true);
         engine.startPreview();
@@ -223,15 +216,26 @@ export default function ChallengerArena({ route, navigation }: Props) {
         setIsPreviewActive(false);
         setIsCamOn(false);
       }
-    } catch (err) {
-      console.error('[ChallengerArena] Camera toggle error:', err);
-      if (mountedRef.current) {
-        setIsPreviewActive(false);
-      }
+    } catch (e) {
+      console.error('[ChallengerArena] Cam toggle error:', e);
+      if (mountedRef.current) setIsPreviewActive(false);
     }
   }, [isCamOn, isEngineReady]);
 
-  const flipCamera = useCallback(() => {
+  const handleToggleMute = useCallback(() => {
+    const next = !isMuted;
+    const engine = agoraEngineRef.current;
+    if (engine) {
+      try {
+        engine.muteLocalAudioStream?.(next);
+      } catch {
+        /* ignore */
+      }
+    }
+    setIsMuted(next);
+  }, [isMuted]);
+
+  const handleFlipCamera = useCallback(() => {
     try {
       agoraEngineRef.current?.switchCamera?.();
     } catch {
@@ -239,12 +243,20 @@ export default function ChallengerArena({ route, navigation }: Props) {
     }
   }, []);
 
-  const toggleMic = useCallback(() => {
-    try {
-      agoraEngineRef.current?.muteLocalAudioStream?.(true);
-    } catch {
-      /* ignore */
-    }
+  const handleVoteHost = useCallback(() => {
+    setHostVotes((prev) => prev + 1);
+  }, []);
+
+  const handleVoteRival = useCallback(() => {
+    setRivalVotes((prev) => prev + 1);
+  }, []);
+
+  const handleChallengersPress = useCallback(() => {
+    Alert.alert('Challengers Queue', `${challengersCount} waiting in line`);
+  }, [challengersCount]);
+
+  const handleBanterPress = useCallback(() => {
+    Alert.alert('Banter Box', 'Open chat overlay');
   }, []);
 
   const showLocalPreview = Boolean(
@@ -255,7 +267,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
     <View style={[styles.rootContainer, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" />
 
-      {/* HOST BOX */}
+      {/* TOP HALF: HOST ARENA */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'HOST' && RtcSurfaceView ? (
           <RtcSurfaceView
@@ -277,7 +289,11 @@ export default function ChallengerArena({ route, navigation }: Props) {
             <Text style={styles.roleText}>[HOST]</Text>
           </View>
           {isSpectator && (
-            <TouchableOpacity style={styles.challengersBtn} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.challengersBtn}
+              onPress={handleChallengersPress}
+              activeOpacity={0.85}
+            >
               <Text style={styles.challengersText}>
                 CHALLENGERS ({challengersCount})
               </Text>
@@ -293,14 +309,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* VS BADGE */}
+      {/* CENTER VS CIRCLE */}
       <View style={styles.vsContainer} pointerEvents="none">
         <View style={styles.vsCircle}>
           <Text style={styles.vsText}>VS</Text>
         </View>
       </View>
 
-      {/* RIVAL BOX */}
+      {/* BOTTOM HALF: RIVAL ARENA */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'RIVAL' && RtcSurfaceView ? (
           <RtcSurfaceView
@@ -316,14 +332,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
           </View>
         )}
 
-        <View style={[styles.bottomLeftGroup, { bottom: isAthlete ? 70 : 16 }]}>
+        <View style={[styles.bottomLeftGroup, { bottom: rivalBadgeBottom }]}>
           <View style={styles.rivalBadge}>
             <Text style={styles.badgeText}>🇮🇳 @SANTHOSH</Text>
             <Text style={[styles.roleText, styles.roleTextRival]}>[RIVAL]</Text>
           </View>
         </View>
 
-        <View style={[styles.bottomRightGroup, { bottom: isAthlete ? 70 : 16 }]}>
+        <View style={[styles.bottomRightGroup, { bottom: rivalBadgeBottom }]}>
           <View style={[styles.repsBox, styles.repsBoxRival]}>
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={styles.repsValue}>0</Text>
@@ -331,74 +347,100 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* SPECTATOR HUD */}
-      {isSpectator && (
-        <View
-          style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
-        >
-          <View style={styles.voteBarWrapper}>
-            <Text style={styles.voteTextLeft}>1.2K · 54%</Text>
-            <View style={styles.progressBarBg}>
-              <View style={styles.progressBarFill} />
-            </View>
-            <Text style={styles.voteTextRight}>46% · 1.1K</Text>
-          </View>
-          <View style={styles.spectatorActionRow}>
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.85}>
-              <Text style={styles.btnText}>🥊 VOTE HOST</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.banterBtn} activeOpacity={0.85}>
-              <Text style={styles.btnText}>💬 BANTER</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} activeOpacity={0.85}>
-              <Text style={styles.btnText}>🥊 VOTE RIVAL</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* ATHLETE HUD */}
-      {isAthlete && (
-        <View
-          style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
-        >
-          <TouchableOpacity
-            style={styles.backChip}
-            activeOpacity={0.85}
-            onPress={() => {
-              if (navigation?.canGoBack?.()) navigation.goBack?.();
-              else navigation?.navigate?.('Main', { tab: 'Battles' });
-            }}
-          >
-            <Text style={styles.btnText}>← BAWAAL</Text>
-          </TouchableOpacity>
-          <View style={styles.athleteControlRow}>
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={flipCamera}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnText}>🔄 Flip</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={toggleMic}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnText}>🎤 Mute</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.controlBtn}
-              onPress={toggleCamera}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnText}>
-                {isCamOn ? '📹 Cam Off' : '📹 Cam On'}
+      {/* FLOATING HUD — spectator XOR athlete (never both) */}
+      <View
+        style={[styles.floatingHudContainer, { bottom: insets.bottom + 12 }]}
+      >
+        {isSpectator && (
+          <View>
+            <View style={styles.voteBarWrapper}>
+              <Text style={styles.voteTextLeft}>
+                {(hostVotes / 1000).toFixed(1)}K · {hostPercent}%
               </Text>
-            </TouchableOpacity>
+              <View style={styles.progressBarBg}>
+                <View
+                  style={[styles.progressBarFill, { width: `${hostPercent}%` }]}
+                />
+              </View>
+              <Text style={styles.voteTextRight}>
+                {rivalPercent}% · {(rivalVotes / 1000).toFixed(1)}K
+              </Text>
+            </View>
+
+            <View style={styles.actionRow}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleVoteHost}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>🥊 VOTE HOST</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.banterBtn}
+                onPress={handleBanterPress}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>💬 BANTER</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleVoteRival}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>🥊 VOTE RIVAL</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      )}
+        )}
+
+        {isAthlete && (
+          <View>
+            <TouchableOpacity
+              style={styles.backChip}
+              activeOpacity={0.85}
+              onPress={() => {
+                if (navigation?.canGoBack?.()) navigation.goBack?.();
+                else navigation?.navigate?.('Main', { tab: 'Battles' });
+              }}
+            >
+              <Text style={styles.btnText}>← BAWAAL</Text>
+            </TouchableOpacity>
+            <View style={styles.athleteControlRow}>
+              <TouchableOpacity
+                style={styles.controlBtn}
+                onPress={handleFlipCamera}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>🔄 Flip</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.controlBtn,
+                  isMuted && styles.activeControlBtn,
+                ]}
+                onPress={handleToggleMute}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>
+                  {isMuted ? '🔇 Unmute' : '🎤 Mute'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.controlBtn,
+                  isCamOn && styles.activeControlBtn,
+                ]}
+                onPress={handleToggleCam}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.btnText}>
+                  {isCamOn ? '📹 Cam Off' : '📹 Cam On'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -501,7 +543,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: 'flex-start',
   },
-  challengersText: { color: '#000', fontSize: 11, fontWeight: 'bold' },
+  challengersText: { color: '#000000', fontSize: 11, fontWeight: 'bold' },
   floatingHudContainer: {
     position: 'absolute',
     left: 16,
@@ -522,24 +564,36 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
   },
-  progressBarFill: {
-    width: '54%',
-    height: '100%',
-    backgroundColor: '#FF5722',
-  },
+  progressBarFill: { height: '100%', backgroundColor: '#FF5722' },
   voteTextLeft: { color: '#FF5722', fontSize: 11, fontWeight: 'bold' },
   voteTextRight: { color: '#00BCD4', fontSize: 11, fontWeight: 'bold' },
-  spectatorActionRow: {
+  actionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 8,
   },
+  actionBtn: {
+    flex: 1,
+    backgroundColor: '#1F293D',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  banterBtn: {
+    backgroundColor: '#374151',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
   athleteControlRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    paddingVertical: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    paddingVertical: 12,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
   },
   backChip: {
     alignSelf: 'flex-start',
@@ -549,21 +603,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  actionBtn: {
-    flex: 1,
-    backgroundColor: '#1F293D',
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  banterBtn: {
-    backgroundColor: '#374151',
+  controlBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-    alignItems: 'center',
+    backgroundColor: '#1F293D',
   },
-  controlBtn: { paddingHorizontal: 16, paddingVertical: 6 },
+  activeControlBtn: { backgroundColor: '#FF5722' },
   btnText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
 });
 
