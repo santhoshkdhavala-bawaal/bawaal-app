@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -14,6 +14,11 @@ import BrandHeader from './BrandHeader';
 import CreateBattleSheet from './CreateBattleSheet';
 import { useMainTabs } from './mainTabContext';
 import { toChallengerAthlete } from './src/services/activeUserProfile';
+import {
+  subscribeBattleChallenges,
+  subscribeHotFeature,
+  getHotFeatureBattle,
+} from './battlesFeedStore';
 
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
@@ -73,9 +78,29 @@ export default function BattlesScreen({ navigation }) {
   const { openProfileGateway } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
+  const [hotFeatureOverride, setHotFeatureOverride] = useState(() =>
+    getHotFeatureBattle()
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+
+  useEffect(() => {
+    const unsubBattles = subscribeBattleChallenges((battle) => {
+      if (!battle?.id) return;
+      setBattles((prev) => {
+        if (prev.some((b) => b.id === battle.id)) return prev;
+        return [battle, ...prev];
+      });
+    });
+    const unsubHot = subscribeHotFeature((card) => {
+      setHotFeatureOverride(card || null);
+    });
+    return () => {
+      unsubBattles();
+      unsubHot();
+    };
+  }, []);
 
   const ensureMediaPermissions = useCallback(async () => {
     if (!cameraPermission?.granted) {
@@ -92,6 +117,28 @@ export default function BattlesScreen({ navigation }) {
   ]);
 
   const featuredLive = (() => {
+    // HOT FEATURE from UniversalCamera BATTLE_BAWAAL takes priority
+    if (hotFeatureOverride?.isHotFeature || hotFeatureOverride?.liveMatch) {
+      const m = hotFeatureOverride.liveMatch;
+      const rival =
+        m?.challenger ||
+        (Array.isArray(m?.challengers) && m.challengers[0]) ||
+        null;
+      return {
+        battleId: hotFeatureOverride.id,
+        match: m,
+        challengeTitle:
+          hotFeatureOverride.challengeTitle ||
+          hotFeatureOverride.target ||
+          DEFAULT_FEATURED.challengeTitle,
+        hostFlag: m?.host?.flag || hotFeatureOverride.hostFlag || DEFAULT_FEATURED.hostFlag,
+        rivalFlag: rival?.flag || null,
+        hostLabel: m?.host?.label || hotFeatureOverride.hostLabel || DEFAULT_FEATURED.hostLabel,
+        rivalLabel: rival?.label || null,
+        isHotFeature: true,
+      };
+    }
+
     const live = battles.find((b) => b.status === 'LIVE' && b.liveMatch);
     if (!live?.liveMatch) return DEFAULT_FEATURED;
     const m = live.liveMatch;
@@ -225,8 +272,16 @@ export default function BattlesScreen({ navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        <View style={styles.featuredCard}>
+        <View
+          style={[
+            styles.featuredCard,
+            featuredLive.isHotFeature && styles.featuredCardHot,
+          ]}
+        >
           <Text style={styles.featuredTitle}>🔴 LIVE 1v1 BATTLE BAWAAL</Text>
+          {featuredLive.isHotFeature ? (
+            <Text style={styles.hotFeatureBadge}>HOT FEATURE</Text>
+          ) : null}
           <Text style={styles.featuredSubtitle} numberOfLines={1}>
             {featuredSubtitle(featuredLive)}
           </Text>
@@ -250,17 +305,25 @@ export default function BattlesScreen({ navigation }) {
 
         {visible.map((battle) => {
           const title = battle.target || battle.description || 'OPEN CHALLENGE';
+          const isRewind = battle.source === 'BATTLE_REWIND';
           return (
-            <View key={battle.id} style={styles.card}>
+            <View
+              key={battle.id}
+              style={[styles.card, isRewind && styles.cardRewind]}
+            >
               <View style={styles.cardLeft}>
                 <View style={styles.titleRow}>
-                  <Text style={styles.sportTag}>[{battle.sport}]</Text>
+                  <Text style={styles.sportTag}>
+                    {isRewind ? '🥊 REWIND' : `[${battle.sport}]`}
+                  </Text>
                   <Text style={styles.title} numberOfLines={1}>
                     {title}
                   </Text>
                 </View>
                 <Text style={styles.meta} numberOfLines={1}>
                   by {battle.host} · {battle.responses} responded
+                  {battle.targetReps ? ` · ${battle.targetReps} reps` : ''}
+                  {battle.timeLimitSec ? ` · ${battle.timeLimitSec}s` : ''}
                   {battle.status === 'LIVE' ? ' · LIVE' : ''}
                   {battle.status === 'SCHEDULED' ? ' · SCHEDULED' : ''}
                 </Text>
@@ -379,11 +442,32 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     marginBottom: 14,
   },
+  featuredCardHot: {
+    borderWidth: 2.5,
+    borderColor: FLAME_ORANGE,
+    shadowColor: FLAME_ORANGE,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  hotFeatureBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    marginBottom: 2,
+    color: FLAME_ORANGE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
   featuredTitle: {
     color: WHITE,
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.4,
+  },
+  cardRewind: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,87,34,0.45)',
   },
   featuredSubtitle: {
     color: MUTED,

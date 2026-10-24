@@ -1,5 +1,6 @@
 /**
- * PostCreationSheet — dark bottom sheet for publishing SPARKS / JOSH / BATTLE_REWIND clips.
+ * PostCreationSheet — dark bottom sheet for publishing SPARKS / JOSH / BATTLE_REWIND.
+ * Dispatches SPARKS/JOSH → Arena feed; BATTLE_REWIND → Battles feed store.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -14,6 +15,8 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { pushArenaPost } from './arenaFeedStore';
+import { pushBattleChallenge } from './battlesFeedStore';
 
 export type CreationMode =
   | 'SPARKS'
@@ -37,14 +40,24 @@ export type PostCreationPayload = {
   tagline?: SportyTagline;
   targetReps?: number;
   timeLimitSec?: number;
+  slowMoEnabled?: boolean;
+  slowMoRate?: number;
+  durationSec?: number;
+  /** Where the post was dispatched */
+  feedTarget?: 'ARENA' | 'BATTLES';
 };
 
 export type PostCreationSheetProps = {
   mode: CreationMode;
   videoUri: string | null;
+  slowMoEnabled?: boolean;
+  slowMoRate?: number;
+  durationSec?: number;
   onClose: () => void;
   onSuccess: (payload?: PostCreationPayload) => void;
 };
+
+const NEON_ORANGE = '#FF5722';
 
 function headerForMode(mode: CreationMode): string {
   switch (mode) {
@@ -74,9 +87,57 @@ function titlePlaceholder(mode: CreationMode): string {
   }
 }
 
+function dispatchPayload(payload: PostCreationPayload): PostCreationPayload {
+  const timestamp = Date.now();
+
+  if (payload.mode === 'SPARKS' || payload.mode === 'JOSH') {
+    pushArenaPost({
+      id: `arena-${payload.mode.toLowerCase()}-${timestamp}`,
+      uri: payload.videoUri,
+      videoUri: payload.videoUri,
+      recordedVideoUri: payload.videoUri,
+      title: payload.title,
+      tagline: payload.tagline,
+      creator: 'You',
+      category: 'GYM',
+      target: payload.title,
+      timestamp,
+      durationSec: payload.durationSec || 30,
+      slowMoEnabled: !!payload.slowMoEnabled,
+      slowMoRate: payload.slowMoRate ?? 1,
+      mode: payload.mode,
+      feed: 'ARENA',
+    });
+    return { ...payload, feedTarget: 'ARENA' };
+  }
+
+  if (payload.mode === 'BATTLE_REWIND') {
+    pushBattleChallenge({
+      id: `rewind-${timestamp}`,
+      sport: 'GYM',
+      target: payload.title,
+      description: payload.tagline || null,
+      host: '@MUMBAI_STRIKER',
+      responses: 0,
+      status: 'OPEN',
+      videoUri: payload.videoUri || undefined,
+      targetReps: payload.targetReps,
+      timeLimitSec: payload.timeLimitSec,
+      source: 'BATTLE_REWIND',
+      isHotFeature: false,
+    });
+    return { ...payload, feedTarget: 'BATTLES' };
+  }
+
+  return payload;
+}
+
 function PostCreationSheet({
   mode,
   videoUri,
+  slowMoEnabled = false,
+  slowMoRate = 0.5,
+  durationSec,
   onClose,
   onSuccess,
 }: PostCreationSheetProps) {
@@ -84,7 +145,9 @@ function PostCreationSheet({
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState<SportyTagline>('#DailyGrind');
   const [targetReps, setTargetReps] = useState('50');
-  const [timeLimit, setTimeLimit] = useState('30');
+  const [timeLimit, setTimeLimit] = useState(
+    String(durationSec && durationSec > 0 ? durationSec : 30)
+  );
 
   const showTaglines = mode === 'SPARKS' || mode === 'JOSH';
   const showBattleFields = mode === 'BATTLE_REWIND';
@@ -106,6 +169,9 @@ function PostCreationSheet({
       mode,
       videoUri,
       title: trimmed,
+      slowMoEnabled,
+      slowMoRate: slowMoEnabled ? slowMoRate : 1,
+      durationSec,
     };
 
     if (showTaglines) {
@@ -127,11 +193,14 @@ function PostCreationSheet({
       payload.timeLimitSec = secs;
     }
 
-    Alert.alert('🔥 Success!', `${mode} posted successfully to BAWAAL!`, [
-      {
-        text: 'OK',
-        onPress: () => onSuccess(payload),
-      },
+    const dispatched = dispatchPayload(payload);
+    const destination =
+      dispatched.feedTarget === 'BATTLES'
+        ? 'BAWAAL Battles'
+        : 'BAWAAL Arena';
+
+    Alert.alert('🔥 Success!', `${mode} posted to ${destination}!`, [
+      { text: 'OK', onPress: () => onSuccess(dispatched) },
     ]);
   };
 
@@ -159,18 +228,14 @@ function PostCreationSheet({
           <Text style={styles.headerTitle} numberOfLines={2}>
             {headerForMode(mode)}
           </Text>
-          <TouchableOpacity
-            onPress={onClose}
-            hitSlop={12}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
+          <TouchableOpacity onPress={onClose} hitSlop={12}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.clipHint} numberOfLines={1}>
           🎬 {clipHint}
+          {slowMoEnabled ? ' · SLOW-MO ON' : ''}
         </Text>
 
         <ScrollView
@@ -243,10 +308,10 @@ function PostCreationSheet({
             style={styles.postBtn}
             onPress={handlePost}
             activeOpacity={0.9}
-            accessibilityRole="button"
-            accessibilityLabel="Publish to BAWAAL"
           >
-            <Text style={styles.postBtnText}>POST TO BAWAAL</Text>
+            <Text style={styles.postBtnText}>
+              {showBattleFields ? 'POST TO BATTLES' : 'POST TO ARENA'}
+            </Text>
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -256,7 +321,6 @@ function PostCreationSheet({
 
 export default PostCreationSheet;
 
-/** Mirrors StyleSheet.absoluteFillObject (typed as absoluteFill on this RN version). */
 const ABSOLUTE_FILL = {
   position: 'absolute' as const,
   top: 0,
@@ -271,9 +335,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.82)',
     justifyContent: 'flex-end',
   },
-  dismissHit: {
-    ...ABSOLUTE_FILL,
-  },
+  dismissHit: { ...ABSOLUTE_FILL },
   sheetContainer: {
     backgroundColor: '#0F172A',
     borderTopLeftRadius: 22,
@@ -305,20 +367,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  closeText: {
-    color: '#94A3B8',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  clipHint: {
-    color: '#64748B',
-    fontSize: 11,
-    marginBottom: 14,
-  },
-  formContent: {
-    gap: 14,
-    paddingBottom: 8,
-  },
+  closeText: { color: '#94A3B8', fontSize: 18, fontWeight: '700' },
+  clipHint: { color: '#64748B', fontSize: 11, marginBottom: 14 },
+  formContent: { gap: 14, paddingBottom: 8 },
   label: {
     color: '#94A3B8',
     fontSize: 12,
@@ -336,11 +387,7 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
     fontSize: 14,
   },
-  tagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tagChip: {
     backgroundColor: '#0A0E1A',
     paddingHorizontal: 12,
@@ -350,33 +397,22 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   activeTagChip: {
-    backgroundColor: '#FF5722',
-    borderColor: '#FF5722',
+    backgroundColor: NEON_ORANGE,
+    borderColor: NEON_ORANGE,
   },
-  tagText: {
-    color: '#94A3B8',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  activeTagText: {
-    color: '#FFFFFF',
-  },
-  battleFieldsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfField: {
-    flex: 1,
-  },
+  tagText: { color: '#94A3B8', fontSize: 11, fontWeight: '700' },
+  activeTagText: { color: '#FFFFFF' },
+  battleFieldsRow: { flexDirection: 'row', gap: 12 },
+  halfField: { flex: 1 },
   postBtn: {
-    backgroundColor: '#00BCD4',
+    backgroundColor: NEON_ORANGE,
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
   },
   postBtnText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.6,
