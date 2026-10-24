@@ -1,5 +1,6 @@
 /**
- * ChallengerArena — 50/50 Host / Rival arena with safe Agora boot.
+ * ChallengerArena — 50/50 Host / Rival arena.
+ * Android permissions complete before Agora initialize(); preview gated by isPreviewActive.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -13,7 +14,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Load Agora SDK dynamically (dev client / Expo Go safe)
 let AgoraSdk: {
   RtcSurfaceView?: React.ComponentType<{
     canvas: { uid: number };
@@ -26,35 +26,25 @@ let AgoraSdk: {
     enableLocalVideo: (on: boolean) => void;
     startPreview: () => void;
     stopPreview: () => void;
-    joinChannel: (...args: unknown[]) => void;
     leaveChannel: () => void;
     switchCamera?: () => void;
     muteLocalAudioStream?: (mute: boolean) => void;
     release?: () => void;
-  };
-  ClientRoleType?: {
-    clientRoleBroadcaster?: number;
-    ClientRoleBroadcaster?: number;
   };
 } | null = null;
 
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   AgoraSdk = require('react-native-agora');
-} catch {
-  console.warn('[ChallengerArena] Agora SDK not installed or loaded');
+} catch (e) {
+  console.warn('[ChallengerArena] Agora SDK load error', e);
 }
 
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine || null;
-const ClientRoleType = AgoraSdk?.ClientRoleType;
 
 const AGORA_APP_ID = '256476d4e1db410e9f72b9196287fd29';
-const AGORA_CONFIGURED = Boolean(
-  AGORA_APP_ID && AGORA_APP_ID.length > 10 && createAgoraRtcEngine
-);
 
-/** Full-bleed fill (absoluteFillObject not in RN typed exports). */
 const ABSOLUTE_FILL = {
   position: 'absolute' as const,
   top: 0,
@@ -85,8 +75,31 @@ function resolveUserRole(params: Record<string, unknown> = {}): UserRole {
   ) {
     return 'RIVAL';
   }
-  // Default HOST for local camera testing when role is unspecified.
   return 'HOST';
+}
+
+async function ensureAndroidMediaPermissions(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+    const camOk =
+      result[PermissionsAndroid.PERMISSIONS.CAMERA] ===
+      PermissionsAndroid.RESULTS.GRANTED;
+    const micOk =
+      result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+      PermissionsAndroid.RESULTS.GRANTED;
+    if (!camOk || !micOk) {
+      console.warn('[ChallengerArena] Android camera/mic permission denied', result);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[ChallengerArena] Permission request error:', err);
+    return false;
+  }
 }
 
 type Props = {
@@ -104,93 +117,119 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
   const [userRole] = useState<UserRole>(() => resolveUserRole(params));
   const [isCamOn, setIsCamOn] = useState(false);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
   const [isEngineReady, setIsEngineReady] = useState(false);
   const agoraEngineRef = useRef<ReturnType<
     NonNullable<typeof createAgoraRtcEngine>
   > | null>(null);
+  const mountedRef = useRef(true);
 
   const challengersCount = 9;
   const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
   const isSpectator = !isAthlete;
 
   useEffect(() => {
-    let isMounted = true;
+    mountedRef.current = true;
+    let cancelled = false;
 
-    const initAgora = async () => {
+    const initEngine = async () => {
       try {
-        if (Platform.OS === 'android') {
-          await PermissionsAndroid.requestMultiple([
-            PermissionsAndroid.PERMISSIONS.CAMERA,
-            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-          ]);
-        }
+        // 1) Runtime permissions MUST finish before native initialize()
+        const permitted = await ensureAndroidMediaPermissions();
+        if (cancelled || !mountedRef.current) return;
 
-        if (!AGORA_CONFIGURED || !createAgoraRtcEngine) {
-          if (isMounted) setIsEngineReady(true);
+        if (!permitted) {
+          // Still mark ready so UI does not stay black / hung
+          if (mountedRef.current) setIsEngineReady(true);
           return;
         }
 
-        const agoraEngine = createAgoraRtcEngine();
-        agoraEngineRef.current = agoraEngine;
+        if (!createAgoraRtcEngine || !AGORA_APP_ID) {
+          if (mountedRef.current) setIsEngineReady(true);
+          return;
+        }
 
-        agoraEngine.initialize({ appId: AGORA_APP_ID });
-        agoraEngine.enableVideo();
+        // 2) Create + initialize only after permissions resolve
+        const engine = createAgoraRtcEngine();
+        if (cancelled || !mountedRef.current) {
+          try {
+            engine.release?.();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
 
-        if (isMounted) setIsEngineReady(true);
-      } catch (e) {
-        console.error('[ChallengerArena] Agora init error:', e);
-        if (isMounted) setIsEngineReady(true);
+        agoraEngineRef.current = engine;
+        engine.initialize({ appId: AGORA_APP_ID });
+        engine.enableVideo();
+
+        if (mountedRef.current && !cancelled) {
+          setIsEngineReady(true);
+        }
+      } catch (err) {
+        console.error('[ChallengerArena] Agora init caught error:', err);
+        if (mountedRef.current && !cancelled) {
+          setIsEngineReady(true);
+        }
       }
     };
 
-    void initAgora();
+    void initEngine();
 
     return () => {
-      isMounted = false;
+      cancelled = true;
+      mountedRef.current = false;
       try {
         agoraEngineRef.current?.stopPreview?.();
         agoraEngineRef.current?.leaveChannel?.();
         agoraEngineRef.current?.release?.();
       } catch {
-        /* ignore */
+        /* ignore cleanup crashes */
       }
       agoraEngineRef.current = null;
     };
   }, []);
 
   const toggleCamera = useCallback(async () => {
-    if (!isCamOn) {
-      if (agoraEngineRef.current && AGORA_CONFIGURED) {
-        try {
-          agoraEngineRef.current.enableLocalVideo(true);
-          agoraEngineRef.current.startPreview();
-          if (ClientRoleType) {
-            agoraEngineRef.current.joinChannel('', 'bawaal_arena', 0, {
-              clientRoleType:
-                ClientRoleType.clientRoleBroadcaster ??
-                ClientRoleType.ClientRoleBroadcaster ??
-                1,
-            });
-          }
-        } catch (e) {
-          console.error('[ChallengerArena] Camera toggle error:', e);
-        }
-      }
-      setIsCamOn(true);
+    const engine = agoraEngineRef.current;
+
+    // Soft UI toggle when engine missing — never crash the mount tree
+    if (!engine || !isEngineReady) {
+      setIsCamOn((prev) => !prev);
+      setIsPreviewActive(false);
       return;
     }
 
-    if (agoraEngineRef.current && AGORA_CONFIGURED) {
-      try {
-        agoraEngineRef.current.enableLocalVideo(false);
-        agoraEngineRef.current.stopPreview();
-        agoraEngineRef.current.leaveChannel();
-      } catch {
-        /* ignore */
+    try {
+      if (!isCamOn) {
+        // Re-check Android perms before starting preview (user may have denied earlier)
+        const permitted = await ensureAndroidMediaPermissions();
+        if (!mountedRef.current) return;
+        if (!permitted) {
+          console.warn('[ChallengerArena] Cannot start preview without permissions');
+          return;
+        }
+
+        engine.enableLocalVideo(true);
+        engine.startPreview();
+        if (!mountedRef.current) return;
+        setIsPreviewActive(true);
+        setIsCamOn(true);
+      } else {
+        engine.stopPreview();
+        engine.enableLocalVideo(false);
+        if (!mountedRef.current) return;
+        setIsPreviewActive(false);
+        setIsCamOn(false);
+      }
+    } catch (err) {
+      console.error('[ChallengerArena] Camera toggle error:', err);
+      if (mountedRef.current) {
+        setIsPreviewActive(false);
       }
     }
-    setIsCamOn(false);
-  }, [isCamOn]);
+  }, [isCamOn, isEngineReady]);
 
   const flipCamera = useCallback(() => {
     try {
@@ -209,14 +248,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
   }, []);
 
   const showLocalPreview = Boolean(
-    isCamOn && isEngineReady && RtcSurfaceView && isAthlete
+    isCamOn && isPreviewActive && isEngineReady && RtcSurfaceView && isAthlete
   );
 
   return (
     <View style={[styles.rootContainer, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" />
 
-      {/* TOP HALF: HOST BOX */}
+      {/* HOST BOX */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'HOST' && RtcSurfaceView ? (
           <RtcSurfaceView
@@ -254,14 +293,14 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* CENTER VS BADGE */}
+      {/* VS BADGE */}
       <View style={styles.vsContainer} pointerEvents="none">
         <View style={styles.vsCircle}>
           <Text style={styles.vsText}>VS</Text>
         </View>
       </View>
 
-      {/* BOTTOM HALF: RIVAL BOX */}
+      {/* RIVAL BOX */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'RIVAL' && RtcSurfaceView ? (
           <RtcSurfaceView
@@ -292,7 +331,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* ROLE-BASED HUDS */}
+      {/* SPECTATOR HUD */}
       {isSpectator && (
         <View
           style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
@@ -318,6 +357,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       )}
 
+      {/* ATHLETE HUD */}
       {isAthlete && (
         <View
           style={[styles.floatingHudContainer, { bottom: insets.bottom + 10 }]}
