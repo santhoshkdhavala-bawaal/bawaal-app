@@ -61,7 +61,16 @@ export default function MainTabs({ navigation, route }) {
       });
       navigation?.setParams?.({ newArenaPost: undefined, tab: undefined });
     }
-  }, [route?.params?.tab, route?.params?.newArenaPost, navigation]);
+    if (route?.params?.newBattlePost) {
+      setTab('Battles');
+      navigation?.setParams?.({ newBattlePost: undefined, tab: undefined });
+    }
+  }, [
+    route?.params?.tab,
+    route?.params?.newArenaPost,
+    route?.params?.newBattlePost,
+    navigation,
+  ]);
 
   const openCreate = useCallback(() => {
     // Central "+" → Universal Creation Engine (mode strip: SPARKS / JOSH / REWIND / BAWAAL)

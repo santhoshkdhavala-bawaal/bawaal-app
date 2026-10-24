@@ -866,7 +866,16 @@ export default function UniversalCamera({
             if (payload) onPublished?.(payload);
             const tab =
               payload?.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
-            navigation?.navigate?.('Main', { tab });
+            // Pass newPost so frozen/remounted feeds refresh immediately
+            navigation?.navigate?.('Main', {
+              tab,
+              ...(tab === 'Arena' && payload?.newPost
+                ? { newArenaPost: payload.newPost }
+                : {}),
+              ...(tab === 'Battles' && payload?.newPost
+                ? { newBattlePost: payload.newPost }
+                : {}),
+            });
           }}
         />
       </Modal>

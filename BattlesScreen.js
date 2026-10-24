@@ -18,7 +18,9 @@ import {
   subscribeBattleChallenges,
   subscribeHotFeature,
   getHotFeatureBattle,
+  getBattlesList,
 } from './battlesFeedStore';
+import { useFocusEffect } from '@react-navigation/native';
 
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
@@ -85,14 +87,17 @@ export default function BattlesScreen({ navigation }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
-  useEffect(() => {
-    const unsubBattles = subscribeBattleChallenges((battle) => {
-      if (!battle?.id) return;
-      setBattles((prev) => {
-        if (prev.some((b) => b.id === battle.id)) return prev;
-        return [battle, ...prev];
-      });
+  const mergeBattle = useCallback((battle) => {
+    if (!battle?.id) return;
+    setBattles((prev) => {
+      if (prev.some((b) => b.id === battle.id)) return prev;
+      return [battle, ...prev];
     });
+  }, []);
+
+  useEffect(() => {
+    getBattlesList().forEach(mergeBattle);
+    const unsubBattles = subscribeBattleChallenges(mergeBattle);
     const unsubHot = subscribeHotFeature((card) => {
       setHotFeatureOverride(card || null);
     });
@@ -100,7 +105,15 @@ export default function BattlesScreen({ navigation }) {
       unsubBattles();
       unsubHot();
     };
-  }, []);
+  }, [mergeBattle]);
+
+  useFocusEffect(
+    useCallback(() => {
+      getBattlesList().forEach(mergeBattle);
+      const hot = getHotFeatureBattle();
+      if (hot) setHotFeatureOverride(hot);
+    }, [mergeBattle])
+  );
 
   const ensureMediaPermissions = useCallback(async () => {
     if (!cameraPermission?.granted) {

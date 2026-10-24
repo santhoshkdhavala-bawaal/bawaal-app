@@ -13,7 +13,11 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { consumeLatestBattleClip, peekLatestBattleClip } from './battleClipStore';
-import { subscribeArenaPosts, drainPendingArenaPosts } from './arenaFeedStore';
+import {
+  subscribeArenaPosts,
+  drainPendingArenaPosts,
+  getArenaPosts,
+} from './arenaFeedStore';
 import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
@@ -688,13 +692,17 @@ export default function ArenaFeed({ navigation, route }) {
 
   useFocusEffect(
     useCallback(() => {
+      // Re-sync persistent store (camera modal / freezeOnBlur safe)
+      getArenaPosts().forEach(absorbPost);
+      const fromParams = route?.params?.newArenaPost;
+      if (fromParams) absorbPost(fromParams);
       const fromStore = consumeLatestBattleClip();
       if (fromStore) absorbPost(fromStore);
       else {
         const peek = peekLatestBattleClip();
         if (peek) absorbPost(peek);
       }
-    }, [absorbPost])
+    }, [absorbPost, route?.params?.newArenaPost])
   );
 
   const visibleFeed =

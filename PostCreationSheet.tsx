@@ -1,6 +1,6 @@
 /**
- * PostCreationSheet — dark bottom sheet for publishing SPARKS / JOSH / BATTLE_REWIND.
- * Dispatches SPARKS/JOSH → Arena feed; BATTLE_REWIND → Battles feed store.
+ * PostCreationSheet — publishes SPARKS/JOSH → Arena, REWIND/BAWAAL → Battles.
+ * Always prepends into persistent feed stores and returns `newPost` via onSuccess.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -16,7 +16,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { pushArenaPost } from './arenaFeedStore';
-import { pushBattleChallenge } from './battlesFeedStore';
+import {
+  pushBattleChallenge,
+  pushHotFeatureBattle,
+} from './battlesFeedStore';
 
 export type CreationMode =
   | 'SPARKS'
@@ -33,6 +36,21 @@ export const SPARTY_TAGLINES = [
 
 export type SportyTagline = (typeof SPARTY_TAGLINES)[number];
 
+export type FeedPostCard = {
+  id: string;
+  mode: CreationMode;
+  videoUri: string | null;
+  title: string;
+  caption?: string;
+  tagline?: SportyTagline;
+  targetReps?: number;
+  timeLimit?: number;
+  timeLimitSec?: number;
+  timestamp: number;
+  feedTarget: 'ARENA' | 'BATTLES';
+  [key: string]: unknown;
+};
+
 export type PostCreationPayload = {
   mode: CreationMode;
   videoUri: string | null;
@@ -43,8 +61,9 @@ export type PostCreationPayload = {
   slowMoEnabled?: boolean;
   slowMoRate?: number;
   durationSec?: number;
-  /** Where the post was dispatched */
   feedTarget?: 'ARENA' | 'BATTLES';
+  /** Fully constructed card that was prepended to the feed store */
+  newPost?: FeedPostCard;
 };
 
 export type PostCreationSheetProps = {
@@ -54,6 +73,7 @@ export type PostCreationSheetProps = {
   slowMoRate?: number;
   durationSec?: number;
   onClose: () => void;
+  /** Called with payload including `newPost` so Arena / Battles can refresh immediately */
   onSuccess: (payload?: PostCreationPayload) => void;
 };
 
@@ -82,51 +102,133 @@ function titlePlaceholder(mode: CreationMode): string {
       return 'e.g., Brutal 150kg PB Deadlift';
     case 'BATTLE_REWIND':
       return 'e.g., 50 Clapper Pushups Challenge';
+    case 'BATTLE_BAWAAL':
+      return 'e.g., Live 100 Pushups Sprint';
     default:
       return 'Give it a hype phrase…';
   }
 }
 
-function dispatchPayload(payload: PostCreationPayload): PostCreationPayload {
+/**
+ * Build + prepend feed cards, then return payload with `newPost` for navigation refresh.
+ */
+export function dispatchToFeeds(
+  payload: PostCreationPayload
+): PostCreationPayload {
   const timestamp = Date.now();
+  const videoUri = payload.videoUri || null;
 
   if (payload.mode === 'SPARKS' || payload.mode === 'JOSH') {
-    pushArenaPost({
+    const arenaCard = pushArenaPost({
       id: `arena-${payload.mode.toLowerCase()}-${timestamp}`,
-      uri: payload.videoUri,
-      videoUri: payload.videoUri,
-      recordedVideoUri: payload.videoUri,
+      type: 'reel',
+      mode: payload.mode,
+      uri: videoUri,
+      videoUri,
+      recordedVideoUri: videoUri,
+      localVideoUri: videoUri,
       title: payload.title,
+      caption: payload.tagline
+        ? `${payload.title} ${payload.tagline}`
+        : payload.title,
       tagline: payload.tagline,
       creator: 'You',
+      author: '@you',
       category: 'GYM',
+      sport: 'GYM',
       target: payload.title,
       timestamp,
+      createdAt: timestamp,
       durationSec: payload.durationSec || 30,
       slowMoEnabled: !!payload.slowMoEnabled,
       slowMoRate: payload.slowMoRate ?? 1,
-      mode: payload.mode,
+      hypeCount: 0,
       feed: 'ARENA',
     });
-    return { ...payload, feedTarget: 'ARENA' };
+
+    const newPost: FeedPostCard = {
+      ...(arenaCard as object),
+      id: arenaCard?.id || `arena-${timestamp}`,
+      mode: payload.mode,
+      videoUri,
+      title: payload.title,
+      caption: arenaCard?.caption || payload.title,
+      tagline: payload.tagline,
+      timestamp,
+      feedTarget: 'ARENA',
+    };
+
+    return { ...payload, feedTarget: 'ARENA', newPost };
   }
 
   if (payload.mode === 'BATTLE_REWIND') {
-    pushBattleChallenge({
+    const battleCard = pushBattleChallenge({
       id: `rewind-${timestamp}`,
       sport: 'GYM',
+      title: payload.title,
       target: payload.title,
       description: payload.tagline || null,
       host: '@MUMBAI_STRIKER',
       responses: 0,
       status: 'OPEN',
-      videoUri: payload.videoUri || undefined,
+      videoUri: videoUri || undefined,
       targetReps: payload.targetReps,
+      timeLimit: payload.timeLimitSec,
       timeLimitSec: payload.timeLimitSec,
+      timestamp,
       source: 'BATTLE_REWIND',
       isHotFeature: false,
     });
-    return { ...payload, feedTarget: 'BATTLES' };
+
+    const newPost: FeedPostCard = {
+      ...(battleCard as object),
+      id: battleCard?.id || `rewind-${timestamp}`,
+      mode: 'BATTLE_REWIND',
+      videoUri,
+      title: payload.title,
+      targetReps: payload.targetReps,
+      timeLimit: payload.timeLimitSec,
+      timeLimitSec: payload.timeLimitSec,
+      timestamp,
+      feedTarget: 'BATTLES',
+    };
+
+    return { ...payload, feedTarget: 'BATTLES', newPost };
+  }
+
+  if (payload.mode === 'BATTLE_BAWAAL') {
+    const hotCard = pushHotFeatureBattle({
+      id: `live-bawaal-${timestamp}`,
+      challengeTitle: payload.title,
+      title: payload.title,
+      target: payload.title,
+      host: '@MUMBAI_STRIKER',
+      hostFlag: '🇮🇳',
+      hostLabel: 'INDIA',
+      videoUri: videoUri || undefined,
+      targetReps: payload.targetReps,
+      timeLimit: payload.timeLimitSec,
+      timeLimitSec: payload.timeLimitSec,
+      timestamp,
+      status: 'LIVE',
+      isHotFeature: true,
+      source: 'BATTLE_BAWAAL',
+    });
+
+    const newPost: FeedPostCard = {
+      ...(hotCard as object),
+      id: hotCard?.id || `live-bawaal-${timestamp}`,
+      mode: 'BATTLE_BAWAAL',
+      videoUri,
+      title: payload.title,
+      targetReps: payload.targetReps,
+      timeLimit: payload.timeLimitSec,
+      timeLimitSec: payload.timeLimitSec,
+      timestamp,
+      feedTarget: 'BATTLES',
+    };
+
+    return { ...payload, feedTarget: 'BATTLES', newPost };
   }
 
   return payload;
@@ -150,7 +252,8 @@ function PostCreationSheet({
   );
 
   const showTaglines = mode === 'SPARKS' || mode === 'JOSH';
-  const showBattleFields = mode === 'BATTLE_REWIND';
+  const showBattleFields =
+    mode === 'BATTLE_REWIND' || mode === 'BATTLE_BAWAAL';
 
   const clipHint = useMemo(() => {
     if (!videoUri) return 'No clip attached';
@@ -162,6 +265,11 @@ function PostCreationSheet({
     const trimmed = title.trim();
     if (!trimmed) {
       Alert.alert('Missing Title', 'Please give your post a quick title!');
+      return;
+    }
+
+    if (!videoUri && mode !== 'BATTLE_BAWAAL') {
+      Alert.alert('Missing Clip', 'Record a video before posting.');
       return;
     }
 
@@ -193,14 +301,17 @@ function PostCreationSheet({
       payload.timeLimitSec = secs;
     }
 
-    const dispatched = dispatchPayload(payload);
+    const dispatched = dispatchToFeeds(payload);
     const destination =
       dispatched.feedTarget === 'BATTLES'
         ? 'BAWAAL Battles'
         : 'BAWAAL Arena';
 
     Alert.alert('🔥 Success!', `${mode} posted to ${destination}!`, [
-      { text: 'OK', onPress: () => onSuccess(dispatched) },
+      {
+        text: 'OK',
+        onPress: () => onSuccess(dispatched),
+      },
     ]);
   };
 
