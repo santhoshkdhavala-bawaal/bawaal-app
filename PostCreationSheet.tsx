@@ -1,6 +1,6 @@
 /**
  * PostCreationSheet — Arena / Battles dispatch + branded BAWAAL success modal.
- * Closes itself before calling onSuccess so navigation cannot crash on open modals.
+ * Closes modals safely (setTimeout) before onSuccess / navigation to prevent crashes.
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -129,7 +129,7 @@ function safeNum(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Build + prepend feed cards with non-null fallbacks (crash shield). */
+/** SPARKS/JOSH → arenaFeedStore · REWIND/BAWAAL → battlesFeedStore */
 export function dispatchToFeeds(
   payload: PostCreationPayload
 ): PostCreationPayload {
@@ -163,7 +163,10 @@ export function dispatchToFeeds(
       slowMoEnabled: !!payload.slowMoEnabled,
       slowMoRate: safeNum(payload.slowMoRate, 1),
       slowMoStartSec: safeNum(payload.slowMoStartSec, 0),
-      slowMoEndSec: safeNum(payload.slowMoEndSec, safeNum(payload.durationSec, 30)),
+      slowMoEndSec: safeNum(
+        payload.slowMoEndSec,
+        safeNum(payload.durationSec, 30)
+      ),
       hypeCount: 0,
       feed: 'ARENA',
     });
@@ -288,7 +291,8 @@ function BawaalSuccessModal({
           />
           <Text style={styles.successEyebrow}>BAWAAL</Text>
           <Text style={styles.successTitle}>
-            🔥 Success! Your video is posted in {MODE_DISPLAY[mode]}
+            🔥 Success! Your video was posted successfully to{' '}
+            {MODE_DISPLAY[mode]}
           </Text>
           <Text style={styles.successSub}>
             It will appear at the top of your feed.
@@ -306,7 +310,13 @@ function BawaalSuccessModal({
   );
 }
 
-function InlineError({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+function InlineError({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
   if (!message) return null;
   return (
     <TouchableOpacity style={styles.inlineError} onPress={onDismiss} activeOpacity={0.9}>
@@ -353,13 +363,13 @@ function PostCreationSheet({
     const payload = pendingPayload;
     setSuccessVisible(false);
     setPendingPayload(null);
-    // Close the sheet first, then hand off — avoids unmount crash with stacked modals
-    onClose();
-    requestAnimationFrame(() => {
+    // Crash shield: delay unmount / navigation after modal teardown
+    setTimeout(() => {
+      onClose();
       setTimeout(() => {
         onSuccess(payload || undefined);
-      }, 40);
-    });
+      }, 80);
+    }, 60);
   };
 
   const handlePost = () => {
@@ -381,10 +391,7 @@ function PostCreationSheet({
       slowMoEnabled: !!slowMoEnabled,
       slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
       slowMoStartSec: safeNum(slowMoStartSec, 0),
-      slowMoEndSec: safeNum(
-        slowMoEndSec,
-        safeNum(durationSec, 30)
-      ),
+      slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
       durationSec: safeNum(durationSec, 30),
     };
 
@@ -446,7 +453,7 @@ function PostCreationSheet({
 
         <Text style={styles.clipHint} numberOfLines={1}>
           🎬 {clipHint}
-          {slowMoEnabled ? ' · SLOW-MO ON' : ''}
+          {slowMoEnabled ? ' · SLOW-MO REGION ON' : ''}
         </Text>
 
         <InlineError message={formError} onDismiss={() => setFormError('')} />
@@ -665,11 +672,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     alignItems: 'center',
   },
-  successLogo: {
-    width: 120,
-    height: 48,
-    marginBottom: 8,
-  },
+  successLogo: { width: 120, height: 48, marginBottom: 8 },
   successEyebrow: {
     color: NEON_ORANGE,
     fontSize: 11,

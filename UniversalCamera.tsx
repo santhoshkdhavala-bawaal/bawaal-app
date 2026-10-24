@@ -1,6 +1,6 @@
 /**
- * UniversalCamera — BAWAAL Universal Creation Engine.
- * Time pill above red shutter · neon-orange mode strip · slow-mo film-strip preview.
+ * UniversalCamera — uncluttered BAWAAL creation engine.
+ * Hub drawer for modes · duration pill · red shutter · region slow-mo preview.
  */
 import React, {
   useCallback,
@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   LayoutChangeEvent,
   type GestureResponderEvent,
 } from 'react-native';
@@ -44,7 +45,8 @@ const NEON_ORANGE = '#FF5722';
 const SHUTTER_RED = '#FF3B30';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
 const PILL_HIDE_MS = 5000;
-const MIN_TRIM_SPAN = 0.4;
+const MIN_TRIM_SPAN = 0.5;
+const DOT_COUNT = 28;
 
 type NavLike = {
   goBack?: () => void;
@@ -59,13 +61,33 @@ export type UniversalCameraProps = {
   onPublished?: (payload: PostCreationPayload) => void;
 };
 
-type ModeMeta = { id: CreationMode; label: string };
+type HubMode = {
+  id: CreationMode;
+  title: string;
+  subtitle: string;
+};
 
-const MODE_STRIP: ModeMeta[] = [
-  { id: 'SPARKS', label: '⚡ SPARKS' },
-  { id: 'JOSH', label: '🔥 JOSH' },
-  { id: 'BATTLE_REWIND', label: '🥊 BATTLE REWIND' },
-  { id: 'BATTLE_BAWAAL', label: '⚔️ BATTLE BAWAAL' },
+const HUB_MODES: HubMode[] = [
+  {
+    id: 'SPARKS',
+    title: '⚡ SPARKS',
+    subtitle: '30s max · Story heat that vanishes in 24h',
+  },
+  {
+    id: 'JOSH',
+    title: '🔥 JOSH',
+    subtitle: '60s default · Unlock 3 min (180s) with coins',
+  },
+  {
+    id: 'BATTLE_REWIND',
+    title: '🥊 BATTLE REWIND',
+    subtitle: '60s max · Async recorded challenge',
+  },
+  {
+    id: 'BATTLE_BAWAAL',
+    title: '⚔️ BATTLE BAWAAL',
+    subtitle: 'Live 1v1 Arena launch',
+  },
 ];
 
 function modeCeiling(mode: CreationMode, joshUnlocked3m: boolean): number {
@@ -111,45 +133,86 @@ const ABSOLUTE_FILL = {
   bottom: 0,
 };
 
-function ShutterProgressRing({ progress }: { progress: number }) {
+/** Dashed/dotted animated progress ring around the red shutter. */
+function DottedProgressRing({
+  progress,
+  recording,
+}: {
+  progress: number;
+  recording: boolean;
+}) {
   const [spin] = useState(() => new Animated.Value(0));
+
   useEffect(() => {
-    spin.setValue(Math.min(1, Math.max(0, progress)));
-  }, [progress, spin]);
+    if (!recording) {
+      spin.stopAnimation();
+      spin.setValue(0);
+      return;
+    }
+    spin.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1400,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recording, spin]);
+
   const rotate = spin.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
+
+  const lit = Math.round(Math.min(1, Math.max(0, progress)) * DOT_COUNT);
+
   return (
-    <View style={ringStyles.track} pointerEvents="none">
-      <Animated.View
-        style={[
-          ringStyles.arc,
-          { transform: [{ rotate }], opacity: progress > 0 ? 1 : 0 },
-        ]}
-      />
-    </View>
+    <Animated.View
+      style={[ringStyles.ring, recording && { transform: [{ rotate }] }]}
+      pointerEvents="none"
+    >
+      {Array.from({ length: DOT_COUNT }).map((_, i) => {
+        const angle = (i / DOT_COUNT) * Math.PI * 2 - Math.PI / 2;
+        const r = 44;
+        const x = 48 + Math.cos(angle) * r - 3;
+        const y = 48 + Math.sin(angle) * r - 3;
+        const active = recording ? i <= lit : false;
+        return (
+          <View
+            key={`dot-${i}`}
+            style={[
+              ringStyles.dot,
+              {
+                left: x,
+                top: y,
+                backgroundColor: active ? NEON_ORANGE : 'rgba(255,255,255,0.35)',
+              },
+            ]}
+          />
+        );
+      })}
+    </Animated.View>
   );
 }
 
 const ringStyles = StyleSheet.create({
-  track: {
-    ...ABSOLUTE_FILL,
-    borderRadius: 48,
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.28)',
+  ring: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
   },
-  arc: {
-    ...ABSOLUTE_FILL,
-    borderRadius: 48,
-    borderWidth: 3,
-    borderColor: 'transparent',
-    borderTopColor: NEON_ORANGE,
-    borderRightColor: NEON_ORANGE,
+  dot: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });
 
-/** Film-strip trimmer with start/end handles + playhead. */
+/** Film strip — red highlight = slow-mo region only. */
 function FilmStripTrimmer({
   duration,
   startSec,
@@ -202,7 +265,6 @@ function FilmStripTrimmer({
   const leftPct = (startSec / dur) * 100;
   const rightPct = (endSec / dur) * 100;
   const playPct = Math.max(0, Math.min(100, (playheadSec / dur) * 100));
-  const frames = 12;
 
   return (
     <View
@@ -216,8 +278,11 @@ function FilmStripTrimmer({
         dragKind.current = null;
       }}
     >
+      <Text style={trimStyles.hint}>
+        Drag red box · only that region plays in slow-mo
+      </Text>
       <View style={trimStyles.film}>
-        {Array.from({ length: frames }).map((_, i) => (
+        {Array.from({ length: 14 }).map((_, i) => (
           <View
             key={`f-${i}`}
             style={[
@@ -229,7 +294,10 @@ function FilmStripTrimmer({
         <View
           style={[
             trimStyles.selection,
-            { left: `${leftPct}%`, width: `${Math.max(2, rightPct - leftPct)}%` },
+            {
+              left: `${leftPct}%`,
+              width: `${Math.max(3, rightPct - leftPct)}%`,
+            },
           ]}
         />
         <View style={[trimStyles.handle, { left: `${leftPct}%` }]}>
@@ -242,7 +310,7 @@ function FilmStripTrimmer({
       </View>
       <View style={trimStyles.labels}>
         <Text style={trimStyles.label}>{formatClock(startSec)}</Text>
-        <Text style={trimStyles.label}>TRIM</Text>
+        <Text style={trimStyles.labelAccent}>SLOW-MO</Text>
         <Text style={trimStyles.label}>{formatClock(endSec)}</Text>
       </View>
     </View>
@@ -250,9 +318,15 @@ function FilmStripTrimmer({
 }
 
 const trimStyles = StyleSheet.create({
-  wrap: { width: '100%', marginTop: 10 },
+  wrap: { width: '100%', marginTop: 8 },
+  hint: {
+    color: '#8A99AD',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
   film: {
-    height: 48,
+    height: 52,
     borderRadius: 10,
     overflow: 'hidden',
     flexDirection: 'row',
@@ -267,9 +341,9 @@ const trimStyles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(255,87,34,0.28)',
+    backgroundColor: 'rgba(255,87,34,0.38)',
     borderColor: NEON_ORANGE,
-    borderWidth: 1.5,
+    borderWidth: 2,
   },
   handle: {
     position: 'absolute',
@@ -282,7 +356,7 @@ const trimStyles = StyleSheet.create({
   },
   handleBar: {
     width: 4,
-    height: '70%',
+    height: '72%',
     borderRadius: 2,
     backgroundColor: NEON_ORANGE,
   },
@@ -300,6 +374,134 @@ const trimStyles = StyleSheet.create({
     marginTop: 6,
   },
   label: { color: '#8A99AD', fontSize: 10, fontWeight: '700' },
+  labelAccent: { color: NEON_ORANGE, fontSize: 10, fontWeight: '900' },
+});
+
+function BawaalHubDrawer({
+  visible,
+  onClose,
+  onSelect,
+  joshUnlocked3m,
+  onToggleJosh3m,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (mode: CreationMode) => void;
+  joshUnlocked3m: boolean;
+  onToggleJosh3m: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={hubStyles.backdrop} onPress={onClose} />
+      <View
+        style={[
+          hubStyles.sheet,
+          { paddingBottom: Math.max(insets.bottom, 18) },
+        ]}
+      >
+        <View style={hubStyles.handle} />
+        <Image
+          source={require('./assets/bawaal-full-logo.png')}
+          style={hubStyles.logo}
+          resizeMode="contain"
+        />
+        <Text style={hubStyles.title}>BAWAAL Hub</Text>
+        <Text style={hubStyles.sub}>Pick your creation mode</Text>
+
+        {HUB_MODES.map((m) => (
+          <TouchableOpacity
+            key={m.id}
+            style={hubStyles.card}
+            activeOpacity={0.88}
+            onPress={() => onSelect(m.id)}
+          >
+            <Text style={hubStyles.cardTitle}>{m.title}</Text>
+            <Text style={hubStyles.cardSub}>{m.subtitle}</Text>
+            {m.id === 'JOSH' && (
+              <TouchableOpacity
+                style={hubStyles.joshChip}
+                onPress={onToggleJosh3m}
+              >
+                <Text style={hubStyles.joshChipText}>
+                  {joshUnlocked3m
+                    ? '⚡ 3 MIN UNLOCKED'
+                    : '🔒 Unlock 3 min (10 coins)'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </Modal>
+  );
+}
+
+const hubStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  sheet: {
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    borderTopWidth: 1.5,
+    borderColor: NEON_ORANGE,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#334155',
+    marginBottom: 10,
+  },
+  logo: { width: 130, height: 44, alignSelf: 'center', marginBottom: 4 },
+  title: {
+    color: NEON_ORANGE,
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0.6,
+  },
+  sub: {
+    color: '#8A99AD',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  card: {
+    backgroundColor: '#0A0E1A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,87,34,0.45)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  cardTitle: {
+    color: NEON_ORANGE,
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  cardSub: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  joshChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    backgroundColor: 'rgba(255,87,34,0.18)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  joshChipText: { color: NEON_ORANGE, fontSize: 11, fontWeight: '800' },
 });
 
 function ClipPreviewModal({
@@ -327,19 +529,26 @@ function ClipPreviewModal({
   const [startSec, setStartSec] = useState(0);
   const [endSec, setEndSec] = useState(bootDur);
   const [playheadSec, setPlayheadSec] = useState(0);
+
   const startSecRef = useRef(0);
   const endSecRef = useRef(bootDur);
+  const rateRef = useRef(0.5);
+  const lastRateRef = useRef(1);
 
   useEffect(() => {
     startSecRef.current = startSec;
     endSecRef.current = endSec;
   }, [startSec, endSec]);
 
+  useEffect(() => {
+    rateRef.current = slowMoRate;
+  }, [slowMoRate]);
+
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
-    p.loop = false;
+    p.loop = true;
     p.muted = false;
     try {
-      p.timeUpdateEventInterval = 0.05;
+      p.timeUpdateEventInterval = 0.08;
     } catch {
       /* ignore */
     }
@@ -348,20 +557,19 @@ function ClipPreviewModal({
   useEffect(() => {
     if (!player || !visible) return;
     try {
-      // eslint-disable-next-line react-hooks/immutability -- VideoPlayer API
-      player.playbackRate = slowMoRate;
       if (playing) player.play();
       else player.pause();
     } catch {
       /* ignore */
     }
-  }, [player, slowMoRate, playing, visible]);
+  }, [player, playing, visible]);
 
   useEffect(() => {
     if (!player || !visible) return;
     let sub: { remove?: () => void } | null = null;
     let statusSub: { remove?: () => void } | null = null;
     let durTimer: ReturnType<typeof setTimeout> | null = null;
+
     try {
       const syncDuration = () => {
         const nativeDur = Number(player.duration);
@@ -370,27 +578,36 @@ function ClipPreviewModal({
           setEndSec((e) => Math.min(Math.max(e, MIN_TRIM_SPAN), nativeDur));
         }
       };
-      durTimer = setTimeout(syncDuration, 120);
+      durTimer = setTimeout(syncDuration, 150);
       statusSub = player.addListener?.('statusChange', syncDuration);
-      sub = player.addListener?.('timeUpdate', (payload: { currentTime?: number }) => {
-        const t =
-          typeof payload?.currentTime === 'number'
-            ? payload.currentTime
-            : Number(player.currentTime) || 0;
-        setPlayheadSec(t);
-        const s = startSecRef.current;
-        const e = endSecRef.current;
-        if (t >= e - 0.05 || t < s - 0.05) {
-          try {
-            player.currentTime = s;
-          } catch {
-            /* ignore */
+
+      sub = player.addListener?.(
+        'timeUpdate',
+        (payload: { currentTime?: number }) => {
+          const t =
+            typeof payload?.currentTime === 'number'
+              ? payload.currentTime
+              : Number(player.currentTime) || 0;
+          setPlayheadSec(t);
+
+          const s = startSecRef.current;
+          const e = endSecRef.current;
+          const inSlow = t >= s && t <= e;
+          const nextRate = inSlow ? rateRef.current : 1;
+          if (Math.abs(nextRate - lastRateRef.current) > 0.01) {
+            try {
+              player.playbackRate = nextRate;
+              lastRateRef.current = nextRate;
+            } catch {
+              /* ignore */
+            }
           }
         }
-      });
+      );
     } catch {
       /* ignore */
     }
+
     return () => {
       if (durTimer) clearTimeout(durTimer);
       try {
@@ -401,10 +618,6 @@ function ClipPreviewModal({
       }
     };
   }, [player, visible]);
-
-  const togglePlay = () => {
-    setPlaying((p) => !p);
-  };
 
   if (!visible || !uri) return null;
 
@@ -422,13 +635,15 @@ function ClipPreviewModal({
             nativeControls={false}
           />
           <TouchableOpacity
-            style={previewStyles.playFab}
-            onPress={togglePlay}
+            style={previewStyles.playOverlay}
+            onPress={() => setPlaying((p) => !p)}
             activeOpacity={0.85}
           >
-            <Text style={previewStyles.playFabText}>
-              {playing ? '⏸' : '▶️'}
-            </Text>
+            <View style={previewStyles.playCircle}>
+              <Text style={previewStyles.playIcon}>
+                {playing ? '⏸' : '▶️'}
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -451,7 +666,9 @@ function ClipPreviewModal({
           }}
         />
 
-        <Text style={previewStyles.rateLabel}>Playback speed</Text>
+        <Text style={previewStyles.rateLabel}>
+          Slow-mo speed (inside red box only)
+        </Text>
         <View style={previewStyles.rateRow}>
           {[0.25, 0.5, 0.75].map((rate) => {
             const active = slowMoRate === rate;
@@ -489,7 +706,7 @@ function ClipPreviewModal({
             style={previewStyles.primaryBtn}
             onPress={() =>
               onNext({
-                slowMoEnabled: slowMoRate < 1,
+                slowMoEnabled: true,
                 slowMoRate,
                 slowMoStartSec: startSec,
                 slowMoEndSec: endSec,
@@ -528,19 +745,22 @@ const previewStyles = StyleSheet.create({
     borderColor: '#1F293D',
   },
   video: { flex: 1 },
-  playFab: {
-    position: 'absolute',
-    bottom: 12,
-    alignSelf: 'center',
-    left: '42%',
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  playOverlay: {
+    ...ABSOLUTE_FILL,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playFabText: { fontSize: 18 },
+  playCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playIcon: { fontSize: 28 },
   rateLabel: {
     color: '#8A99AD',
     fontSize: 11,
@@ -599,6 +819,7 @@ export default function UniversalCamera({
     'SPARKS';
 
   const [mode, setMode] = useState<CreationMode>(bootMode);
+  const [hubOpen, setHubOpen] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(() =>
     defaultDuration(bootMode)
   );
@@ -668,9 +889,7 @@ export default function UniversalCamera({
 
   const scheduleHidePill = useCallback(() => {
     if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
-    hidePillTimerRef.current = setTimeout(() => {
-      fadeTimePill(true);
-    }, PILL_HIDE_MS);
+    hidePillTimerRef.current = setTimeout(() => fadeTimePill(true), PILL_HIDE_MS);
   }, [fadeTimePill]);
 
   const revealTimePill = useCallback(() => {
@@ -694,13 +913,11 @@ export default function UniversalCamera({
   ]);
 
   useEffect(() => {
-    // Auto-schedule first hide after boot
     if (bootMode !== 'BATTLE_BAWAAL') scheduleHidePill();
     return () => {
       if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
       if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
     };
-    // Intentionally once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -725,22 +942,21 @@ export default function UniversalCamera({
       navigatingRef.current = true;
       setShowPreview(false);
       setShowPostSheet(false);
-      requestAnimationFrame(() => {
-        setTimeout(() => {
+      setHubOpen(false);
+      setTimeout(() => {
+        try {
+          navigation?.navigate?.('Main', params);
+        } catch (err) {
+          console.warn('[UniversalCamera] navigate failed:', err);
           try {
-            navigation?.navigate?.('Main', params);
-          } catch (err) {
-            console.warn('[UniversalCamera] navigate failed:', err);
-            try {
-              if (navigation?.canGoBack?.()) navigation.goBack?.();
-            } catch {
-              /* ignore */
-            }
-          } finally {
-            navigatingRef.current = false;
+            if (navigation?.canGoBack?.()) navigation.goBack?.();
+          } catch {
+            /* ignore */
           }
-        }, 60);
-      });
+        } finally {
+          navigatingRef.current = false;
+        }
+      }, 120);
     },
     [navigation]
   );
@@ -755,21 +971,19 @@ export default function UniversalCamera({
     }
     setShowPreview(false);
     setShowPostSheet(false);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        if (navigation?.canGoBack?.()) navigation.goBack?.();
-        else navigation?.navigate?.('Main', { tab: 'Arena' });
-      }, 40);
-    });
+    setHubOpen(false);
+    setTimeout(() => {
+      if (navigation?.canGoBack?.()) navigation.goBack?.();
+      else navigation?.navigate?.('Main', { tab: 'Arena' });
+    }, 80);
   }, [isRecording, navigation]);
 
-  const handleModeChange = useCallback(
+  const handleHubSelect = useCallback(
     (next: CreationMode) => {
-      if (isRecording || recordingLockRef.current) return;
       setMode(next);
+      setHubOpen(false);
       if (next === 'BATTLE_BAWAAL') {
         setShowTimePill(false);
-        if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
         return;
       }
       const nextDur = Math.min(
@@ -780,7 +994,7 @@ export default function UniversalCamera({
       fadeTimePill(false);
       scheduleHidePill();
     },
-    [isRecording, joshUnlocked3m, fadeTimePill, scheduleHidePill]
+    [joshUnlocked3m, fadeTimePill, scheduleHidePill]
   );
 
   const handleTimeSelect = useCallback(
@@ -792,19 +1006,6 @@ export default function UniversalCamera({
     },
     [isRecording, fadeTimePill, scheduleHidePill]
   );
-
-  const handleToggle3mExtension = useCallback(() => {
-    if (isRecording || mode !== 'JOSH') return;
-    if (joshUnlocked3m) {
-      setJoshUnlocked3m(false);
-      setSelectedDuration((d) => Math.min(d, 60));
-      return;
-    }
-    setJoshUnlocked3m(true);
-    setSelectedDuration(180);
-    fadeTimePill(false);
-    scheduleHidePill();
-  }, [isRecording, mode, joshUnlocked3m, fadeTimePill, scheduleHidePill]);
 
   const launchBattleBawaal = useCallback(() => {
     const card = pushHotFeatureBattle({
@@ -818,16 +1019,15 @@ export default function UniversalCamera({
     });
     setShowPreview(false);
     setShowPostSheet(false);
-    requestAnimationFrame(() => {
-      setTimeout(() => {
-        navigation?.navigate?.('ChallengerArena', {
-          mode: 'athlete',
-          role: 'host',
-          battleId: card?.id || `live-${Date.now()}`,
-          match: card?.liveMatch || null,
-        });
-      }, 40);
-    });
+    setHubOpen(false);
+    setTimeout(() => {
+      navigation?.navigate?.('ChallengerArena', {
+        mode: 'athlete',
+        role: 'host',
+        battleId: card?.id || `live-${Date.now()}`,
+        match: card?.liveMatch || null,
+      });
+    }, 80);
   }, [navigation]);
 
   const startRecording = useCallback(async () => {
@@ -925,6 +1125,9 @@ export default function UniversalCamera({
   const permissionsGranted =
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
+  const modeLabel =
+    HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
+
   if (permissionsPending) {
     return (
       <View style={styles.permissionContainer}>
@@ -971,7 +1174,6 @@ export default function UniversalCamera({
         }}
       />
 
-      {/* Tap viewfinder to restore time pill */}
       <Pressable
         style={styles.viewfinderTap}
         onPress={revealTimePill}
@@ -982,15 +1184,16 @@ export default function UniversalCamera({
         pointerEvents="box-none"
         style={[styles.absoluteFill, styles.overlayRoot]}
       >
+        {/* Glassmorphic CANCEL / FLIP */}
         <View
           style={[styles.topBar, { paddingTop: Math.max(insets.top, 12) }]}
         >
           <TouchableOpacity
             onPress={handleClose}
-            style={styles.iconBtn}
-            accessibilityLabel="Close camera"
+            style={styles.glassPill}
+            accessibilityLabel="Cancel"
           >
-            <Text style={styles.iconText}>✕</Text>
+            <Text style={styles.glassPillText}>✕ CANCEL</Text>
           </TouchableOpacity>
 
           <View style={styles.timerBadge}>
@@ -999,32 +1202,19 @@ export default function UniversalCamera({
                 ? '🔴 BATTLE BAWAAL'
                 : isRecording
                   ? `🔴 ${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
-                  : `⏱️ MAX ${recordLimit}s`}
+                  : modeLabel}
             </Text>
           </View>
 
           <TouchableOpacity
             onPress={flipCamera}
-            style={styles.iconBtn}
+            style={styles.glassPill}
             disabled={isRecording}
             accessibilityLabel="Flip camera"
           >
-            <Text style={styles.iconText}>🔄</Text>
+            <Text style={styles.glassPillText}>🔄 FLIP</Text>
           </TouchableOpacity>
         </View>
-
-        {mode === 'JOSH' && !isRecording && (
-          <TouchableOpacity
-            style={styles.paidToggleBtn}
-            onPress={handleToggle3mExtension}
-          >
-            <Text style={styles.paidToggleText}>
-              {joshUnlocked3m
-                ? '⚡ 3 MIN UNLOCKED (180s)'
-                : '🔒 UNLOCK 3 MIN (10 Coins)'}
-            </Text>
-          </TouchableOpacity>
-        )}
 
         {!!cameraError && (
           <TouchableOpacity
@@ -1041,7 +1231,6 @@ export default function UniversalCamera({
             { paddingBottom: Math.max(insets.bottom, 14) },
           ]}
         >
-          {/* Dark rounded duration pill (button1 style) */}
           {mode !== 'BATTLE_BAWAAL' && showTimePill && (
             <Animated.View
               style={[styles.timePill, { opacity: timePillOpacity }]}
@@ -1069,20 +1258,12 @@ export default function UniversalCamera({
             </Animated.View>
           )}
 
-          {/* Red shutter in circular track */}
           <TouchableOpacity
             style={styles.shutterWrap}
             onPress={handleShutter}
             activeOpacity={0.85}
-            accessibilityLabel={
-              mode === 'BATTLE_BAWAAL'
-                ? 'Go live Battle Bawaal'
-                : isRecording
-                  ? 'Stop recording'
-                  : 'Start recording'
-            }
           >
-            <ShutterProgressRing progress={progress} />
+            <DottedProgressRing progress={progress} recording={isRecording} />
             <View
               style={[
                 styles.shutterInner,
@@ -1092,35 +1273,25 @@ export default function UniversalCamera({
             />
           </TouchableOpacity>
 
-          {/* Neon-orange mode strip on dark glass */}
-          <View style={styles.modeStrip}>
-            {MODE_STRIP.map((item) => {
-              const active = mode === item.id;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.modeChip, active && styles.modeChipActive]}
-                  onPress={() => handleModeChange(item.id)}
-                  disabled={isRecording}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.modeText,
-                      active && styles.modeTextActive,
-                      isRecording && !active && styles.modeTextDim,
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {/* Glowing BAWAAL Hub FAB — replaces heavy mode strip */}
+          <TouchableOpacity
+            style={styles.hubFab}
+            onPress={() => !isRecording && setHubOpen(true)}
+            activeOpacity={0.9}
+            disabled={isRecording}
+          >
+            <Text style={styles.hubFabText}>BAWAAL Hub</Text>
+          </TouchableOpacity>
         </View>
       </View>
+
+      <BawaalHubDrawer
+        visible={hubOpen}
+        onClose={() => setHubOpen(false)}
+        onSelect={handleHubSelect}
+        joshUnlocked3m={joshUnlocked3m}
+        onToggleJosh3m={() => setJoshUnlocked3m((v) => !v)}
+      />
 
       <ClipPreviewModal
         key={recordedVideoUri || 'preview'}
@@ -1145,7 +1316,7 @@ export default function UniversalCamera({
           setSlowMoStartSec(s);
           setSlowMoEndSec(e);
           setShowPreview(false);
-          requestAnimationFrame(() => setShowPostSheet(true));
+          setTimeout(() => setShowPostSheet(true), 60);
         }}
       />
 
@@ -1194,8 +1365,8 @@ const styles = StyleSheet.create({
   camera: { ...ABSOLUTE_FILL },
   viewfinderTap: {
     ...ABSOLUTE_FILL,
-    top: 90,
-    bottom: 220,
+    top: 100,
+    bottom: 210,
   },
   overlayRoot: { justifyContent: 'space-between' },
   permissionContainer: {
@@ -1223,42 +1394,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
   },
-  iconBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  glassPill: {
     backgroundColor: 'rgba(10, 14, 26, 0.72)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(255,255,255,0.14)',
   },
-  iconText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
+  glassPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   timerBadge: {
     backgroundColor: 'rgba(10, 14, 26, 0.82)',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255, 87, 34, 0.55)',
+    maxWidth: '42%',
   },
   timerText: {
     color: NEON_ORANGE,
     fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.3,
+    fontSize: 11,
+    textAlign: 'center',
   },
-  paidToggleBtn: {
-    alignSelf: 'center',
-    backgroundColor: NEON_ORANGE,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: 20,
-    marginTop: 10,
-  },
-  paidToggleText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800' },
   errorBanner: {
     alignSelf: 'center',
     marginTop: 10,
@@ -1293,9 +1459,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'transparent',
   },
-  timeChipActive: {
-    backgroundColor: NEON_ORANGE,
-  },
+  timeChipActive: { backgroundColor: NEON_ORANGE },
   timeChipText: {
     color: 'rgba(255,255,255,0.78)',
     fontSize: 13,
@@ -1308,7 +1472,7 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   shutterInner: {
     width: 68,
@@ -1327,37 +1491,21 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: NEON_ORANGE,
   },
-  modeStrip: {
-    flexDirection: 'row',
-    width: '100%',
-    backgroundColor: 'rgba(10, 14, 26, 0.82)',
-    borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255,87,34,0.35)',
-    gap: 2,
+  hubFab: {
+    backgroundColor: NEON_ORANGE,
+    borderRadius: 24,
+    paddingHorizontal: 28,
+    paddingVertical: 13,
+    shadowColor: NEON_ORANGE,
+    shadowOpacity: 0.55,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
   },
-  modeChip: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 2,
-    borderRadius: 10,
+  hubFabText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
-  modeChipActive: {
-    backgroundColor: 'rgba(255,87,34,0.18)',
-  },
-  modeText: {
-    color: NEON_ORANGE,
-    fontSize: 10,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  modeTextActive: {
-    color: NEON_ORANGE,
-    textShadowColor: 'rgba(255,87,34,0.55)',
-    textShadowRadius: 6,
-  },
-  modeTextDim: { opacity: 0.45 },
 });
