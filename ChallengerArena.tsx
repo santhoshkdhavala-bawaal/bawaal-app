@@ -33,7 +33,7 @@ const ABSOLUTE_FILL = {
 const AGORA_CONFIGURED = Boolean(
   hasAgoraAppId() &&
     AGORA_APP_ID &&
-    AGORA_APP_ID.toUpperCase() !== 'YOUR_AGORA_APP_ID'
+    AGORA_APP_ID.trim().length > 0
 );
 
 type UserRole = 'HOST' | 'RIVAL' | 'SPECTATOR';
