@@ -36,6 +36,7 @@ type NavLike = {
 
 export type UniversalCameraProps = {
   navigation?: NavLike;
+  route?: { params?: { initialMode?: CreationMode } & Record<string, unknown> };
   /** Optional initial mode (defaults to SPARKS). */
   initialMode?: CreationMode;
   onPublished?: (payload: PostCreationPayload) => void;
@@ -74,14 +75,20 @@ function maxDurationFor(
 
 export default function UniversalCamera({
   navigation,
-  initialMode = 'SPARKS',
+  route,
+  initialMode,
   onPublished,
 }: UniversalCameraProps) {
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
-  const [mode, setMode] = useState<CreationMode>(initialMode);
+  const bootMode: CreationMode =
+    initialMode ||
+    (route?.params?.initialMode as CreationMode | undefined) ||
+    'SPARKS';
+
+  const [mode, setMode] = useState<CreationMode>(bootMode);
   const [isRecording, setIsRecording] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);

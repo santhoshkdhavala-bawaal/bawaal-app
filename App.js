@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import * as SplashScreen from 'expo-splash-screen';
 import MainTabs from './MainTabs';
-import ChallengeScreen from './ChallengeScreen';
+import UniversalCamera from './UniversalCamera';
 import LeaderboardScreen from './LeaderboardScreen';
 import Live1v1BattleScreen from './ChallengerArena';
 import RoleSelection from './RoleSelection';
@@ -179,9 +179,16 @@ export default function App() {
             >
               <Stack.Screen name="Entry" component={EntryScreen} />
               <Stack.Screen name="Main" component={MainTabs} />
+              {/* Central "+" create → UniversalCamera (SPARKS / JOSH / REWIND / BAWAAL) */}
+              <Stack.Screen
+                name="UniversalCamera"
+                component={UniversalCamera}
+                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+              />
+              {/* Legacy "Challenge" route name → same Universal Creation Engine */}
               <Stack.Screen
                 name="Challenge"
-                component={ChallengeScreen}
+                component={UniversalCamera}
                 options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
               />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />

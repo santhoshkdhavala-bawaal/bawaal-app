@@ -64,19 +64,9 @@ export default function MainTabs({ navigation, route }) {
   }, [route?.params?.tab, route?.params?.newArenaPost, navigation]);
 
   const openCreate = useCallback(() => {
-    navigation?.navigate?.('Challenge', {
-      mode: 'FULL_SCREEN',
-      cameraMode: 'FULL_SCREEN',
-      challengeMaxDuration: 30,
-      target: 'ARENA DROP',
-      // No battleId — creation posts as a general Arena reel (no split / no battle card)
-      reel: {
-        creator: 'You',
-        statSticker: 'ARENA DROP',
-        category: 'GYM',
-        challengeMaxDuration: 30,
-        durationSec: 30,
-      },
+    // Central "+" → Universal Creation Engine (mode strip: SPARKS / JOSH / REWIND / BAWAAL)
+    navigation?.navigate?.('UniversalCamera', {
+      initialMode: 'SPARKS',
     });
   }, [navigation]);
 
@@ -101,20 +91,11 @@ export default function MainTabs({ navigation, route }) {
     const c = challengeAlert;
     setChallengeModalOpen(false);
     setChallengeAlert(null);
-    navigation?.navigate?.('Challenge', {
-      challengeMaxDuration: 30,
+    navigation?.navigate?.('UniversalCamera', {
+      initialMode: 'BATTLE_REWIND',
       battleId: c?.id,
       target: c?.target || c?.detail || 'OPEN CHALLENGE',
       handle: (c?.handle || '@Rival_IN').replace(/^@/, ''),
-      reel: {
-        id: c?.id,
-        battleId: c?.id,
-        creator: (c?.handle || '@Rival_IN').replace(/^@/, ''),
-        statSticker: c?.target || c?.detail || 'OPEN CHALLENGE',
-        category: c?.sport || 'GYM',
-        challengeMaxDuration: 30,
-        durationSec: 30,
-      },
     });
   }, [challengeAlert, navigation]);
 
