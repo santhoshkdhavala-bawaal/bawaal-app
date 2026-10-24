@@ -1,6 +1,5 @@
 /**
- * ChallengerArena — 50/50 Host / Rival arena.
- * Spectator vs Athlete HUDs are mutually exclusive; action handlers wired.
+ * ChallengerArena — 50/50 Host / Rival with dedicated footer HUD (no absolute overlap).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -37,8 +36,8 @@ let AgoraSdk: {
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   AgoraSdk = require('react-native-agora');
-} catch {
-  console.warn('[ChallengerArena] Agora SDK not loaded');
+} catch (e) {
+  console.warn('[ChallengerArena] Agora SDK not loaded', e);
 }
 
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -118,7 +117,6 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const [isMuted, setIsMuted] = useState(false);
   const [hostVotes, setHostVotes] = useState(1200);
   const [rivalVotes, setRivalVotes] = useState(1100);
-  const [challengersCount] = useState(9);
   const [isEngineReady, setIsEngineReady] = useState(false);
 
   const agoraEngineRef = useRef<ReturnType<
@@ -131,9 +129,6 @@ export default function ChallengerArena({ route, navigation }: Props) {
   const totalVotes = Math.max(hostVotes + rivalVotes, 1);
   const hostPercent = Math.round((hostVotes / totalVotes) * 100);
   const rivalPercent = 100 - hostPercent;
-
-  /** Keep rival badges clear of the floating athlete HUD */
-  const rivalBadgeBottom = isAthlete ? 120 : 80;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -243,36 +238,25 @@ export default function ChallengerArena({ route, navigation }: Props) {
     }
   }, []);
 
-  const handleVoteHost = useCallback(() => {
-    setHostVotes((prev) => prev + 1);
-  }, []);
-
-  const handleVoteRival = useCallback(() => {
-    setRivalVotes((prev) => prev + 1);
-  }, []);
-
-  const handleChallengersPress = useCallback(() => {
-    Alert.alert('Challengers Queue', `${challengersCount} waiting in line`);
-  }, [challengersCount]);
-
-  const handleBanterPress = useCallback(() => {
-    Alert.alert('Banter Box', 'Open chat overlay');
-  }, []);
-
   const showLocalPreview = Boolean(
     isCamOn && isPreviewActive && isEngineReady && RtcSurfaceView && isAthlete
   );
 
   return (
-    <View style={[styles.rootContainer, { paddingTop: insets.top }]}>
+    <View
+      style={[
+        styles.rootContainer,
+        { paddingTop: Math.max(insets.top, 12) },
+      ]}
+    >
       <StatusBar barStyle="light-content" />
 
-      {/* TOP HALF: HOST ARENA */}
+      {/* 1. TOP HALF: HOST ARENA */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'HOST' && RtcSurfaceView ? (
           <RtcSurfaceView
-            canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
+            canvas={{ uid: 0 }}
             zOrderMediaOverlay
           />
         ) : (
@@ -291,12 +275,12 @@ export default function ChallengerArena({ route, navigation }: Props) {
           {isSpectator && (
             <TouchableOpacity
               style={styles.challengersBtn}
-              onPress={handleChallengersPress}
+              onPress={() =>
+                Alert.alert('Challengers Queue', '9 waiting in line')
+              }
               activeOpacity={0.85}
             >
-              <Text style={styles.challengersText}>
-                CHALLENGERS ({challengersCount})
-              </Text>
+              <Text style={styles.challengersText}>CHALLENGERS (9)</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -309,19 +293,19 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* CENTER VS CIRCLE */}
+      {/* 2. CENTER VS BADGE */}
       <View style={styles.vsContainer} pointerEvents="none">
         <View style={styles.vsCircle}>
           <Text style={styles.vsText}>VS</Text>
         </View>
       </View>
 
-      {/* BOTTOM HALF: RIVAL ARENA */}
+      {/* 3. BOTTOM HALF: RIVAL ARENA */}
       <View style={styles.arenaHalf}>
         {showLocalPreview && userRole === 'RIVAL' && RtcSurfaceView ? (
           <RtcSurfaceView
-            canvas={{ uid: 0 }}
             style={styles.fullScreenStream}
+            canvas={{ uid: 0 }}
             zOrderMediaOverlay
           />
         ) : (
@@ -332,14 +316,11 @@ export default function ChallengerArena({ route, navigation }: Props) {
           </View>
         )}
 
-        <View style={[styles.bottomLeftGroup, { bottom: rivalBadgeBottom }]}>
+        <View style={styles.bottomInfoRow}>
           <View style={styles.rivalBadge}>
             <Text style={styles.badgeText}>🇮🇳 @SANTHOSH</Text>
             <Text style={[styles.roleText, styles.roleTextRival]}>[RIVAL]</Text>
           </View>
-        </View>
-
-        <View style={[styles.bottomRightGroup, { bottom: rivalBadgeBottom }]}>
           <View style={[styles.repsBox, styles.repsBoxRival]}>
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={styles.repsValue}>0</Text>
@@ -347,12 +328,15 @@ export default function ChallengerArena({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* FLOATING HUD — spectator XOR athlete (never both) */}
+      {/* 4. FOOTER HUD — flow layout below arena (no absolute overlap) */}
       <View
-        style={[styles.floatingHudContainer, { bottom: insets.bottom + 12 }]}
+        style={[
+          styles.bottomHudWrapper,
+          { paddingBottom: Math.max(insets.bottom, 12) },
+        ]}
       >
         {isSpectator && (
-          <View>
+          <View style={styles.hudInner}>
             <View style={styles.voteBarWrapper}>
               <Text style={styles.voteTextLeft}>
                 {(hostVotes / 1000).toFixed(1)}K · {hostPercent}%
@@ -370,21 +354,23 @@ export default function ChallengerArena({ route, navigation }: Props) {
             <View style={styles.actionRow}>
               <TouchableOpacity
                 style={styles.actionBtn}
-                onPress={handleVoteHost}
+                onPress={() => setHostVotes((v) => v + 1)}
                 activeOpacity={0.85}
               >
                 <Text style={styles.btnText}>🥊 VOTE HOST</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.banterBtn}
-                onPress={handleBanterPress}
+                onPress={() =>
+                  Alert.alert('Banter', 'Banter chat feature coming live')
+                }
                 activeOpacity={0.85}
               >
                 <Text style={styles.btnText}>💬 BANTER</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}
-                onPress={handleVoteRival}
+                onPress={() => setRivalVotes((v) => v + 1)}
                 activeOpacity={0.85}
               >
                 <Text style={styles.btnText}>🥊 VOTE RIVAL</Text>
@@ -413,6 +399,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
               >
                 <Text style={styles.btnText}>🔄 Flip</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.controlBtn,
@@ -425,6 +412,7 @@ export default function ChallengerArena({ route, navigation }: Props) {
                   {isMuted ? '🔇 Unmute' : '🎤 Mute'}
                 </Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 style={[
                   styles.controlBtn,
@@ -446,7 +434,10 @@ export default function ChallengerArena({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  rootContainer: { flex: 1, backgroundColor: '#0A0E1A' },
+  rootContainer: {
+    flex: 1,
+    backgroundColor: '#0A0E1A',
+  },
   arenaHalf: {
     flex: 1,
     width: '100%',
@@ -455,7 +446,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: '#1F293D',
   },
-  fullScreenStream: { ...ABSOLUTE_FILL, zIndex: 1 },
+  fullScreenStream: {
+    ...ABSOLUTE_FILL,
+    zIndex: 1,
+  },
   standbyContainer: {
     ...ABSOLUTE_FILL,
     justifyContent: 'center',
@@ -463,7 +457,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0E1A',
     zIndex: 1,
   },
-  flagEmoji: { fontSize: 28, marginBottom: 4, textAlign: 'center' },
+  flagEmoji: {
+    fontSize: 28,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
   handleText: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -484,9 +482,22 @@ const styles = StyleSheet.create({
     zIndex: 10,
     gap: 6,
   },
-  topRightGroup: { position: 'absolute', top: 12, right: 16, zIndex: 10 },
-  bottomLeftGroup: { position: 'absolute', left: 16, zIndex: 10 },
-  bottomRightGroup: { position: 'absolute', right: 16, zIndex: 10 },
+  topRightGroup: {
+    position: 'absolute',
+    top: 12,
+    right: 16,
+    zIndex: 10,
+  },
+  bottomInfoRow: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
   hostBadge: {
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderWidth: 1,
@@ -503,9 +514,20 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
-  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
-  roleText: { color: '#FF5722', fontSize: 10, fontWeight: 'bold', marginTop: 2 },
-  roleTextRival: { color: '#00BCD4' },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  roleText: {
+    color: '#FF5722',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  roleTextRival: {
+    color: '#00BCD4',
+  },
   repsBox: {
     backgroundColor: 'rgba(15, 23, 42, 0.85)',
     borderWidth: 1,
@@ -515,12 +537,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  repsBoxRival: { borderColor: '#00BCD4' },
-  repsLabel: { color: '#8A99AD', fontSize: 9, fontWeight: 'bold' },
-  repsValue: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+  repsBoxRival: {
+    borderColor: '#00BCD4',
+  },
+  repsLabel: {
+    color: '#8A99AD',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  repsValue: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
   vsContainer: {
     position: 'absolute',
-    top: '50%',
+    top: '45%',
     left: '50%',
     transform: [{ translateX: -20 }, { translateY: -20 }],
     zIndex: 50,
@@ -535,7 +567,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  vsText: { color: '#FF5722', fontWeight: 'bold', fontSize: 14 },
+  vsText: {
+    color: '#FF5722',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
   challengersBtn: {
     backgroundColor: '#00BCD4',
     paddingHorizontal: 10,
@@ -543,12 +579,21 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignSelf: 'flex-start',
   },
-  challengersText: { color: '#000000', fontSize: 11, fontWeight: 'bold' },
-  floatingHudContainer: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 100,
+  challengersText: {
+    color: '#000000',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  bottomHudWrapper: {
+    width: '100%',
+    backgroundColor: '#0A0E1A',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderColor: '#1F293D',
+  },
+  hudInner: {
+    width: '100%',
   },
   voteBarWrapper: {
     flexDirection: 'row',
@@ -564,9 +609,20 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
   },
-  progressBarFill: { height: '100%', backgroundColor: '#FF5722' },
-  voteTextLeft: { color: '#FF5722', fontSize: 11, fontWeight: 'bold' },
-  voteTextRight: { color: '#00BCD4', fontSize: 11, fontWeight: 'bold' },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#FF5722',
+  },
+  voteTextLeft: {
+    color: '#FF5722',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  voteTextRight: {
+    color: '#00BCD4',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -590,7 +646,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#374151',
@@ -604,13 +660,21 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   controlBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    flex: 1,
+    marginHorizontal: 4,
+    paddingVertical: 10,
     borderRadius: 8,
     backgroundColor: '#1F293D',
+    alignItems: 'center',
   },
-  activeControlBtn: { backgroundColor: '#FF5722' },
-  btnText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
+  activeControlBtn: {
+    backgroundColor: '#FF5722',
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
 });
 
 export { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
