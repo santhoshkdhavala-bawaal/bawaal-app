@@ -1,7 +1,4 @@
-/**
- * ChallengerArena — 50/50 Host / Rival with dedicated footer HUD (no absolute overlap).
- */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,256 +6,146 @@ import {
   TouchableOpacity,
   PermissionsAndroid,
   Platform,
-  Alert,
-  StatusBar,
+  Modal,
+  FlatList,
+  Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-let AgoraSdk: {
-  RtcSurfaceView?: React.ComponentType<{
-    canvas: { uid: number };
-    style?: object;
-    zOrderMediaOverlay?: boolean;
-  }>;
-  createAgoraRtcEngine?: () => {
-    initialize: (c: { appId: string }) => void;
-    enableVideo: () => void;
-    enableLocalVideo: (on: boolean) => void;
-    startPreview: () => void;
-    stopPreview: () => void;
-    leaveChannel: () => void;
-    switchCamera?: () => void;
-    muteLocalAudioStream?: (mute: boolean) => void;
-    release?: () => void;
-  };
-} | null = null;
-
+let AgoraSdk: any = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   AgoraSdk = require('react-native-agora');
 } catch (e) {
-  console.warn('[ChallengerArena] Agora SDK not loaded', e);
+  console.warn('Agora SDK load exception');
 }
 
-const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
-const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine || null;
+const RtcSurfaceView = AgoraSdk?.RtcSurfaceView;
+const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine;
 
 const AGORA_APP_ID = '256476d4e1db410e9f72b9196287fd29';
 
-const ABSOLUTE_FILL = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-};
+// Default Global Challengers Seed
+const INITIAL_CHALLENGERS = [
+  { id: '1', name: '@MEXICO_TITAN', flag: '🇲🇽', rank: '#1' },
+  { id: '2', name: '@BRAZIL_BRAWLER', flag: '🇧🇷', rank: '#2' },
+  { id: '3', name: '@SAMURAI_STRIKER', flag: '🇯🇵', rank: '#3' },
+  { id: '4', name: '@UK_KNOCKOUT', flag: '🇬🇧', rank: '#4' },
+  { id: '5', name: '@US_HEAVYWEIGHT', flag: '🇺🇸', rank: '#5' },
+];
 
-type UserRole = 'HOST' | 'RIVAL' | 'SPECTATOR';
-
-function resolveUserRole(params: Record<string, unknown> = {}): UserRole {
-  const mode = String(params.mode || '').toLowerCase().trim();
-  const role = String(params.role || '').toLowerCase().trim();
-  if (
-    mode === 'spectator' ||
-    role === 'spectator' ||
-    role === 'watch' ||
-    mode === 'watch'
-  ) {
-    return 'SPECTATOR';
-  }
-  if (role === 'host' || mode === 'host') return 'HOST';
-  if (
-    role === 'challenger' ||
-    role === 'rival' ||
-    mode === 'athlete' ||
-    role === 'athlete'
-  ) {
-    return 'RIVAL';
-  }
-  return 'HOST';
-}
-
-async function ensureAndroidMediaPermissions(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  try {
-    const result = await PermissionsAndroid.requestMultiple([
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-    ]);
-    const camOk =
-      result[PermissionsAndroid.PERMISSIONS.CAMERA] ===
-      PermissionsAndroid.RESULTS.GRANTED;
-    const micOk =
-      result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
-      PermissionsAndroid.RESULTS.GRANTED;
-    return camOk && micOk;
-  } catch (err) {
-    console.error('[ChallengerArena] Permission request error:', err);
-    return false;
-  }
-}
-
-type Props = {
-  route?: { params?: Record<string, unknown> };
-  navigation?: {
-    canGoBack?: () => boolean;
-    goBack?: () => void;
-    navigate?: (name: string, params?: Record<string, unknown>) => void;
-  };
-};
-
-export default function ChallengerArena({ route, navigation }: Props) {
+export default function ChallengerArena() {
   const insets = useSafeAreaInsets();
-  const params = useMemo(() => route?.params || {}, [route?.params]);
 
-  const [userRole] = useState<UserRole>(() => resolveUserRole(params));
+  // Mode: 'SPECTATOR' (Watch) vs 'ATHLETE' (Challenge)
+  const [viewMode, setViewMode] = useState<'SPECTATOR' | 'ATHLETE'>('SPECTATOR');
+
+  // Camera & Mic Controls
   const [isCamOn, setIsCamOn] = useState(false);
-  const [isPreviewActive, setIsPreviewActive] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMicOn, setIsMicOn] = useState(false);
+
+  // Live Voting State
   const [hostVotes, setHostVotes] = useState(1200);
   const [rivalVotes, setRivalVotes] = useState(1100);
-  const [isEngineReady, setIsEngineReady] = useState(false);
 
-  const agoraEngineRef = useRef<ReturnType<
-    NonNullable<typeof createAgoraRtcEngine>
-  > | null>(null);
-  const mountedRef = useRef(true);
+  // Challengers List State
+  const [challengersList, setChallengersList] = useState(INITIAL_CHALLENGERS);
 
-  const isAthlete = userRole === 'HOST' || userRole === 'RIVAL';
-  const isSpectator = !isAthlete;
-  const totalVotes = Math.max(hostVotes + rivalVotes, 1);
-  const hostPercent = Math.round((hostVotes / totalVotes) * 100);
+  // Modals
+  const [showChallengersModal, setShowChallengersModal] = useState(false);
+  const [showBanterModal, setShowBanterModal] = useState(false);
+
+  const agoraEngineRef = useRef<any>(null);
+
+  const isAthlete = viewMode === 'ATHLETE';
+  const totalVotes = hostVotes + rivalVotes;
+  const hostPercent = totalVotes > 0 ? Math.round((hostVotes / totalVotes) * 100) : 50;
   const rivalPercent = 100 - hostPercent;
 
   useEffect(() => {
-    mountedRef.current = true;
-    let cancelled = false;
-
+    let mounted = true;
     const initEngine = async () => {
       try {
-        const permitted = await ensureAndroidMediaPermissions();
-        if (cancelled || !mountedRef.current) return;
-
-        if (!permitted || !createAgoraRtcEngine || !AGORA_APP_ID) {
-          if (mountedRef.current) setIsEngineReady(true);
-          return;
+        if (Platform.OS === 'android') {
+          await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.CAMERA,
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          ]);
         }
-
-        const engine = createAgoraRtcEngine();
-        if (cancelled || !mountedRef.current) {
-          try {
-            engine.release?.();
-          } catch {
-            /* ignore */
-          }
-          return;
-        }
-
-        agoraEngineRef.current = engine;
-        engine.initialize({ appId: AGORA_APP_ID });
-        engine.enableVideo();
-
-        if (mountedRef.current && !cancelled) {
-          setIsEngineReady(true);
+        if (createAgoraRtcEngine && AGORA_APP_ID) {
+          const engine = createAgoraRtcEngine();
+          agoraEngineRef.current = engine;
+          engine.initialize({ appId: AGORA_APP_ID });
+          engine.enableVideo();
         }
       } catch (err) {
-        console.error('[ChallengerArena] Agora init error:', err);
-        if (mountedRef.current && !cancelled) {
-          setIsEngineReady(true);
-        }
+        console.error('Agora init error:', err);
       }
     };
-
-    void initEngine();
+    initEngine();
 
     return () => {
-      cancelled = true;
-      mountedRef.current = false;
+      mounted = false;
       try {
-        agoraEngineRef.current?.stopPreview?.();
-        agoraEngineRef.current?.leaveChannel?.();
-        agoraEngineRef.current?.release?.();
-      } catch {
-        /* ignore */
-      }
-      agoraEngineRef.current = null;
+        agoraEngineRef.current?.stopPreview();
+        agoraEngineRef.current?.leaveChannel();
+        agoraEngineRef.current?.release();
+      } catch (e) {}
     };
   }, []);
 
-  const handleToggleCam = useCallback(async () => {
-    const engine = agoraEngineRef.current;
-    if (!engine || !isEngineReady) {
-      setIsCamOn((prev) => !prev);
-      setIsPreviewActive(false);
-      return;
-    }
-
-    try {
-      if (!isCamOn) {
-        const permitted = await ensureAndroidMediaPermissions();
-        if (!mountedRef.current) return;
-        if (!permitted) return;
-
-        engine.enableLocalVideo(true);
-        engine.startPreview();
-        if (!mountedRef.current) return;
-        setIsPreviewActive(true);
-        setIsCamOn(true);
-      } else {
-        engine.stopPreview();
-        engine.enableLocalVideo(false);
-        if (!mountedRef.current) return;
-        setIsPreviewActive(false);
-        setIsCamOn(false);
-      }
-    } catch (e) {
-      console.error('[ChallengerArena] Cam toggle error:', e);
-      if (mountedRef.current) setIsPreviewActive(false);
-    }
-  }, [isCamOn, isEngineReady]);
-
-  const handleToggleMute = useCallback(() => {
-    const next = !isMuted;
+  const handleToggleCam = async () => {
+    const nextState = !isCamOn;
     const engine = agoraEngineRef.current;
     if (engine) {
       try {
-        engine.muteLocalAudioStream?.(next);
-      } catch {
-        /* ignore */
+        if (nextState) {
+          engine.enableLocalVideo(true);
+          engine.startPreview();
+        } else {
+          engine.stopPreview();
+          engine.enableLocalVideo(false);
+        }
+      } catch (e) {
+        console.error('Cam toggle error:', e);
       }
     }
-    setIsMuted(next);
-  }, [isMuted]);
+    setIsCamOn(nextState);
+  };
 
-  const handleFlipCamera = useCallback(() => {
-    try {
-      agoraEngineRef.current?.switchCamera?.();
-    } catch {
-      /* ignore */
+  const handleToggleMic = async () => {
+    const nextState = !isMicOn;
+    const engine = agoraEngineRef.current;
+    if (engine) {
+      try {
+        engine.muteLocalAudioStream(!nextState);
+      } catch (e) {}
     }
-  }, []);
+    setIsMicOn(nextState);
+  };
 
-  const showLocalPreview = Boolean(
-    isCamOn && isPreviewActive && isEngineReady && RtcSurfaceView && isAthlete
-  );
+  const handleVoteHost = () => {
+    setHostVotes(prev => prev + 1);
+  };
+
+  const handleVoteRival = () => {
+    setRivalVotes(prev => prev + 1);
+  };
+
+  const handleAcceptChallenger = (id: string) => {
+    setChallengersList(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handleResetQueue = () => {
+    setChallengersList(INITIAL_CHALLENGERS);
+  };
 
   return (
-    <View
-      style={[
-        styles.rootContainer,
-        { paddingTop: Math.max(insets.top, 12) },
-      ]}
-    >
-      <StatusBar barStyle="light-content" />
-
+    <View style={[styles.rootContainer, { paddingTop: Math.max(insets.top, 12) }]}>
+      
       {/* 1. TOP HALF: HOST ARENA */}
       <View style={styles.arenaHalf}>
-        {showLocalPreview && userRole === 'HOST' && RtcSurfaceView ? (
-          <RtcSurfaceView
-            style={styles.fullScreenStream}
-            canvas={{ uid: 0 }}
-            zOrderMediaOverlay
-          />
+        {isCamOn && RtcSurfaceView ? (
+          <RtcSurfaceView style={styles.fullScreenStream} canvas={{ uid: 0 }} />
         ) : (
           <View style={styles.standbyContainer}>
             <Text style={styles.flagEmoji}>🇮🇳</Text>
@@ -267,34 +154,40 @@ export default function ChallengerArena({ route, navigation }: Props) {
           </View>
         )}
 
+        {/* Host Badge & Challengers Queue Button - Top Left */}
         <View style={styles.topLeftGroup}>
           <View style={styles.hostBadge}>
             <Text style={styles.badgeText}>🇮🇳 @MUMBAI_STRIKER</Text>
             <Text style={styles.roleText}>[HOST]</Text>
           </View>
-          {isSpectator && (
-            <TouchableOpacity
-              style={styles.challengersBtn}
-              onPress={() =>
-                Alert.alert('Challengers Queue', '9 waiting in line')
-              }
-              activeOpacity={0.85}
-            >
-              <Text style={styles.challengersText}>CHALLENGERS (9)</Text>
-            </TouchableOpacity>
-          )}
+
+          <TouchableOpacity
+            style={styles.challengersBtn}
+            onPress={() => setShowChallengersModal(true)}
+          >
+            <Text style={styles.challengersText}>CHALLENGERS ({challengersList.length})</Text>
+          </TouchableOpacity>
         </View>
 
+        {/* Reps Box & Mode Switcher - Top Right */}
         <View style={styles.topRightGroup}>
           <View style={styles.repsBox}>
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={styles.repsValue}>43</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.roleSwitchBtn, isAthlete && styles.athleteSwitchActive]}
+            onPress={() => setViewMode(m => (m === 'SPECTATOR' ? 'ATHLETE' : 'SPECTATOR'))}
+          >
+            <Text style={styles.roleSwitchText}>
+              {isAthlete ? '⚔️ Athlete Mode' : '👁️ Watch Mode'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       {/* 2. CENTER VS BADGE */}
-      <View style={styles.vsContainer} pointerEvents="none">
+      <View style={styles.vsContainer}>
         <View style={styles.vsCircle}>
           <Text style={styles.vsText}>VS</Text>
         </View>
@@ -302,387 +195,207 @@ export default function ChallengerArena({ route, navigation }: Props) {
 
       {/* 3. BOTTOM HALF: RIVAL ARENA */}
       <View style={styles.arenaHalf}>
-        {showLocalPreview && userRole === 'RIVAL' && RtcSurfaceView ? (
-          <RtcSurfaceView
-            style={styles.fullScreenStream}
-            canvas={{ uid: 0 }}
-            zOrderMediaOverlay
-          />
-        ) : (
-          <View style={styles.standbyContainer}>
-            <Text style={styles.flagEmoji}>🇮🇳</Text>
-            <Text style={styles.handleText}>@SANTHOSH</Text>
-            <Text style={styles.standbyText}>STANDBY</Text>
-          </View>
-        )}
+        <View style={styles.standbyContainer}>
+          <Text style={styles.flagEmoji}>🇮🇳</Text>
+          <Text style={styles.handleText}>@SANTHOSH</Text>
+          <Text style={styles.standbyText}>STANDBY</Text>
+        </View>
 
-        <View style={styles.bottomInfoRow}>
+        {/* Rival Badge & Reps - Top of Bottom Half */}
+        <View style={styles.bottomTopInfoRow}>
           <View style={styles.rivalBadge}>
             <Text style={styles.badgeText}>🇮🇳 @SANTHOSH</Text>
-            <Text style={[styles.roleText, styles.roleTextRival]}>[RIVAL]</Text>
+            <Text style={styles.roleText}>[RIVAL]</Text>
           </View>
-          <View style={[styles.repsBox, styles.repsBoxRival]}>
+          <View style={styles.repsBox}>
             <Text style={styles.repsLabel}>REPS</Text>
             <Text style={styles.repsValue}>0</Text>
           </View>
         </View>
       </View>
 
-      {/* 4. FOOTER HUD — flow layout below arena (no absolute overlap) */}
-      <View
-        style={[
-          styles.bottomHudWrapper,
-          { paddingBottom: Math.max(insets.bottom, 12) },
-        ]}
-      >
-        {isSpectator && (
+      {/* 4. FOOTER HUD CONTROLS */}
+      <View style={[styles.bottomHudWrapper, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        
+        {/* SPECTATOR (WATCH) MODE HUD */}
+        {!isAthlete ? (
           <View style={styles.hudInner}>
             <View style={styles.voteBarWrapper}>
-              <Text style={styles.voteTextLeft}>
-                {(hostVotes / 1000).toFixed(1)}K · {hostPercent}%
-              </Text>
+              <Text style={styles.voteTextLeft}>{(hostVotes / 1000).toFixed(1)}K • {hostPercent}%</Text>
               <View style={styles.progressBarBg}>
-                <View
-                  style={[styles.progressBarFill, { width: `${hostPercent}%` }]}
-                />
+                <View style={[styles.progressBarFill, { width: `${hostPercent}%` }]} />
               </View>
-              <Text style={styles.voteTextRight}>
-                {rivalPercent}% · {(rivalVotes / 1000).toFixed(1)}K
-              </Text>
+              <Text style={styles.voteTextRight}>{rivalPercent}% • {(rivalVotes / 1000).toFixed(1)}K</Text>
             </View>
 
             <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => setHostVotes((v) => v + 1)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.btnText}>🥊 VOTE HOST</Text>
+              <TouchableOpacity style={styles.actionBtn} onPress={handleVoteHost}>
+                <Text style={styles.btnText}>🥊 VOTE HOST ({hostVotes})</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.banterBtn}
-                onPress={() =>
-                  Alert.alert('Banter', 'Banter chat feature coming live')
-                }
-                activeOpacity={0.85}
-              >
+
+              <TouchableOpacity style={styles.banterBtn} onPress={() => setShowBanterModal(true)}>
                 <Text style={styles.btnText}>💬 BANTER</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => setRivalVotes((v) => v + 1)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.btnText}>🥊 VOTE RIVAL</Text>
+
+              <TouchableOpacity style={styles.actionBtn} onPress={handleVoteRival}>
+                <Text style={styles.btnText}>🥊 VOTE RIVAL ({rivalVotes})</Text>
               </TouchableOpacity>
             </View>
           </View>
-        )}
-
-        {isAthlete && (
-          <View>
+        ) : (
+          /* ATHLETE MODE HUD - Camera, Mic & Flip Controls */
+          <View style={styles.athleteControlRow}>
             <TouchableOpacity
-              style={styles.backChip}
-              activeOpacity={0.85}
-              onPress={() => {
-                if (navigation?.canGoBack?.()) navigation.goBack?.();
-                else navigation?.navigate?.('Main', { tab: 'Battles' });
-              }}
+              style={styles.controlBtn}
+              onPress={() => agoraEngineRef.current?.switchCamera()}
             >
-              <Text style={styles.btnText}>← BAWAAL</Text>
+              <Text style={styles.btnText}>🔄 Flip</Text>
             </TouchableOpacity>
-            <View style={styles.athleteControlRow}>
-              <TouchableOpacity
-                style={styles.controlBtn}
-                onPress={handleFlipCamera}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.btnText}>🔄 Flip</Text>
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.controlBtn,
-                  isMuted && styles.activeControlBtn,
-                ]}
-                onPress={handleToggleMute}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.btnText}>
-                  {isMuted ? '🔇 Unmute' : '🎤 Mute'}
-                </Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.controlBtn, isMicOn && styles.activeControlBtn]}
+              onPress={handleToggleMic}
+            >
+              <Text style={styles.btnText}>{isMicOn ? '🎙️ Mic On' : '🎤 Mute'}</Text>
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.controlBtn,
-                  isCamOn && styles.activeControlBtn,
-                ]}
-                onPress={handleToggleCam}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.btnText}>
-                  {isCamOn ? '📹 Cam Off' : '📹 Cam On'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.controlBtn, isCamOn && styles.activeControlBtn]}
+              onPress={handleToggleCam}
+            >
+              <Text style={styles.btnText}>{isCamOn ? '📹 Cam On' : '📹 Cam Off'}</Text>
+            </TouchableOpacity>
           </View>
         )}
+
       </View>
+
+      {/* CHALLENGERS QUEUE MODAL SHEET */}
+      <Modal visible={showChallengersModal} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowChallengersModal(false)}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Challengers Queue</Text>
+              {challengersList.length === 0 && (
+                <TouchableOpacity style={styles.resetBtn} onPress={handleResetQueue}>
+                  <Text style={styles.resetBtnText}>🔄 Reload Queue</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {challengersList.length > 0 ? (
+              <FlatList
+                data={challengersList}
+                keyExtractor={item => item.id}
+                renderItem={({ item }) => (
+                  <View style={styles.challengerItem}>
+                    <Text style={styles.challengerName}>
+                      {item.rank} {item.flag} {item.name}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.acceptBtn}
+                      onPress={() => handleAcceptChallenger(item.id)}
+                    >
+                      <Text style={styles.acceptBtnText}>ACCEPT</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              />
+            ) : (
+              <Text style={styles.emptyQueueText}>Queue is empty right now!</Text>
+            )}
+
+            <TouchableOpacity
+              style={styles.closeModalBtn}
+              onPress={() => setShowChallengersModal(false)}
+            >
+              <Text style={styles.btnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* BANTER MODAL SHEET */}
+      <Modal visible={showBanterModal} transparent animationType="slide">
+        <Pressable style={styles.modalOverlay} onPress={() => setShowBanterModal(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Live Banter Box</Text>
+            <Text style={styles.modalSubtitle}>Drop comments live in the arena!</Text>
+            <TouchableOpacity
+              style={styles.closeModalBtn}
+              onPress={() => setShowBanterModal(false)}
+            >
+              <Text style={styles.btnText}>Close Chat</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  rootContainer: {
-    flex: 1,
-    backgroundColor: '#0A0E1A',
-  },
-  arenaHalf: {
-    flex: 1,
-    width: '100%',
-    position: 'relative',
-    overflow: 'hidden',
-    borderBottomWidth: 1,
-    borderColor: '#1F293D',
-  },
-  fullScreenStream: {
-    ...ABSOLUTE_FILL,
-    zIndex: 1,
-  },
-  standbyContainer: {
-    ...ABSOLUTE_FILL,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0A0E1A',
-    zIndex: 1,
-  },
-  flagEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  handleText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  standbyText: {
-    color: '#8A99AD',
-    fontSize: 12,
-    marginTop: 2,
-    letterSpacing: 1,
-    textAlign: 'center',
-  },
-  topLeftGroup: {
-    position: 'absolute',
-    top: 12,
-    left: 16,
-    zIndex: 10,
-    gap: 6,
-  },
-  topRightGroup: {
-    position: 'absolute',
-    top: 12,
-    right: 16,
-    zIndex: 10,
-  },
-  bottomInfoRow: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    zIndex: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  hostBadge: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderWidth: 1,
-    borderColor: '#FF5722',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  rivalBadge: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderWidth: 1,
-    borderColor: '#00BCD4',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  roleText: {
-    color: '#FF5722',
-    fontSize: 10,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  roleTextRival: {
-    color: '#00BCD4',
-  },
-  repsBox: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderWidth: 1,
-    borderColor: '#FF5722',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  repsBoxRival: {
-    borderColor: '#00BCD4',
-  },
-  repsLabel: {
-    color: '#8A99AD',
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
-  repsValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  vsContainer: {
-    position: 'absolute',
-    top: '45%',
-    left: '50%',
-    transform: [{ translateX: -20 }, { translateY: -20 }],
-    zIndex: 50,
-  },
-  vsCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#0A0E1A',
-    borderWidth: 2,
-    borderColor: '#FF5722',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  vsText: {
-    color: '#FF5722',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  challengersBtn: {
-    backgroundColor: '#00BCD4',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    alignSelf: 'flex-start',
-  },
-  challengersText: {
-    color: '#000000',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  bottomHudWrapper: {
-    width: '100%',
-    backgroundColor: '#0A0E1A',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderColor: '#1F293D',
-  },
-  hudInner: {
-    width: '100%',
-  },
-  voteBarWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  progressBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: '#00BCD4',
-    marginHorizontal: 8,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#FF5722',
-  },
-  voteTextLeft: {
-    color: '#FF5722',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  voteTextRight: {
-    color: '#00BCD4',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  actionBtn: {
-    flex: 1,
-    backgroundColor: '#1F293D',
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  banterBtn: {
-    backgroundColor: '#374151',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  athleteControlRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  backChip: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  controlBtn: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#1F293D',
-    alignItems: 'center',
-  },
-  activeControlBtn: {
-    backgroundColor: '#FF5722',
-  },
-  btnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-});
+  rootContainer: { flex: 1, backgroundColor: '#0A0E1A' },
+  arenaHalf: { flex: 1, width: '100%', position: 'relative', overflow: 'hidden', borderBottomWidth: 1, borderColor: '#1F293D' },
+  fullScreenStream: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 },
+  standbyContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0E1A', zIndex: 1 },
+  flagEmoji: { fontSize: 28, marginBottom: 4, textAlign: 'center' },
+  handleText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold', textAlign: 'center' },
+  standbyText: { color: '#8A99AD', fontSize: 12, marginTop: 2, letterSpacing: 1, textAlign: 'center' },
 
-export { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
-export type { ArenaLocalVideoProps } from './src/components/ArenaLocalVideo';
-export {
-  enableLocalCamera,
-  initAgoraEngine,
-  ensureLocalPreview,
-  setLocalCameraEnabled,
-  startBroadcasterPreview,
-} from './src/services/agoraService';
+  topLeftGroup: { position: 'absolute', top: 12, left: 16, zIndex: 10, gap: 6 },
+  topRightGroup: { position: 'absolute', top: 12, right: 16, zIndex: 10, alignItems: 'flex-end', gap: 6 },
+
+  bottomTopInfoRow: { position: 'absolute', top: 12, left: 16, right: 16, zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+
+  hostBadge: { backgroundColor: 'rgba(15, 23, 42, 0.85)', borderWidth: 1, borderColor: '#FF5722', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  rivalBadge: { backgroundColor: 'rgba(15, 23, 42, 0.85)', borderWidth: 1, borderColor: '#00BCD4', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  badgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
+  roleText: { color: '#FF5722', fontSize: 10, fontWeight: 'bold' },
+  repsBox: { backgroundColor: 'rgba(15, 23, 42, 0.85)', borderWidth: 1, borderColor: '#FF5722', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, alignItems: 'center' },
+  repsLabel: { color: '#8A99AD', fontSize: 9, fontWeight: 'bold' },
+  repsValue: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+
+  roleSwitchBtn: { backgroundColor: '#374151', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6 },
+  athleteSwitchActive: { backgroundColor: '#FF5722' },
+  roleSwitchText: { color: '#FFFFFF', fontSize: 11, fontWeight: 'bold' },
+
+  vsContainer: { position: 'absolute', top: '45%', left: '50%', transform: [{ translateX: -20 }, { translateY: -20 }], zIndex: 50 },
+  vsCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#0A0E1A', borderWidth: 2, borderColor: '#FF5722', justifyContent: 'center', alignItems: 'center' },
+  vsText: { color: '#FF5722', fontWeight: 'bold', fontSize: 14 },
+
+  challengersBtn: { backgroundColor: '#00BCD4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  challengersText: { color: '#000000', fontSize: 11, fontWeight: 'bold' },
+
+  bottomHudWrapper: { width: '100%', backgroundColor: '#0A0E1A', paddingHorizontal: 16, paddingTop: 8, borderTopWidth: 1, borderColor: '#1F293D' },
+  hudInner: { width: '100%' },
+  voteBarWrapper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  progressBarBg: { flex: 1, height: 6, backgroundColor: '#00BCD4', marginHorizontal: 8, borderRadius: 3, overflow: 'hidden' },
+  progressBarFill: { height: '100%', backgroundColor: '#FF5722' },
+  voteTextLeft: { color: '#FF5722', fontSize: 11, fontWeight: 'bold' },
+  voteTextRight: { color: '#00BCD4', fontSize: 11, fontWeight: 'bold' },
+
+  actionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  actionBtn: { flex: 1, backgroundColor: '#1F293D', paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  banterBtn: { backgroundColor: '#374151', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+
+  athleteControlRow: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: 'rgba(15, 23, 42, 0.95)', paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#374151' },
+  controlBtn: { flex: 1, marginHorizontal: 4, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1F293D', alignItems: 'center' },
+  activeControlBtn: { backgroundColor: '#FF5722' },
+  btnText: { color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#1E293B', padding: 20, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: '50%' },
+  modalHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  modalTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold' },
+  modalSubtitle: { color: '#94A3B8', fontSize: 14, marginBottom: 16 },
+  resetBtn: { backgroundColor: '#374151', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  resetBtnText: { color: '#00BCD4', fontSize: 12, fontWeight: 'bold' },
+  emptyQueueText: { color: '#94A3B8', textAlign: 'center', marginVertical: 20 },
+  challengerItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#334155' },
+  challengerName: { color: '#FFFFFF', fontWeight: 'bold' },
+  acceptBtn: { backgroundColor: '#00BCD4', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  acceptBtnText: { color: '#000000', fontSize: 10, fontWeight: 'bold' },
+  closeModalBtn: { backgroundColor: '#FF5722', paddingVertical: 12, borderRadius: 8, alignItems: 'center', marginTop: 14 },
+});
