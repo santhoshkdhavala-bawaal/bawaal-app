@@ -212,7 +212,7 @@ const ringStyles = StyleSheet.create({
   },
 });
 
-/** Film strip — red highlight = slow-mo region only. */
+/** Film strip — local drag state avoids parent re-render jitter. */
 function FilmStripTrimmer({
   duration,
   startSec,
@@ -224,46 +224,72 @@ function FilmStripTrimmer({
   startSec: number;
   endSec: number;
   playheadSec: number;
-  onChangeRange: (start: number, end: number) => void;
+  onChangeRange: (start: number, end: number, commit: boolean) => void;
 }) {
   const dragKind = useRef<'start' | 'end' | null>(null);
   const widthRef = useRef(1);
+  const localStartRef = useRef(startSec);
+  const localEndRef = useRef(endSec);
+  const [dragPreview, setDragPreview] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
 
   const onLayout = (e: LayoutChangeEvent) => {
     widthRef.current = Math.max(1, e.nativeEvent.layout.width);
   };
 
-  const xToSec = (evt: GestureResponderEvent) => {
+  const touchToSec = (evt: GestureResponderEvent) => {
     const w = Math.max(1, widthRef.current);
     const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
-    return Math.max(
-      0,
-      Math.min(maxDur, (evt.nativeEvent.locationX / w) * maxDur)
-    );
+    // Prefer locationX (stable within the strip) — avoids pageX/layout shake
+    const locX = Math.max(0, Math.min(w, evt.nativeEvent.locationX));
+    return Math.max(0, Math.min(maxDur, (locX / w) * maxDur));
   };
 
   const onGrant = (evt: GestureResponderEvent) => {
-    const sec = xToSec(evt);
+    localStartRef.current = startSec;
+    localEndRef.current = endSec;
+    const sec = touchToSec(evt);
     const mid = (startSec + endSec) / 2;
     dragKind.current = sec < mid ? 'start' : 'end';
+    setDragPreview({ start: startSec, end: endSec });
   };
 
   const onMove = (evt: GestureResponderEvent) => {
-    const sec = xToSec(evt);
+    if (!dragKind.current) return;
+    const sec = touchToSec(evt);
     const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
     if (dragKind.current === 'start') {
-      onChangeRange(Math.max(0, Math.min(sec, endSec - MIN_TRIM_SPAN)), endSec);
-    } else if (dragKind.current === 'end') {
-      onChangeRange(
-        startSec,
-        Math.min(maxDur, Math.max(sec, startSec + MIN_TRIM_SPAN))
+      const next = Math.max(
+        0,
+        Math.min(sec, localEndRef.current - MIN_TRIM_SPAN)
       );
+      localStartRef.current = next;
+      setDragPreview({ start: next, end: localEndRef.current });
+    } else {
+      const next = Math.min(
+        maxDur,
+        Math.max(sec, localStartRef.current + MIN_TRIM_SPAN)
+      );
+      localEndRef.current = next;
+      setDragPreview({ start: localStartRef.current, end: next });
     }
   };
 
+  const onRelease = () => {
+    dragKind.current = null;
+    const s = localStartRef.current;
+    const e = localEndRef.current;
+    setDragPreview(null);
+    onChangeRange(s, e, true);
+  };
+
+  const displayStart = dragPreview?.start ?? startSec;
+  const displayEnd = dragPreview?.end ?? endSec;
   const dur = Math.max(MIN_TRIM_SPAN, duration || 1);
-  const leftPct = (startSec / dur) * 100;
-  const rightPct = (endSec / dur) * 100;
+  const leftPct = (displayStart / dur) * 100;
+  const rightPct = (displayEnd / dur) * 100;
   const playPct = Math.max(0, Math.min(100, (playheadSec / dur) * 100));
 
   return (
@@ -272,11 +298,11 @@ function FilmStripTrimmer({
       onLayout={onLayout}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
+      onResponderTerminationRequest={() => false}
       onResponderGrant={onGrant}
       onResponderMove={onMove}
-      onResponderRelease={() => {
-        dragKind.current = null;
-      }}
+      onResponderRelease={onRelease}
+      onResponderTerminate={onRelease}
     >
       <Text style={trimStyles.hint}>
         Drag red box · only that region plays in slow-mo
@@ -306,12 +332,14 @@ function FilmStripTrimmer({
         <View style={[trimStyles.handle, { left: `${rightPct}%` }]}>
           <View style={trimStyles.handleBar} />
         </View>
-        <View style={[trimStyles.playhead, { left: `${playPct}%` }]} />
+        {!dragPreview ? (
+          <View style={[trimStyles.playhead, { left: `${playPct}%` }]} />
+        ) : null}
       </View>
       <View style={trimStyles.labels}>
-        <Text style={trimStyles.label}>{formatClock(startSec)}</Text>
+        <Text style={trimStyles.label}>{formatClock(displayStart)}</Text>
         <Text style={trimStyles.labelAccent}>SLOW-MO</Text>
-        <Text style={trimStyles.label}>{formatClock(endSec)}</Text>
+        <Text style={trimStyles.label}>{formatClock(displayEnd)}</Text>
       </View>
     </View>
   );
@@ -641,7 +669,7 @@ function ClipPreviewModal({
           >
             <View style={previewStyles.playCircle}>
               <Text style={previewStyles.playIcon}>
-                {playing ? '⏸' : '▶️'}
+                {playing ? '❚❚' : '▶'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -652,7 +680,9 @@ function ClipPreviewModal({
           startSec={startSec}
           endSec={endSec}
           playheadSec={playheadSec}
-          onChangeRange={(s, e) => {
+          onChangeRange={(s, e, commit) => {
+            // Ignore live drag updates in parent — local trimmer owns UI during drag
+            if (!commit) return;
             setStartSec(s);
             setEndSec(e);
             try {
@@ -751,16 +781,20 @@ const previewStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   playCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: 'rgba(255,255,255,0.14)',
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: 'rgba(255,255,255,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  playIcon: { fontSize: 28 },
+  playIcon: {
+    fontSize: 26,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
   rateLabel: {
     color: '#8A99AD',
     fontSize: 11,
@@ -943,6 +977,7 @@ export default function UniversalCamera({
       setShowPreview(false);
       setShowPostSheet(false);
       setHubOpen(false);
+      // 300ms after sheet close — prevents SPARKS/JOSH unmount race crashes
       setTimeout(() => {
         try {
           navigation?.navigate?.('Main', params);
@@ -956,7 +991,7 @@ export default function UniversalCamera({
         } finally {
           navigatingRef.current = false;
         }
-      }, 120);
+      }, 300);
     },
     [navigation]
   );
@@ -1208,11 +1243,11 @@ export default function UniversalCamera({
 
           <TouchableOpacity
             onPress={flipCamera}
-            style={styles.glassPill}
+            style={styles.flipPill}
             disabled={isRecording}
             accessibilityLabel="Flip camera"
           >
-            <Text style={styles.glassPillText}>🔄 FLIP</Text>
+            <Text style={styles.flipPillText}>🔄 FLIP</Text>
           </TouchableOpacity>
         </View>
 
@@ -1410,6 +1445,20 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  flipPill: {
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  flipPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   timerBadge: {
     backgroundColor: 'rgba(10, 14, 26, 0.82)',
     paddingHorizontal: 12,
@@ -1492,18 +1541,15 @@ const styles = StyleSheet.create({
     borderColor: NEON_ORANGE,
   },
   hubFab: {
-    backgroundColor: NEON_ORANGE,
+    backgroundColor: 'rgba(255, 87, 34, 0.18)',
+    borderColor: '#FF5722',
+    borderWidth: 1.5,
     borderRadius: 24,
     paddingHorizontal: 28,
     paddingVertical: 13,
-    shadowColor: NEON_ORANGE,
-    shadowOpacity: 0.55,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
   },
   hubFabText: {
-    color: '#FFFFFF',
+    color: '#FF5722',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.8,

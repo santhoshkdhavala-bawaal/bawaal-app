@@ -16,7 +16,7 @@ import {
   Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { pushArenaPost } from './arenaFeedStore';
+import { addPost as addArenaPost, pushArenaPost } from './arenaFeedStore';
 import {
   pushBattleChallenge,
   pushHotFeatureBattle,
@@ -141,9 +141,9 @@ export function dispatchToFeeds(
   const title = safeStr(payload.title, 'BAWAAL Drop');
 
   if (payload.mode === 'SPARKS' || payload.mode === 'JOSH') {
-    const arenaCard = pushArenaPost({
+    const arenaPayload = {
       id: `arena-${payload.mode.toLowerCase()}-${timestamp}`,
-      type: 'reel',
+      type: 'reel' as const,
       mode: payload.mode,
       uri: videoUri,
       videoUri,
@@ -169,7 +169,10 @@ export function dispatchToFeeds(
       ),
       hypeCount: 0,
       feed: 'ARENA',
-    });
+    };
+    // Prefer addPost alias — never throws; falls back to pushArenaPost
+    const arenaCard =
+      addArenaPost(arenaPayload) || pushArenaPost(arenaPayload) || arenaPayload;
 
     const newPost: FeedPostCard = {
       id: safeStr(arenaCard?.id, `arena-${timestamp}`),
@@ -363,13 +366,15 @@ function PostCreationSheet({
     const payload = pendingPayload;
     setSuccessVisible(false);
     setPendingPayload(null);
-    // Crash shield: delay unmount / navigation after modal teardown
+    // Crash shield: close sheet, then delay onSuccess / goBack (unmount race)
+    onClose();
     setTimeout(() => {
-      onClose();
-      setTimeout(() => {
+      try {
         onSuccess(payload || undefined);
-      }, 80);
-    }, 60);
+      } catch (err) {
+        console.warn('[PostCreationSheet] onSuccess failed:', err);
+      }
+    }, 300);
   };
 
   const handlePost = () => {
