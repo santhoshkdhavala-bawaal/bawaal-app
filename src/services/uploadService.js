@@ -112,47 +112,58 @@ export async function persistLocalVideoUri(localUri) {
   }
 }
 
-export async function readLocalVideoBytes(localUri) {
+/**
+ * Convert a local Expo/RN file URI into a Blob suitable for supabase-js Storage.
+ * Primary path: fetch(uri) → blob() (required on React Native).
+ */
+export async function localUriToBlob(localUri) {
   const uri = normalizeLocalUri(localUri);
   if (!uri) throw new Error('Missing local video URI for upload');
   if (uri.startsWith('emulator-mock://')) {
     throw new Error('Cannot upload emulator mock clip to cloud storage');
   }
 
-  if (uri.startsWith('file://') || uri.startsWith('/')) {
-    const info = await FileSystem.getInfoAsync(uri);
-    if (!info.exists) {
-      throw new Error(`Local video file not found at ${uri}`);
-    }
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    if (!base64) throw new Error('Local video file is empty');
-    return base64ToArrayBuffer(base64);
-  }
-
+  // content:// / ph:// → copy to a stable file:// first
+  let readableUri = uri;
   if (uri.startsWith('content://') || uri.startsWith('ph://')) {
-    const stable = await persistLocalVideoUri(uri);
-    return readLocalVideoBytes(stable);
+    readableUri = await persistLocalVideoUri(uri);
   }
 
-  if (uri.startsWith('http://') || uri.startsWith('https://')) {
-    const response = await fetch(uri);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to read video (${response.status}). URI may be invalid or expired.`
-      );
-    }
-    return response.arrayBuffer();
+  const response = await fetch(readableUri);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to read local video (${response.status}). URI may be invalid or expired.`
+    );
   }
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Local video blob is empty');
+  }
+  return blob;
+}
 
-  throw new Error(`Unsupported video URI scheme: ${uri.slice(0, 32)}`);
+/** @deprecated Prefer localUriToBlob — kept for callers that still need ArrayBuffer. */
+export async function readLocalVideoBytes(localUri) {
+  const blob = await localUriToBlob(localUri);
+  if (typeof blob.arrayBuffer === 'function') {
+    return blob.arrayBuffer();
+  }
+  // Fallback: base64 decode via FileSystem
+  const uri = normalizeLocalUri(localUri);
+  const info = await FileSystem.getInfoAsync(uri);
+  if (!info.exists) throw new Error(`Local video file not found at ${uri}`);
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  if (!base64) throw new Error('Local video file is empty');
+  return base64ToArrayBuffer(base64);
 }
 
 /**
  * Upload a recorded clip to Supabase Storage bucket `bawaalvideos`.
  * Path: battles/{timestamp}_video.mp4
  *
+ * Uses fetch(localUri).blob() for RN/Expo payloads + upsert:true.
  * On auth/storage/offline failure returns local file:// fallback — never throws
  * for network/storage errors.
  *
@@ -189,21 +200,23 @@ export const uploadBattleVideo = async (localUri) => {
     return localFallback('not-configured');
   }
 
+  // Soft auth probe only — never block public-bucket uploads on session/JWS noise
   try {
-    const canCloud = await canAttemptCloudUpload();
-    if (!canCloud) {
-      return localFallback('auth-unavailable');
-    }
+    await canAttemptCloudUpload();
+  } catch (_) {
+    /* ignore */
+  }
 
-    const objectPath = `battles/${Date.now()}_video.mp4`;
-    const arrayBuffer = await readLocalVideoBytes(stableUri);
+  try {
+    const filePath = `battles/${Date.now()}_video.mp4`;
+    const blob = await localUriToBlob(stableUri);
 
-    const { error } = await supabase.storage
+    const { data, error } = await supabase.storage
       .from(BAWAAL_VIDEO_BUCKET)
-      .upload(objectPath, arrayBuffer, {
+      .upload(filePath, blob, {
         contentType: 'video/mp4',
         cacheControl: '3600',
-        upsert: false,
+        upsert: true,
       });
 
     if (error) {
@@ -211,6 +224,7 @@ export const uploadBattleVideo = async (localUri) => {
       return localFallback('storage-error', error);
     }
 
+    const objectPath = data?.path || filePath;
     const { data: publicUrlData } = supabase.storage
       .from(BAWAAL_VIDEO_BUCKET)
       .getPublicUrl(objectPath);

@@ -63,27 +63,21 @@ export function isSupabaseConfigured() {
 }
 
 /**
- * True only when we have a usable key and (optionally) a live auth session.
- * Missing/offline session is OK for public bucket uploads with a valid anon key.
+ * Soft readiness check for public Storage uploads.
+ * Missing/offline session is OK for the public `bawaalvideos` bucket with a valid key.
+ * Do NOT treat getSession JWS noise as hard failure — that was falsely tripping offline fallback.
  */
 export async function canAttemptCloudUpload() {
   if (!isSupabaseConfigured()) return false;
   try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      const msg = String(error?.message || error);
-      if (/jws|jwt|compact|invalid token|unauthorized/i.test(msg)) {
-        console.warn('[supabase] Auth token unusable — local clip fallback:', msg);
-        return false;
-      }
-    }
-    void data;
-    return true;
+    await supabase.auth.getSession();
   } catch (err) {
-    const msg = String(err?.message || err);
-    console.warn('[supabase] Session check failed — local clip fallback:', msg);
-    return false;
+    console.warn(
+      '[supabase] Session probe failed (continuing with anon key):',
+      err?.message || err
+    );
   }
+  return true;
 }
 
 export function isCloudAuthError(err) {
