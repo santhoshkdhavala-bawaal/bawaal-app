@@ -1,8 +1,12 @@
+import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isCloudAuthError } from './supabase';
 
 /** Public Supabase Storage bucket for BAWAAL clips */
 export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
+
+/** Reject uploads smaller than this — empty/corrupt streams cause black playback. */
+const MIN_VIDEO_BYTES = 1024;
 
 function getEnvSupabaseUrl() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -14,18 +18,41 @@ function getEnvAnonKey() {
   return typeof key === 'string' ? key.trim() : '';
 }
 
-function normalizeLocalUri(uri) {
-  if (!uri || typeof uri !== 'string') return null;
-  if (uri.startsWith('emulator-mock://')) return uri;
+/**
+ * Sanitize local video URIs for Android / iOS before upload.
+ * Bare absolute paths on Android must be prefixed with `file://`.
+ */
+export function sanitizeVideoUriForUpload(videoUri) {
+  if (!videoUri || typeof videoUri !== 'string') return null;
+  const trimmed = videoUri.trim();
+  if (!trimmed) return null;
+
   if (
-    uri.startsWith('file://') ||
-    uri.startsWith('content://') ||
-    uri.startsWith('ph://')
+    trimmed.startsWith('file://') ||
+    trimmed.startsWith('content://') ||
+    trimmed.startsWith('ph://') ||
+    trimmed.startsWith('assets-library://') ||
+    trimmed.startsWith('emulator-mock://') ||
+    /^https?:\/\//i.test(trimmed)
   ) {
-    return uri;
+    return trimmed;
   }
-  if (uri.startsWith('/')) return `file://${uri}`;
-  return uri;
+
+  // Android often returns paths like /data/... without a scheme
+  if (
+    Platform.OS === 'android' &&
+    !trimmed.startsWith('file://') &&
+    !trimmed.startsWith('content://')
+  ) {
+    return trimmed.startsWith('/') ? `file://${trimmed}` : `file:///${trimmed}`;
+  }
+
+  if (trimmed.startsWith('/')) return `file://${trimmed}`;
+  return trimmed;
+}
+
+function normalizeLocalUri(uri) {
+  return sanitizeVideoUriForUpload(uri);
 }
 
 function makeObjectFileName(fileName) {
@@ -33,7 +60,9 @@ function makeObjectFileName(fileName) {
     typeof fileName === 'string' && fileName.trim().length > 0
       ? fileName.trim()
       : `video_${Date.now()}.mp4`;
-  return raw.replace(/[^\w.\-]+/g, '_');
+  // Always keep .mp4 so Storage / CDN serve video/mp4
+  const cleaned = raw.replace(/[^\w.\-]+/g, '_');
+  return cleaned.toLowerCase().endsWith('.mp4') ? cleaned : `${cleaned}.mp4`;
 }
 
 export function isRemoteHttpsUri(uri) {
@@ -77,7 +106,7 @@ export function resolvePlayableVideoUri(source) {
  * Copy camera temp clips into app document storage so POST still works after review.
  */
 export async function persistLocalVideoUri(localUri) {
-  const uri = normalizeLocalUri(localUri);
+  const uri = sanitizeVideoUriForUpload(localUri);
   if (!uri || uri.startsWith('emulator-mock://')) return uri;
   if (!FileSystem.documentDirectory) return uri;
 
@@ -100,6 +129,24 @@ export async function persistLocalVideoUri(localUri) {
   }
 }
 
+/**
+ * Ensure the local file exists and is large enough to be a real video (not empty stream).
+ */
+async function assertUploadableVideoFile(fileUri) {
+  const info = await FileSystem.getInfoAsync(fileUri);
+  if (!info.exists || info.isDirectory) {
+    throw new Error(`Video file missing before upload: ${fileUri}`);
+  }
+  const size = typeof info.size === 'number' ? info.size : 0;
+  console.log('UPLOAD_FILE_SIZE:', size, 'uri=', fileUri);
+  if (size < MIN_VIDEO_BYTES) {
+    throw new Error(
+      `Video file too small (${size} bytes) — refusing empty/corrupt upload`
+    );
+  }
+  return size;
+}
+
 function buildPublicUrl(supabaseUrl, safeName) {
   return `${supabaseUrl}/storage/v1/object/public/bawaalvideos/battles/${safeName}`;
 }
@@ -108,26 +155,22 @@ function buildUploadUrl(supabaseUrl, safeName) {
   return `${supabaseUrl}/storage/v1/object/bawaalvideos/battles/${safeName}`;
 }
 
-function authHeaders(anonKey) {
-  return {
-    apikey: anonKey,
-    Authorization: `Bearer ${anonKey}`,
-    'x-upsert': 'true',
-  };
-}
-
 /**
- * Preferred path on Android/iOS: native binary upload.
- * Avoids RN `fetch(fileUri)` / blob reads that throw "Failed to fetch".
- * Supabase Storage expects the raw file bytes as the request body.
+ * Native binary upload ONLY.
+ *
+ * Supabase Storage `/object/{bucket}/{path}` expects the raw file bytes with
+ * `Content-Type: video/mp4`. Multipart FormData wraps the file in boundary
+ * markers and produces black/corrupt playback in players.
  */
 async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
   const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
     headers: {
-      ...authHeaders(anonKey),
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
       'Content-Type': 'video/mp4',
+      'x-upsert': 'true',
     },
   });
 
@@ -142,52 +185,16 @@ async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
     );
   }
 
-  return true;
-}
-
-/**
- * React Native FormData upload (multipart).
- * Do NOT set Content-Type — fetch sets the multipart boundary.
- */
-async function uploadViaFormData(uploadUrl, fileUri, safeName, anonKey) {
-  const formData = new FormData();
-  formData.append('file', {
-    uri: fileUri,
-    name: safeName || `video_${Date.now()}.mp4`,
-    type: 'video/mp4',
-  });
-
-  const response = await fetch(uploadUrl, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(anonKey),
-      // Content-Type intentionally omitted for multipart boundary
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error(
-      'REST_UPLOAD_ERROR (formData):',
-      response.status,
-      response.statusText,
-      errText
-    );
-    throw new Error(
-      errText || `Storage FormData upload failed with status ${response.status}`
-    );
-  }
-
+  console.log('BINARY_UPLOAD_OK: status=', result.status);
   return true;
 }
 
 /**
  * Upload a local video to Supabase Storage (`bawaalvideos/battles/{fileName}`).
  *
- * 1) Persist to a stable `file://` path when possible
- * 2) Native FileSystem binary upload (Android-safe)
- * 3) Fall back to RN FormData if binary path fails
+ * - Sanitizes Android URIs (`file://` prefix)
+ * - Persists to a stable path and verifies non-empty size
+ * - Uploads raw MP4 bytes with `Content-Type: video/mp4` (never multipart)
  *
  * @param {string} videoUri
  * @param {string} [fileName]
@@ -207,8 +214,8 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
       return null;
     }
 
-    const resolvedUri = normalizeLocalUri(videoUri) || videoUri;
-    if (!resolvedUri || typeof resolvedUri !== 'string') {
+    const resolvedUri = sanitizeVideoUriForUpload(videoUri);
+    if (!resolvedUri) {
       console.error('REST_UPLOAD_ERROR: missing videoUri');
       return null;
     }
@@ -229,36 +236,36 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
       '(len=' + ANON_KEY.length + ')'
     );
 
-    // Stable file:// URI — content:// / camera temp paths break some Android uploads
+    // Stable file:// path — content:// / bare Android paths cause empty streams
     let fileUri = resolvedUri;
     try {
       const persisted = await persistLocalVideoUri(resolvedUri);
       if (typeof persisted === 'string' && persisted.length > 0) {
-        fileUri = persisted;
+        fileUri = sanitizeVideoUriForUpload(persisted) || persisted;
       }
     } catch (persistErr) {
       console.warn(
-        '[upload] persist skipped, using original URI:',
+        '[upload] persist skipped, using sanitized URI:',
         persistErr?.message || persistErr
       );
+      fileUri = sanitizeVideoUriForUpload(resolvedUri) || resolvedUri;
     }
+
+    // Extra Android guard matching PostCreationSheet sanitization
+    if (
+      Platform.OS === 'android' &&
+      !fileUri.startsWith('file://') &&
+      !fileUri.startsWith('content://')
+    ) {
+      fileUri = fileUri.startsWith('/') ? `file://${fileUri}` : `file:///${fileUri}`;
+    }
+
     console.log('UPLOAD_FILE_URI:', fileUri);
+    await assertUploadableVideoFile(fileUri);
 
-    // 1) Native binary (correct for Supabase Storage, avoids "Failed to fetch")
-    try {
-      await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY);
-      console.log('PUBLIC_URL (binary):', publicUrl);
-      return publicUrl;
-    } catch (binaryErr) {
-      console.warn(
-        '[upload] binary upload failed, trying FormData:',
-        binaryErr?.message || binaryErr
-      );
-    }
-
-    // 2) RN FormData fallback
-    await uploadViaFormData(uploadUrl, fileUri, safeName, ANON_KEY);
-    console.log('PUBLIC_URL (formData):', publicUrl);
+    // Binary only — FormData multipart corrupts objects in Supabase Storage
+    await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY);
+    console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
     console.error('UPLOAD_CATCH_ERROR:', err);
@@ -273,7 +280,7 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
  * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string, error?: string }}
  */
 export const uploadBattleVideo = async (localUri) => {
-  const stableUri = normalizeLocalUri(localUri) || localUri || '';
+  const stableUri = sanitizeVideoUriForUpload(localUri) || localUri || '';
 
   if (isRemoteHttpsUri(stableUri)) {
     return {

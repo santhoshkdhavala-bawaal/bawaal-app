@@ -26,6 +26,7 @@ import {
 import {
   isRemoteHttpsUri,
   resolvePlayableVideoUri,
+  sanitizeVideoUriForUpload,
   uploadVideoToSupabase,
 } from './src/services/uploadService';
 
@@ -452,16 +453,23 @@ function PostCreationSheet({
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl = localVideoUri.trim();
       } else if (localVideoUri) {
-        // FormData / native FileSystem upload lives in uploadService —
-        // never fetch(localUri).blob() (Android "Failed to fetch").
+        // Android: bare paths must be file:// before native binary upload.
+        // Never multipart FormData to Storage — it stores boundary junk → black/corrupt video.
+        const sanitizedUri =
+          sanitizeVideoUriForUpload(localVideoUri) ||
+          (Platform.OS === 'android' &&
+          !localVideoUri.startsWith('file://') &&
+          !localVideoUri.startsWith('content://')
+            ? `file://${localVideoUri}`
+            : localVideoUri);
         const uploadFileName = `video_${Date.now()}.mp4`;
         console.log(
-          '[PostCreationSheet] uploading via FormData helper:',
-          localVideoUri,
+          '[PostCreationSheet] uploading binary MP4:',
+          sanitizedUri,
           uploadFileName
         );
         const remoteUrl = await uploadVideoToSupabase(
-          localVideoUri,
+          sanitizedUri,
           uploadFileName
         );
         if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
