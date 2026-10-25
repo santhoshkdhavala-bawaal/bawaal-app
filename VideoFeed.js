@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import { resolvePlayableVideoUri } from './src/services/uploadService';
 
 function isPlayableUri(uri) {
   if (uri == null) return false;
@@ -48,8 +49,7 @@ class FeedItemErrorBoundary extends Component {
 }
 
 function PostCard({ item }) {
-  const videoUri =
-    item?.videoUrl || item?.videoUri || item?.uri || item?.localVideoUri || null;
+  const videoUri = resolvePlayableVideoUri(item);
   const playable = isPlayableUri(videoUri);
   const athleteName =
     typeof item?.athleteName === 'string' && item.athleteName.trim()

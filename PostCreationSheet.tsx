@@ -14,6 +14,8 @@ import {
   Platform,
   Image,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addPost as addArenaPost, pushArenaPost } from './arenaFeedStore';
@@ -21,6 +23,10 @@ import {
   pushBattleChallenge,
   pushHotFeatureBattle,
 } from './battlesFeedStore';
+import {
+  resolvePlayableVideoUri,
+  uploadBawaalVideo,
+} from './src/services/uploadService';
 
 export type CreationMode =
   | 'SPARKS'
@@ -41,6 +47,9 @@ export type FeedPostCard = {
   id: string;
   mode: CreationMode;
   videoUri: string | null;
+  localVideoUri?: string | null;
+  publicCloudUrl?: string | null;
+  remoteVideoUri?: string | null;
   title: string;
   caption?: string;
   tagline?: SportyTagline;
@@ -55,17 +64,22 @@ export type FeedPostCard = {
 export type PostCreationPayload = {
   mode: CreationMode;
   videoUri: string | null;
+  localVideoUri?: string | null;
+  publicCloudUrl?: string | null;
+  remoteVideoUri?: string | null;
   title: string;
   tagline?: SportyTagline;
   targetReps?: number;
   timeLimitSec?: number;
   slowMoEnabled?: boolean;
   slowMoRate?: number;
-  slowMoStartSec?: number;
   slowMoEndSec?: number;
+  slowMoStartSec?: number;
   durationSec?: number;
   feedTarget?: 'ARENA' | 'BATTLES';
   newPost?: FeedPostCard;
+  uploadSkipped?: boolean;
+  uploadReason?: string;
 };
 
 export type PostCreationSheetProps = {
@@ -136,21 +150,37 @@ export function dispatchToFeeds(
   payload: PostCreationPayload
 ): PostCreationPayload {
   const timestamp = Date.now();
+  const remote =
+    (typeof payload.publicCloudUrl === 'string' && payload.publicCloudUrl) ||
+    (typeof payload.remoteVideoUri === 'string' && payload.remoteVideoUri) ||
+    null;
+  const local =
+    (typeof payload.localVideoUri === 'string' && payload.localVideoUri) ||
+    null;
+  // Prefer HTTPS cloud URL for feed playback; keep local as fallback only
   const videoUri =
-    typeof payload.videoUri === 'string' && payload.videoUri.length > 0
-      ? payload.videoUri
-      : null;
+    resolvePlayableVideoUri({
+      publicCloudUrl: remote,
+      remoteVideoUri: remote,
+      videoUri: payload.videoUri,
+      localVideoUri: local,
+    }) || null;
   const title = safeStr(payload.title, 'BAWAAL Drop');
+  const mediaMeta = {
+    videoUri,
+    uri: videoUri,
+    recordedVideoUri: videoUri,
+    localVideoUri: local || payload.videoUri || null,
+    publicCloudUrl: remote,
+    remoteVideoUri: remote,
+  };
 
   if (payload.mode === 'SPARKS' || payload.mode === 'JOSH') {
     const arenaPayload = {
       id: `arena-${payload.mode.toLowerCase()}-${timestamp}`,
       type: 'reel' as const,
       mode: payload.mode,
-      uri: videoUri,
-      videoUri,
-      recordedVideoUri: videoUri,
-      localVideoUri: videoUri,
+      ...mediaMeta,
       title,
       caption: payload.tagline ? `${title} ${payload.tagline}` : title,
       tagline: payload.tagline || '#DailyGrind',
@@ -172,14 +202,13 @@ export function dispatchToFeeds(
       hypeCount: 0,
       feed: 'ARENA',
     };
-    // Prefer addPost alias — never throws; falls back to pushArenaPost
     const arenaCard =
       addArenaPost(arenaPayload) || pushArenaPost(arenaPayload) || arenaPayload;
 
     const newPost: FeedPostCard = {
       id: safeStr(arenaCard?.id, `arena-${timestamp}`),
       mode: payload.mode,
-      videoUri,
+      ...mediaMeta,
       title,
       caption: safeStr(arenaCard?.caption, title),
       tagline: payload.tagline,
@@ -188,7 +217,7 @@ export function dispatchToFeeds(
       ...(arenaCard || {}),
     };
 
-    return { ...payload, title, videoUri, feedTarget: 'ARENA', newPost };
+    return { ...payload, title, ...mediaMeta, feedTarget: 'ARENA', newPost };
   }
 
   if (payload.mode === 'BATTLE_REWIND') {
@@ -201,6 +230,7 @@ export function dispatchToFeeds(
       host: '@MUMBAI_STRIKER',
       responses: 0,
       status: 'OPEN',
+      ...mediaMeta,
       videoUri: videoUri || undefined,
       targetReps: safeNum(payload.targetReps, 50),
       timeLimit: safeNum(payload.timeLimitSec, 30),
@@ -213,7 +243,7 @@ export function dispatchToFeeds(
     const newPost: FeedPostCard = {
       id: safeStr(battleCard?.id, `rewind-${timestamp}`),
       mode: 'BATTLE_REWIND',
-      videoUri,
+      ...mediaMeta,
       title,
       targetReps: safeNum(payload.targetReps, 50),
       timeLimit: safeNum(payload.timeLimitSec, 30),
@@ -223,7 +253,7 @@ export function dispatchToFeeds(
       ...(battleCard || {}),
     };
 
-    return { ...payload, title, videoUri, feedTarget: 'BATTLES', newPost };
+    return { ...payload, title, ...mediaMeta, feedTarget: 'BATTLES', newPost };
   }
 
   if (payload.mode === 'BATTLE_BAWAAL') {
@@ -235,6 +265,7 @@ export function dispatchToFeeds(
       host: '@MUMBAI_STRIKER',
       hostFlag: '🇮🇳',
       hostLabel: 'INDIA',
+      ...mediaMeta,
       videoUri: videoUri || undefined,
       targetReps: safeNum(payload.targetReps, 50),
       timeLimit: safeNum(payload.timeLimitSec, 30),
@@ -248,7 +279,7 @@ export function dispatchToFeeds(
     const newPost: FeedPostCard = {
       id: safeStr(hotCard?.id, `live-bawaal-${timestamp}`),
       mode: 'BATTLE_BAWAAL',
-      videoUri,
+      ...mediaMeta,
       title,
       targetReps: safeNum(payload.targetReps, 50),
       timeLimit: safeNum(payload.timeLimitSec, 30),
@@ -258,17 +289,17 @@ export function dispatchToFeeds(
       ...(hotCard || {}),
     };
 
-    return { ...payload, title, videoUri, feedTarget: 'BATTLES', newPost };
+    return { ...payload, title, ...mediaMeta, feedTarget: 'BATTLES', newPost };
   }
 
   return {
     ...payload,
     title,
-    videoUri,
+    ...mediaMeta,
     newPost: {
       id: `post-${timestamp}`,
       mode: payload.mode,
-      videoUri,
+      ...mediaMeta,
       title,
       timestamp,
       feedTarget: 'ARENA',
@@ -349,6 +380,7 @@ function PostCreationSheet({
     String(durationSec && durationSec > 0 ? durationSec : 30)
   );
   const [formError, setFormError] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [successVisible, setSuccessVisible] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<PostCreationPayload | null>(
     null
@@ -379,7 +411,7 @@ function PostCreationSheet({
     }, 300);
   };
 
-  const handlePost = () => {
+  const handlePost = async () => {
     setFormError('');
     const trimmed = title.trim();
     if (!trimmed) {
@@ -390,23 +422,13 @@ function PostCreationSheet({
       setFormError('Record a video before posting.');
       return;
     }
+    if (uploading) return;
 
-    const payload: PostCreationPayload = {
-      mode,
-      videoUri: videoUri || null,
-      title: trimmed,
-      slowMoEnabled: !!slowMoEnabled,
-      slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
-      slowMoStartSec: safeNum(slowMoStartSec, 0),
-      slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
-      durationSec: safeNum(durationSec, 30),
-    };
-
-    if (showTaglines) payload.tagline = tagline;
-
+    let reps: number | undefined;
+    let secs: number | undefined;
     if (showBattleFields) {
-      const reps = Number.parseInt(targetReps.replace(/[^0-9]/g, ''), 10);
-      const secs = Number.parseInt(timeLimit.replace(/[^0-9]/g, ''), 10);
+      reps = Number.parseInt(targetReps.replace(/[^0-9]/g, ''), 10);
+      secs = Number.parseInt(timeLimit.replace(/[^0-9]/g, ''), 10);
       if (!Number.isFinite(reps) || reps <= 0) {
         setFormError('Enter a valid target reps number.');
         return;
@@ -415,17 +437,67 @@ function PostCreationSheet({
         setFormError('Enter a valid time limit in seconds.');
         return;
       }
-      payload.targetReps = reps;
-      payload.timeLimitSec = secs;
     }
 
+    setUploading(true);
+    let publicCloudUrl: string | null = null;
+    let localVideoUri: string | null = videoUri || null;
+    let uploadSkipped = false;
+    let uploadReason: string | undefined;
+
     try {
+      if (videoUri) {
+        const upload = await uploadBawaalVideo(videoUri);
+        localVideoUri = upload.localUri || videoUri;
+        if (upload.publicUrl) {
+          publicCloudUrl = upload.publicUrl;
+        } else {
+          uploadSkipped = true;
+          uploadReason = upload.reason || 'storage-error';
+          Alert.alert(
+            'Upload unavailable',
+            'Could not upload to BAWAAL cloud storage. Your clip will stay on-device for now — feed playback may be limited until you are back online.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+      const playbackUri = publicCloudUrl || localVideoUri || null;
+      const payload: PostCreationPayload = {
+        mode,
+        videoUri: playbackUri,
+        localVideoUri,
+        publicCloudUrl,
+        remoteVideoUri: publicCloudUrl,
+        title: trimmed,
+        slowMoEnabled: !!slowMoEnabled,
+        slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
+        slowMoStartSec: safeNum(slowMoStartSec, 0),
+        slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
+        durationSec: safeNum(durationSec, 30),
+        uploadSkipped,
+        uploadReason,
+      };
+
+      if (showTaglines) payload.tagline = tagline;
+      if (showBattleFields) {
+        payload.targetReps = reps;
+        payload.timeLimitSec = secs;
+      }
+
       const dispatched = dispatchToFeeds(payload);
       setPendingPayload(dispatched);
       setSuccessVisible(true);
     } catch (err) {
-      console.error('[PostCreationSheet] dispatch failed:', err);
+      console.error('[PostCreationSheet] post failed:', err);
       setFormError('Could not post. Please try again.');
+      Alert.alert(
+        'Post failed',
+        'Something went wrong while publishing. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -532,13 +604,23 @@ function PostCreationSheet({
           )}
 
           <TouchableOpacity
-            style={styles.postBtn}
-            onPress={handlePost}
+            style={[styles.postBtn, uploading && styles.postBtnDisabled]}
+            onPress={() => {
+              void handlePost();
+            }}
             activeOpacity={0.9}
+            disabled={uploading}
           >
-            <Text style={styles.postBtnText}>
-              {showBattleFields ? 'POST TO BATTLES' : 'POST TO ARENA'}
-            </Text>
+            {uploading ? (
+              <View style={styles.postBtnRow}>
+                <ActivityIndicator color="#000000" size="small" />
+                <Text style={styles.postBtnText}>UPLOADING…</Text>
+              </View>
+            ) : (
+              <Text style={styles.postBtnText}>
+                {showBattleFields ? 'POST TO BATTLES' : 'POST TO ARENA'}
+              </Text>
+            )}
           </TouchableOpacity>
         </ScrollView>
       </View>
@@ -653,6 +735,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 8,
+  },
+  postBtnDisabled: {
+    opacity: 0.7,
+  },
+  postBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   postBtnText: {
     color: '#000000',

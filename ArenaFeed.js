@@ -23,6 +23,7 @@ import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
+import { resolvePlayableVideoUri } from './src/services/uploadService';
 
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
@@ -226,8 +227,7 @@ function isOfficialBattlePost(post) {
 }
 
 function mapPostToReel(post) {
-  const uri =
-    post.videoUri || post.recordedVideoUri || post.uri || post.localVideoUri || null;
+  const uri = resolvePlayableVideoUri(post);
   const rawHandle =
     post.author ||
     post.handle ||
@@ -399,8 +399,7 @@ function sortResponses(list, mode) {
 }
 
 function mapPostToResponse(post) {
-  const uri =
-    post.videoUri || post.recordedVideoUri || post.uri || post.localVideoUri || null;
+  const uri = resolvePlayableVideoUri(post);
   const creator =
     post.creator === 'You' || post.creator === 'YOU' ? 'You' : post.creator || 'You';
   return {

@@ -58,11 +58,31 @@ function prependBattle(card) {
   return card;
 }
 
+function pickVideoUri(source) {
+  if (!source || typeof source !== 'object') return null;
+  const candidates = [
+    source.publicCloudUrl,
+    source.remoteVideoUri,
+    source.videoUrl,
+    source.video_url,
+    source.videoUri,
+    source.recordedVideoUri,
+    source.uri,
+    source.localVideoUri,
+  ];
+  const https = candidates.find(
+    (u) => typeof u === 'string' && /^https:\/\//i.test(u)
+  );
+  if (https) return https;
+  return candidates.find((u) => typeof u === 'string' && u.length > 0) || null;
+}
+
 /** Push an async Battle Rewind challenge — prepends to battlesList. */
 export function pushBattleChallenge(battle) {
   if (!battle || typeof battle !== 'object') return null;
   const timestamp = Number(battle.timestamp) || Date.now();
   const title = String(battle.title || battle.target || 'Open Challenge');
+  const videoUri = pickVideoUri(battle);
   const card = {
     responses: 0,
     status: 'OPEN',
@@ -75,7 +95,13 @@ export function pushBattleChallenge(battle) {
     title,
     target: String(battle.target || title),
     description: battle.description ?? null,
-    videoUri: typeof battle.videoUri === 'string' ? battle.videoUri : null,
+    videoUri,
+    publicCloudUrl:
+      typeof battle.publicCloudUrl === 'string' ? battle.publicCloudUrl : null,
+    remoteVideoUri:
+      typeof battle.remoteVideoUri === 'string' ? battle.remoteVideoUri : null,
+    localVideoUri:
+      typeof battle.localVideoUri === 'string' ? battle.localVideoUri : null,
     targetReps: Number(battle.targetReps) || 0,
     timeLimit: Number(battle.timeLimit ?? battle.timeLimitSec) || 30,
     timeLimitSec: Number(battle.timeLimitSec ?? battle.timeLimit) || 30,
@@ -88,6 +114,7 @@ export function pushBattleChallenge(battle) {
 export function pushHotFeatureBattle(feature) {
   if (!feature) return null;
   const timestamp = feature.timestamp || Date.now();
+  const videoUri = pickVideoUri(feature);
   const card = {
     responses: 0,
     status: 'LIVE',
@@ -98,10 +125,16 @@ export function pushHotFeatureBattle(feature) {
     target: feature.challengeTitle || feature.target || feature.title || 'Live 1v1 Open Challenge',
     title: feature.title || feature.challengeTitle || feature.target || 'Live 1v1 Open Challenge',
     description: feature.description || null,
-    videoUri: feature.videoUri || null,
     ...feature,
     id: feature.id || `live-bawaal-${timestamp}`,
     timestamp,
+    videoUri,
+    publicCloudUrl:
+      typeof feature.publicCloudUrl === 'string' ? feature.publicCloudUrl : null,
+    remoteVideoUri:
+      typeof feature.remoteVideoUri === 'string' ? feature.remoteVideoUri : null,
+    localVideoUri:
+      typeof feature.localVideoUri === 'string' ? feature.localVideoUri : null,
     liveMatch: feature.liveMatch || {
       category: `[GYM] ${feature.challengeTitle || feature.title || 'Live 1v1 Open Challenge'}`,
       timerLabel: '00:00',

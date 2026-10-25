@@ -6,6 +6,9 @@ import {
   supabase,
 } from './supabase';
 
+/** Public Supabase Storage bucket for BAWAAL clips */
+export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
+
 /** Decode base64 → ArrayBuffer without relying on atob (Hermes-safe). */
 function base64ToArrayBuffer(base64) {
   const cleaned = String(base64).replace(/[\r\n\s]/g, '');
@@ -43,6 +46,43 @@ function normalizeLocalUri(uri) {
   }
   if (uri.startsWith('/')) return `file://${uri}`;
   return uri;
+}
+
+export function isRemoteHttpsUri(uri) {
+  return typeof uri === 'string' && /^https:\/\//i.test(uri.trim());
+}
+
+/**
+ * Prefer remote HTTPS playback URLs over temporary file:// URIs.
+ */
+export function resolvePlayableVideoUri(source) {
+  if (!source) return null;
+  if (typeof source === 'string') {
+    const t = source.trim();
+    return t.length > 0 ? t : null;
+  }
+
+  const candidates = [
+    source.publicCloudUrl,
+    source.remoteVideoUri,
+    source.videoUrl,
+    source.video_url,
+    source.videoUri,
+    source.recordedVideoUri,
+    source.uri,
+    source.localVideoUri,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && isRemoteHttpsUri(c)) return c.trim();
+  }
+  for (const c of candidates) {
+    if (typeof c === 'string' && /^http:\/\//i.test(c.trim())) return c.trim();
+  }
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 0) return c.trim();
+  }
+  return null;
 }
 
 /**
@@ -110,10 +150,13 @@ export async function readLocalVideoBytes(localUri) {
 }
 
 /**
- * Try Supabase Storage upload; on any auth/storage/offline failure return local file:// URI.
- * Never throws for Storage / JWS / network — Expo Go demo can always post locally.
+ * Upload a recorded clip to Supabase Storage bucket `bawaalvideos`.
+ * Path: battles/{timestamp}_video.mp4
  *
- * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string }}
+ * On auth/storage/offline failure returns local file:// fallback — never throws
+ * for network/storage errors.
+ *
+ * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string, error?: string, path?: string }}
  */
 export const uploadBattleVideo = async (localUri) => {
   let stableUri = normalizeLocalUri(localUri);
@@ -132,6 +175,16 @@ export const uploadBattleVideo = async (localUri) => {
     error: error ? String(error?.message || error) : undefined,
   });
 
+  // Already a remote HTTPS URL — no re-upload needed
+  if (isRemoteHttpsUri(stableUri)) {
+    return {
+      publicUrl: stableUri.trim(),
+      localUri: stableUri,
+      skipped: false,
+      reason: 'already-remote',
+    };
+  }
+
   if (!isSupabaseConfigured()) {
     return localFallback('not-configured');
   }
@@ -142,25 +195,25 @@ export const uploadBattleVideo = async (localUri) => {
       return localFallback('auth-unavailable');
     }
 
-    const filename = `battle_${Date.now()}_${Math.random().toString(36).slice(2, 9)}.mp4`;
+    const objectPath = `battles/${Date.now()}_video.mp4`;
     const arrayBuffer = await readLocalVideoBytes(stableUri);
 
-    const { error } = await supabase.storage.from('battle-videos').upload(filename, arrayBuffer, {
-      contentType: 'video/mp4',
-      cacheControl: '3600',
-      upsert: false,
-    });
+    const { error } = await supabase.storage
+      .from(BAWAAL_VIDEO_BUCKET)
+      .upload(objectPath, arrayBuffer, {
+        contentType: 'video/mp4',
+        cacheControl: '3600',
+        upsert: false,
+      });
 
     if (error) {
-      if (isCloudAuthError(error) || /storage/i.test(String(error?.message || ''))) {
-        return localFallback('storage-error', error);
-      }
+      console.warn('[upload] Storage upload failed:', error.message || error);
       return localFallback('storage-error', error);
     }
 
     const { data: publicUrlData } = supabase.storage
-      .from('battle-videos')
-      .getPublicUrl(filename);
+      .from(BAWAAL_VIDEO_BUCKET)
+      .getPublicUrl(objectPath);
 
     if (!publicUrlData?.publicUrl) {
       return localFallback('no-public-url');
@@ -170,13 +223,18 @@ export const uploadBattleVideo = async (localUri) => {
       publicUrl: publicUrlData.publicUrl,
       localUri: stableUri,
       skipped: false,
+      path: objectPath,
     };
   } catch (err) {
+    console.warn('[upload] Unexpected upload error:', err?.message || err);
     return localFallback(
       isCloudAuthError(err) ? 'auth-unavailable' : 'storage-error',
       err
     );
   }
 };
+
+/** Alias matching BAWAAL product naming */
+export const uploadBawaalVideo = uploadBattleVideo;
 
 export { normalizeLocalUri, isCloudAuthError };

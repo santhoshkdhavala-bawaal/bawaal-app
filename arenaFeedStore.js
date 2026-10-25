@@ -24,11 +24,23 @@ export function pushArenaPost(post) {
     if (!post || typeof post !== 'object') return null;
     const ts = Number(post.timestamp || post.createdAt) || Date.now();
     const id = String(post.id || `arena-${ts}`);
+    // Prefer remote HTTPS (Supabase) over temporary file:// URIs
+    const candidates = [
+      post.publicCloudUrl,
+      post.remoteVideoUri,
+      post.videoUrl,
+      post.video_url,
+      post.videoUri,
+      post.recordedVideoUri,
+      post.uri,
+      post.localVideoUri,
+    ];
+    const httpsUri = candidates.find(
+      (u) => typeof u === 'string' && /^https:\/\//i.test(u)
+    );
     const videoUri =
-      (typeof post.videoUri === 'string' && post.videoUri) ||
-      (typeof post.recordedVideoUri === 'string' && post.recordedVideoUri) ||
-      (typeof post.uri === 'string' && post.uri) ||
-      (typeof post.localVideoUri === 'string' && post.localVideoUri) ||
+      httpsUri ||
+      candidates.find((u) => typeof u === 'string' && u.length > 0) ||
       null;
     const normalized = {
       type: 'reel',
@@ -50,6 +62,12 @@ export function pushArenaPost(post) {
       videoUri,
       uri: videoUri,
       recordedVideoUri: videoUri,
+      publicCloudUrl:
+        typeof post.publicCloudUrl === 'string' ? post.publicCloudUrl : httpsUri || null,
+      remoteVideoUri:
+        typeof post.remoteVideoUri === 'string' ? post.remoteVideoUri : httpsUri || null,
+      localVideoUri:
+        typeof post.localVideoUri === 'string' ? post.localVideoUri : null,
     };
 
     arenaPosts = [
