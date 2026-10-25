@@ -3,6 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+/** Project URL for direct Storage REST calls (no session injection). */
+export function getSupabaseUrl() {
+  return typeof supabaseUrl === 'string' ? supabaseUrl.replace(/\/$/, '') : '';
+}
+
+/** Anon / publishable key used only as `apikey` for anonymous Storage uploads. */
+export function getSupabaseAnonKey() {
+  return typeof supabaseAnonKey === 'string' ? supabaseAnonKey.trim() : '';
+}
+
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn(
     '[supabase] Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +

@@ -1,5 +1,10 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import { isCloudAuthError, supabase } from './supabase';
+import {
+  getSupabaseAnonKey,
+  getSupabaseUrl,
+  isCloudAuthError,
+  looksLikeJwt,
+} from './supabase';
 
 /** Public Supabase Storage bucket for BAWAAL clips */
 export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
@@ -79,8 +84,12 @@ export async function persistLocalVideoUri(localUri) {
 }
 
 /**
- * Direct anonymous upload to public `bawaalvideos` bucket.
- * NO getSession / canAttemptCloudUpload / auth gates.
+ * Anonymous upload via Storage REST — bypasses supabase-js so a stale/bad
+ * user session JWT is never attached (fixes Invalid Compact JWS / 403).
+ *
+ * POST {SUPABASE_URL}/storage/v1/object/bawaalvideos/{path}
+ * Headers: apikey + (Bearer only when key is a real JWT anon key)
+ *
  * Never throws — returns public HTTPS URL string or null.
  *
  * @param {string} localUri
@@ -89,9 +98,15 @@ export async function persistLocalVideoUri(localUri) {
 export async function uploadVideoToSupabase(localUri) {
   console.log('START_UPLOAD: localUri ->', localUri);
 
+  const baseUrl = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!baseUrl || !anonKey) {
+    console.error('SUPABASE_ERROR_DETAILS: missing EXPO_PUBLIC_SUPABASE_URL or ANON_KEY');
+    return null;
+  }
+
   let blob;
   try {
-    // Fetch local file and convert to Blob
     const response = await fetch(localUri);
     console.log('FETCH_RESPONSE_OK:', response?.ok, 'status:', response?.status);
     blob = await response.blob();
@@ -104,33 +119,64 @@ export async function uploadVideoToSupabase(localUri) {
   try {
     const fileName = `battle_${Date.now()}.mp4`;
     const filePath = `battles/${fileName}`;
+    // Encode each path segment for the REST URL
+    const encodedPath = filePath
+      .split('/')
+      .map((seg) => encodeURIComponent(seg))
+      .join('/');
+    const uploadUrl = `${baseUrl}/storage/v1/object/${BAWAAL_VIDEO_BUCKET}/${encodedPath}`;
     console.log('UPLOAD_PATH:', filePath);
+    console.log('UPLOAD_REST_URL:', uploadUrl);
 
-    // Direct upload to public bucket (anon key — no user session)
-    const { data, error } = await supabase.storage
-      .from('bawaalvideos')
-      .upload(filePath, blob, {
-        contentType: 'video/mp4',
-        upsert: true,
-      });
+    /** @type {Record<string, string>} */
+    const headers = {
+      apikey: anonKey,
+      'Content-Type': 'video/mp4',
+      'x-upsert': 'true',
+    };
 
-    if (error) {
+    // Only attach Bearer when the key is a classic JWT. `sb_publishable_*` is NOT a
+    // JWS — sending it as Authorization causes "Invalid Compact JWS" / AccessDenied.
+    if (looksLikeJwt(anonKey)) {
+      headers.Authorization = `Bearer ${anonKey}`;
+    } else {
+      console.warn(
+        '[upload] Non-JWT anon key detected (e.g. sb_publishable_). ' +
+          'Uploading with apikey only — prefer the classic JWT anon key from ' +
+          'Supabase → Project Settings → API for Storage.'
+      );
+      // Explicitly do NOT set Authorization (avoids injecting a bad session/JWS)
+    }
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers,
+      body: blob,
+    });
+
+    const responseText = await uploadRes.text();
+    console.log('UPLOAD_HTTP_STATUS:', uploadRes.status, responseText?.slice?.(0, 400));
+
+    if (!uploadRes.ok) {
       console.error(
         'SUPABASE_ERROR_DETAILS:',
-        JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
+        JSON.stringify(
+          {
+            status: uploadRes.status,
+            statusText: uploadRes.statusText,
+            body: responseText,
+          },
+          null,
+          2
+        )
       );
       return null;
     }
 
-    console.log('UPLOAD_OK: path=', data?.path || filePath);
-
-    // Retrieve public HTTPS URL
-    const { data: publicUrlData } = supabase.storage
-      .from('bawaalvideos')
-      .getPublicUrl(filePath);
-
-    console.log('PUBLIC_URL:', publicUrlData?.publicUrl);
-    return publicUrlData?.publicUrl || null;
+    const publicUrl = `${baseUrl}/storage/v1/object/public/${BAWAAL_VIDEO_BUCKET}/${encodedPath}`;
+    console.log('PUBLIC_URL:', publicUrl);
+    console.log('UPLOAD_OK: path=', filePath);
+    return publicUrl;
   } catch (err) {
     console.error(
       'SUPABASE_ERROR_DETAILS:',
