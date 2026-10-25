@@ -413,6 +413,54 @@ function PostCreationSheet({
     }, 300);
   };
 
+  /**
+   * Android bare paths must be `file://` / `content://` before upload.
+   * Multipart FormData to Supabase `/object/...` stores boundary junk as the
+   * "video" → black screen + player crash. We send raw MP4 bytes instead
+   * (Content-Type: video/mp4) via `uploadVideoToSupabase`.
+   */
+  const formatVideoUriForUpload = (rawUri: string): string => {
+    const fromHelper = sanitizeVideoUriForUpload(rawUri);
+    if (fromHelper) return fromHelper;
+    if (
+      Platform.OS === 'android' &&
+      !rawUri.startsWith('file://') &&
+      !rawUri.startsWith('content://')
+    ) {
+      return `file://${rawUri}`;
+    }
+    return rawUri;
+  };
+
+  /**
+   * Upload clip → public HTTPS URL, or null (caller must NOT create a feed post).
+   */
+  const uploadClipOrAbort = async (
+    rawLocalUri: string
+  ): Promise<string | null> => {
+    const formattedUri = formatVideoUriForUpload(rawLocalUri);
+    const fileName = `video_${Date.now()}.mp4`;
+
+    console.log('[PostCreationSheet] formattedUri ->', formattedUri);
+    console.log('[PostCreationSheet] upload fileName ->', fileName);
+
+    // RN FormData shape (uri/name/type) is for reference only — do NOT POST
+    // multipart to Storage. Kept here so the payload contract stays explicit:
+    //   { uri: formattedUri, name: fileName, type: 'video/mp4' }
+    // Actual transfer: native binary PUT/POST with Content-Type video/mp4.
+    const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName);
+
+    if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
+      console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
+      return remoteUrl.trim();
+    }
+
+    console.error(
+      '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL — skipping DB/feed post'
+    );
+    return null;
+  };
+
   const handlePost = async () => {
     setFormError('');
     const trimmed = title.trim();
@@ -453,33 +501,11 @@ function PostCreationSheet({
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl = localVideoUri.trim();
       } else if (localVideoUri) {
-        // Android: bare paths must be file:// before native binary upload.
-        // Never multipart FormData to Storage — it stores boundary junk → black/corrupt video.
-        const sanitizedUri =
-          sanitizeVideoUriForUpload(localVideoUri) ||
-          (Platform.OS === 'android' &&
-          !localVideoUri.startsWith('file://') &&
-          !localVideoUri.startsWith('content://')
-            ? `file://${localVideoUri}`
-            : localVideoUri);
-        const uploadFileName = `video_${Date.now()}.mp4`;
-        console.log(
-          '[PostCreationSheet] uploading binary MP4:',
-          sanitizedUri,
-          uploadFileName
-        );
-        const remoteUrl = await uploadVideoToSupabase(
-          sanitizedUri,
-          uploadFileName
-        );
-        if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
-          publicCloudUrl = remoteUrl.trim();
-          console.log('[PostCreationSheet] cloud URL ready:', publicCloudUrl);
-        } else {
-          console.warn('[PostCreationSheet] upload returned null — aborting post');
+        publicCloudUrl = await uploadClipOrAbort(localVideoUri);
+        if (!publicCloudUrl) {
           Alert.alert(
             'Upload failed',
-            'Could not upload your video to BAWAAL cloud storage. Check your connection and Supabase Storage settings, then try again. Your post was not published.',
+            'Could not upload a playable video to BAWAAL cloud storage. Your post was not published (this prevents black-screen crashes in the feed).',
             [{ text: 'OK' }]
           );
           return;
@@ -489,9 +515,12 @@ function PostCreationSheet({
         return;
       }
 
-      // Only publish when we have a playable remote URL (or live battle with no clip)
+      // Safety: never create a feed/DB post without a playable remote URL
       const playbackUri = publicCloudUrl;
       if (requiresCloudVideo && !playbackUri) {
+        console.error(
+          '[PostCreationSheet] aborting post — missing publicCloudUrl after upload'
+        );
         Alert.alert(
           'Upload failed',
           'Video upload did not complete. Your post was not published.',
