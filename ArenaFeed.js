@@ -249,21 +249,72 @@ function mapPostToReel(post) {
 }
 
 function isPlayableUri(uri) {
+  if (uri == null) return false;
+  if (typeof uri !== 'string') return false;
+  const trimmed = uri.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
   return (
-    typeof uri === 'string' &&
-    (uri.startsWith('file://') ||
-      uri.startsWith('http://') ||
-      uri.startsWith('https://') ||
-      uri.startsWith('content://'))
+    trimmed.startsWith('file://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('content://') ||
+    trimmed.startsWith('ph://') ||
+    trimmed.startsWith('assets-library://')
   );
 }
 
+function releasePlayer(player) {
+  if (!player) return;
+  try {
+    player.pause?.();
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    if (typeof player.release === 'function') player.release();
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+/** Catches VideoView native render failures so one bad clip cannot crash the feed. */
+class ClipErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('[ArenaFeed] Clip render error:', error?.message || error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <View style={[styles.clipPlaceholder, this.props.style]}>
+          <Text style={styles.clipPlaceholderLabel}>
+            {this.props.fallbackLabel || 'CLIP UNAVAILABLE'}
+          </Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function ClipSurface({ uri, label, style }) {
-  const playable = isPlayableUri(uri);
-  const player = useVideoPlayer(playable ? { uri } : null, (p) => {
-    p.loop = true;
-    p.muted = true;
+  const safeUri = isPlayableUri(uri) ? String(uri).trim() : null;
+  const playable = Boolean(safeUri);
+  const [failed, setFailed] = useState(false);
+
+  const player = useVideoPlayer(playable && !failed ? { uri: safeUri } : null, (p) => {
     try {
+      p.loop = true;
+      p.muted = true;
       if (playable) p.play();
     } catch (_) {
       /* ignore */
@@ -271,32 +322,43 @@ function ClipSurface({ uri, label, style }) {
   });
 
   useEffect(() => {
+    setFailed(false);
+  }, [safeUri]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!playable || !safeUri || !player || failed) return;
       try {
-        if (playable) {
-          await player.replaceAsync({ uri });
-          if (!cancelled) {
-            player.loop = true;
-            player.muted = true;
-            player.play();
-          }
+        if (typeof player.replaceAsync === 'function') {
+          await player.replaceAsync({ uri: safeUri });
         }
-      } catch (_) {
-        /* ignore */
+        if (cancelled) return;
+        try {
+          player.loop = true;
+          player.muted = true;
+          player.play?.();
+        } catch (_) {
+          /* ignore */
+        }
+      } catch (e) {
+        console.warn('[ArenaFeed] replaceAsync failed:', e?.message || e);
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
-      try {
-        player.pause();
-      } catch (_) {
-        /* ignore */
-      }
+      releasePlayer(player);
     };
-  }, [player, uri, playable]);
+  }, [player, safeUri, playable, failed]);
 
-  if (!playable) {
+  useEffect(() => {
+    return () => {
+      releasePlayer(player);
+    };
+  }, [player]);
+
+  if (!playable || failed) {
     return (
       <View style={[styles.clipPlaceholder, style]}>
         <View style={styles.streamLiveRow}>
@@ -309,19 +371,21 @@ function ClipSurface({ uri, label, style }) {
   }
 
   return (
-    <View style={[styles.clipVideoWrap, style]}>
-      <VideoView
-        style={StyleSheet.absoluteFillObject}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
-      />
-      {!!label && (
-        <View style={styles.clipCornerTag}>
-          <Text style={styles.clipCornerTagText}>{label}</Text>
-        </View>
-      )}
-    </View>
+    <ClipErrorBoundary style={style} fallbackLabel={label || 'CLIP UNAVAILABLE'}>
+      <View style={[styles.clipVideoWrap, style]}>
+        <VideoView
+          style={StyleSheet.absoluteFillObject}
+          player={player}
+          contentFit="cover"
+          nativeControls={false}
+        />
+        {!!label && (
+          <View style={styles.clipCornerTag}>
+            <Text style={styles.clipCornerTagText}>{label}</Text>
+          </View>
+        )}
+      </View>
+    </ClipErrorBoundary>
   );
 }
 

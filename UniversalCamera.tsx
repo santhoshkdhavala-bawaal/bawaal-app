@@ -21,8 +21,6 @@ import {
   Animated,
   Easing,
   Image,
-  LayoutChangeEvent,
-  type GestureResponderEvent,
 } from 'react-native';
 import {
   CameraView,
@@ -37,12 +35,13 @@ import type {
   CreationMode,
   PostCreationPayload,
 } from './PostCreationSheet';
-import { pushHotFeatureBattle } from './battlesFeedStore';
-
+import FilmStripTrimmer from './FilmStripTrimmer';
 export type { CreationMode, PostCreationPayload };
 
-const NEON_ORANGE = '#FF5722';
+/** Minimalist Black & White accent — never neon orange */
+const ACCENT = '#FFFFFF';
 const SHUTTER_RED = '#FF3B30';
+const SHEET_BG = 'rgba(10,10,10,0.95)';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
 const PILL_HIDE_MS = 5000;
 const MIN_TRIM_SPAN = 0.5;
@@ -86,7 +85,7 @@ const HUB_MODES: HubMode[] = [
   {
     id: 'BATTLE_BAWAAL',
     title: '⚔️ BATTLE BAWAAL',
-    subtitle: 'Live 1v1 Arena launch',
+    subtitle: 'Set challenge details · then launch live arena',
   },
 ];
 
@@ -188,7 +187,7 @@ function DottedProgressRing({
               {
                 left: x,
                 top: y,
-                backgroundColor: active ? NEON_ORANGE : 'rgba(255,255,255,0.35)',
+                backgroundColor: active ? ACCENT : 'rgba(255,255,255,0.35)',
               },
             ]}
           />
@@ -210,199 +209,6 @@ const ringStyles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-});
-
-/** Film strip — local drag state avoids parent re-render jitter. */
-function FilmStripTrimmer({
-  duration,
-  startSec,
-  endSec,
-  playheadSec,
-  onChangeRange,
-}: {
-  duration: number;
-  startSec: number;
-  endSec: number;
-  playheadSec: number;
-  onChangeRange: (start: number, end: number, commit: boolean) => void;
-}) {
-  const dragKind = useRef<'start' | 'end' | null>(null);
-  const widthRef = useRef(1);
-  const localStartRef = useRef(startSec);
-  const localEndRef = useRef(endSec);
-  const [dragPreview, setDragPreview] = useState<{
-    start: number;
-    end: number;
-  } | null>(null);
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    widthRef.current = Math.max(1, e.nativeEvent.layout.width);
-  };
-
-  const touchToSec = (evt: GestureResponderEvent) => {
-    const w = Math.max(1, widthRef.current);
-    const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
-    // Prefer locationX (stable within the strip) — avoids pageX/layout shake
-    const locX = Math.max(0, Math.min(w, evt.nativeEvent.locationX));
-    return Math.max(0, Math.min(maxDur, (locX / w) * maxDur));
-  };
-
-  const onGrant = (evt: GestureResponderEvent) => {
-    localStartRef.current = startSec;
-    localEndRef.current = endSec;
-    const sec = touchToSec(evt);
-    const mid = (startSec + endSec) / 2;
-    dragKind.current = sec < mid ? 'start' : 'end';
-    setDragPreview({ start: startSec, end: endSec });
-  };
-
-  const onMove = (evt: GestureResponderEvent) => {
-    if (!dragKind.current) return;
-    const sec = touchToSec(evt);
-    const maxDur = Math.max(MIN_TRIM_SPAN, duration || 1);
-    if (dragKind.current === 'start') {
-      const next = Math.max(
-        0,
-        Math.min(sec, localEndRef.current - MIN_TRIM_SPAN)
-      );
-      localStartRef.current = next;
-      setDragPreview({ start: next, end: localEndRef.current });
-    } else {
-      const next = Math.min(
-        maxDur,
-        Math.max(sec, localStartRef.current + MIN_TRIM_SPAN)
-      );
-      localEndRef.current = next;
-      setDragPreview({ start: localStartRef.current, end: next });
-    }
-  };
-
-  const onRelease = () => {
-    dragKind.current = null;
-    const s = localStartRef.current;
-    const e = localEndRef.current;
-    setDragPreview(null);
-    onChangeRange(s, e, true);
-  };
-
-  const displayStart = dragPreview?.start ?? startSec;
-  const displayEnd = dragPreview?.end ?? endSec;
-  const dur = Math.max(MIN_TRIM_SPAN, duration || 1);
-  const leftPct = (displayStart / dur) * 100;
-  const rightPct = (displayEnd / dur) * 100;
-  const playPct = Math.max(0, Math.min(100, (playheadSec / dur) * 100));
-
-  return (
-    <View
-      style={trimStyles.wrap}
-      onLayout={onLayout}
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
-      onResponderTerminationRequest={() => false}
-      onResponderGrant={onGrant}
-      onResponderMove={onMove}
-      onResponderRelease={onRelease}
-      onResponderTerminate={onRelease}
-    >
-      <Text style={trimStyles.hint}>
-        Drag red box · only that region plays in slow-mo
-      </Text>
-      <View style={trimStyles.film}>
-        {Array.from({ length: 14 }).map((_, i) => (
-          <View
-            key={`f-${i}`}
-            style={[
-              trimStyles.frame,
-              i % 2 === 0 ? trimStyles.frameA : trimStyles.frameB,
-            ]}
-          />
-        ))}
-        <View
-          style={[
-            trimStyles.selection,
-            {
-              left: `${leftPct}%`,
-              width: `${Math.max(3, rightPct - leftPct)}%`,
-            },
-          ]}
-        />
-        <View style={[trimStyles.handle, { left: `${leftPct}%` }]}>
-          <View style={trimStyles.handleBar} />
-        </View>
-        <View style={[trimStyles.handle, { left: `${rightPct}%` }]}>
-          <View style={trimStyles.handleBar} />
-        </View>
-        {!dragPreview ? (
-          <View style={[trimStyles.playhead, { left: `${playPct}%` }]} />
-        ) : null}
-      </View>
-      <View style={trimStyles.labels}>
-        <Text style={trimStyles.label}>{formatClock(displayStart)}</Text>
-        <Text style={trimStyles.labelAccent}>SLOW-MO</Text>
-        <Text style={trimStyles.label}>{formatClock(displayEnd)}</Text>
-      </View>
-    </View>
-  );
-}
-
-const trimStyles = StyleSheet.create({
-  wrap: { width: '100%', marginTop: 8 },
-  hint: {
-    color: '#8A99AD',
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  film: {
-    height: 52,
-    borderRadius: 10,
-    overflow: 'hidden',
-    flexDirection: 'row',
-    backgroundColor: '#0A0E1A',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  frame: { flex: 1, borderRightWidth: 1, borderRightColor: '#1F293D' },
-  frameA: { backgroundColor: '#1A2336' },
-  frameB: { backgroundColor: '#121A2A' },
-  selection: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(255,87,34,0.38)',
-    borderColor: NEON_ORANGE,
-    borderWidth: 2,
-  },
-  handle: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 18,
-    marginLeft: -9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  handleBar: {
-    width: 4,
-    height: '72%',
-    borderRadius: 2,
-    backgroundColor: NEON_ORANGE,
-  },
-  playhead: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 2,
-    marginLeft: -1,
-    backgroundColor: '#FFFFFF',
-  },
-  labels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  label: { color: '#8A99AD', fontSize: 10, fontWeight: '700' },
-  labelAccent: { color: NEON_ORANGE, fontSize: 10, fontWeight: '900' },
 });
 
 function BawaalHubDrawer({
@@ -468,55 +274,55 @@ function BawaalHubDrawer({
 const hubStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.62)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
   sheet: {
-    backgroundColor: '#0F172A',
+    backgroundColor: SHEET_BG,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingHorizontal: 18,
     paddingTop: 10,
-    borderTopWidth: 1.5,
-    borderColor: NEON_ORANGE,
+    borderTopWidth: 1,
+    borderColor: '#FFFFFF',
   },
   handle: {
     alignSelf: 'center',
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#334155',
+    backgroundColor: '#555555',
     marginBottom: 10,
   },
   logo: { width: 130, height: 44, alignSelf: 'center', marginBottom: 4 },
   title: {
-    color: NEON_ORANGE,
+    color: ACCENT,
     fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
     letterSpacing: 0.6,
   },
   sub: {
-    color: '#8A99AD',
+    color: '#A3A3A3',
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 14,
   },
   card: {
-    backgroundColor: '#0A0E1A',
+    backgroundColor: 'transparent',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,87,34,0.45)',
+    borderColor: 'rgba(255,255,255,0.3)',
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 10,
   },
   cardTitle: {
-    color: NEON_ORANGE,
+    color: ACCENT,
     fontSize: 15,
     fontWeight: '900',
   },
   cardSub: {
-    color: '#94A3B8',
+    color: 'rgba(255,255,255,0.65)',
     fontSize: 12,
     marginTop: 4,
     lineHeight: 17,
@@ -524,12 +330,14 @@ const hubStyles = StyleSheet.create({
   joshChip: {
     alignSelf: 'flex-start',
     marginTop: 8,
-    backgroundColor: 'rgba(255,87,34,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  joshChipText: { color: NEON_ORANGE, fontSize: 11, fontWeight: '800' },
+  joshChipText: { color: ACCENT, fontSize: 11, fontWeight: '800' },
 });
 
 function ClipPreviewModal({
@@ -681,14 +489,16 @@ function ClipPreviewModal({
           endSec={endSec}
           playheadSec={playheadSec}
           onChangeRange={(s, e, commit) => {
-            // Ignore live drag updates in parent — local trimmer owns UI during drag
             if (!commit) return;
             setStartSec(s);
             setEndSec(e);
+          }}
+          onSeekPlayhead={(sec) => {
+            setPlayheadSec(sec);
             try {
               if (player) {
                 // eslint-disable-next-line react-hooks/immutability -- VideoPlayer seek API
-                player.currentTime = s;
+                player.currentTime = sec;
               }
             } catch {
               /* ignore */
@@ -755,13 +565,13 @@ function ClipPreviewModal({
 const previewStyles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0A0E1A',
+    backgroundColor: '#0A0A0A',
     paddingTop: 54,
     paddingHorizontal: 16,
     paddingBottom: 24,
   },
   title: {
-    color: '#FFFFFF',
+    color: ACCENT,
     fontSize: 18,
     fontWeight: '900',
     marginBottom: 12,
@@ -772,7 +582,7 @@ const previewStyles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#000',
     borderWidth: 1,
-    borderColor: '#1F293D',
+    borderColor: '#333333',
   },
   video: { flex: 1 },
   playOverlay: {
@@ -792,11 +602,11 @@ const previewStyles = StyleSheet.create({
   },
   playIcon: {
     fontSize: 26,
-    color: '#FFFFFF',
+    color: ACCENT,
     fontWeight: '700',
   },
   rateLabel: {
-    color: '#8A99AD',
+    color: '#A3A3A3',
     fontSize: 11,
     fontWeight: '700',
     marginTop: 12,
@@ -808,33 +618,33 @@ const previewStyles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#334155',
-    backgroundColor: '#0F172A',
+    borderColor: '#333333',
+    backgroundColor: '#111111',
   },
   rateChipActive: {
-    backgroundColor: NEON_ORANGE,
-    borderColor: NEON_ORANGE,
+    backgroundColor: ACCENT,
+    borderColor: ACCENT,
   },
-  rateText: { color: '#8A99AD', fontWeight: '800', fontSize: 12 },
-  rateTextActive: { color: '#FFFFFF' },
+  rateText: { color: '#A3A3A3', fontWeight: '800', fontSize: 12 },
+  rateTextActive: { color: '#000000' },
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   secondaryBtn: {
     flex: 1,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#334155',
+    borderColor: ACCENT,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  secondaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  secondaryText: { color: ACCENT, fontWeight: '800', fontSize: 13 },
   primaryBtn: {
     flex: 1.4,
     borderRadius: 12,
-    backgroundColor: NEON_ORANGE,
+    backgroundColor: ACCENT,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  primaryText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
+  primaryText: { color: '#000000', fontWeight: '900', fontSize: 13 },
 });
 
 export default function UniversalCamera({
@@ -847,10 +657,13 @@ export default function UniversalCamera({
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
-  const bootMode: CreationMode =
+  const rawBootMode: CreationMode =
     initialMode ||
     (route?.params?.initialMode as CreationMode | undefined) ||
     'SPARKS';
+  // Never boot camera into BATTLE_BAWAAL — that route is the challenge form
+  const bootMode: CreationMode =
+    rawBootMode === 'BATTLE_BAWAAL' ? 'SPARKS' : rawBootMode;
 
   const [mode, setMode] = useState<CreationMode>(bootMode);
   const [hubOpen, setHubOpen] = useState(false);
@@ -947,7 +760,17 @@ export default function UniversalCamera({
   ]);
 
   useEffect(() => {
-    if (bootMode !== 'BATTLE_BAWAAL') scheduleHidePill();
+    scheduleHidePill();
+    if (rawBootMode === 'BATTLE_BAWAAL') {
+      const t = setTimeout(() => {
+        navigation?.navigate?.('BattleChallengeForm');
+      }, 80);
+      return () => {
+        clearTimeout(t);
+        if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
+        if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
+      };
+    }
     return () => {
       if (elapsedTimerRef.current) clearInterval(elapsedTimerRef.current);
       if (hidePillTimerRef.current) clearTimeout(hidePillTimerRef.current);
@@ -1013,14 +836,24 @@ export default function UniversalCamera({
     }, 80);
   }, [isRecording, navigation]);
 
+  const openBattleChallengeForm = useCallback(() => {
+    setShowPreview(false);
+    setShowPostSheet(false);
+    setHubOpen(false);
+    setTimeout(() => {
+      navigation?.navigate?.('BattleChallengeForm');
+    }, 80);
+  }, [navigation]);
+
   const handleHubSelect = useCallback(
     (next: CreationMode) => {
-      setMode(next);
       setHubOpen(false);
+      // CRITICAL: Battle Bawaal opens challenge setup — never a camera mode
       if (next === 'BATTLE_BAWAAL') {
-        setShowTimePill(false);
+        openBattleChallengeForm();
         return;
       }
+      setMode(next);
       const nextDur = Math.min(
         defaultDuration(next),
         modeCeiling(next, joshUnlocked3m)
@@ -1029,7 +862,7 @@ export default function UniversalCamera({
       fadeTimePill(false);
       scheduleHidePill();
     },
-    [joshUnlocked3m, fadeTimePill, scheduleHidePill]
+    [joshUnlocked3m, fadeTimePill, scheduleHidePill, openBattleChallengeForm]
   );
 
   const handleTimeSelect = useCallback(
@@ -1042,32 +875,9 @@ export default function UniversalCamera({
     [isRecording, fadeTimePill, scheduleHidePill]
   );
 
-  const launchBattleBawaal = useCallback(() => {
-    const card = pushHotFeatureBattle({
-      challengeTitle: 'Open Live 1v1 Challenge',
-      host: '@MUMBAI_STRIKER',
-      hostFlag: '🇮🇳',
-      hostLabel: 'INDIA',
-      status: 'LIVE',
-      isHotFeature: true,
-      source: 'BATTLE_BAWAAL',
-    });
-    setShowPreview(false);
-    setShowPostSheet(false);
-    setHubOpen(false);
-    setTimeout(() => {
-      navigation?.navigate?.('ChallengerArena', {
-        mode: 'athlete',
-        role: 'host',
-        battleId: card?.id || `live-${Date.now()}`,
-        match: card?.liveMatch || null,
-      });
-    }, 80);
-  }, [navigation]);
-
   const startRecording = useCallback(async () => {
     if (mode === 'BATTLE_BAWAAL') {
-      launchBattleBawaal();
+      openBattleChallengeForm();
       return;
     }
     if (
@@ -1124,7 +934,7 @@ export default function UniversalCamera({
     fadeTimePill,
     startElapsedTimer,
     clearElapsedTimer,
-    launchBattleBawaal,
+    openBattleChallengeForm,
   ]);
 
   const stopRecording = useCallback(() => {
@@ -1138,12 +948,12 @@ export default function UniversalCamera({
 
   const handleShutter = useCallback(() => {
     if (mode === 'BATTLE_BAWAAL') {
-      launchBattleBawaal();
+      openBattleChallengeForm();
       return;
     }
     if (isRecording) stopRecording();
     else void startRecording();
-  }, [mode, isRecording, launchBattleBawaal, stopRecording, startRecording]);
+  }, [mode, isRecording, openBattleChallengeForm, stopRecording, startRecording]);
 
   const flipCamera = useCallback(() => {
     if (isRecording) return;
@@ -1167,7 +977,7 @@ export default function UniversalCamera({
     return (
       <View style={styles.permissionContainer}>
         <StatusBar barStyle="light-content" />
-        <ActivityIndicator color={NEON_ORANGE} size="large" />
+        <ActivityIndicator color={ACCENT} size="large" />
         <Text style={styles.permissionText}>Preparing camera…</Text>
       </View>
     );
@@ -1406,25 +1216,25 @@ const styles = StyleSheet.create({
   overlayRoot: { justifyContent: 'space-between' },
   permissionContainer: {
     flex: 1,
-    backgroundColor: '#0A0E1A',
+    backgroundColor: '#0A0A0A',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
     gap: 16,
   },
   permissionText: {
-    color: '#FFFFFF',
+    color: ACCENT,
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 22,
   },
   permissionBtn: {
-    backgroundColor: NEON_ORANGE,
+    backgroundColor: ACCENT,
     paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: 10,
   },
-  btnText: { color: '#FFFFFF', fontWeight: '800' },
+  btnText: { color: '#000000', fontWeight: '800' },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1460,16 +1270,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   timerBadge: {
-    backgroundColor: 'rgba(10, 14, 26, 0.82)',
+    backgroundColor: 'rgba(10, 10, 10, 0.82)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 87, 34, 0.55)',
+    borderColor: 'rgba(255,255,255,0.45)',
     maxWidth: '42%',
   },
   timerText: {
-    color: NEON_ORANGE,
+    color: ACCENT,
     fontWeight: '800',
     fontSize: 11,
     textAlign: 'center',
@@ -1508,13 +1318,13 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: 'transparent',
   },
-  timeChipActive: { backgroundColor: NEON_ORANGE },
+  timeChipActive: { backgroundColor: ACCENT },
   timeChipText: {
     color: 'rgba(255,255,255,0.78)',
     fontSize: 13,
     fontWeight: '800',
   },
-  timeChipTextActive: { color: '#FFFFFF' },
+  timeChipTextActive: { color: '#000000' },
   shutterWrap: {
     width: 96,
     height: 96,
@@ -1538,18 +1348,18 @@ const styles = StyleSheet.create({
   shutterInnerLive: {
     backgroundColor: SHUTTER_RED,
     borderWidth: 3,
-    borderColor: NEON_ORANGE,
+    borderColor: ACCENT,
   },
   hubFab: {
-    backgroundColor: 'rgba(255, 87, 34, 0.18)',
-    borderColor: '#FF5722',
-    borderWidth: 1.5,
+    backgroundColor: 'transparent',
+    borderColor: '#FFFFFF',
+    borderWidth: 1,
     borderRadius: 24,
     paddingHorizontal: 28,
     paddingVertical: 13,
   },
   hubFabText: {
-    color: '#FF5722',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.8,

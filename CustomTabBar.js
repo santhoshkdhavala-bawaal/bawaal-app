@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 
 const OBSIDIAN = '#000000';
 const OFF_WHITE = '#E8ECE9';
-const ACCENT = '#FF5722';
+const WHITE = '#FFFFFF';
+const ACCENT = '#FFFFFF';
 const BORDER_TOP = '#1A1A1A';
 const MUTED = '#A0A0A0';
 
@@ -26,7 +27,7 @@ export default function CustomTabBar({
   bottomPad = 8,
   challengeAlertActive = false,
 }) {
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [pulse] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (!challengeAlertActive) {
@@ -171,13 +172,13 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: ACCENT,
+    backgroundColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
       ios: {
-        shadowColor: ACCENT,
-        shadowOpacity: 0.5,
+        shadowColor: '#000',
+        shadowOpacity: 0.35,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 3 },
       },
@@ -185,7 +186,7 @@ const styles = StyleSheet.create({
     }),
   },
   fabPlus: {
-    color: OBSIDIAN,
+    color: '#000000',
     fontSize: 34,
     fontWeight: '900',
     marginTop: -2,
@@ -204,7 +205,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: OBSIDIAN,
     borderWidth: 1.5,
-    borderColor: ACCENT,
+    borderColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,

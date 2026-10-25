@@ -7,6 +7,7 @@ import { enableScreens } from 'react-native-screens';
 import * as SplashScreen from 'expo-splash-screen';
 import MainTabs from './MainTabs';
 import UniversalCamera from './UniversalCamera';
+import BattleChallengeForm from './BattleChallengeForm';
 import LeaderboardScreen from './LeaderboardScreen';
 import Live1v1BattleScreen from './ChallengerArena';
 import RoleSelection from './RoleSelection';
@@ -197,10 +198,16 @@ export default function App() {
                 component={Live1v1BattleScreen}
                 options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
               />
-              {/* Alias used by UniversalCamera BATTLE_BAWAAL shutter */}
+              {/* Alias used by UniversalCamera / BattleChallengeForm */}
               <Stack.Screen
                 name="ChallengerArena"
                 component={Live1v1BattleScreen}
+                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+              />
+              {/* ⚔️ BATTLE BAWAAL → challenge setup (title / reps / timer) before live arena */}
+              <Stack.Screen
+                name="BattleChallengeForm"
+                component={BattleChallengeForm}
                 options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
               />
               <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />

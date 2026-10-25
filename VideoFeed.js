@@ -1,20 +1,102 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, Component } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+
+function isPlayableUri(uri) {
+  if (uri == null) return false;
+  if (typeof uri !== 'string') return false;
+  const trimmed = uri.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
+  return (
+    trimmed.startsWith('file://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('content://')
+  );
+}
+
+class FeedItemErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('[VideoFeed] item render error:', error?.message || error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <View style={styles.postCard}>
+          <Text style={styles.noPostsText}>Unable to load this post.</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function PostCard({ item }) {
+  const videoUri =
+    item?.videoUrl || item?.videoUri || item?.uri || item?.localVideoUri || null;
+  const playable = isPlayableUri(videoUri);
+  const athleteName =
+    typeof item?.athleteName === 'string' && item.athleteName.trim()
+      ? item.athleteName
+      : 'Athlete';
+  const sport =
+    typeof item?.sport === 'string' && item.sport.trim() ? item.sport : 'ALL';
+  const title =
+    typeof item?.title === 'string' && item.title.trim()
+      ? item.title
+      : 'Untitled post';
+
+  return (
+    <View style={styles.postCard}>
+      <View style={styles.postHeader}>
+        <Text style={styles.athleteName}>{athleteName}</Text>
+        <Text style={styles.sportBadge}>{sport}</Text>
+      </View>
+      <Text style={styles.postTitle}>{title}</Text>
+      <View style={styles.videoPlaceholder}>
+        <Text style={styles.videoPlaceholderText}>
+          {playable
+            ? `📹 Video ready`
+            : '📹 No playable video for this post'}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function VideoFeed({ route }) {
-  // Get user object passed from registration (contains role & specializedSport)
-  const user = route?.params?.user || { role: 'fan', specializedSport: null, name: 'Guest' };
-  
+  const user = route?.params?.user || {
+    role: 'fan',
+    specializedSport: null,
+    name: 'Guest',
+  };
+
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('filtered'); // 'filtered' or 'global'
+  const [viewMode, setViewMode] = useState('filtered');
   const [activeFilterName, setActiveFilterName] = useState('');
 
   const fetchFeed = async () => {
     try {
       setLoading(true);
-      let apiUrl = `https://bawaal-app.onrender.com/api/feed?role=${user.role}`;
-      
+      let apiUrl = `https://bawaal-app.onrender.com/api/feed?role=${user.role || 'fan'}`;
+
       if (user.specializedSport) {
         apiUrl += `&specializedSport=${encodeURIComponent(user.specializedSport)}`;
       }
@@ -26,54 +108,84 @@ export default function VideoFeed({ route }) {
       const response = await fetch(apiUrl);
       const data = await response.json();
 
-      if (data.success) {
-        setPosts(data.posts);
-        setActiveFilterName(data.activeFilter);
+      if (data?.success && Array.isArray(data.posts)) {
+        setPosts(data.posts.filter(Boolean));
+        setActiveFilterName(
+          typeof data.activeFilter === 'string' ? data.activeFilter : 'Feed'
+        );
+      } else {
+        setPosts([]);
       }
     } catch (error) {
       console.error('Error fetching feed:', error);
+      setPosts([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchFeed();
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!cancelled) await fetchFeed();
+      } catch (_) {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  const safeKey = (item, index) => {
+    const id = item?._id || item?.id;
+    if (id != null && String(id).length > 0) return String(id);
+    return `feed-item-${index}`;
+  };
 
   return (
     <View style={styles.container}>
-      {/* Header Banner */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.welcomeText}>Welcome, {user.name}!</Text>
+          <Text style={styles.welcomeText}>
+            Welcome, {user?.name || 'Guest'}!
+          </Text>
           <Text style={styles.roleSubText}>
-            Role: <Text style={styles.highlight}>{user.role.toUpperCase()}</Text>
-            {user.role === 'scout' && user.specializedSport ? ` • Specialization: ${user.specializedSport}` : ''}
+            Role:{' '}
+            <Text style={styles.highlight}>
+              {String(user?.role || 'fan').toUpperCase()}
+            </Text>
+            {user?.role === 'scout' && user?.specializedSport
+              ? ` • Specialization: ${user.specializedSport}`
+              : ''}
           </Text>
         </View>
 
-        {/* Toggle button for Scouts */}
-        {user.role === 'scout' && (
-          <TouchableOpacity 
-            style={styles.toggleBtn} 
-            onPress={() => setViewMode(viewMode === 'filtered' ? 'global' : 'filtered')}
+        {user?.role === 'scout' && (
+          <TouchableOpacity
+            style={styles.toggleBtn}
+            onPress={() =>
+              setViewMode(viewMode === 'filtered' ? 'global' : 'filtered')
+            }
           >
             <Text style={styles.toggleBtnText}>
-              {viewMode === 'filtered' ? 'Switch to Global' : `View ${user.specializedSport}`}
+              {viewMode === 'filtered'
+                ? 'Switch to Global'
+                : `View ${user.specializedSport || 'Sport'}`}
             </Text>
           </TouchableOpacity>
         )}
       </View>
 
       <View style={styles.feedBar}>
-        <Text style={styles.feedTitle}>Feed: {activeFilterName}</Text>
+        <Text style={styles.feedTitle}>Feed: {activeFilterName || '—'}</Text>
       </View>
 
-      {/* Posts List */}
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <ActivityIndicator size="large" color="#FFFFFF" />
         </View>
       ) : posts.length === 0 ? (
         <View style={styles.center}>
@@ -82,18 +194,11 @@ export default function VideoFeed({ route }) {
       ) : (
         <FlatList
           data={posts}
-          keyExtractor={(item) => item._id || Math.random().toString()}
-          renderItem={({ item }) => (
-            <View style={styles.postCard}>
-              <View style={styles.postHeader}>
-                <Text style={styles.athleteName}>{item.athleteName}</Text>
-                <Text style={styles.sportBadge}>{item.sport}</Text>
-              </View>
-              <Text style={styles.postTitle}>{item.title}</Text>
-              <View style={styles.videoPlaceholder}>
-                <Text style={styles.videoPlaceholderText}>📹 Video Stream: {item.videoUrl}</Text>
-              </View>
-            </View>
+          keyExtractor={safeKey}
+          renderItem={({ item, index }) => (
+            <FeedItemErrorBoundary key={safeKey(item, index)}>
+              <PostCard item={item} />
+            </FeedItemErrorBoundary>
           )}
         />
       )}
@@ -118,94 +223,92 @@ const styles = StyleSheet.create({
   },
   welcomeText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   roleSubText: {
     fontSize: 12,
-    color: '#94a3b8',
+    color: '#9CA3AF',
     marginTop: 4,
   },
   highlight: {
-    color: '#38bdf8',
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   toggleBtn: {
-    backgroundColor: '#1f2937',
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#3b82f6',
-    borderRadius: 8,
+    borderColor: '#FFFFFF',
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   toggleBtnText: {
-    color: '#38bdf8',
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   feedBar: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   feedTitle: {
+    color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '900',
-    color: '#38bdf8',
-    letterSpacing: 1,
+    fontWeight: '700',
   },
   center: {
     flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     padding: 24,
   },
   noPostsText: {
-    color: '#94a3b8',
+    color: '#9CA3AF',
     fontSize: 14,
+    textAlign: 'center',
   },
   postCard: {
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 16,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 14,
+    padding: 14,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'transparent',
   },
   postHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 8,
   },
   athleteName: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 14,
   },
   sportBadge: {
-    backgroundColor: '#1e3a8a',
-    color: '#93c5fd',
-    fontSize: 10,
-    fontWeight: 'bold',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    overflow: 'hidden',
+    color: '#A3A3A3',
+    fontSize: 11,
+    fontWeight: '700',
   },
   postTitle: {
-    color: '#f8fafc',
-    fontSize: 14,
-    marginBottom: 12,
+    color: '#E5E5E5',
+    fontSize: 13,
+    marginBottom: 10,
   },
   videoPlaceholder: {
-    backgroundColor: '#1f2937',
-    borderRadius: 8,
-    padding: 20,
+    height: 120,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   videoPlaceholderText: {
-    color: '#94a3b8',
+    color: '#A3A3A3',
     fontSize: 12,
+    fontWeight: '600',
   },
 });

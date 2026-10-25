@@ -19,10 +19,6 @@ const SURFACE = '#121212';
 const BORDER = '#1F2937';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-/** Soft premium coral — replaces neon orange accents. */
-const CORAL = '#FF8A65';
-const CORAL_SOFT = '#FF9E80';
-const INK = '#0F172A';
 const OFF_WHITE = '#E8ECE9';
 
 const SPORTS = ['COMBAT', 'GYM', 'CRICKET', 'ATHLETICS', 'CROSSFIT'];
@@ -71,8 +67,7 @@ function formatLocalSchedule(isoUTC) {
 /**
  * Create Battle bottom sheet — UTC scheduling + notification payload schema.
  *
- * LOCK-IN accents: soft coral #FF8A65 / #FF9E80; selected labels #0F172A (800);
- * unselected labels #FFFFFF (700); LAUNCH CTA 17/800 coral + dark ink.
+ * Minimalist B&W: transparent pills, white borders, selected rgba(255,255,255,0.2).
  */
 export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
   const insets = useSafeAreaInsets();
@@ -432,7 +427,7 @@ const styles = StyleSheet.create({
   },
   accentLine: {
     height: 3,
-    backgroundColor: CORAL,
+    backgroundColor: WHITE,
     width: '100%',
   },
   pullBar: {
@@ -484,13 +479,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 999,
-    backgroundColor: SURFACE,
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: '#FFFFFF',
   },
   pillActive: {
-    backgroundColor: CORAL,
-    borderColor: CORAL,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderColor: '#FFFFFF',
   },
   pillText: {
     color: WHITE,
@@ -498,7 +493,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   pillTextActive: {
-    color: INK,
+    color: WHITE,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -530,19 +525,21 @@ const styles = StyleSheet.create({
   },
   segment: {
     flexDirection: 'row',
-    backgroundColor: SURFACE,
+    backgroundColor: 'transparent',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: '#FFFFFF',
     overflow: 'hidden',
   },
   segmentBtn: {
     flex: 1,
     paddingVertical: 14,
     alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
   },
   segmentBtnOn: {
-    backgroundColor: CORAL,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   segmentText: {
     color: WHITE,
@@ -550,7 +547,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   segmentTextOn: {
-    color: INK,
+    color: WHITE,
     fontSize: 15,
     fontWeight: '800',
   },
@@ -572,12 +569,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: BG,
+    borderColor: '#FFFFFF',
+    backgroundColor: 'transparent',
   },
   offsetChipOn: {
-    borderColor: CORAL_SOFT,
-    backgroundColor: 'rgba(255,138,101,0.18)',
+    borderColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   offsetChipText: {
     color: WHITE,
@@ -585,7 +582,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   offsetChipTextOn: {
-    color: CORAL_SOFT,
+    color: WHITE,
     fontWeight: '800',
   },
   localTime: {
@@ -594,7 +591,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   countdown: {
-    color: CORAL_SOFT,
+    color: WHITE,
     fontSize: 12,
     fontWeight: '900',
     marginTop: 6,
@@ -606,18 +603,15 @@ const styles = StyleSheet.create({
   },
   launchBtn: {
     marginTop: 20,
-    backgroundColor: CORAL,
+    backgroundColor: 'transparent',
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
     paddingVertical: 16,
     alignItems: 'center',
-    shadowColor: CORAL,
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
   },
   launchBtnText: {
-    color: INK,
+    color: WHITE,
     fontSize: 17,
     fontWeight: '800',
     letterSpacing: 1,
