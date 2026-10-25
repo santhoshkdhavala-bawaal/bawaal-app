@@ -1,9 +1,8 @@
 /**
- * Floating mute / unmute — icon only (no circle/box).
- * White megaphone + crisp black drop shadow over any video frame.
+ * Floating mute / unmute — flat icon only (no circle, no drop shadow).
  */
 import React, { memo } from 'react';
-import { Pressable, View, Image, StyleSheet, Platform } from 'react-native';
+import { Pressable, Image, StyleSheet } from 'react-native';
 
 const ICON_MUTED = require('../../assets/bmute.png');
 const ICON_UNMUTED = require('../../assets/bunmute.png');
@@ -21,15 +20,12 @@ function MuteToggleButton({ muted, onPress, style }) {
         style,
       ]}
     >
-      {/* Transparent host only — never a filled circle / bubble */}
-      <View style={styles.shadowHost}>
-        <Image
-          source={muted ? ICON_MUTED : ICON_UNMUTED}
-          style={styles.icon}
-          resizeMode="contain"
-          tintColor="#FFFFFF"
-        />
-      </View>
+      <Image
+        source={muted ? ICON_MUTED : ICON_UNMUTED}
+        style={styles.icon}
+        resizeMode="contain"
+        tintColor="#FFFFFF"
+      />
     </Pressable>
   );
 }
@@ -44,20 +40,6 @@ const styles = StyleSheet.create({
   hitPressed: {
     opacity: 0.72,
     transform: [{ scale: 0.92 }],
-  },
-  shadowHost: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    ...Platform.select({
-      android: {
-        elevation: 6,
-      },
-      default: {},
-    }),
   },
   icon: {
     width: 28,

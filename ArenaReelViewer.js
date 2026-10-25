@@ -280,9 +280,7 @@ export default function ArenaReelViewer({
             accessibilityRole="button"
             accessibilityLabel="More actions"
           >
-            <View style={styles.moreShadowHost}>
-              <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
-            </View>
+            <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
             <Text style={styles.actionCount}>MORE</Text>
           </TouchableOpacity>
         </View>
@@ -470,7 +468,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   closeBtn: {
-    // Icon-only — no dark circle bubble
+    // Icon-only — flat, no circle / shadow
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
@@ -480,9 +478,6 @@ const styles = StyleSheet.create({
     color: WHITE,
     fontSize: 18,
     fontWeight: '700',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   actionStack: {
     position: 'absolute',
@@ -498,17 +493,6 @@ const styles = StyleSheet.create({
   },
   actionEmoji: {
     fontSize: 28,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  moreShadowHost: {
-    backgroundColor: 'transparent',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 6,
   },
   moreDots: {
     color: WHITE,
@@ -516,18 +500,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 30,
     backgroundColor: 'transparent',
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   actionCount: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '800',
     marginTop: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   bottomStack: {
     position: 'absolute',
@@ -546,9 +524,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
-    textShadowColor: 'rgba(0,0,0,0.65)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
   },
   gifTray: {
     paddingHorizontal: 12,

@@ -115,7 +115,23 @@ function buildDemoResponses(challengeId) {
   }));
 }
 
-function seedArenaFeed() {
+/** Lean first paint — heavy demo battles hydrate after first frame. */
+function seedArenaFeedLean() {
+  return [
+    {
+      id: 'reel-gym-1',
+      type: 'reel',
+      sport: 'GYM',
+      author: '@Mia_Torque',
+      caption: 'Floor PR session · chalk & chaos',
+      hypeCount: 1204,
+      videoUri: null,
+      createdAt: Date.now() - 12_000_000,
+    },
+  ];
+}
+
+function seedArenaFeedDemoBattles() {
   const gymId = 'challenge-gym-yuki';
   const cricketId = 'challenge-cricket-rohit';
   const combatId = 'challenge-combat-aman';
@@ -664,7 +680,8 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway } = useMainTabs();
   const [activeTab, setActiveTab] = useState('ALL');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [feedItems, setFeedItems] = useState(() => seedArenaFeed());
+  // Lean seed for instant first paint — demos + cloud hydrate after idle
+  const [feedItems, setFeedItems] = useState(() => seedArenaFeedLean());
   const [hubThread, setHubThread] = useState(null);
   const [activeReel, setActiveReel] = useState(null);
   /** Keep last reel mounted under the modal so reopen skips a cold buffer. */
@@ -711,25 +728,71 @@ export default function ArenaFeed({ navigation, route }) {
     return subscribeArenaPosts(absorbPost);
   }, [absorbPost]);
 
-  // Cold start / remount — pull Arena reels from Supabase `bawaal_posts`
+  // Defer heavy cloud hydrate + demo battles until after first paint
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let idleId = null;
+    let timeoutId = null;
+
+    const runDeferred = async () => {
+      if (cancelled) return;
       try {
-        const posts = await hydrateArenaPostsFromSupabase();
-        if (cancelled || !Array.isArray(posts)) return;
-        posts.forEach(absorbPost);
+        // One batched setState for demo shells (no N re-renders)
+        setFeedItems((prev) => {
+          let next = prev;
+          const seen = new Set(prev.map((p) => p.id));
+          for (const item of seedArenaFeedDemoBattles()) {
+            if (seen.has(item.id)) continue;
+            seen.add(item.id);
+            next = [...next, item];
+          }
+          return next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        });
+
+        const posts = await hydrateArenaPostsFromSupabase({ silent: true });
+        if (cancelled || !Array.isArray(posts) || posts.length === 0) return;
+
+        setFeedItems((prev) => {
+          let next = prev;
+          for (const post of posts) {
+            const key =
+              post.id ||
+              `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
+            if (key) ingestedIds.current.add(key);
+            next = ingestArenaPost(next, post);
+          }
+          return next;
+        });
       } catch (err) {
         console.warn(
-          '[ArenaFeed] Supabase hydrate failed:',
+          '[ArenaFeed] deferred hydrate failed:',
           err?.message || err
         );
       }
-    })();
+    };
+
+    // Wait for first frame + short idle so Arena UI appears immediately
+    timeoutId = setTimeout(() => {
+      if (typeof globalThis.requestIdleCallback === 'function') {
+        idleId = globalThis.requestIdleCallback(() => {
+          void runDeferred();
+        }, { timeout: 400 });
+      } else {
+        void runDeferred();
+      }
+    }, 48);
+
     return () => {
       cancelled = true;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (
+        idleId != null &&
+        typeof globalThis.cancelIdleCallback === 'function'
+      ) {
+        globalThis.cancelIdleCallback(idleId);
+      }
     };
-  }, [absorbPost]);
+  }, []);
 
   // Instant ingest when POST TO ARENA navigates here with params
   useEffect(() => {
@@ -786,7 +849,8 @@ export default function ArenaFeed({ navigation, route }) {
             onOpen={openReel}
             onHype={hypeReel}
             active={active}
-            immersiveOpen={activeReel?.id === item.id}
+            // Hide ALL feed overlays while any fullscreen reel is open
+            immersiveOpen={!!activeReel}
           />
         );
       }
@@ -795,13 +859,13 @@ export default function ArenaFeed({ navigation, route }) {
           <BattleCard
             item={item}
             onOpenResponses={openResponses}
-            active={active}
+            active={active && !activeReel}
           />
         );
       }
       return null;
     },
-    [openReel, openResponses, hypeReel, activeVideoIds, activeReel?.id]
+    [openReel, openResponses, hypeReel, activeVideoIds, activeReel]
   );
 
   const feedKeyExtractor = useCallback((item) => String(item.id), []);
@@ -907,10 +971,10 @@ export default function ArenaFeed({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         // Lean first paint — decode only near-viewport cells
-        initialNumToRender={2}
+        initialNumToRender={1}
         maxToRenderPerBatch={2}
-        windowSize={5}
-        updateCellsBatchingPeriod={40}
+        windowSize={4}
+        updateCellsBatchingPeriod={50}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
       />
@@ -1115,17 +1179,12 @@ const styles = StyleSheet.create({
     zIndex: 14,
   },
   engageToggle: {
-    // Icon-only — no dark circle bubble (matches mute megaphone)
+    // Icon-only — flat, no circle / shadow
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 6,
     paddingHorizontal: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 6,
   },
   engageToggleText: {
     color: WHITE,
@@ -1133,13 +1192,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 24,
     marginTop: -1,
-    textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
   engageToggleTextOpen: {
     color: FLAME_ORANGE,
-    textShadowColor: 'rgba(0, 0, 0, 0.9)',
   },
   engageDrawer: {
     backgroundColor: 'rgba(0, 0, 0,0.92)',

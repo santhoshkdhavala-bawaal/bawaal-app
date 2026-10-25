@@ -154,10 +154,15 @@ export function drainPendingArenaPosts() {
 /**
  * Load posts from Supabase into the store (deduped, newest first).
  * Safe to call multiple times — shares one in-flight promise.
+ *
+ * @param {{ silent?: boolean }} [opts] When silent, skip per-post emit so the
+ *   Arena screen can apply one batched setState (avoids cold-start stutter).
  * @returns {Promise<object[]>}
  */
-export async function hydrateArenaPostsFromSupabase() {
+export async function hydrateArenaPostsFromSupabase(opts = {}) {
   if (hydratePromise) return hydratePromise;
+
+  const silent = !!opts.silent;
 
   hydratePromise = (async () => {
     try {
@@ -174,12 +179,13 @@ export async function hydrateArenaPostsFromSupabase() {
         incoming.push(normalized);
       }
 
-      // Notify subscribers once with the batch (ArenaFeed absorbs each)
-      emitBatch(incoming);
+      // Default: notify listeners. Silent mode lets ArenaFeed do one render pass.
+      if (!silent) emitBatch(incoming);
       console.log(
         '[arenaFeedStore] hydrated',
         incoming.length,
-        'posts from Supabase'
+        'posts from Supabase',
+        silent ? '(silent)' : ''
       );
       return arenaPosts.slice();
     } catch (err) {

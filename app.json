@@ -18,7 +18,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Allow BAWAAL to access your camera for live battle streaming and responses.",
         "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone for live battle audio and responses.",
-        "NSPhotoLibraryUsageDescription": "Allow BAWAAL to access your photo library so you can pick a video to post."
+        "NSPhotoLibraryUsageDescription": "Allow BAWAAL to access your photo library so you can pick a video to post.",
+        "NSPhotoLibraryAddUsageDescription": "Allow BAWAAL to save your recorded clips to your Photos library."
       }
     },
     "android": {
@@ -42,7 +43,8 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.INTERNET",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -63,6 +65,14 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow BAWAAL to access your photo library so you can pick a video to post."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow BAWAAL to access your photo library so you can pick a video to post.",
+          "savePhotosPermission": "Allow BAWAAL to save your recorded clips to your camera roll.",
+          "isAccessMediaLocationEnabled": false
         }
       ],
       "./plugins/withAgora.js",

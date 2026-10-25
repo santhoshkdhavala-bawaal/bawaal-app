@@ -29,6 +29,12 @@ import {
   type CameraType,
 } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+// Legacy API still exposes createAssetAsync (SDK 58 next API uses Asset.create)
+import {
+  createAssetAsync,
+  getPermissionsAsync,
+  requestPermissionsAsync,
+} from 'expo-media-library/legacy';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreationPostSheet from './PostCreationSheet';
@@ -38,6 +44,35 @@ import type {
 } from './PostCreationSheet';
 import FilmStripTrimmer from './FilmStripTrimmer';
 export type { CreationMode, PostCreationPayload };
+
+/**
+ * Instagram-style auto-save: request permission if needed, then write the
+ * recorded clip into the device Camera Roll / Gallery.
+ */
+async function saveClipToDeviceGallery(videoUri: string): Promise<boolean> {
+  if (!videoUri || typeof videoUri !== 'string') return false;
+  try {
+    const current = await getPermissionsAsync(true);
+    let status = current.status;
+    if (status !== 'granted') {
+      const asked = await requestPermissionsAsync(true);
+      status = asked.status;
+    }
+    if (status !== 'granted') {
+      console.warn('[UniversalCamera] gallery save skipped — permission denied');
+      return false;
+    }
+    await createAssetAsync(videoUri);
+    console.log('[UniversalCamera] clip saved to device gallery');
+    return true;
+  } catch (err) {
+    console.warn(
+      '[UniversalCamera] gallery save failed:',
+      (err as Error)?.message || err
+    );
+    return false;
+  }
+}
 
 /** Minimalist Black & White accent — never neon orange */
 const ACCENT = '#FFFFFF';
@@ -987,18 +1022,23 @@ export default function UniversalCamera({
    */
   const resetCreationSession = useCallback(
     (opts?: { remountCamera?: boolean }) => {
+      // 1) Unbind native recorder first
       releaseCameraRecorder();
+      // 2) Clear all JS session / trimmer / rate state to defaults
       setShowPreview(false);
       setShowPostSheet(false);
+      setHubOpen(false);
       setRecordedVideoUri(null);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
       setSlowMoEndSec(safeDurationSec(selectedDuration || recordLimit, 15));
+      setElapsedSec(0);
       setCameraError('');
       clearHidePillTimer();
+      recordingLockRef.current = false;
+      // 3) Remount CameraView → fresh native session for football-after-baseball takes
       if (opts?.remountCamera !== false) {
-        // Remount CameraView → fresh native recorder binding for multi-clip sessions
         setIsCameraReady(false);
         setCameraSessionKey((k) => k + 1);
       }
@@ -1100,28 +1140,24 @@ export default function UniversalCamera({
       return;
     }
 
-    // Strict pre-roll cleanup — never start on a lingering recorder session
+    // Full session teardown before every take (multi-sport sequential clips)
+    resetCreationSession({ remountCamera: false });
     releaseCameraRecorder();
-    setShowPreview(false);
-    setShowPostSheet(false);
-    setRecordedVideoUri(null);
-    setSlowMoEnabled(false);
-    setSlowMoRate(0.5);
-    setSlowMoStartSec(0);
-    setSlowMoEndSec(safeDurationSec(recordLimit, 15));
-    setCameraError('');
 
-    // Yield one frame so stopRecording settles before recordAsync
+    // Yield so native stopRecording / state clears settle before recordAsync
     await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => setTimeout(resolve, 0));
+      requestAnimationFrame(() => setTimeout(resolve, 32));
     });
 
-    const cam = cameraRef.current;
-    if (!cam) {
-      setCameraError('Camera not ready. Try again.');
+    if (!isCameraReady || !cameraRef.current) {
+      // Force a clean remount then abort this press — user taps shutter again
+      setIsCameraReady(false);
+      setCameraSessionKey((k) => k + 1);
+      setCameraError('Camera resetting — tap shutter again.');
       return;
     }
 
+    const cam = cameraRef.current;
     recordingLockRef.current = true;
     setIsRecording(true);
     fadeTimePill(true);
@@ -1144,6 +1180,9 @@ export default function UniversalCamera({
         return;
       }
 
+      // Instagram-style: auto-save to Camera Roll (non-blocking)
+      void saveClipToDeviceGallery(uri);
+
       const clipDur = safeDurationSec(recordLimit, 15);
       setRecordedVideoUri(uri);
       setSlowMoEnabled(false);
@@ -1161,13 +1200,8 @@ export default function UniversalCamera({
     } catch (e) {
       console.error('[UniversalCamera] Recording error:', e);
       releaseCameraRecorder();
-      setShowPreview(false);
-      setShowPostSheet(false);
-      setRecordedVideoUri(null);
+      resetCreationSession({ remountCamera: true });
       setCameraError('Could not save this clip. Try again.');
-      // Remount camera after a failed record to clear native stuck state
-      setIsCameraReady(false);
-      setCameraSessionKey((k) => k + 1);
     }
   }, [
     mode,
@@ -1179,6 +1213,7 @@ export default function UniversalCamera({
     clearElapsedTimer,
     openBattleChallengeForm,
     releaseCameraRecorder,
+    resetCreationSession,
   ]);
 
   const stopRecording = useCallback(() => {
