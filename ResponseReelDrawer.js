@@ -10,7 +10,10 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import SafeFeedVideo, {
+  isPlayableFeedUri,
+  resolveFeedVideoUri,
+} from './src/components/SafeFeedVideo';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -19,56 +22,31 @@ const ACCENT = '#FF5722';
 const CARD = '#121212';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-function playableUri(uri) {
-  if (!uri || typeof uri !== 'string') return null;
-  if (uri.startsWith('file://') || uri.startsWith('content://') || uri.startsWith('http')) {
-    return uri;
-  }
-  return null;
-}
-
 function ReelPage({ item, index, total, active, labelPrefix }) {
-  const uri = playableUri(item?.videoUri);
-  const player = useVideoPlayer(uri || '', (p) => {
-    p.loop = true;
-    p.muted = false;
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        if (!uri) return;
-        await player.replaceAsync({ uri });
-        if (cancelled) return;
-        player.loop = true;
-        if (active) player.play();
-        else player.pause();
-      } catch (_) {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-      try {
-        player.pause();
-      } catch (_) {
-        /* ignore */
-      }
-    };
-  }, [player, uri, active]);
-
-  const handle = item?.creator === 'You' ? 'YOU' : `@${String(item?.creator || 'athlete').replace(/^@/, '')}`;
+  const uri = resolveFeedVideoUri(item) || resolveFeedVideoUri(item?.videoUri);
+  const playable = isPlayableFeedUri(uri);
+  const handle =
+    item?.creator === 'You'
+      ? 'YOU'
+      : `@${String(item?.creator || 'athlete').replace(/^@/, '')}`;
 
   return (
     <View style={styles.page}>
-      {uri ? (
-        <VideoView
+      {playable && active ? (
+        <SafeFeedVideo
+          key={`resp-${item?.id || index}-${uri}`}
+          uri={uri}
           style={StyleSheet.absoluteFillObject}
-          player={player}
+          muted={false}
+          loop
+          autoPlay
           contentFit="cover"
-          nativeControls={false}
         />
+      ) : playable ? (
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderLabel}>{handle}</Text>
+          <Text style={styles.placeholderSub}>SWIPE TO PLAY</Text>
+        </View>
       ) : (
         <View style={styles.placeholder}>
           <Text style={styles.placeholderLabel}>{handle}</Text>

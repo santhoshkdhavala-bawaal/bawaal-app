@@ -13,7 +13,11 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import SafeFeedVideo, {
+  isPlayableFeedUri,
+  resolveFeedVideoUri,
+  toPublicFeedVideoUrl,
+} from './src/components/SafeFeedVideo';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -29,35 +33,6 @@ const DEMO_BANTER = [
   { id: 'b2', handle: '@Dev_Snatch', text: 'GIF energy only', gif: '💀' },
   { id: 'b3', handle: '@Mia_Torque', text: 'Send the angle next time', gif: '🐐' },
 ];
-
-function isPlayableUri(uri) {
-  if (uri == null) return false;
-  if (typeof uri !== 'string') return false;
-  const trimmed = uri.trim();
-  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
-  return (
-    trimmed.startsWith('file://') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('content://') ||
-    trimmed.startsWith('ph://') ||
-    trimmed.startsWith('assets-library://')
-  );
-}
-
-function releasePlayer(player) {
-  if (!player) return;
-  try {
-    player.pause?.();
-  } catch (_) {
-    /* ignore */
-  }
-  try {
-    if (typeof player.release === 'function') player.release();
-  } catch (_) {
-    /* ignore */
-  }
-}
 
 /**
  * Full-screen Arena Reel — banter = text & GIF audience chat (not audio).
@@ -83,53 +58,26 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setTimeout(() => setToast(''), 1400);
   };
 
-  const uri = isPlayableUri(reel?.videoUri) ? String(reel.videoUri).trim() : null;
-  const [playbackFailed, setPlaybackFailed] = useState(false);
-  const player = useVideoPlayer(uri && !playbackFailed ? { uri } : null, (p) => {
-    try {
-      p.loop = true;
-      p.muted = false;
-    } catch (_) {
-      /* ignore */
-    }
-  });
-
-  useEffect(() => {
-    setPlaybackFailed(false);
-  }, [uri, reel?.id]);
+  const uri = (() => {
+    const raw =
+      resolveFeedVideoUri(reel) ||
+      toPublicFeedVideoUrl(reel?.videoUri) ||
+      toPublicFeedVideoUrl(reel?.publicCloudUrl) ||
+      null;
+    return isPlayableFeedUri(raw) ? raw : null;
+  })();
 
   useEffect(() => {
     if (!visible || !reel) return undefined;
-    // Sync reel props into local UI when the viewer opens / switches clips.
-    /* eslint-disable react-hooks/set-state-in-effect, react-hooks/immutability -- reel open reset + expo-video player API */
+    /* eslint-disable react-hooks/set-state-in-effect -- reel open reset */
     setHype(reel.hypeCount || 0);
     setBanter(reel.banter?.length ? reel.banter : DEMO_BANTER);
     setDraft('');
     setShowBanter(false);
     setMoreOpen(false);
-    let cancelled = false;
-    (async () => {
-      try {
-        if (uri && player && !playbackFailed) {
-          if (typeof player.replaceAsync === 'function') {
-            await player.replaceAsync({ uri });
-          }
-          if (!cancelled) {
-            player.loop = true;
-            player.play?.();
-          }
-        }
-      } catch (e) {
-        console.warn('[ArenaReelViewer] playback failed:', e?.message || e);
-        if (!cancelled) setPlaybackFailed(true);
-      }
-    })();
-    /* eslint-enable react-hooks/set-state-in-effect, react-hooks/immutability */
-    return () => {
-      cancelled = true;
-      releasePlayer(player);
-    };
-  }, [visible, reel?.id, uri, player, reel, playbackFailed]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    return undefined;
+  }, [visible, reel?.id, reel]);
 
   if (!reel) return null;
 
@@ -163,7 +111,6 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 8;
-  // Clear captions, emoji row, and open banter drawer.
   const actionStackBottom = 180 + Math.max(insets.bottom, 0);
   const bottomStackPad = Math.max(insets.bottom, 12);
 
@@ -171,18 +118,23 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
-        {uri && !playbackFailed && player ? (
-          <VideoView
+        {uri ? (
+          <SafeFeedVideo
+            key={`reel-video-${reel.id || uri}`}
+            uri={uri}
             style={StyleSheet.absoluteFillObject}
-            player={player}
+            muted={false}
+            loop
+            autoPlay
             contentFit="cover"
             nativeControls={false}
           />
         ) : (
-          <View style={styles.placeholder} />
+          <View style={styles.placeholder}>
+            <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
+          </View>
         )}
 
-        {/* Floating GIF overlays on the video (not the header) */}
         {activeGifs.map((g) => (
           <Text
             key={g.id}
@@ -195,7 +147,6 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </Text>
         ))}
 
-        {/* Single top header — StatusBar.currentHeight + 8 clears the clock */}
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
           <View style={styles.topBar}>
             <View style={styles.topTitleBlock}>
@@ -216,7 +167,6 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </View>
         )}
 
-        {/* Right action stack — elevated clear of bottom chrome */}
         <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
           {moreOpen ? (
             <>
@@ -273,13 +223,11 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom stack: emoji (above caption) → caption → banter drawer */}
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={[styles.bottomStack, { paddingBottom: bottomStackPad }]}
           pointerEvents="box-none"
         >
-          {/* Hide quick reactions while typing banter so they never cover the input */}
           {!showBanter ? (
             <ScrollView
               horizontal
@@ -349,6 +297,14 @@ const styles = StyleSheet.create({
   placeholder: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
   gifFloat: {
     position: 'absolute',

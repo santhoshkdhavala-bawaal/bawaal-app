@@ -70,13 +70,76 @@ export function isRemoteHttpsUri(uri) {
 }
 
 /**
+ * Expand relative / incomplete Storage paths into the public object URL:
+ * `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/...`
+ */
+export function toPublicFeedVideoUrl(raw) {
+  if (raw == null || typeof raw !== 'string') return null;
+  let uri = raw.trim();
+  if (!uri || uri === 'null' || uri === 'undefined') return null;
+
+  const base = getEnvSupabaseUrl();
+
+  if (/^https:\/\//i.test(uri)) {
+    if (
+      uri.includes('/storage/v1/object/') &&
+      !uri.includes('/storage/v1/object/public/') &&
+      uri.includes('/bawaalvideos/')
+    ) {
+      uri = uri
+        .replace(
+          '/storage/v1/object/bawaalvideos/',
+          '/storage/v1/object/public/bawaalvideos/'
+        )
+        .replace(
+          '/storage/v1/object/sign/bawaalvideos/',
+          '/storage/v1/object/public/bawaalvideos/'
+        );
+    }
+    return uri;
+  }
+
+  if (/^http:\/\//i.test(uri)) return uri;
+
+  if (
+    uri.startsWith('file://') ||
+    uri.startsWith('content://') ||
+    uri.startsWith('ph://') ||
+    uri.startsWith('assets-library://')
+  ) {
+    return uri;
+  }
+
+  if (!base) return null;
+
+  if (uri.startsWith('/storage/v1/object/public/')) return `${base}${uri}`;
+  if (uri.startsWith('storage/v1/object/public/')) return `${base}/${uri}`;
+  if (uri.startsWith('/storage/v1/object/bawaalvideos/')) {
+    return `${base}${uri.replace(
+      '/storage/v1/object/bawaalvideos/',
+      '/storage/v1/object/public/bawaalvideos/'
+    )}`;
+  }
+
+  const cleaned = uri.replace(/^\//, '');
+  if (cleaned.startsWith('bawaalvideos/')) {
+    return `${base}/storage/v1/object/public/${cleaned}`;
+  }
+  if (cleaned.startsWith('battles/')) {
+    return `${base}/storage/v1/object/public/bawaalvideos/${cleaned}`;
+  }
+
+  return null;
+}
+
+/**
  * Prefer remote HTTPS playback URLs over temporary file:// URIs.
+ * Always normalize Supabase Storage paths to `/object/public/bawaalvideos/...`.
  */
 export function resolvePlayableVideoUri(source) {
   if (!source) return null;
   if (typeof source === 'string') {
-    const t = source.trim();
-    return t.length > 0 ? t : null;
+    return toPublicFeedVideoUrl(source.trim()) || source.trim() || null;
   }
 
   const candidates = [
@@ -91,13 +154,19 @@ export function resolvePlayableVideoUri(source) {
   ];
 
   for (const c of candidates) {
-    if (typeof c === 'string' && isRemoteHttpsUri(c)) return c.trim();
+    if (typeof c === 'string' && isRemoteHttpsUri(c)) {
+      return toPublicFeedVideoUrl(c) || c.trim();
+    }
   }
   for (const c of candidates) {
-    if (typeof c === 'string' && /^http:\/\//i.test(c.trim())) return c.trim();
+    if (typeof c === 'string' && /^http:\/\//i.test(c.trim())) {
+      return toPublicFeedVideoUrl(c) || c.trim();
+    }
   }
   for (const c of candidates) {
-    if (typeof c === 'string' && c.trim().length > 0) return c.trim();
+    if (typeof c === 'string' && c.trim().length > 0) {
+      return toPublicFeedVideoUrl(c) || c.trim();
+    }
   }
   return null;
 }

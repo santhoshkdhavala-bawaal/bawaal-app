@@ -1,6 +1,8 @@
 /**
  * BAWAAL Arena feed store — persistent list so posts survive camera modal / freezeOnBlur.
  */
+import { toPublicFeedVideoUrl } from './src/services/uploadService';
+
 /** @type {object[]} */
 let arenaPosts = [];
 const listeners = new Set();
@@ -38,10 +40,11 @@ export function pushArenaPost(post) {
     const httpsUri = candidates.find(
       (u) => typeof u === 'string' && /^https:\/\//i.test(u)
     );
-    const videoUri =
+    const rawUri =
       httpsUri ||
       candidates.find((u) => typeof u === 'string' && u.length > 0) ||
       null;
+    const videoUri = toPublicFeedVideoUrl(rawUri) || rawUri;
     const normalized = {
       type: 'reel',
       sport: post.category || post.sport || 'GYM',
