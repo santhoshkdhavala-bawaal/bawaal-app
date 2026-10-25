@@ -14,6 +14,7 @@ import {
   Platform,
   Image,
   Modal,
+  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -441,33 +442,45 @@ function PostCreationSheet({
 
     setUploading(true);
     const localVideoUri: string | null = videoUri || null;
-    let publicCloudUrl: string | null = null;
 
     try {
-      // Best-effort cloud upload — never block the post on failure
-      if (localVideoUri && !isRemoteHttpsUri(localVideoUri)) {
-        try {
-          const remoteUrl = await uploadVideoToSupabase(localVideoUri);
-          if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
-            publicCloudUrl = remoteUrl.trim();
-            console.log('[PostCreationSheet] cloud URL ready:', publicCloudUrl);
-          } else {
-            console.log(
-              '[PostCreationSheet] cloud upload returned null — saving local URI silently'
-            );
-          }
-        } catch (uploadErr) {
-          console.warn(
-            '[PostCreationSheet] upload threw (continuing with local URI):',
-            uploadErr
-          );
-        }
-      } else if (isRemoteHttpsUri(localVideoUri)) {
+      let publicCloudUrl: string | null = null;
+
+      // Modes with a clip MUST get a cloud HTTPS URL — never save a broken local-only post
+      const requiresCloudVideo = Boolean(localVideoUri) && mode !== 'BATTLE_BAWAAL';
+
+      if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl = localVideoUri.trim();
+      } else if (localVideoUri) {
+        const remoteUrl = await uploadVideoToSupabase(localVideoUri);
+        if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
+          publicCloudUrl = remoteUrl.trim();
+          console.log('[PostCreationSheet] cloud URL ready:', publicCloudUrl);
+        } else {
+          console.warn('[PostCreationSheet] upload returned null — aborting post');
+          Alert.alert(
+            'Upload failed',
+            'Could not upload your video to BAWAAL cloud storage. Check your connection and that EXPO_PUBLIC_SUPABASE_ANON_KEY is the classic JWT anon key (eyJ…), then try again.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      } else if (requiresCloudVideo) {
+        Alert.alert('Missing clip', 'Record a video before posting.', [{ text: 'OK' }]);
+        return;
       }
 
-      // Prefer HTTPS cloud URL when present; otherwise keep local clip — no modal
-      const playbackUri = publicCloudUrl || localVideoUri || null;
+      // Only publish when we have a playable remote URL (or live battle with no clip)
+      const playbackUri = publicCloudUrl;
+      if (requiresCloudVideo && !playbackUri) {
+        Alert.alert(
+          'Upload failed',
+          'Video upload did not complete. Your post was not published.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       const payload: PostCreationPayload = {
         mode,
         videoUri: playbackUri,
@@ -480,7 +493,7 @@ function PostCreationSheet({
         slowMoStartSec: safeNum(slowMoStartSec, 0),
         slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
         durationSec: safeNum(durationSec, 30),
-        uploadSkipped: !publicCloudUrl && !!localVideoUri,
+        uploadSkipped: false,
       };
 
       if (showTaglines) payload.tagline = tagline;
@@ -493,35 +506,12 @@ function PostCreationSheet({
       setPendingPayload(dispatched);
       setSuccessVisible(true);
     } catch (err) {
-      // Last-resort: still try to publish with local URI so the flow stays smooth
-      console.error('[PostCreationSheet] post failed — local fallback:', err);
-      try {
-        const fallbackPayload: PostCreationPayload = {
-          mode,
-          videoUri: localVideoUri,
-          localVideoUri,
-          publicCloudUrl: null,
-          remoteVideoUri: null,
-          title: trimmed,
-          slowMoEnabled: !!slowMoEnabled,
-          slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
-          slowMoStartSec: safeNum(slowMoStartSec, 0),
-          slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
-          durationSec: safeNum(durationSec, 30),
-          uploadSkipped: true,
-        };
-        if (showTaglines) fallbackPayload.tagline = tagline;
-        if (showBattleFields) {
-          fallbackPayload.targetReps = reps;
-          fallbackPayload.timeLimitSec = secs;
-        }
-        const dispatched = dispatchToFeeds(fallbackPayload);
-        setPendingPayload(dispatched);
-        setSuccessVisible(true);
-      } catch (dispatchErr) {
-        console.error('[PostCreationSheet] local dispatch also failed:', dispatchErr);
-        setFormError('Could not post. Please try again.');
-      }
+      console.error('[PostCreationSheet] post failed:', err);
+      Alert.alert(
+        'Could not post',
+        'Something went wrong while publishing. Please try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setUploading(false);
     }

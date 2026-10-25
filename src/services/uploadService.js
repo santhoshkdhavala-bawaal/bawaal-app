@@ -1,12 +1,19 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import {
-  getSupabaseAnonKey,
-  getSupabaseUrl,
-  isCloudAuthError,
-} from './supabase';
+import { isCloudAuthError, looksLikeJwt } from './supabase';
 
 /** Public Supabase Storage bucket for BAWAAL clips */
 export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
+
+/** Strict env reads — never a user session JWT from supabase.auth */
+function getEnvSupabaseUrl() {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  return typeof url === 'string' ? url.replace(/\/$/, '').trim() : '';
+}
+
+function getEnvAnonKey() {
+  const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  return typeof key === 'string' ? key.trim() : '';
+}
 
 function normalizeLocalUri(uri) {
   if (!uri || typeof uri !== 'string') return null;
@@ -83,51 +90,52 @@ export async function persistLocalVideoUri(localUri) {
 }
 
 /**
- * Raw Storage REST upload — completely bypasses supabase.storage SDK
- * so no stale/invalid user JWS session token is ever injected.
+ * Raw Storage REST upload — bypasses supabase-js entirely (no session JWT).
  *
- * POST {SUPABASE_URL}/storage/v1/object/bawaalvideos/{path}
- * Auth: only the project anon key (apikey + Bearer) — never a user session.
- *
- * Never throws — returns public HTTPS URL string or null.
+ * Headers use ONLY EXPO_PUBLIC_SUPABASE_ANON_KEY (classic JWT eyJ…).
+ * Never attaches supabase.auth.getSession() / user tokens.
  *
  * @param {string} localUri
- * @returns {Promise<string|null>}
+ * @returns {Promise<string|null>} public HTTPS URL or null
  */
 export async function uploadVideoToSupabase(localUri) {
   try {
     console.log('START_UPLOAD: localUri ->', localUri);
 
-    // Env-backed URL/key (same values as createClient — not a user session token)
-    const supabaseUrl = getSupabaseUrl();
-    const supabaseKey = getSupabaseAnonKey();
-    if (!supabaseUrl || !supabaseKey) {
+    const SUPABASE_URL = getEnvSupabaseUrl();
+    const SUPABASE_ANON_KEY = getEnvAnonKey();
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       console.error('REST_UPLOAD_ERROR: missing EXPO_PUBLIC_SUPABASE_URL or ANON_KEY');
       return null;
     }
 
-    const fileName = `battle_${Date.now()}.mp4`;
-    const filePath = `battles/${fileName}`;
+    // Storage requires a classic JWT anon key. sb_publishable_* → Invalid Compact JWS.
+    if (!looksLikeJwt(SUPABASE_ANON_KEY)) {
+      console.error(
+        'REST_UPLOAD_ERROR: EXPO_PUBLIC_SUPABASE_ANON_KEY is not a JWT ' +
+          `(starts with "${SUPABASE_ANON_KEY.slice(0, 18)}…"). ` +
+          'Use the classic anon key from Supabase → Project Settings → API (starts with eyJ).'
+      );
+      return null;
+    }
 
-    // Fetch local file and convert to Blob
+    const fileName = `battle_${Date.now()}.mp4`;
+    // Exact path shape: /object/bawaalvideos/battles/{fileName}
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/bawaalvideos/battles/${encodeURIComponent(fileName)}`;
+    console.log('UPLOAD_REST_URL:', uploadUrl);
+
     const response = await fetch(localUri);
     console.log('FETCH_RESPONSE_OK:', response?.ok, 'status:', response?.status);
     const blob = await response.blob();
     console.log('BLOB_READY: size=', blob?.size, 'type=', blob?.type);
 
-    const encodedPath = filePath
-      .split('/')
-      .map((seg) => encodeURIComponent(seg))
-      .join('/');
-    const uploadUrl = `${supabaseUrl}/storage/v1/object/bawaalvideos/${encodedPath}`;
-    console.log('UPLOAD_REST_URL:', uploadUrl);
-
-    // Direct REST — does NOT use supabase.storage.* (no session JWT injection)
+    // Strict anon-key auth only — never a user session JWS
     const uploadResponse = await fetch(uploadUrl, {
       method: 'POST',
       headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'video/mp4',
         'x-upsert': 'true',
       },
@@ -140,8 +148,7 @@ export async function uploadVideoToSupabase(localUri) {
       return null;
     }
 
-    // Public URL without calling supabase.storage.getPublicUrl
-    const publicUrl = `${supabaseUrl}/storage/v1/object/public/bawaalvideos/${encodedPath}`;
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/battles/${encodeURIComponent(fileName)}`;
     console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
