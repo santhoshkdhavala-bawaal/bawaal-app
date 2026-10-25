@@ -1,33 +1,15 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import {
-  supabase,
-  getSupabaseUrl,
-  getSupabaseAnonKey,
-  isCloudAuthError,
-} from './supabase';
+import { isCloudAuthError } from './supabase';
 
 /** Public Supabase Storage bucket for BAWAAL clips */
 export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
 
-/**
- * Resolve project URL — prefer shared helper, fall back to env.
- * Never a user session JWT from supabase.auth.
- */
-function resolveSupabaseUrl() {
-  const fromHelper = getSupabaseUrl?.() || '';
-  if (fromHelper) return fromHelper;
+function getEnvSupabaseUrl() {
   const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
   return typeof url === 'string' ? url.replace(/\/$/, '').trim() : '';
 }
 
-/**
- * Resolve anon / publishable key for Storage REST headers.
- * Accepts classic JWT (`eyJ…`) and newer `sb_publishable_…` keys alike —
- * no format/regex rejection.
- */
-function resolveAnonKey() {
-  const fromHelper = getSupabaseAnonKey?.() || '';
-  if (fromHelper) return fromHelper;
+function getEnvAnonKey() {
   const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
   return typeof key === 'string' ? key.trim() : '';
 }
@@ -111,117 +93,87 @@ export async function persistLocalVideoUri(localUri) {
 }
 
 /**
- * Read local video URI into a binary body (Blob preferred, ArrayBuffer fallback).
- */
-async function readVideoBinary(localUri) {
-  const uri = normalizeLocalUri(localUri) || localUri;
-  const response = await fetch(uri);
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to read local video (HTTP ${response.status}) from ${uri}`
-    );
-  }
-
-  try {
-    const blob = await response.blob();
-    if (blob && typeof blob.size === 'number' && blob.size > 0) {
-      return { body: blob, byteLength: blob.size, kind: 'blob' };
-    }
-  } catch (blobErr) {
-    console.warn(
-      '[upload] blob() failed, falling back to arrayBuffer:',
-      blobErr?.message || blobErr
-    );
-  }
-
-  // Re-fetch for ArrayBuffer — response body may already be consumed
-  const retry = await fetch(uri);
-  if (!retry.ok) {
-    throw new Error(
-      `Failed to re-read local video (HTTP ${retry.status}) from ${uri}`
-    );
-  }
-  const buffer = await retry.arrayBuffer();
-  if (!buffer || buffer.byteLength === 0) {
-    throw new Error('Local video file is empty (0 bytes)');
-  }
-  return { body: buffer, byteLength: buffer.byteLength, kind: 'arrayBuffer' };
-}
-
-/**
- * Raw Storage REST upload to `bawaalvideos/battles/{fileName}`.
+ * Upload a local video to Supabase Storage via React Native FormData.
  *
- * Headers use EXPO_PUBLIC_SUPABASE_ANON_KEY as-is (JWT `eyJ…` or `sb_publishable_…`).
- * Never attaches supabase.auth.getSession() / user tokens.
+ * Avoids `fetch(fileUri).blob()` which fails on Android with "Failed to fetch".
+ * Does NOT set Content-Type — RN sets multipart boundary automatically.
  *
- * @param {string} localUri
+ * @param {string} videoUri - local file:// / content:// URI
+ * @param {string} [fileName] - optional object name under battles/
  * @returns {Promise<string|null>} public HTTPS URL or null (caller must abort post)
  */
-export async function uploadVideoToSupabase(localUri) {
+export async function uploadVideoToSupabase(videoUri, fileName) {
   try {
-    console.log('START_UPLOAD: localUri ->', localUri);
+    console.log('START_UPLOAD: videoUri ->', videoUri);
 
-    const SUPABASE_URL = resolveSupabaseUrl();
-    const SUPABASE_ANON_KEY = resolveAnonKey();
+    const SUPABASE_URL = getEnvSupabaseUrl();
+    const ANON_KEY = getEnvAnonKey();
 
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    if (!SUPABASE_URL || !ANON_KEY) {
       console.error(
         'REST_UPLOAD_ERROR: missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY'
       );
       return null;
     }
 
+    const resolvedUri = normalizeLocalUri(videoUri) || videoUri;
+    if (!resolvedUri || typeof resolvedUri !== 'string') {
+      console.error('REST_UPLOAD_ERROR: missing videoUri');
+      return null;
+    }
+
+    if (isRemoteHttpsUri(resolvedUri)) {
+      console.log('UPLOAD_SKIP: already remote HTTPS');
+      return resolvedUri.trim();
+    }
+
+    const safeName =
+      (typeof fileName === 'string' && fileName.trim().length > 0
+        ? fileName.trim()
+        : `battle_${Date.now()}.mp4`
+      ).replace(/[^\w.\-]+/g, '_');
+
+    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/bawaalvideos/battles/${safeName}`;
+    console.log('UPLOAD_REST_URL:', uploadUrl);
     console.log(
       'UPLOAD_KEY_PREFIX:',
-      SUPABASE_ANON_KEY.slice(0, 18) + '…',
-      '(len=' + SUPABASE_ANON_KEY.length + ')'
+      ANON_KEY.slice(0, 18) + '…',
+      '(len=' + ANON_KEY.length + ')'
     );
 
-    const fileName = `battle_${Date.now()}.mp4`;
-    const objectPath = `battles/${fileName}`;
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/bawaalvideos/${objectPath}`;
-    console.log('UPLOAD_REST_URL:', uploadUrl);
-
-    const { body, byteLength, kind } = await readVideoBinary(localUri);
-    console.log('BLOB_READY: size=', byteLength, 'kind=', kind);
-
-    const uploadResponse = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'video/mp4',
-        'x-upsert': 'true',
-      },
-      body,
+    // RN FormData file descriptor — streams the file URI natively (Android-safe)
+    const formData = new FormData();
+    formData.append('file', {
+      uri: resolvedUri,
+      name: safeName,
+      type: 'video/mp4',
     });
 
-    if (!uploadResponse.ok) {
-      const errText = await uploadResponse.text();
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        apikey: ANON_KEY,
+        Authorization: `Bearer ${ANON_KEY}`,
+        'x-upsert': 'true',
+        // Do NOT set Content-Type — fetch must set multipart boundary
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
       console.error(
         'REST_UPLOAD_ERROR:',
-        uploadResponse.status,
-        uploadResponse.statusText,
+        response.status,
+        response.statusText,
         errText
       );
-      return null;
+      throw new Error(
+        errText || `Storage upload failed with status ${response.status}`
+      );
     }
 
-    const { data } = supabase.storage
-      .from(BAWAAL_VIDEO_BUCKET)
-      .getPublicUrl(objectPath);
-
-    const publicUrl =
-      typeof data?.publicUrl === 'string' && data.publicUrl.length > 0
-        ? data.publicUrl
-        : `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/${objectPath}`;
-
-    if (!isRemoteHttpsUri(publicUrl)) {
-      console.error('REST_UPLOAD_ERROR: getPublicUrl did not return HTTPS URL', publicUrl);
-      return null;
-    }
-
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/battles/${safeName}`;
     console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
@@ -232,8 +184,7 @@ export async function uploadVideoToSupabase(localUri) {
 
 /**
  * Thin wrapper for PostCreationSheet / battle flows.
- * Never throws. Uses uploadVideoToSupabase with no auth gates.
- * When publicUrl is null, callers must NOT create a feed post.
+ * Never throws. When publicUrl is null, callers must NOT create a feed post.
  *
  * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string, error?: string }}
  */
