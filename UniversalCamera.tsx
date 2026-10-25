@@ -187,7 +187,9 @@ function DottedProgressRing({
               {
                 left: x,
                 top: y,
-                backgroundColor: active ? ACCENT : 'rgba(255,255,255,0.35)',
+                backgroundColor: active
+                  ? '#FF0000'
+                  : 'rgba(255,0,0,0.35)',
               },
             ]}
           />
@@ -370,6 +372,7 @@ function ClipPreviewModal({
   const endSecRef = useRef(bootDur);
   const rateRef = useRef(0.5);
   const lastRateRef = useRef(1);
+  const slowMoEnabled = slowMoRate > 0;
 
   useEffect(() => {
     startSecRef.current = startSec;
@@ -377,7 +380,8 @@ function ClipPreviewModal({
   }, [startSec, endSec]);
 
   useEffect(() => {
-    rateRef.current = slowMoRate;
+    // 0 = No Slow-Mo → always play at 1x inside the region too
+    rateRef.current = slowMoRate > 0 ? slowMoRate : 1;
   }, [slowMoRate]);
 
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
@@ -510,11 +514,11 @@ function ClipPreviewModal({
           Slow-mo speed (inside red box only)
         </Text>
         <View style={previewStyles.rateRow}>
-          {[0.25, 0.5, 0.75].map((rate) => {
+          {[0, 0.25, 0.5, 0.75].map((rate) => {
             const active = slowMoRate === rate;
             return (
               <TouchableOpacity
-                key={rate}
+                key={`rate-${rate}`}
                 style={[
                   previewStyles.rateChip,
                   active && previewStyles.rateChipActive,
@@ -527,7 +531,7 @@ function ClipPreviewModal({
                     active && previewStyles.rateTextActive,
                   ]}
                 >
-                  {rate}x
+                  {rate === 0 ? 'No Slow-Mo' : `${rate}x`}
                 </Text>
               </TouchableOpacity>
             );
@@ -546,8 +550,8 @@ function ClipPreviewModal({
             style={previewStyles.primaryBtn}
             onPress={() =>
               onNext({
-                slowMoEnabled: true,
-                slowMoRate,
+                slowMoEnabled,
+                slowMoRate: slowMoEnabled ? slowMoRate : 1,
                 slowMoStartSec: startSec,
                 slowMoEndSec: endSec,
               })
@@ -612,7 +616,12 @@ const previewStyles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 6,
   },
-  rateRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  rateRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
   rateChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,

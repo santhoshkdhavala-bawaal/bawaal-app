@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -9,14 +9,11 @@ import {
   Animated,
 } from 'react-native';
 
-const BG = '#000000';
-const CARD = '#121212';
 const WHITE = '#FFFFFF';
-const MUTED = '#A0A0A0';
-const ACCENT = '#FF5722';
+const MUTED = 'rgba(255,255,255,0.65)';
 
 /**
- * Challenge alert popup from center + BATTLE FAB when an active alert exists.
+ * Incoming battle alert — minimalist black & white glass card.
  */
 export default function ChallengeAlertModal({
   visible,
@@ -25,14 +22,22 @@ export default function ChallengeAlertModal({
   onDecline,
   onClose,
 }) {
-  const pulse = useRef(new Animated.Value(1)).current;
+  const [pulse] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (!visible) return undefined;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.08, duration: 520, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 520, useNativeDriver: true }),
+        Animated.timing(pulse, {
+          toValue: 1.08,
+          duration: 520,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 520,
+          useNativeDriver: true,
+        }),
       ])
     );
     loop.start();
@@ -71,7 +76,7 @@ export default function ChallengeAlertModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
@@ -80,19 +85,20 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 360,
-    backgroundColor: CARD,
+    backgroundColor: 'rgba(10, 10, 10, 0.55)',
     borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: ACCENT,
+    borderWidth: 1,
+    borderColor: WHITE,
     padding: 22,
     alignItems: 'center',
   },
   thunder: {
     fontSize: 36,
     marginBottom: 6,
+    color: WHITE,
   },
   eyebrow: {
-    color: ACCENT,
+    color: WHITE,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.4,
@@ -121,29 +127,29 @@ const styles = StyleSheet.create({
   },
   acceptBtn: {
     width: '100%',
-    backgroundColor: ACCENT,
+    backgroundColor: WHITE,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: 10,
   },
   acceptText: {
-    color: WHITE,
+    color: '#000000',
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.6,
   },
   declineBtn: {
     width: '100%',
-    backgroundColor: BG,
+    backgroundColor: 'transparent',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: MUTED,
+    borderColor: WHITE,
     paddingVertical: 13,
     alignItems: 'center',
   },
   declineText: {
-    color: MUTED,
+    color: WHITE,
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.6,

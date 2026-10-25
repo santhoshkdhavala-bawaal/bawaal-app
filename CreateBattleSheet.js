@@ -19,14 +19,17 @@ const SURFACE = '#121212';
 const BORDER = '#1F2937';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const OFF_WHITE = '#E8ECE9';
 
-const SPORTS = ['COMBAT', 'GYM', 'CRICKET', 'ATHLETICS', 'CROSSFIT'];
-const PRESETS = [
-  '3-Round Shadow Spar',
-  '100 Pushups Sprint',
-  'Max Bench 3 Reps',
-  'Cover Drive · 6 Balls',
+const SPORTS = [
+  'CRICKET',
+  'FOOTBALL',
+  'KABADDI',
+  'GYM',
+  'COMBAT',
+  'THROTTLE',
+  'WAVE & BLADE',
+  'COURT KINGS',
+  'SKY & SUMMIT',
 ];
 const DURATIONS = [
   { id: '1m', label: '1 Min', seconds: 60 },
@@ -71,8 +74,8 @@ function formatLocalSchedule(isoUTC) {
  */
 export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
   const insets = useSafeAreaInsets();
-  const [sport, setSport] = useState('COMBAT');
-  const [title, setTitle] = useState('3-Round Shadow Spar');
+  const [sport, setSport] = useState('CRICKET');
+  const [title, setTitle] = useState('');
   const [battleType, setBattleType] = useState('open'); // open | direct
   const [rivalHandle, setRivalHandle] = useState('@NYC_LIFT');
   const [durationId, setDurationId] = useState('3m');
@@ -88,8 +91,8 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
 
   useEffect(() => {
     if (!visible) return;
-    setSport('COMBAT');
-    setTitle('3-Round Shadow Spar');
+    setSport('CRICKET');
+    setTitle('');
     setBattleType('open');
     setRivalHandle('@NYC_LIFT');
     setDurationId('3m');
@@ -271,22 +274,6 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
               placeholder="Name your battle"
               placeholderTextColor="#666"
             />
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.pillRow}
-            >
-              {PRESETS.map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={styles.presetChip}
-                  onPress={() => setTitle(p)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.presetChipText}>{p}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
 
             <Text style={styles.label}>BATTLE TYPE</Text>
             <View style={styles.segment}>
@@ -508,20 +495,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
-  },
-  presetChip: {
-    backgroundColor: SURFACE,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginRight: 8,
-  },
-  presetChipText: {
-    color: OFF_WHITE,
-    fontSize: 11,
-    fontWeight: '700',
   },
   segment: {
     flexDirection: 'row',

@@ -31,13 +31,32 @@ const DEMO_BANTER = [
 ];
 
 function isPlayableUri(uri) {
+  if (uri == null) return false;
+  if (typeof uri !== 'string') return false;
+  const trimmed = uri.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') return false;
   return (
-    typeof uri === 'string' &&
-    (uri.startsWith('file://') ||
-      uri.startsWith('http://') ||
-      uri.startsWith('https://') ||
-      uri.startsWith('content://'))
+    trimmed.startsWith('file://') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('content://') ||
+    trimmed.startsWith('ph://') ||
+    trimmed.startsWith('assets-library://')
   );
+}
+
+function releasePlayer(player) {
+  if (!player) return;
+  try {
+    player.pause?.();
+  } catch (_) {
+    /* ignore */
+  }
+  try {
+    if (typeof player.release === 'function') player.release();
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 /**
@@ -64,11 +83,20 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setTimeout(() => setToast(''), 1400);
   };
 
-  const uri = isPlayableUri(reel?.videoUri) ? reel.videoUri : null;
-  const player = useVideoPlayer(uri || '', (p) => {
-    p.loop = true;
-    p.muted = false;
+  const uri = isPlayableUri(reel?.videoUri) ? String(reel.videoUri).trim() : null;
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+  const player = useVideoPlayer(uri && !playbackFailed ? { uri } : null, (p) => {
+    try {
+      p.loop = true;
+      p.muted = false;
+    } catch (_) {
+      /* ignore */
+    }
   });
+
+  useEffect(() => {
+    setPlaybackFailed(false);
+  }, [uri, reel?.id]);
 
   useEffect(() => {
     if (!visible || !reel) return undefined;
@@ -82,27 +110,26 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        if (uri) {
-          await player.replaceAsync({ uri });
+        if (uri && player && !playbackFailed) {
+          if (typeof player.replaceAsync === 'function') {
+            await player.replaceAsync({ uri });
+          }
           if (!cancelled) {
             player.loop = true;
-            player.play();
+            player.play?.();
           }
         }
-      } catch (_) {
-        /* ignore */
+      } catch (e) {
+        console.warn('[ArenaReelViewer] playback failed:', e?.message || e);
+        if (!cancelled) setPlaybackFailed(true);
       }
     })();
     /* eslint-enable react-hooks/set-state-in-effect, react-hooks/immutability */
     return () => {
       cancelled = true;
-      try {
-        player.pause();
-      } catch (_) {
-        /* ignore */
-      }
+      releasePlayer(player);
     };
-  }, [visible, reel?.id, uri, player, reel]);
+  }, [visible, reel?.id, uri, player, reel, playbackFailed]);
 
   if (!reel) return null;
 
@@ -144,7 +171,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
-        {uri ? (
+        {uri && !playbackFailed && player ? (
           <VideoView
             style={StyleSheet.absoluteFillObject}
             player={player}

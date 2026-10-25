@@ -311,11 +311,12 @@ function ClipSurface({ uri, label, style }) {
   const playable = Boolean(safeUri);
   const [failed, setFailed] = useState(false);
 
-  const player = useVideoPlayer(playable && !failed ? { uri: safeUri } : null, (p) => {
+  // Never pass null/empty source objects into the native player
+  const source = playable && !failed && safeUri ? { uri: safeUri } : null;
+  const player = useVideoPlayer(source, (p) => {
     try {
       p.loop = true;
       p.muted = true;
-      if (playable) p.play();
     } catch (_) {
       /* ignore */
     }
@@ -358,7 +359,7 @@ function ClipSurface({ uri, label, style }) {
     };
   }, [player]);
 
-  if (!playable || failed) {
+  if (!playable || failed || !player) {
     return (
       <View style={[styles.clipPlaceholder, style]}>
         <View style={styles.streamLiveRow}>
