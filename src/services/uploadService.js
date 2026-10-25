@@ -87,13 +87,24 @@ export async function persistLocalVideoUri(localUri) {
  * @returns {Promise<string|null>}
  */
 export async function uploadVideoToSupabase(localUri) {
+  console.log('START_UPLOAD: localUri ->', localUri);
+
+  let blob;
+  try {
+    // Fetch local file and convert to Blob
+    const response = await fetch(localUri);
+    console.log('FETCH_RESPONSE_OK:', response?.ok, 'status:', response?.status);
+    blob = await response.blob();
+    console.log('BLOB_READY: size=', blob?.size, 'type=', blob?.type);
+  } catch (err) {
+    console.error('BLOB_FETCH_ERROR:', err);
+    return null;
+  }
+
   try {
     const fileName = `battle_${Date.now()}.mp4`;
     const filePath = `battles/${fileName}`;
-
-    // Fetch local file and convert to Blob
-    const response = await fetch(localUri);
-    const blob = await response.blob();
+    console.log('UPLOAD_PATH:', filePath);
 
     // Direct upload to public bucket (anon key — no user session)
     const { data, error } = await supabase.storage
@@ -104,19 +115,27 @@ export async function uploadVideoToSupabase(localUri) {
       });
 
     if (error) {
-      console.error('SUPABASE_UPLOAD_ERROR:', error);
+      console.error(
+        'SUPABASE_ERROR_DETAILS:',
+        JSON.stringify(error, Object.getOwnPropertyNames(error), 2)
+      );
       return null;
     }
 
-    void data;
+    console.log('UPLOAD_OK: path=', data?.path || filePath);
 
     // Retrieve public HTTPS URL
     const { data: publicUrlData } = supabase.storage
       .from('bawaalvideos')
       .getPublicUrl(filePath);
 
+    console.log('PUBLIC_URL:', publicUrlData?.publicUrl);
     return publicUrlData?.publicUrl || null;
   } catch (err) {
+    console.error(
+      'SUPABASE_ERROR_DETAILS:',
+      JSON.stringify(err, Object.getOwnPropertyNames(err || {}), 2)
+    );
     console.error('UPLOAD_CATCH_ERROR:', err);
     return null;
   }
