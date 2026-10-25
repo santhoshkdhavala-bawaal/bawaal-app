@@ -63,7 +63,11 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
       resolveFeedVideoUri(reel) ||
       toPublicFeedVideoUrl(reel?.videoUri) ||
       toPublicFeedVideoUrl(reel?.publicCloudUrl) ||
+      toPublicFeedVideoUrl(reel?.remoteVideoUri) ||
       null;
+    if (raw) {
+      console.log('[ArenaReelViewer] public playback URL:', raw);
+    }
     return isPlayableFeedUri(raw) ? raw : null;
   })();
 
@@ -118,22 +122,24 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
-        {uri ? (
-          <SafeFeedVideo
-            key={`reel-video-${reel.id || uri}`}
-            uri={uri}
-            style={StyleSheet.absoluteFillObject}
-            muted={false}
-            loop
-            autoPlay
-            contentFit="cover"
-            nativeControls={false}
-          />
-        ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
-          </View>
-        )}
+        <View style={styles.videoShell}>
+          {uri ? (
+            <SafeFeedVideo
+              key={`reel-video-${reel.id || uri}`}
+              uri={uri}
+              style={styles.videoFill}
+              muted={false}
+              loop
+              autoPlay
+              contentFit="cover"
+              nativeControls={false}
+            />
+          ) : (
+            <View style={styles.placeholder}>
+              <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
+            </View>
+          )}
+        </View>
 
         {activeGifs.map((g) => (
           <Text
@@ -292,10 +298,24 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: BG,
   },
-  placeholder: {
+  videoShell: {
     ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+  },
+  videoFill: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+  },
+  placeholder: {
+    width: '100%',
+    height: '100%',
     backgroundColor: CARD,
     alignItems: 'center',
     justifyContent: 'center',

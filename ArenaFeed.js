@@ -251,15 +251,18 @@ function mapPostToReel(post) {
 
 function ClipSurface({ uri, label, style }) {
   return (
-    <SafeFeedVideo
-      uri={uri}
-      label={label}
-      style={style}
-      muted
-      loop
-      autoPlay
-      contentFit="cover"
-    />
+    <View style={[styles.clipShell, style]}>
+      <SafeFeedVideo
+        uri={uri}
+        label={label}
+        style={styles.clipVideoFill}
+        muted
+        loop
+        autoPlay
+        contentFit="cover"
+        nativeControls={false}
+      />
+    </View>
   );
 }
 
@@ -887,6 +890,17 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: BORDER,
+  },
+  clipShell: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+  clipVideoFill: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
   },
   reelFullBleed: {
     ...StyleSheet.absoluteFillObject,

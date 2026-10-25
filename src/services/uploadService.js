@@ -69,11 +69,23 @@ export function isRemoteHttpsUri(uri) {
   return typeof uri === 'string' && /^https:\/\//i.test(uri.trim());
 }
 
+/** Collapse `https://host//path` and repeated `/public/` segments. */
+function cleanStorageUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  return url
+    .replace(/([^:]\/)\/+/g, '$1')
+    .replace(
+      /\/storage\/v1\/object\/public\/(?:public\/)+bawaalvideos\//g,
+      '/storage/v1/object/public/bawaalvideos/'
+    )
+    .trim();
+}
+
 /**
  * Force the exact public bucket URL shape required for playback:
- * `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/battles/${fileName}`
+ * `https://<project>.supabase.co/storage/v1/object/public/bawaalvideos/${filePath}`
  *
- * Fixes missing `/public/` (audio may play via redirect; video/Android crashes).
+ * Fixes missing `/public/` and duplicate slashes (audio may play; video stays black).
  */
 export function ensurePublicBawaalVideoUrl(raw) {
   if (raw == null || typeof raw !== 'string') return null;
@@ -107,49 +119,53 @@ export function ensurePublicBawaalVideoUrl(raw) {
         '/storage/v1/object/authenticated/bawaalvideos/',
         '/storage/v1/object/public/bawaalvideos/'
       );
-    // Collapse accidental double public
-    uri = uri.replace(
-      '/storage/v1/object/public/public/bawaalvideos/',
-      '/storage/v1/object/public/bawaalvideos/'
-    );
   }
 
-  // Absolute http(s) after repair
+  // Absolute http(s) → canonical public form
   if (/^https?:\/\//i.test(uri)) {
     const rebuilt = uri.match(
       /^(https?:\/\/[^/?#]+)\/storage\/v1\/object\/(?:public\/)?bawaalvideos\/(.+?)(?:\?.*)?$/i
     );
     if (rebuilt) {
-      return `${rebuilt[1]}/storage/v1/object/public/bawaalvideos/${rebuilt[2]}`;
+      const filePath = rebuilt[2].replace(/^\/+/, '').replace(/\/+/g, '/');
+      return cleanStorageUrl(
+        `${rebuilt[1]}/storage/v1/object/public/bawaalvideos/${filePath}`
+      );
     }
-    return uri;
+    return cleanStorageUrl(uri);
   }
 
   if (!base) return null;
 
   if (uri.startsWith('/storage/v1/object/public/bawaalvideos/')) {
-    return `${base}${uri}`;
+    return cleanStorageUrl(`${base}${uri}`);
   }
   if (uri.startsWith('/storage/v1/object/bawaalvideos/')) {
-    return `${base}${uri.replace(
-      '/storage/v1/object/bawaalvideos/',
-      '/storage/v1/object/public/bawaalvideos/'
-    )}`;
+    return cleanStorageUrl(
+      `${base}${uri.replace(
+        '/storage/v1/object/bawaalvideos/',
+        '/storage/v1/object/public/bawaalvideos/'
+      )}`
+    );
   }
   if (uri.startsWith('storage/v1/object/public/bawaalvideos/')) {
-    return `${base}/${uri}`;
+    return cleanStorageUrl(`${base}/${uri}`);
   }
 
-  const cleaned = uri.replace(/^\//, '');
+  const cleaned = uri.replace(/^\//, '').replace(/\/+/g, '/');
   if (cleaned.startsWith('bawaalvideos/')) {
-    return `${base}/storage/v1/object/public/${cleaned}`;
+    return cleanStorageUrl(`${base}/storage/v1/object/public/${cleaned}`);
   }
   if (cleaned.startsWith('battles/')) {
-    return `${base}/storage/v1/object/public/bawaalvideos/${cleaned}`;
+    return cleanStorageUrl(
+      `${base}/storage/v1/object/public/bawaalvideos/${cleaned}`
+    );
   }
   // Bare filename → battles/<file>
   if (/^[\w.\-]+\.mp4$/i.test(cleaned)) {
-    return `${base}/storage/v1/object/public/bawaalvideos/battles/${cleaned}`;
+    return cleanStorageUrl(
+      `${base}/storage/v1/object/public/bawaalvideos/battles/${cleaned}`
+    );
   }
 
   return null;

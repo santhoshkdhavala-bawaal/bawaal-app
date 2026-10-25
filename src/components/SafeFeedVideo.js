@@ -1,11 +1,18 @@
 /**
- * Crash-safe feed / reel video surface for BAWAAL.
- * - Prefers full Supabase public HTTPS URLs
- * - Android uses textureView so overlays don't blank the SurfaceView
- * - Never mounts VideoView without a playable URI; swallows render errors
+ * Crash-safe feed / reel video surface for BAWAAL (expo-video).
+ * - Clean public Supabase URLs (.../object/public/bawaalvideos/...)
+ * - Explicit 100% sized wrapper (Android black-surface fix)
+ * - textureView on Android; loop + autoplay; no native controls
+ * - Logs load/error instead of crashing; error boundary fallback
  */
 import React, { Component, useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   isRemoteHttpsUri,
@@ -37,20 +44,6 @@ export function isPlayableFeedUri(uri) {
   );
 }
 
-function releasePlayer(player) {
-  if (!player) return;
-  try {
-    player.pause?.();
-  } catch (_) {
-    /* ignore */
-  }
-  try {
-    if (typeof player.release === 'function') player.release();
-  } catch (_) {
-    /* ignore */
-  }
-}
-
 class VideoErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -62,7 +55,7 @@ class VideoErrorBoundary extends Component {
   }
 
   componentDidCatch(error) {
-    console.warn('[SafeFeedVideo] render error:', error?.message || error);
+    console.log('Video Player Error:', error?.message || error);
   }
 
   componentDidUpdate(prevProps) {
@@ -86,7 +79,11 @@ class VideoErrorBoundary extends Component {
 }
 
 /**
- * @param {{ uri?: string|null, source?: object, style?: object, muted?: boolean, loop?: boolean, autoPlay?: boolean, contentFit?: 'cover'|'contain'|'fill', label?: string|null, nativeControls?: boolean }} props
+ * expo-video equivalents of expo-av:
+ *   resizeMode="cover"     → contentFit="cover"
+ *   useNativeControls={false}
+ *   shouldPlay={true}      → autoPlay + player.play()
+ *   isLooping={true}       → player.loop = true
  */
 export default function SafeFeedVideo({
   uri: uriProp,
@@ -106,6 +103,8 @@ export default function SafeFeedVideo({
 
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [hasFrame, setHasFrame] = useState(false);
 
   const playerSource =
     playable && !failed && resolved
@@ -114,72 +113,116 @@ export default function SafeFeedVideo({
 
   const player = useVideoPlayer(playerSource, (p) => {
     try {
-      p.loop = loop;
+      p.loop = loop; // isLooping
       p.muted = muted;
-    } catch (_) {
-      /* ignore */
+    } catch (err) {
+      console.log('Video Player Error:', err);
     }
   });
 
   useEffect(() => {
     setFailed(false);
+    setLoading(true);
+    setHasFrame(false);
   }, [resolved]);
 
   useEffect(() => {
     let cancelled = false;
     let statusSub = null;
+    let playingSub = null;
 
     (async () => {
       if (!playable || !resolved || !player || failed) return;
       try {
+        console.log('[SafeFeedVideo] loading URI:', resolved);
         if (typeof player.replaceAsync === 'function') {
           await player.replaceAsync({ uri: resolved, contentType: 'auto' });
         }
         if (cancelled) return;
         player.loop = loop;
         player.muted = muted;
-        if (autoPlay) player.play?.();
+        if (autoPlay) {
+          // shouldPlay
+          player.play?.();
+        }
       } catch (e) {
-        console.warn('[SafeFeedVideo] load failed:', e?.message || e);
-        if (!cancelled) setFailed(true);
+        console.log('Video Player Error:', e?.message || e);
+        if (!cancelled) {
+          setFailed(true);
+          setLoading(false);
+        }
       }
     })();
 
     try {
       statusSub = player?.addListener?.('statusChange', ({ status, error }) => {
+        if (cancelled) return;
         if (status === 'error') {
-          console.warn('[SafeFeedVideo] player status error:', error);
-          if (!cancelled) setFailed(true);
+          console.log('Video Player Error:', error || status);
+          setFailed(true);
+          setLoading(false);
+        } else if (status === 'readyToPlay' || status === 'loading') {
+          if (status === 'readyToPlay') {
+            console.log('[SafeFeedVideo] onLoad / readyToPlay:', resolved);
+            setLoading(false);
+            if (autoPlay) {
+              try {
+                player.play?.();
+              } catch (err) {
+                console.log('Video Player Error:', err);
+              }
+            }
+          }
         }
       });
-    } catch (_) {
-      /* ignore */
+      playingSub = player?.addListener?.('playingChange', ({ isPlaying }) => {
+        if (isPlaying && !cancelled) {
+          setLoading(false);
+        }
+      });
+    } catch (err) {
+      console.log('Video Player Error:', err);
     }
 
     return () => {
       cancelled = true;
       try {
         statusSub?.remove?.();
+        playingSub?.remove?.();
       } catch (_) {
         /* ignore */
       }
-      releasePlayer(player);
+      // Do NOT call player.release() — useVideoPlayer owns lifecycle.
+      // Double-release on unmount/tap was crashing ArenaReelViewer.
+      try {
+        player?.pause?.();
+      } catch (_) {
+        /* ignore */
+      }
     };
   }, [player, resolved, playable, failed, loop, muted, autoPlay]);
 
+  const onFirstFrameRender = () => {
+    console.log('[SafeFeedVideo] onLoad / first frame decoded:', resolved);
+    setHasFrame(true);
+    setLoading(false);
+  };
+
   if (!playable || failed || !player) {
     return (
-      <View style={[styles.placeholder, style]}>
-        <Text style={styles.placeholderText}>
-          {label || (failed ? 'CLIP UNAVAILABLE' : 'BAWAAL CLIP')}
-        </Text>
-        {!!resolved && failed ? (
-          <Text style={styles.placeholderSub} numberOfLines={2}>
-            {isRemoteHttpsUri(resolved)
-              ? 'Cloud clip failed to decode'
-              : 'No playable URL'}
+      <View style={[styles.shell, style]}>
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderText}>
+            {label || (failed ? 'CLIP UNAVAILABLE' : 'BAWAAL CLIP')}
           </Text>
-        ) : null}
+          {!!resolved && failed ? (
+            <Text style={styles.placeholderSub} numberOfLines={2}>
+              {isRemoteHttpsUri(resolved)
+                ? 'Cloud clip failed to decode'
+                : 'No playable URL'}
+            </Text>
+          ) : null}
+        </View>
       </View>
     );
   }
@@ -189,21 +232,30 @@ export default function SafeFeedVideo({
       resetKey={resolved}
       style={style}
       fallback={
-        <View style={[styles.placeholder, style]}>
-          <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
+        <View style={[styles.shell, style]}>
+          <View style={styles.placeholder}>
+            <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
+          </View>
         </View>
       }
     >
-      <View style={[styles.wrap, style]}>
+      {/* Explicit dimensions — Android Surface/TextureView needs a sized parent */}
+      <View style={[styles.shell, style]}>
         <VideoView
-          style={StyleSheet.absoluteFillObject}
+          style={styles.video}
           player={player}
           contentFit={contentFit}
           nativeControls={nativeControls}
+          onFirstFrameRender={onFirstFrameRender}
           {...(Platform.OS === 'android'
             ? { surfaceType: 'textureView', useExoShutter: false }
             : {})}
         />
+        {(loading || !hasFrame) && (
+          <View style={styles.loadingOverlay} pointerEvents="none">
+            <ActivityIndicator color="#FFFFFF" />
+          </View>
+        )}
         {!!label && (
           <View style={styles.cornerTag}>
             <Text style={styles.cornerTagText}>{label}</Text>
@@ -215,11 +267,27 @@ export default function SafeFeedVideo({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  shell: {
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000000',
     overflow: 'hidden',
   },
+  video: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
   placeholder: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#121212',
     alignItems: 'center',
     justifyContent: 'center',
