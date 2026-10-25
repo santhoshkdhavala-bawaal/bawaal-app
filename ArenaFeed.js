@@ -24,6 +24,7 @@ import {
   subscribeArenaPosts,
   drainPendingArenaPosts,
   getArenaPosts,
+  hydrateArenaPostsFromSupabase,
 } from './arenaFeedStore';
 import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
@@ -657,6 +658,26 @@ export default function ArenaFeed({ navigation, route }) {
   useEffect(() => {
     drainPendingArenaPosts().forEach(absorbPost);
     return subscribeArenaPosts(absorbPost);
+  }, [absorbPost]);
+
+  // Cold start / remount — pull Arena reels from Supabase `bawaal_posts`
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const posts = await hydrateArenaPostsFromSupabase();
+        if (cancelled || !Array.isArray(posts)) return;
+        posts.forEach(absorbPost);
+      } catch (err) {
+        console.warn(
+          '[ArenaFeed] Supabase hydrate failed:',
+          err?.message || err
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [absorbPost]);
 
   // Instant ingest when POST TO ARENA navigates here with params

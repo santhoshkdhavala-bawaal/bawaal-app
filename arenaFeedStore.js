@@ -1,11 +1,18 @@
 /**
- * BAWAAL Arena feed store — persistent list so posts survive camera modal / freezeOnBlur.
+ * BAWAAL Arena feed store — in-memory + Supabase-backed persistence.
+ * Hydrate from `bawaal_posts` on Arena mount; prepend locally on publish.
  */
 import { ensurePublicBawaalVideoUrl } from './src/services/uploadService';
+import {
+  fetchArenaPostsFromSupabase,
+  persistArenaPostToSupabase,
+} from './src/services/arenaPostsService';
 
 /** @type {object[]} */
 let arenaPosts = [];
 const listeners = new Set();
+/** @type {Promise<object[]>|null} */
+let hydratePromise = null;
 
 function emit(post) {
   listeners.forEach((fn) => {
@@ -15,6 +22,11 @@ function emit(post) {
       /* ignore subscriber errors */
     }
   });
+}
+
+function emitBatch(posts) {
+  if (!Array.isArray(posts) || posts.length === 0) return;
+  posts.forEach((p) => emit(p));
 }
 
 function pickPublicVideoUri(post) {
@@ -38,50 +50,73 @@ function pickPublicVideoUri(post) {
   return ensurePublicBawaalVideoUrl(rawUri) || rawUri || null;
 }
 
+function normalizeArenaPost(post) {
+  if (!post || typeof post !== 'object') return null;
+  const ts = Number(post.timestamp || post.createdAt) || Date.now();
+  const id = String(post.id || `arena-${ts}`);
+  const videoUri = pickPublicVideoUri(post);
+  return {
+    type: 'reel',
+    sport: post.category || post.sport || 'GYM',
+    author:
+      post.author ||
+      (post.creator === 'You' || post.creator === 'YOU'
+        ? '@you'
+        : post.creator
+          ? `@${String(post.creator).replace(/^@/, '')}`
+          : '@you'),
+    caption: String(post.caption || post.title || post.target || 'Arena drop'),
+    title: String(post.title || post.caption || 'Arena drop'),
+    hypeCount: Number(post.hypeCount) || 0,
+    createdAt: ts,
+    ...post,
+    id,
+    timestamp: ts,
+    videoUri,
+    uri: videoUri,
+    recordedVideoUri: videoUri,
+    publicCloudUrl: videoUri,
+    remoteVideoUri: videoUri,
+    localVideoUri:
+      typeof post.localVideoUri === 'string' ? post.localVideoUri : null,
+  };
+}
+
+function mergeIntoStore(normalized, { emitEvent = true } = {}) {
+  if (!normalized?.id) return null;
+  arenaPosts = [
+    normalized,
+    ...arenaPosts.filter((p) => p && p.id !== normalized.id),
+  ];
+  // Keep newest-first by timestamp
+  arenaPosts.sort(
+    (a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0)
+  );
+  if (emitEvent) emit(normalized);
+  return normalized;
+}
+
 /**
- * Safely prepend a reel/challenge to the Arena feed.
+ * Safely prepend a reel/challenge to the Arena feed and persist to Supabase.
  * Alias: addPost (used by SPARKS / JOSH publish path).
  */
 export function pushArenaPost(post) {
   try {
-    if (!post || typeof post !== 'object') return null;
-    const ts = Number(post.timestamp || post.createdAt) || Date.now();
-    const id = String(post.id || `arena-${ts}`);
-    // Always store the /object/public/bawaalvideos/... form for Android playback
-    const videoUri = pickPublicVideoUri(post);
-    const normalized = {
-      type: 'reel',
-      sport: post.category || post.sport || 'GYM',
-      author:
-        post.author ||
-        (post.creator === 'You' || post.creator === 'YOU'
-          ? '@you'
-          : post.creator
-            ? `@${String(post.creator).replace(/^@/, '')}`
-            : '@you'),
-      caption: String(post.caption || post.title || post.target || 'Arena drop'),
-      title: String(post.title || post.caption || 'Arena drop'),
-      hypeCount: Number(post.hypeCount) || 0,
-      createdAt: ts,
-      ...post,
-      id,
-      timestamp: ts,
-      videoUri,
-      uri: videoUri,
-      recordedVideoUri: videoUri,
-      publicCloudUrl: videoUri,
-      remoteVideoUri: videoUri,
-      localVideoUri:
-        typeof post.localVideoUri === 'string' ? post.localVideoUri : null,
-    };
+    const normalized = normalizeArenaPost(post);
+    if (!normalized) return null;
 
-    console.log('[arenaFeedStore] videoUri ->', videoUri);
+    console.log('[arenaFeedStore] videoUri ->', normalized.videoUri);
+    mergeIntoStore(normalized, { emitEvent: true });
 
-    arenaPosts = [
-      normalized,
-      ...arenaPosts.filter((p) => p && p.id !== normalized.id),
-    ];
-    emit(normalized);
+    // Fire-and-forget cloud persist (skip rows that came from hydrate)
+    if (!post?._fromRemote && !post?._skipPersist) {
+      void persistArenaPostToSupabase(normalized).then((res) => {
+        if (!res?.ok && !res?.skipped) {
+          console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
+        }
+      });
+    }
+
     return normalized;
   } catch (err) {
     console.warn('[arenaFeedStore] pushArenaPost failed:', err?.message || err);
@@ -116,12 +151,68 @@ export function drainPendingArenaPosts() {
   return arenaPosts.slice();
 }
 
+/**
+ * Load posts from Supabase into the store (deduped, newest first).
+ * Safe to call multiple times — shares one in-flight promise.
+ * @returns {Promise<object[]>}
+ */
+export async function hydrateArenaPostsFromSupabase() {
+  if (hydratePromise) return hydratePromise;
+
+  hydratePromise = (async () => {
+    try {
+      const remote = await fetchArenaPostsFromSupabase();
+      if (!Array.isArray(remote) || remote.length === 0) {
+        return arenaPosts.slice();
+      }
+
+      const incoming = [];
+      for (const row of remote) {
+        const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
+        if (!normalized) continue;
+        mergeIntoStore(normalized, { emitEvent: false });
+        incoming.push(normalized);
+      }
+
+      // Notify subscribers once with the batch (ArenaFeed absorbs each)
+      emitBatch(incoming);
+      console.log(
+        '[arenaFeedStore] hydrated',
+        incoming.length,
+        'posts from Supabase'
+      );
+      return arenaPosts.slice();
+    } catch (err) {
+      console.warn(
+        '[arenaFeedStore] hydrate failed:',
+        err?.message || err
+      );
+      return arenaPosts.slice();
+    } finally {
+      // Allow a later refresh (e.g. pull-to-refresh) to fetch again
+      hydratePromise = null;
+    }
+  })();
+
+  return hydratePromise;
+}
+
+/**
+ * Force a fresh fetch (e.g. on Arena focus after a long background).
+ */
+export async function refreshArenaPostsFromSupabase() {
+  hydratePromise = null;
+  return hydrateArenaPostsFromSupabase();
+}
+
 const arenaFeedStore = {
   pushArenaPost,
   addPost,
   getArenaPosts,
   subscribeArenaPosts,
   drainPendingArenaPosts,
+  hydrateArenaPostsFromSupabase,
+  refreshArenaPostsFromSupabase,
 };
 
 export default arenaFeedStore;
