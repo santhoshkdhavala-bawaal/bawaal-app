@@ -1,6 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import {
-  canAttemptCloudUpload,
   isCloudAuthError,
   isSupabaseConfigured,
   supabase,
@@ -160,12 +159,64 @@ export async function readLocalVideoBytes(localUri) {
 }
 
 /**
+ * Direct anonymous upload to public `bawaalvideos` bucket.
+ * NO getSession / canAttemptCloudUpload gate — public insert policies allow anon.
+ *
+ * @returns {{ publicUrl: string, path: string, localUri: string }}
+ */
+export async function uploadVideoToSupabase(localUri) {
+  const uri = normalizeLocalUri(localUri) || localUri;
+  if (!uri) throw new Error('Missing local video URI for upload');
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured');
+  }
+
+  const filePath = `battles/${Date.now()}_video.mp4`;
+
+  // RN/Expo: fetch local file → Blob, then upload with anon key (no user session)
+  const response = await fetch(uri);
+  if (!response.ok) {
+    throw new Error(`Failed to read local video (${response.status})`);
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Local video blob is empty');
+  }
+
+  const { data, error } = await supabase.storage
+    .from(BAWAAL_VIDEO_BUCKET)
+    .upload(filePath, blob, {
+      contentType: 'video/mp4',
+      cacheControl: '3600',
+      upsert: true,
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  const objectPath = data?.path || filePath;
+  const { data: publicUrlData } = supabase.storage
+    .from(BAWAAL_VIDEO_BUCKET)
+    .getPublicUrl(objectPath);
+
+  if (!publicUrlData?.publicUrl) {
+    throw new Error('Upload succeeded but public URL was empty');
+  }
+
+  return {
+    publicUrl: publicUrlData.publicUrl,
+    path: objectPath,
+    localUri: uri,
+  };
+}
+
+/**
  * Upload a recorded clip to Supabase Storage bucket `bawaalvideos`.
  * Path: battles/{timestamp}_video.mp4
  *
- * Uses fetch(localUri).blob() for RN/Expo payloads + upsert:true.
- * On auth/storage/offline failure returns local file:// fallback — never throws
- * for network/storage errors.
+ * Never calls getSession — anonymous public-bucket upload only.
+ * On network/storage failure returns local file:// fallback (does not throw).
  *
  * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string, error?: string, path?: string }}
  */
@@ -200,49 +251,19 @@ export const uploadBattleVideo = async (localUri) => {
     return localFallback('not-configured');
   }
 
-  // Soft auth probe only — never block public-bucket uploads on session/JWS noise
   try {
-    await canAttemptCloudUpload();
-  } catch (_) {
-    /* ignore */
-  }
-
-  try {
-    const filePath = `battles/${Date.now()}_video.mp4`;
-    const blob = await localUriToBlob(stableUri);
-
-    const { data, error } = await supabase.storage
-      .from(BAWAAL_VIDEO_BUCKET)
-      .upload(filePath, blob, {
-        contentType: 'video/mp4',
-        cacheControl: '3600',
-        upsert: true,
-      });
-
-    if (error) {
-      console.warn('[upload] Storage upload failed:', error.message || error);
-      return localFallback('storage-error', error);
-    }
-
-    const objectPath = data?.path || filePath;
-    const { data: publicUrlData } = supabase.storage
-      .from(BAWAAL_VIDEO_BUCKET)
-      .getPublicUrl(objectPath);
-
-    if (!publicUrlData?.publicUrl) {
-      return localFallback('no-public-url');
-    }
-
+    // Direct anon upload — no session / auth probe
+    const result = await uploadVideoToSupabase(stableUri);
     return {
-      publicUrl: publicUrlData.publicUrl,
-      localUri: stableUri,
+      publicUrl: result.publicUrl,
+      localUri: result.localUri || stableUri,
       skipped: false,
-      path: objectPath,
+      path: result.path,
     };
   } catch (err) {
     console.warn('[upload] Unexpected upload error:', err?.message || err);
     return localFallback(
-      isCloudAuthError(err) ? 'auth-unavailable' : 'storage-error',
+      isCloudAuthError(err) ? 'storage-error' : 'storage-error',
       err
     );
   }

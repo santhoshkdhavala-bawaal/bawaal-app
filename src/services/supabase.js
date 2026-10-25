@@ -63,21 +63,12 @@ export function isSupabaseConfigured() {
 }
 
 /**
- * Soft readiness check for public Storage uploads.
- * Missing/offline session is OK for the public `bawaalvideos` bucket with a valid key.
- * Do NOT treat getSession JWS noise as hard failure — that was falsely tripping offline fallback.
+ * @deprecated Storage uploads no longer call this — public `bawaalvideos`
+ * inserts use the anon/publishable key with no user session.
+ * Kept as a no-op compatibility shim for any legacy callers.
  */
 export async function canAttemptCloudUpload() {
-  if (!isSupabaseConfigured()) return false;
-  try {
-    await supabase.auth.getSession();
-  } catch (err) {
-    console.warn(
-      '[supabase] Session probe failed (continuing with anon key):',
-      err?.message || err
-    );
-  }
-  return true;
+  return isSupabaseConfigured();
 }
 
 export function isCloudAuthError(err) {
