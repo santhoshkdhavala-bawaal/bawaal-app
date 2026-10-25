@@ -28,6 +28,7 @@ import {
   useMicrophonePermissions,
   type CameraType,
 } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreationPostSheet from './PostCreationSheet';
@@ -969,6 +970,52 @@ export default function UniversalCamera({
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
   }, [isRecording]);
 
+  /** Gallery → same preview / post sheet path as a fresh recording (then uploadVideoToSupabase). */
+  const pickFromGallery = useCallback(async () => {
+    if (isRecording || mode === 'BATTLE_BAWAAL') return;
+
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        setCameraError('Gallery access is needed to pick a video.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        quality: 1,
+        videoMaxDuration: modeCeiling(mode, joshUnlocked3m) || undefined,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const uri = result.assets[0].uri;
+      const assetDurationSec =
+        typeof result.assets[0].duration === 'number' &&
+        result.assets[0].duration > 0
+          ? Math.ceil(result.assets[0].duration / 1000)
+          : recordLimit;
+
+      setCameraError('');
+      setRecordedVideoUri(uri);
+      setSlowMoEnabled(false);
+      setSlowMoRate(0.5);
+      setSlowMoStartSec(0);
+      setSlowMoEndSec(assetDurationSec);
+      fadeTimePill(true);
+
+      if (mode === 'SPARKS' || mode === 'JOSH') {
+        setShowPreview(true);
+      } else {
+        setShowPostSheet(true);
+      }
+    } catch (err) {
+      console.error('[UniversalCamera] Gallery pick failed:', err);
+      setCameraError('Could not open gallery. Try again.');
+    }
+  }, [isRecording, mode, joshUnlocked3m, recordLimit, fadeTimePill]);
+
   const progress =
     isRecording && recordLimit > 0
       ? Math.min(1, elapsedSec / recordLimit)
@@ -1112,20 +1159,44 @@ export default function UniversalCamera({
             </Animated.View>
           )}
 
-          <TouchableOpacity
-            style={styles.shutterWrap}
-            onPress={handleShutter}
-            activeOpacity={0.85}
-          >
-            <DottedProgressRing progress={progress} recording={isRecording} />
-            <View
+          <View style={styles.shutterRow}>
+            <TouchableOpacity
               style={[
-                styles.shutterInner,
-                isRecording && styles.shutterSquare,
-                mode === 'BATTLE_BAWAAL' && styles.shutterInnerLive,
+                styles.galleryBtn,
+                (isRecording || mode === 'BATTLE_BAWAAL') &&
+                  styles.galleryBtnDisabled,
               ]}
-            />
-          </TouchableOpacity>
+              onPress={() => {
+                void pickFromGallery();
+              }}
+              activeOpacity={0.85}
+              disabled={isRecording || mode === 'BATTLE_BAWAAL'}
+              accessibilityLabel="Pick video from gallery"
+            >
+              <View style={styles.galleryIconFrame}>
+                <View style={styles.galleryIconPlay} />
+              </View>
+              <Text style={styles.galleryLabel}>Gallery</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.shutterWrap}
+              onPress={handleShutter}
+              activeOpacity={0.85}
+            >
+              <DottedProgressRing progress={progress} recording={isRecording} />
+              <View
+                style={[
+                  styles.shutterInner,
+                  isRecording && styles.shutterSquare,
+                  mode === 'BATTLE_BAWAAL' && styles.shutterInnerLive,
+                ]}
+              />
+            </TouchableOpacity>
+
+            {/* Balance spacer so shutter stays centered */}
+            <View style={styles.galleryBtnSpacer} />
+          </View>
 
           {/* Glowing BAWAAL Hub FAB — replaces heavy mode strip */}
           <TouchableOpacity
@@ -1334,13 +1405,65 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   timeChipTextActive: { color: '#000000' },
+  shutterRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  galleryBtn: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  galleryBtnDisabled: {
+    opacity: 0.35,
+  },
+  galleryBtnSpacer: {
+    width: 72,
+  },
+  galleryIconFrame: {
+    width: 22,
+    height: 18,
+    borderRadius: 3,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  galleryIconPlay: {
+    width: 0,
+    height: 0,
+    marginLeft: 2,
+    borderTopWidth: 4,
+    borderBottomWidth: 4,
+    borderLeftWidth: 7,
+    borderStyle: 'solid',
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: '#FFFFFF',
+  },
+  galleryLabel: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
   shutterWrap: {
     width: 96,
     height: 96,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginHorizontal: 18,
   },
   shutterInner: {
     width: 68,
