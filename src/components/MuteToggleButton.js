@@ -1,9 +1,10 @@
 /**
  * Instagram-style floating mute / unmute control.
  * Uses BAWAAL megaphone assets: bmute.png / bunmute.png.
+ * Neon-white glow chip — readable on any video background.
  */
 import React, { memo } from 'react';
-import { Pressable, Image, StyleSheet } from 'react-native';
+import { Pressable, Image, StyleSheet, Platform } from 'react-native';
 
 const ICON_MUTED = require('../../assets/bmute.png');
 const ICON_UNMUTED = require('../../assets/bunmute.png');
@@ -25,6 +26,8 @@ function MuteToggleButton({ muted, onPress, style }) {
         source={muted ? ICON_MUTED : ICON_UNMUTED}
         style={styles.icon}
         resizeMode="contain"
+        // Force crisp bright white against dark glass chip
+        tintColor="#FFFFFF"
       />
     </Pressable>
   );
@@ -32,22 +35,37 @@ function MuteToggleButton({ muted, onPress, style }) {
 
 const styles = StyleSheet.create({
   btn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    // iOS neon white glow
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    // Android glow
+    elevation: 6,
+    ...Platform.select({
+      android: {
+        // elevation alone is gray — reinforce edge with border
+        borderColor: 'rgba(255,255,255,0.95)',
+      },
+      default: {},
+    }),
   },
   btnPressed: {
-    opacity: 0.72,
+    opacity: 0.78,
     transform: [{ scale: 0.94 }],
   },
   icon: {
     width: 22,
     height: 22,
+    tintColor: '#FFFFFF',
   },
 });
 

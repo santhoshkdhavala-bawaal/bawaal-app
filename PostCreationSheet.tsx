@@ -2,7 +2,7 @@
  * PostCreationSheet — Arena / Battles dispatch + branded BAWAAL success modal.
  * Closes modals safely (setTimeout) before onSuccess / navigation to prevent crashes.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -30,6 +30,18 @@ import {
   sanitizeVideoUriForUpload,
   uploadVideoToSupabase,
 } from './src/services/uploadService';
+
+/** Yield a frame so uploading indicators paint before native transfer starts. */
+function yieldToUI(): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = () => requestAnimationFrame(() => setTimeout(resolve, 0));
+    if (typeof globalThis.requestIdleCallback === 'function') {
+      globalThis.requestIdleCallback(() => finish(), { timeout: 120 });
+    } else {
+      finish();
+    }
+  });
+}
 
 export type CreationMode =
   | 'SPARKS'
@@ -388,6 +400,7 @@ function PostCreationSheet({
   );
   const [formError, setFormError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [successVisible, setSuccessVisible] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<PostCreationPayload | null>(
     null
@@ -439,32 +452,32 @@ function PostCreationSheet({
 
   /**
    * Upload clip → public HTTPS URL, or null (caller must NOT create a feed post).
+   * Native FileSystem task + InteractionManager keep the JS thread responsive.
    */
-  const uploadClipOrAbort = async (
-    rawLocalUri: string
-  ): Promise<string | null> => {
-    const formattedUri = formatVideoUriForUpload(rawLocalUri);
-    const fileName = `video_${Date.now()}.mp4`;
+  const uploadClipOrAbort = useCallback(
+    async (rawLocalUri: string): Promise<string | null> => {
+      const formattedUri = formatVideoUriForUpload(rawLocalUri);
+      const fileName = `video_${Date.now()}.mp4`;
 
-    console.log('[PostCreationSheet] formattedUri ->', formattedUri);
-    console.log('[PostCreationSheet] upload fileName ->', fileName);
+      console.log('[PostCreationSheet] formattedUri ->', formattedUri);
+      console.log('[PostCreationSheet] upload fileName ->', fileName);
 
-    // RN FormData shape (uri/name/type) is for reference only — do NOT POST
-    // multipart to Storage. Kept here so the payload contract stays explicit:
-    //   { uri: formattedUri, name: fileName, type: 'video/mp4' }
-    // Actual transfer: native binary PUT/POST with Content-Type video/mp4.
-    const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName);
+      const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName, {
+        onProgress: (pct) => setUploadPct(pct),
+      });
 
-    if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
-      console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
-      return remoteUrl.trim();
-    }
+      if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
+        console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
+        return remoteUrl.trim();
+      }
 
-    console.error(
-      '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL — skipping DB/feed post'
-    );
-    return null;
-  };
+      console.error(
+        '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL — skipping DB/feed post'
+      );
+      return null;
+    },
+    []
+  );
 
   const handlePost = async () => {
     setFormError('');
@@ -494,8 +507,12 @@ function PostCreationSheet({
       }
     }
 
+    // Paint loading UI first, then run upload after the next idle/frame
     setUploading(true);
+    setUploadPct(0);
     const localVideoUri: string | null = videoUri || null;
+
+    await yieldToUI();
 
     try {
       let publicCloudUrl: string | null = null;
@@ -506,6 +523,7 @@ function PostCreationSheet({
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl =
           ensurePublicBawaalVideoUrl(localVideoUri) || localVideoUri.trim();
+        setUploadPct(100);
       } else if (localVideoUri) {
         const uploaded = await uploadClipOrAbort(localVideoUri);
         publicCloudUrl = uploaded
@@ -590,6 +608,7 @@ function PostCreationSheet({
       );
     } finally {
       setUploading(false);
+      setUploadPct(0);
     }
   };
 
@@ -706,7 +725,9 @@ function PostCreationSheet({
             {uploading ? (
               <View style={styles.postBtnRow}>
                 <ActivityIndicator color="#000000" size="small" />
-                <Text style={styles.postBtnText}>UPLOADING…</Text>
+                <Text style={styles.postBtnText}>
+                  {uploadPct > 0 ? `UPLOADING ${uploadPct}%` : 'UPLOADING…'}
+                </Text>
               </View>
             ) : (
               <Text style={styles.postBtnText}>
@@ -714,8 +735,31 @@ function PostCreationSheet({
               </Text>
             )}
           </TouchableOpacity>
+
+          {uploading ? (
+            <View style={styles.uploadTrack} accessibilityLabel="Upload progress">
+              <View
+                style={[
+                  styles.uploadFill,
+                  { width: `${Math.max(4, Math.min(100, uploadPct))}%` },
+                ]}
+              />
+            </View>
+          ) : null}
         </ScrollView>
       </View>
+
+      {/* Full-sheet loading veil — keeps UI responsive while native upload runs */}
+      {uploading ? (
+        <View style={styles.uploadVeil} pointerEvents="auto">
+          <ActivityIndicator color="#FFFFFF" size="large" />
+          <Text style={styles.uploadVeilText}>
+            {uploadPct > 0
+              ? `Uploading to BAWAAL cloud… ${uploadPct}%`
+              : 'Preparing upload…'}
+          </Text>
+        </View>
+      ) : null}
 
       <BawaalSuccessModal
         visible={successVisible}
@@ -841,6 +885,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.6,
+  },
+  uploadTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    overflow: 'hidden',
+    marginTop: 10,
+  },
+  uploadFill: {
+    height: '100%',
+    borderRadius: 2,
+    backgroundColor: ACCENT,
+  },
+  uploadVeil: {
+    ...ABSOLUTE_FILL,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    zIndex: 20,
+  },
+  uploadVeilText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   successOverlay: {
     ...ABSOLUTE_FILL,

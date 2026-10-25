@@ -5,7 +5,14 @@
  * - textureView on Android; loop + autoplay; no native controls
  * - Logs load/error instead of crashing; error boundary fallback
  */
-import React, { Component, useEffect, useMemo, useState } from 'react';
+import React, {
+  Component,
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -85,7 +92,7 @@ class VideoErrorBoundary extends Component {
  *   shouldPlay={true}      → autoPlay + player.play()
  *   isLooping={true}       → player.loop = true
  */
-export default function SafeFeedVideo({
+function SafeFeedVideo({
   uri: uriProp,
   source,
   style,
@@ -108,6 +115,22 @@ export default function SafeFeedVideo({
   const [loading, setLoading] = useState(true);
   const [hasFrame, setHasFrame] = useState(false);
 
+  // Refs keep mute/pause out of the source-load effect — toggling must NEVER
+  // call replaceAsync or remount VideoView (Android black-screen flash).
+  const mutedRef = useRef(muted);
+  const pausedRef = useRef(paused);
+  const autoPlayRef = useRef(autoPlay);
+
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+  useEffect(() => {
+    autoPlayRef.current = autoPlay;
+  }, [autoPlay]);
+
   const playerSource =
     playable && !failed && resolved
       ? { uri: resolved, contentType: 'auto' }
@@ -119,7 +142,7 @@ export default function SafeFeedVideo({
       // Never flip native `muted` (Android tears down decoder → black flash).
       // Silence via volume only; keep muted=false for continuous video frames.
       p.muted = false;
-      p.volume = muted ? 0 : 1;
+      p.volume = mutedRef.current ? 0 : 1;
       // Smooth start: keep ~15s ahead, resume after ~1.5s buffered (Android ExoPlayer)
       p.bufferOptions = {
         preferredForwardBufferDuration: 15,
@@ -132,6 +155,9 @@ export default function SafeFeedVideo({
     }
   });
 
+  /* expo-video `player` is a mutable native handle — React Compiler immutability
+     rules do not apply. All effects below intentionally mutate player APIs. */
+  /* eslint-disable react-hooks/immutability */
   useEffect(() => {
     if (!player) return;
     try {
@@ -146,6 +172,7 @@ export default function SafeFeedVideo({
     }
   }, [player]);
 
+  // Play / pause only — never touches source or VideoView identity
   useEffect(() => {
     if (!player || failed) return;
     try {
@@ -156,7 +183,7 @@ export default function SafeFeedVideo({
     }
   }, [player, paused, autoPlay, failed]);
 
-  // Soft mute: volume 0/1 — keeps decoder + VideoView mounted (no black flicker)
+  // Soft mute: volume 0/1 only — keeps decoder + VideoView mounted (no black flicker)
   useEffect(() => {
     if (!player) return;
     try {
@@ -168,11 +195,14 @@ export default function SafeFeedVideo({
   }, [player, muted]);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- reset load UI when URI changes */
     setFailed(false);
     setLoading(true);
     setHasFrame(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [resolved]);
 
+  // Source load ONLY — muted / paused / autoPlay intentionally omitted from deps
   useEffect(() => {
     let cancelled = false;
     let statusSub = null;
@@ -188,9 +218,8 @@ export default function SafeFeedVideo({
         if (cancelled) return;
         player.loop = loop;
         player.muted = false;
-        player.volume = muted ? 0 : 1;
-        if (autoPlay && !paused) {
-          // shouldPlay
+        player.volume = mutedRef.current ? 0 : 1;
+        if (autoPlayRef.current && !pausedRef.current) {
           player.play?.();
         } else {
           player.pause?.();
@@ -211,16 +240,14 @@ export default function SafeFeedVideo({
           console.log('Video Player Error:', error || status);
           setFailed(true);
           setLoading(false);
-        } else if (status === 'readyToPlay' || status === 'loading') {
-          if (status === 'readyToPlay') {
-            console.log('[SafeFeedVideo] onLoad / readyToPlay:', resolved);
-            setLoading(false);
-            if (autoPlay && !paused) {
-              try {
-                player.play?.();
-              } catch (err) {
-                console.log('Video Player Error:', err);
-              }
+        } else if (status === 'readyToPlay') {
+          console.log('[SafeFeedVideo] onLoad / readyToPlay:', resolved);
+          setLoading(false);
+          if (autoPlayRef.current && !pausedRef.current) {
+            try {
+              player.play?.();
+            } catch (err) {
+              console.log('Video Player Error:', err);
             }
           }
         }
@@ -243,14 +270,14 @@ export default function SafeFeedVideo({
         /* ignore */
       }
       // Do NOT call player.release() — useVideoPlayer owns lifecycle.
-      // Double-release on unmount/tap was crashing ArenaReelViewer.
       try {
         player?.pause?.();
       } catch (_) {
         /* ignore */
       }
     };
-  }, [player, resolved, playable, failed, loop, muted, autoPlay, paused]);
+  }, [player, resolved, playable, failed, loop]);
+  /* eslint-enable react-hooks/immutability */
 
   const onFirstFrameRender = () => {
     console.log('[SafeFeedVideo] onLoad / first frame decoded:', resolved);
@@ -289,14 +316,13 @@ export default function SafeFeedVideo({
         </View>
       }
     >
-      {/* Explicit dimensions — Android Surface/TextureView needs a sized parent */}
+      {/* Static shell — mute/pause must never remount this tree */}
       <View style={[styles.shell, style]} pointerEvents="box-none">
         <VideoView
           style={styles.video}
           player={player}
           contentFit={contentFit}
           nativeControls={false}
-          // Block native fullscreen intents — JS Pressables own all taps
           fullscreenOptions={{ enable: false }}
           pointerEvents="none"
           onFirstFrameRender={onFirstFrameRender}
@@ -318,6 +344,8 @@ export default function SafeFeedVideo({
     </VideoErrorBoundary>
   );
 }
+
+export default memo(SafeFeedVideo);
 
 const styles = StyleSheet.create({
   shell: {

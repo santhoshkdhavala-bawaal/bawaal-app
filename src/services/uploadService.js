@@ -2,6 +2,21 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isCloudAuthError } from './supabase';
 
+/**
+ * Yield so React can paint loading UI before heavy file / network work.
+ * (RN 0.88+ removed InteractionManager — use idle + next frame instead.)
+ */
+function yieldToUI() {
+  return new Promise((resolve) => {
+    const finish = () => requestAnimationFrame(() => setTimeout(resolve, 0));
+    if (typeof globalThis.requestIdleCallback === 'function') {
+      globalThis.requestIdleCallback(() => finish(), { timeout: 120 });
+    } else {
+      finish();
+    }
+  });
+}
+
 /** Public Supabase Storage bucket for BAWAAL clips */
 export const BAWAAL_VIDEO_BUCKET = 'bawaalvideos';
 
@@ -269,23 +284,61 @@ function buildUploadUrl(supabaseUrl, safeName) {
 }
 
 /**
- * Native binary upload ONLY.
+ * Native binary upload ONLY (runs off the JS thread via FileSystem native task).
  *
  * Supabase Storage `/object/{bucket}/{path}` expects the raw file bytes with
  * `Content-Type: video/mp4`. Multipart FormData wraps the file in boundary
  * markers and produces black/corrupt playback in players.
+ *
+ * @param {string} uploadUrl
+ * @param {string} fileUri
+ * @param {string} anonKey
+ * @param {(pct: number) => void} [onProgress] 0–100
  */
-async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
-  const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
+async function uploadViaFileSystemBinary(
+  uploadUrl,
+  fileUri,
+  anonKey,
+  onProgress
+) {
+  const headers = {
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
+    'Content-Type': 'video/mp4',
+    'x-upsert': 'true',
+  };
+  const options = {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${anonKey}`,
-      'Content-Type': 'video/mp4',
-      'x-upsert': 'true',
-    },
-  });
+    headers,
+  };
+
+  let result;
+
+  // Prefer createUploadTask — native background transfer + progress callbacks
+  // so the JS thread stays responsive during multi‑MB video uploads.
+  if (typeof FileSystem.createUploadTask === 'function') {
+    const task = FileSystem.createUploadTask(
+      uploadUrl,
+      fileUri,
+      options,
+      (progress) => {
+        try {
+          const total = progress?.totalBytesExpectedToSend || 0;
+          const sent = progress?.totalBytesSent || 0;
+          if (total > 0 && typeof onProgress === 'function') {
+            const pct = Math.min(100, Math.round((sent / total) * 100));
+            onProgress(pct);
+          }
+        } catch (_) {
+          /* ignore progress callback errors */
+        }
+      }
+    );
+    result = await task.uploadAsync();
+  } else {
+    result = await FileSystem.uploadAsync(uploadUrl, fileUri, options);
+  }
 
   if (result.status < 200 || result.status >= 300) {
     console.error(
@@ -298,6 +351,7 @@ async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
     );
   }
 
+  if (typeof onProgress === 'function') onProgress(100);
   console.log('BINARY_UPLOAD_OK: status=', result.status);
   return true;
 }
@@ -305,17 +359,28 @@ async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
 /**
  * Upload a local video to Supabase Storage (`bawaalvideos/battles/{fileName}`).
  *
+ * - Yields to UI (InteractionManager) before file I/O / network
  * - Sanitizes Android URIs (`file://` prefix)
  * - Persists to a stable path and verifies non-empty size
- * - Uploads raw MP4 bytes with `Content-Type: video/mp4` (never multipart)
+ * - Uploads raw MP4 bytes via native FileSystem task (never multipart / never blocks JS)
  *
  * @param {string} videoUri
  * @param {string} [fileName]
+ * @param {{ onProgress?: (pct: number) => void }} [options]
  * @returns {Promise<string|null>} public HTTPS URL or null (caller must abort post)
  */
-export async function uploadVideoToSupabase(videoUri, fileName) {
+export async function uploadVideoToSupabase(videoUri, fileName, options) {
+  const onProgress =
+    options && typeof options.onProgress === 'function'
+      ? options.onProgress
+      : null;
+
   try {
     console.log('START_UPLOAD: videoUri ->', videoUri);
+
+    // Let loading indicators paint before heavy work stalls the JS thread
+    await yieldToUI();
+    if (onProgress) onProgress(2);
 
     const SUPABASE_URL = getEnvSupabaseUrl();
     const ANON_KEY = getEnvAnonKey();
@@ -337,6 +402,7 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
       const publicExisting =
         ensurePublicBawaalVideoUrl(resolvedUri) || resolvedUri.trim();
       console.log('UPLOAD_SKIP: already remote HTTPS ->', publicExisting);
+      if (onProgress) onProgress(100);
       return publicExisting;
     }
 
@@ -357,6 +423,7 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
     // Stable file:// path — content:// / bare Android paths cause empty streams
     let fileUri = resolvedUri;
     try {
+      if (onProgress) onProgress(5);
       const persisted = await persistLocalVideoUri(resolvedUri);
       if (typeof persisted === 'string' && persisted.length > 0) {
         fileUri = sanitizeVideoUriForUpload(persisted) || persisted;
@@ -380,9 +447,16 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
 
     console.log('UPLOAD_FILE_URI:', fileUri);
     await assertUploadableVideoFile(fileUri);
+    if (onProgress) onProgress(8);
+
+    // Yield again right before native transfer so UI stays buttery
+    await yieldToUI();
 
     // Binary only — FormData multipart corrupts objects in Supabase Storage
-    await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY);
+    await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY, (pct) => {
+      // Map native 0–100 into 8–100 so prep steps stay visible
+      if (onProgress) onProgress(Math.max(8, Math.min(100, pct)));
+    });
     console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
