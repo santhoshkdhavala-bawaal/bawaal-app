@@ -452,7 +452,18 @@ function PostCreationSheet({
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl = localVideoUri.trim();
       } else if (localVideoUri) {
-        const remoteUrl = await uploadVideoToSupabase(localVideoUri);
+        // FormData / native FileSystem upload lives in uploadService —
+        // never fetch(localUri).blob() (Android "Failed to fetch").
+        const uploadFileName = `video_${Date.now()}.mp4`;
+        console.log(
+          '[PostCreationSheet] uploading via FormData helper:',
+          localVideoUri,
+          uploadFileName
+        );
+        const remoteUrl = await uploadVideoToSupabase(
+          localVideoUri,
+          uploadFileName
+        );
         if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
           publicCloudUrl = remoteUrl.trim();
           console.log('[PostCreationSheet] cloud URL ready:', publicCloudUrl);

@@ -28,6 +28,14 @@ function normalizeLocalUri(uri) {
   return uri;
 }
 
+function makeObjectFileName(fileName) {
+  const raw =
+    typeof fileName === 'string' && fileName.trim().length > 0
+      ? fileName.trim()
+      : `video_${Date.now()}.mp4`;
+  return raw.replace(/[^\w.\-]+/g, '_');
+}
+
 export function isRemoteHttpsUri(uri) {
   return typeof uri === 'string' && /^https:\/\//i.test(uri.trim());
 }
@@ -92,14 +100,97 @@ export async function persistLocalVideoUri(localUri) {
   }
 }
 
+function buildPublicUrl(supabaseUrl, safeName) {
+  return `${supabaseUrl}/storage/v1/object/public/bawaalvideos/battles/${safeName}`;
+}
+
+function buildUploadUrl(supabaseUrl, safeName) {
+  return `${supabaseUrl}/storage/v1/object/bawaalvideos/battles/${safeName}`;
+}
+
+function authHeaders(anonKey) {
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
+    'x-upsert': 'true',
+  };
+}
+
 /**
- * Upload a local video to Supabase Storage via React Native FormData.
+ * Preferred path on Android/iOS: native binary upload.
+ * Avoids RN `fetch(fileUri)` / blob reads that throw "Failed to fetch".
+ * Supabase Storage expects the raw file bytes as the request body.
+ */
+async function uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey) {
+  const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      ...authHeaders(anonKey),
+      'Content-Type': 'video/mp4',
+    },
+  });
+
+  if (result.status < 200 || result.status >= 300) {
+    console.error(
+      'REST_UPLOAD_ERROR (binary):',
+      result.status,
+      result.body
+    );
+    throw new Error(
+      result.body || `Storage binary upload failed with status ${result.status}`
+    );
+  }
+
+  return true;
+}
+
+/**
+ * React Native FormData upload (multipart).
+ * Do NOT set Content-Type — fetch sets the multipart boundary.
+ */
+async function uploadViaFormData(uploadUrl, fileUri, safeName, anonKey) {
+  const formData = new FormData();
+  formData.append('file', {
+    uri: fileUri,
+    name: safeName || `video_${Date.now()}.mp4`,
+    type: 'video/mp4',
+  });
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(anonKey),
+      // Content-Type intentionally omitted for multipart boundary
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(
+      'REST_UPLOAD_ERROR (formData):',
+      response.status,
+      response.statusText,
+      errText
+    );
+    throw new Error(
+      errText || `Storage FormData upload failed with status ${response.status}`
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Upload a local video to Supabase Storage (`bawaalvideos/battles/{fileName}`).
  *
- * Avoids `fetch(fileUri).blob()` which fails on Android with "Failed to fetch".
- * Does NOT set Content-Type — RN sets multipart boundary automatically.
+ * 1) Persist to a stable `file://` path when possible
+ * 2) Native FileSystem binary upload (Android-safe)
+ * 3) Fall back to RN FormData if binary path fails
  *
- * @param {string} videoUri - local file:// / content:// URI
- * @param {string} [fileName] - optional object name under battles/
+ * @param {string} videoUri
+ * @param {string} [fileName]
  * @returns {Promise<string|null>} public HTTPS URL or null (caller must abort post)
  */
 export async function uploadVideoToSupabase(videoUri, fileName) {
@@ -127,13 +218,10 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
       return resolvedUri.trim();
     }
 
-    const safeName =
-      (typeof fileName === 'string' && fileName.trim().length > 0
-        ? fileName.trim()
-        : `battle_${Date.now()}.mp4`
-      ).replace(/[^\w.\-]+/g, '_');
+    const safeName = makeObjectFileName(fileName);
+    const uploadUrl = buildUploadUrl(SUPABASE_URL, safeName);
+    const publicUrl = buildPublicUrl(SUPABASE_URL, safeName);
 
-    const uploadUrl = `${SUPABASE_URL}/storage/v1/object/bawaalvideos/battles/${safeName}`;
     console.log('UPLOAD_REST_URL:', uploadUrl);
     console.log(
       'UPLOAD_KEY_PREFIX:',
@@ -141,40 +229,36 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
       '(len=' + ANON_KEY.length + ')'
     );
 
-    // RN FormData file descriptor — streams the file URI natively (Android-safe)
-    const formData = new FormData();
-    formData.append('file', {
-      uri: resolvedUri,
-      name: safeName,
-      type: 'video/mp4',
-    });
-
-    const response = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: {
-        apikey: ANON_KEY,
-        Authorization: `Bearer ${ANON_KEY}`,
-        'x-upsert': 'true',
-        // Do NOT set Content-Type — fetch must set multipart boundary
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(
-        'REST_UPLOAD_ERROR:',
-        response.status,
-        response.statusText,
-        errText
+    // Stable file:// URI — content:// / camera temp paths break some Android uploads
+    let fileUri = resolvedUri;
+    try {
+      const persisted = await persistLocalVideoUri(resolvedUri);
+      if (typeof persisted === 'string' && persisted.length > 0) {
+        fileUri = persisted;
+      }
+    } catch (persistErr) {
+      console.warn(
+        '[upload] persist skipped, using original URI:',
+        persistErr?.message || persistErr
       );
-      throw new Error(
-        errText || `Storage upload failed with status ${response.status}`
+    }
+    console.log('UPLOAD_FILE_URI:', fileUri);
+
+    // 1) Native binary (correct for Supabase Storage, avoids "Failed to fetch")
+    try {
+      await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY);
+      console.log('PUBLIC_URL (binary):', publicUrl);
+      return publicUrl;
+    } catch (binaryErr) {
+      console.warn(
+        '[upload] binary upload failed, trying FormData:',
+        binaryErr?.message || binaryErr
       );
     }
 
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/battles/${safeName}`;
-    console.log('PUBLIC_URL:', publicUrl);
+    // 2) RN FormData fallback
+    await uploadViaFormData(uploadUrl, fileUri, safeName, ANON_KEY);
+    console.log('PUBLIC_URL (formData):', publicUrl);
     return publicUrl;
   } catch (err) {
     console.error('UPLOAD_CATCH_ERROR:', err);
@@ -209,7 +293,10 @@ export const uploadBattleVideo = async (localUri) => {
     };
   }
 
-  const publicUrl = await uploadVideoToSupabase(stableUri);
+  const publicUrl = await uploadVideoToSupabase(
+    stableUri,
+    `video_${Date.now()}.mp4`
+  );
   if (typeof publicUrl === 'string' && publicUrl.length > 0) {
     return {
       publicUrl,
