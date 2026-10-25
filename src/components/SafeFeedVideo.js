@@ -154,6 +154,15 @@ export default function SafeFeedVideo({
   }, [player, paused, autoPlay, failed]);
 
   useEffect(() => {
+    if (!player) return;
+    try {
+      player.muted = muted;
+    } catch (err) {
+      console.log('Video Player Error:', err);
+    }
+  }, [player, muted]);
+
+  useEffect(() => {
     setFailed(false);
     setLoading(true);
     setHasFrame(false);

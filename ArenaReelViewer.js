@@ -19,6 +19,7 @@ import SafeFeedVideo, {
   resolveFeedVideoUri,
   toPublicFeedVideoUrl,
 } from './src/components/SafeFeedVideo';
+import MuteToggleButton from './src/components/MuteToggleButton';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -50,6 +51,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [activeGifs, setActiveGifs] = useState([
     { id: 'g1', emoji: '🔥', x: 0.72, y: 0.28 },
     { id: 'g2', emoji: '💪', x: 0.18, y: 0.42 },
@@ -90,6 +92,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setShowBanter(false);
     setMoreOpen(false);
     setPaused(false);
+    setMuted(false);
     /* eslint-enable react-hooks/set-state-in-effect */
     return undefined;
   }, [visible, reel?.id, reel]);
@@ -97,6 +100,10 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const togglePlayPause = useCallback(() => {
     // JS-only play/pause — never enter native VideoView fullscreen
     setPaused((p) => !p);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMuted((m) => !m);
   }, []);
 
   if (!reel) return null;
@@ -144,7 +151,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
               key={`reel-video-${reel.id || uri}`}
               uri={uri}
               style={styles.videoFill}
-              muted={false}
+              muted={muted}
               loop
               autoPlay
               paused={paused}
@@ -161,6 +168,11 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
             style={styles.videoTapLayer}
             onPress={togglePlayPause}
             accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+          />
+          <MuteToggleButton
+            muted={muted}
+            onPress={toggleMute}
+            style={[styles.muteBtn, { top: topPad + 8 }]}
           />
           {paused ? (
             <View style={styles.pauseBadge} pointerEvents="none">
@@ -348,6 +360,11 @@ const styles = StyleSheet.create({
     left: '10%',
     right: '22%',
     zIndex: 4,
+  },
+  muteBtn: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 22,
   },
   pauseBadge: {
     position: 'absolute',

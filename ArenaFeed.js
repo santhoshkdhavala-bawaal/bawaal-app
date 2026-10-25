@@ -3,12 +3,14 @@ import React, {
   useEffect,
   useCallback,
   useRef,
+  useMemo,
   memo,
 } from 'react';
 import {
   StyleSheet,
   Text,
   View,
+  FlatList,
   ScrollView,
   TouchableOpacity,
   Pressable,
@@ -31,6 +33,7 @@ import { useMainTabs } from './mainTabContext';
 import SafeFeedVideo, {
   resolveFeedVideoUri,
 } from './src/components/SafeFeedVideo';
+import MuteToggleButton from './src/components/MuteToggleButton';
 
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
@@ -255,14 +258,19 @@ function mapPostToReel(post) {
   };
 }
 
-function ClipSurface({ uri, label, style }) {
+const ClipSurface = memo(function ClipSurface({
+  uri,
+  label,
+  style,
+  muted = true,
+}) {
   return (
     <View style={[styles.clipShell, style]} pointerEvents="none">
       <SafeFeedVideo
         uri={uri}
         label={label}
         style={styles.clipVideoFill}
-        muted
+        muted={muted}
         loop
         autoPlay
         contentFit="cover"
@@ -270,7 +278,7 @@ function ClipSurface({ uri, label, style }) {
       />
     </View>
   );
-}
+});
 
 function sortResponses(list, mode) {
   const copy = [...(list || [])];
@@ -363,6 +371,7 @@ function ingestArenaPost(prev, post) {
 const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) {
   const [engageOpen, setEngageOpen] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
+  const [muted, setMuted] = useState(true);
   const menuAnim = useRef(new Animated.Value(0)).current;
   const fireScale = useRef(new Animated.Value(0)).current;
   const fireOpacity = useRef(new Animated.Value(0)).current;
@@ -445,10 +454,25 @@ const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) 
   });
   const menuOpacity = menuAnim;
 
+  const toggleMute = useCallback(() => {
+    setMuted((m) => !m);
+  }, []);
+
   return (
     <View style={styles.reelCard}>
       {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
-      <ClipSurface uri={item.videoUri} label={null} style={styles.reelFullBleed} />
+      <ClipSurface
+        uri={item.videoUri}
+        label={null}
+        style={styles.reelFullBleed}
+        muted={muted}
+      />
+
+      <MuteToggleButton
+        muted={muted}
+        onPress={toggleMute}
+        style={styles.reelMuteBtn}
+      />
 
       {/* Safe middle tap → ArenaReelViewer (no native fullscreen) */}
       <Pressable
@@ -658,10 +682,111 @@ export default function ArenaFeed({ navigation, route }) {
     }, [absorbPost, route?.params?.newArenaPost])
   );
 
-  const visibleFeed =
-    activeTab === 'ALL'
-      ? feedItems
-      : feedItems.filter((item) => item.sport === activeTab);
+  const visibleFeed = useMemo(
+    () =>
+      activeTab === 'ALL'
+        ? feedItems
+        : feedItems.filter((item) => item.sport === activeTab),
+    [activeTab, feedItems]
+  );
+
+  const openReel = useCallback((item) => {
+    setActiveReel(item);
+  }, []);
+
+  const openResponses = useCallback((item) => {
+    setHubThread(item);
+  }, []);
+
+  const renderFeedItem = useCallback(
+    ({ item }) => {
+      if (item.type === 'reel') {
+        return (
+          <GeneralReelCard item={item} onOpen={openReel} onHype={hypeReel} />
+        );
+      }
+      if (item.type === 'battle_thread') {
+        return <BattleCard item={item} onOpenResponses={openResponses} />;
+      }
+      return null;
+    },
+    [openReel, openResponses, hypeReel]
+  );
+
+  const feedKeyExtractor = useCallback((item) => String(item.id), []);
+
+  const listHeader = useMemo(() => {
+    if (!filtersOpen) return null;
+    return (
+      <View style={styles.filtersPanel}>
+        <View style={styles.subheaderRow}>
+          <Text style={styles.subheaderTitle}>LIVE FEED</Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveBadgeText}>TOKYO GLOBAL LIVE</Text>
+          </View>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tickerContainer}
+        >
+          {LIVE_SCORE_SAMPLES.map((score) => (
+            <TouchableOpacity
+              key={score.id}
+              style={[styles.scoreCard, score.special && styles.scoreCardSpecial]}
+            >
+              <View style={styles.scoreCardHeader}>
+                <Text
+                  style={[styles.scoreSport, score.special && styles.scoreSportSpecial]}
+                >
+                  {score.sport} [{score.tier}]
+                </Text>
+                <View style={styles.miniLiveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.miniLiveText}>{score.status}</Text>
+                </View>
+              </View>
+              <Text style={styles.scoreTitle}>{score.title}</Text>
+              <Text style={styles.scoreLine}>{score.line}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        <View style={styles.tabsWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tabsContainer}
+          >
+            {PERMANENT_SPORTS_TABS.map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    styles.tabButton,
+                    isActive ? styles.activeTabButton : styles.inactiveTabButton,
+                  ]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      isActive ? styles.activeTabText : styles.inactiveTabText,
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    );
+  }, [filtersOpen, activeTab]);
 
   return (
     <View style={styles.container}>
@@ -682,100 +807,19 @@ export default function ArenaFeed({ navigation, route }) {
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {filtersOpen ? (
-          <View style={styles.filtersPanel}>
-            <View style={styles.subheaderRow}>
-              <Text style={styles.subheaderTitle}>LIVE FEED</Text>
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveBadgeText}>TOKYO GLOBAL LIVE</Text>
-              </View>
-            </View>
-
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.tickerContainer}
-            >
-              {LIVE_SCORE_SAMPLES.map((score) => (
-                <TouchableOpacity
-                  key={score.id}
-                  style={[styles.scoreCard, score.special && styles.scoreCardSpecial]}
-                >
-                  <View style={styles.scoreCardHeader}>
-                    <Text
-                      style={[styles.scoreSport, score.special && styles.scoreSportSpecial]}
-                    >
-                      {score.sport} [{score.tier}]
-                    </Text>
-                    <View style={styles.miniLiveBadge}>
-                      <View style={styles.liveDot} />
-                      <Text style={styles.miniLiveText}>{score.status}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.scoreTitle}>{score.title}</Text>
-                  <Text style={styles.scoreLine}>{score.line}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.tabsWrapper}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.tabsContainer}
-              >
-                {PERMANENT_SPORTS_TABS.map((tab) => {
-                  const isActive = activeTab === tab;
-                  return (
-                    <TouchableOpacity
-                      key={tab}
-                      style={[
-                        styles.tabButton,
-                        isActive ? styles.activeTabButton : styles.inactiveTabButton,
-                      ]}
-                      onPress={() => setActiveTab(tab)}
-                    >
-                      <Text
-                        style={[
-                          styles.tabText,
-                          isActive ? styles.activeTabText : styles.inactiveTabText,
-                        ]}
-                      >
-                        {tab}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          </View>
-        ) : null}
-
-        {visibleFeed.map((item) => {
-          if (item.type === 'reel') {
-            return (
-              <GeneralReelCard
-                key={item.id}
-                item={item}
-                onOpen={setActiveReel}
-                onHype={hypeReel}
-              />
-            );
-          }
-          if (item.type === 'battle_thread') {
-            return (
-              <BattleCard
-                key={item.id}
-                item={item}
-                onOpenResponses={setHubThread}
-              />
-            );
-          }
-          return null;
-        })}
-      </ScrollView>
+      <FlatList
+        data={visibleFeed}
+        keyExtractor={feedKeyExtractor}
+        renderItem={renderFeedItem}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews
+        initialNumToRender={3}
+        maxToRenderPerBatch={4}
+        windowSize={7}
+        updateCellsBatchingPeriod={50}
+      />
 
       <ArenaReelViewer
         visible={!!activeReel}
@@ -917,6 +961,12 @@ const styles = StyleSheet.create({
   },
   reelFullBleed: {
     ...StyleSheet.absoluteFillObject,
+  },
+  reelMuteBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    zIndex: 14,
   },
   reelMiddleTap: {
     position: 'absolute',

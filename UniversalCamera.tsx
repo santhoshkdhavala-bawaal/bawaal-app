@@ -218,12 +218,16 @@ function BawaalHubDrawer({
   visible,
   onClose,
   onSelect,
+  onPickGallery,
+  galleryDisabled,
   joshUnlocked3m,
   onToggleJosh3m,
 }: {
   visible: boolean;
   onClose: () => void;
   onSelect: (mode: CreationMode) => void;
+  onPickGallery: () => void;
+  galleryDisabled?: boolean;
   joshUnlocked3m: boolean;
   onToggleJosh3m: () => void;
 }) {
@@ -269,6 +273,28 @@ function BawaalHubDrawer({
             )}
           </TouchableOpacity>
         ))}
+
+        <TouchableOpacity
+          style={[
+            hubStyles.card,
+            hubStyles.galleryCard,
+            galleryDisabled && hubStyles.galleryCardDisabled,
+          ]}
+          activeOpacity={0.88}
+          disabled={galleryDisabled}
+          onPress={() => {
+            if (galleryDisabled) return;
+            onClose();
+            // Let hub modal dismiss before launching the system picker
+            setTimeout(() => onPickGallery(), 220);
+          }}
+          accessibilityLabel="Pick video from gallery"
+        >
+          <Text style={hubStyles.cardTitle}>Gallery</Text>
+          <Text style={hubStyles.cardSub}>
+            Import a video from your phone library
+          </Text>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
@@ -341,6 +367,13 @@ const hubStyles = StyleSheet.create({
     paddingVertical: 5,
   },
   joshChipText: { color: ACCENT, fontSize: 11, fontWeight: '800' },
+  galleryCard: {
+    borderStyle: 'dashed' as const,
+    marginTop: 4,
+  },
+  galleryCardDisabled: {
+    opacity: 0.4,
+  },
 });
 
 function ClipPreviewModal({
@@ -1180,44 +1213,20 @@ export default function UniversalCamera({
             </Animated.View>
           )}
 
-          <View style={styles.shutterRow}>
-            <TouchableOpacity
+          <TouchableOpacity
+            style={styles.shutterWrap}
+            onPress={handleShutter}
+            activeOpacity={0.85}
+          >
+            <DottedProgressRing progress={progress} recording={isRecording} />
+            <View
               style={[
-                styles.galleryBtn,
-                (isRecording || mode === 'BATTLE_BAWAAL') &&
-                  styles.galleryBtnDisabled,
+                styles.shutterInner,
+                isRecording && styles.shutterSquare,
+                mode === 'BATTLE_BAWAAL' && styles.shutterInnerLive,
               ]}
-              onPress={() => {
-                void pickFromGallery();
-              }}
-              activeOpacity={0.85}
-              disabled={isRecording || mode === 'BATTLE_BAWAAL'}
-              accessibilityLabel="Pick video from gallery"
-            >
-              <View style={styles.galleryIconFrame}>
-                <View style={styles.galleryIconPlay} />
-              </View>
-              <Text style={styles.galleryLabel}>Gallery</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.shutterWrap}
-              onPress={handleShutter}
-              activeOpacity={0.85}
-            >
-              <DottedProgressRing progress={progress} recording={isRecording} />
-              <View
-                style={[
-                  styles.shutterInner,
-                  isRecording && styles.shutterSquare,
-                  mode === 'BATTLE_BAWAAL' && styles.shutterInnerLive,
-                ]}
-              />
-            </TouchableOpacity>
-
-            {/* Balance spacer so shutter stays centered */}
-            <View style={styles.galleryBtnSpacer} />
-          </View>
+            />
+          </TouchableOpacity>
 
           {/* Glowing BAWAAL Hub FAB — replaces heavy mode strip */}
           <TouchableOpacity
@@ -1235,6 +1244,10 @@ export default function UniversalCamera({
         visible={hubOpen}
         onClose={() => setHubOpen(false)}
         onSelect={handleHubSelect}
+        onPickGallery={() => {
+          void pickFromGallery();
+        }}
+        galleryDisabled={isRecording || mode === 'BATTLE_BAWAAL'}
         joshUnlocked3m={joshUnlocked3m}
         onToggleJosh3m={() => setJoshUnlocked3m((v) => !v)}
       />
@@ -1426,65 +1439,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   timeChipTextActive: { color: '#000000' },
-  shutterRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  galleryBtn: {
-    width: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  galleryBtnDisabled: {
-    opacity: 0.35,
-  },
-  galleryBtnSpacer: {
-    width: 72,
-  },
-  galleryIconFrame: {
-    width: 22,
-    height: 18,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  galleryIconPlay: {
-    width: 0,
-    height: 0,
-    marginLeft: 2,
-    borderTopWidth: 4,
-    borderBottomWidth: 4,
-    borderLeftWidth: 7,
-    borderStyle: 'solid',
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
-    borderLeftColor: '#FFFFFF',
-  },
-  galleryLabel: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
   shutterWrap: {
     width: 96,
     height: 96,
     borderRadius: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 18,
+    marginBottom: 16,
   },
   shutterInner: {
     width: 68,
