@@ -159,74 +159,153 @@ export async function readLocalVideoBytes(localUri) {
 }
 
 /**
- * Direct anonymous upload to public `bawaalvideos` bucket.
- * NO getSession / canAttemptCloudUpload gate — public insert policies allow anon.
- *
- * @returns {{ publicUrl: string, path: string, localUri: string }}
+ * Build a Storage body from a local URI. Tries blob → arrayBuffer → base64.
+ * Returns null on failure (never throws).
  */
-export async function uploadVideoToSupabase(localUri) {
-  const uri = normalizeLocalUri(localUri) || localUri;
-  if (!uri) throw new Error('Missing local video URI for upload');
-  if (!isSupabaseConfigured()) {
-    throw new Error('Supabase is not configured');
+async function buildUploadBody(uri) {
+  // 1) fetch → blob (preferred RN path)
+  try {
+    const response = await fetch(uri);
+    if (response?.ok) {
+      const blob = await response.blob();
+      if (blob && blob.size > 0) return { body: blob, via: 'blob' };
+      // Some RN builds return empty blobs — fall through to arrayBuffer
+      if (typeof response.arrayBuffer === 'function') {
+        const ab = await response.arrayBuffer();
+        if (ab && ab.byteLength > 0) return { body: ab, via: 'arrayBuffer' };
+      }
+    }
+  } catch (err) {
+    console.warn('[upload] fetch/blob failed:', err?.message || err);
   }
 
-  const filePath = `battles/${Date.now()}_video.mp4`;
-
-  // RN/Expo: fetch local file → Blob, then upload with anon key (no user session)
-  const response = await fetch(uri);
-  if (!response.ok) {
-    throw new Error(`Failed to read local video (${response.status})`);
-  }
-  const blob = await response.blob();
-  if (!blob || blob.size === 0) {
-    throw new Error('Local video blob is empty');
-  }
-
-  const { data, error } = await supabase.storage
-    .from(BAWAAL_VIDEO_BUCKET)
-    .upload(filePath, blob, {
-      contentType: 'video/mp4',
-      cacheControl: '3600',
-      upsert: true,
-    });
-
-  if (error) {
-    throw error;
+  // 2) Fresh fetch → arrayBuffer
+  try {
+    const response = await fetch(uri);
+    if (response?.ok && typeof response.arrayBuffer === 'function') {
+      const ab = await response.arrayBuffer();
+      if (ab && ab.byteLength > 0) return { body: ab, via: 'arrayBuffer' };
+    }
+  } catch (err) {
+    console.warn('[upload] fetch/arrayBuffer failed:', err?.message || err);
   }
 
-  const objectPath = data?.path || filePath;
-  const { data: publicUrlData } = supabase.storage
-    .from(BAWAAL_VIDEO_BUCKET)
-    .getPublicUrl(objectPath);
-
-  if (!publicUrlData?.publicUrl) {
-    throw new Error('Upload succeeded but public URL was empty');
+  // 3) Expo FileSystem base64 → ArrayBuffer
+  try {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (info?.exists) {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (base64) {
+        return { body: base64ToArrayBuffer(base64), via: 'base64' };
+      }
+    }
+  } catch (err) {
+    console.warn('[upload] FileSystem base64 failed:', err?.message || err);
   }
 
-  return {
-    publicUrl: publicUrlData.publicUrl,
-    path: objectPath,
-    localUri: uri,
-  };
+  return null;
 }
 
 /**
- * Upload a recorded clip to Supabase Storage bucket `bawaalvideos`.
- * Path: battles/{timestamp}_video.mp4
+ * Bulletproof anonymous upload to public `bawaalvideos` bucket.
+ * - No getSession / canAttemptCloudUpload / auth gates
+ * - Never throws — returns public HTTPS URL string or null
  *
- * Never calls getSession — anonymous public-bucket upload only.
- * On network/storage failure returns local file:// fallback (does not throw).
+ * @param {string} localUri
+ * @returns {Promise<string|null>}
+ */
+export async function uploadVideoToSupabase(localUri) {
+  try {
+    if (!localUri || typeof localUri !== 'string') {
+      console.warn('[upload] uploadVideoToSupabase: missing localUri');
+      return null;
+    }
+
+    if (!isSupabaseConfigured()) {
+      console.warn('[upload] uploadVideoToSupabase: Supabase not configured');
+      return null;
+    }
+
+    // Already remote — nothing to upload
+    if (isRemoteHttpsUri(localUri)) {
+      return localUri.trim();
+    }
+
+    let uri = normalizeLocalUri(localUri) || localUri;
+    try {
+      if (uri.startsWith('content://') || uri.startsWith('ph://')) {
+        uri = (await persistLocalVideoUri(uri)) || uri;
+      } else if (uri.startsWith('file://') || uri.startsWith('/')) {
+        uri = (await persistLocalVideoUri(uri)) || uri;
+      }
+    } catch (persistErr) {
+      console.warn(
+        '[upload] persist skipped, using original URI:',
+        persistErr?.message || persistErr
+      );
+    }
+
+    const filePath = `battles/${Date.now()}_video.mp4`;
+    const prepared = await buildUploadBody(uri);
+    if (!prepared?.body) {
+      console.warn('[upload] Could not read local video body');
+      return null;
+    }
+
+    const { error } = await supabase.storage
+      .from(BAWAAL_VIDEO_BUCKET)
+      .upload(filePath, prepared.body, {
+        contentType: 'video/mp4',
+        cacheControl: '3600',
+        upsert: true,
+      });
+
+    if (error) {
+      console.warn(
+        '[upload] storage.upload failed:',
+        error.message || error,
+        `(via ${prepared.via})`
+      );
+      return null;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(BAWAAL_VIDEO_BUCKET)
+      .getPublicUrl(filePath);
+
+    const publicUrl =
+      typeof publicUrlData?.publicUrl === 'string'
+        ? publicUrlData.publicUrl.trim()
+        : '';
+
+    if (!publicUrl || !/^https:\/\//i.test(publicUrl)) {
+      console.warn('[upload] getPublicUrl returned empty/invalid URL');
+      return null;
+    }
+
+    return publicUrl;
+  } catch (err) {
+    // Absolute last resort — never crash the post flow
+    console.warn('[upload] uploadVideoToSupabase caught:', err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * Upload wrapper used by PostCreationSheet / battle flows.
+ * Never throws. Prefer remote HTTPS; fall back to local URI metadata.
  *
  * @returns {{ publicUrl: string|null, localUri: string, skipped: boolean, reason?: string, error?: string, path?: string }}
  */
 export const uploadBattleVideo = async (localUri) => {
-  let stableUri = normalizeLocalUri(localUri);
+  let stableUri = normalizeLocalUri(localUri) || localUri || '';
   try {
-    stableUri = await persistLocalVideoUri(localUri);
+    const persisted = await persistLocalVideoUri(localUri);
+    if (persisted) stableUri = persisted;
   } catch (err) {
     console.warn('[upload] Could not persist clip — using original URI:', err?.message || err);
-    stableUri = normalizeLocalUri(localUri) || localUri;
   }
 
   const localFallback = (reason, error) => ({
@@ -237,7 +316,6 @@ export const uploadBattleVideo = async (localUri) => {
     error: error ? String(error?.message || error) : undefined,
   });
 
-  // Already a remote HTTPS URL — no re-upload needed
   if (isRemoteHttpsUri(stableUri)) {
     return {
       publicUrl: stableUri.trim(),
@@ -247,25 +325,25 @@ export const uploadBattleVideo = async (localUri) => {
     };
   }
 
-  if (!isSupabaseConfigured()) {
-    return localFallback('not-configured');
+  if (!stableUri) {
+    return localFallback('missing-uri');
   }
 
   try {
-    // Direct anon upload — no session / auth probe
-    const result = await uploadVideoToSupabase(stableUri);
-    return {
-      publicUrl: result.publicUrl,
-      localUri: result.localUri || stableUri,
-      skipped: false,
-      path: result.path,
-    };
+    const publicUrl = await uploadVideoToSupabase(stableUri);
+    if (typeof publicUrl === 'string' && publicUrl.length > 0) {
+      return {
+        publicUrl,
+        localUri: stableUri,
+        skipped: false,
+        path: publicUrl.split('/').slice(-2).join('/'),
+      };
+    }
+    return localFallback('storage-error', 'uploadVideoToSupabase returned null');
   } catch (err) {
-    console.warn('[upload] Unexpected upload error:', err?.message || err);
-    return localFallback(
-      isCloudAuthError(err) ? 'storage-error' : 'storage-error',
-      err
-    );
+    // Should never happen — uploadVideoToSupabase swallows errors — but belt & suspenders
+    console.warn('[upload] uploadBattleVideo outer catch:', err?.message || err);
+    return localFallback('storage-error', err);
   }
 };
 
