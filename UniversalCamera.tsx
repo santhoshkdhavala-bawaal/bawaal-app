@@ -376,6 +376,23 @@ const hubStyles = StyleSheet.create({
   },
 });
 
+/** Allowed slow-mo rates — never index outside this list. */
+const SLOWMO_RATES = [0, 0.25, 0.5, 0.75] as const;
+type SlowMoRate = (typeof SLOWMO_RATES)[number];
+
+function clampSlowMoRate(rate: unknown): SlowMoRate {
+  const n = typeof rate === 'number' ? rate : Number(rate);
+  if (!Number.isFinite(n)) return 0.5;
+  const hit = SLOWMO_RATES.find((r) => Math.abs(r - n) < 0.001);
+  return hit ?? 0.5;
+}
+
+function safeDurationSec(value: unknown, fallback = 15): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return Math.max(1, fallback);
+  return Math.max(1, n);
+}
+
 /** Pause + unload so preview audio cannot ghost after Post / leave. */
 function stopAndUnloadPlayer(player: {
   pause?: () => void;
@@ -426,9 +443,9 @@ function ClipPreviewModal({
     slowMoEndSec: number;
   }) => void;
 }) {
-  const bootDur = Math.max(1, fallbackDuration || 15);
+  const bootDur = safeDurationSec(fallbackDuration, 15);
   const [playing, setPlaying] = useState(true);
-  const [slowMoRate, setSlowMoRate] = useState(0.5);
+  const [slowMoRate, setSlowMoRate] = useState<SlowMoRate>(0.5);
   const [duration, setDuration] = useState(bootDur);
   const [startSec, setStartSec] = useState(0);
   const [endSec, setEndSec] = useState(bootDur);
@@ -495,10 +512,21 @@ function ClipPreviewModal({
     try {
       const syncDuration = () => {
         const nativeDur = Number(player.duration);
-        if (Number.isFinite(nativeDur) && nativeDur > 0.2) {
-          setDuration(nativeDur);
-          setEndSec((e) => Math.min(Math.max(e, MIN_TRIM_SPAN), nativeDur));
-        }
+        if (!Number.isFinite(nativeDur) || nativeDur <= 0.2) return;
+        const safeDur = safeDurationSec(nativeDur, bootDur);
+        setDuration(safeDur);
+        setStartSec((s) => {
+          const next = Math.max(0, Math.min(Number(s) || 0, safeDur - MIN_TRIM_SPAN));
+          return Number.isFinite(next) ? next : 0;
+        });
+        setEndSec((e) => {
+          const raw = Number(e);
+          const next = Math.min(
+            safeDur,
+            Math.max(Number.isFinite(raw) ? raw : safeDur, MIN_TRIM_SPAN)
+          );
+          return Number.isFinite(next) ? next : safeDur;
+        });
       };
       durTimer = setTimeout(syncDuration, 150);
       statusSub = player.addListener?.('statusChange', syncDuration);
@@ -539,7 +567,7 @@ function ClipPreviewModal({
         /* ignore */
       }
     };
-  }, [player, visible]);
+  }, [player, visible, bootDur]);
 
   const handleRetake = useCallback(() => {
     setPlaying(false);
@@ -550,13 +578,28 @@ function ClipPreviewModal({
   const handleNextToPost = useCallback(() => {
     setPlaying(false);
     stopAndUnloadPlayer(player);
+    const dur = safeDurationSec(duration, bootDur);
+    const start = Math.max(0, Math.min(Number(startSec) || 0, dur - MIN_TRIM_SPAN));
+    const end = Math.min(
+      dur,
+      Math.max(Number(endSec) || dur, start + MIN_TRIM_SPAN)
+    );
+    const rate = clampSlowMoRate(slowMoRate);
     onNext({
-      slowMoEnabled,
-      slowMoRate: slowMoEnabled ? slowMoRate : 1,
-      slowMoStartSec: startSec,
-      slowMoEndSec: endSec,
+      slowMoEnabled: rate > 0,
+      slowMoRate: rate > 0 ? rate : 1,
+      slowMoStartSec: Number.isFinite(start) ? start : 0,
+      slowMoEndSec: Number.isFinite(end) ? end : dur,
     });
-  }, [player, onNext, slowMoEnabled, slowMoRate, startSec, endSec]);
+  }, [
+    player,
+    onNext,
+    slowMoRate,
+    startSec,
+    endSec,
+    duration,
+    bootDur,
+  ]);
 
   if (!visible || !uri) return null;
 
@@ -613,8 +656,8 @@ function ClipPreviewModal({
           Slow-mo speed (inside red box only)
         </Text>
         <View style={previewStyles.rateRow}>
-          {[0, 0.25, 0.5, 0.75].map((rate) => {
-            const active = slowMoRate === rate;
+          {SLOWMO_RATES.map((rate) => {
+            const active = Math.abs(slowMoRate - rate) < 0.001;
             return (
               <TouchableOpacity
                 key={`rate-${rate}`}
@@ -622,7 +665,7 @@ function ClipPreviewModal({
                   previewStyles.rateChip,
                   active && previewStyles.rateChipActive,
                 ]}
-                onPress={() => setSlowMoRate(rate)}
+                onPress={() => setSlowMoRate(clampSlowMoRate(rate))}
               >
                 <Text
                   style={[
@@ -785,7 +828,7 @@ export default function UniversalCamera({
   const [showPreview, setShowPreview] = useState(false);
   const [showPostSheet, setShowPostSheet] = useState(false);
   const [slowMoEnabled, setSlowMoEnabled] = useState(false);
-  const [slowMoRate, setSlowMoRate] = useState(0.5);
+  const [slowMoRate, setSlowMoRate] = useState<SlowMoRate>(0.5);
   const [slowMoStartSec, setSlowMoStartSec] = useState(0);
   const [slowMoEndSec, setSlowMoEndSec] = useState(15);
 
@@ -914,12 +957,35 @@ export default function UniversalCamera({
     }, 1000);
   }, [clearElapsedTimer]);
 
+  /**
+   * Hard reset of preview / post / slow-mo session state.
+   * Prevents stale trimmer/rate indexes from crashing the next recording.
+   */
+  const resetCreationSession = useCallback(
+    (opts?: { keepModePill?: boolean }) => {
+      setShowPreview(false);
+      setShowPostSheet(false);
+      setRecordedVideoUri(null);
+      setSlowMoEnabled(false);
+      setSlowMoRate(0.5);
+      setSlowMoStartSec(0);
+      setSlowMoEndSec(safeDurationSec(selectedDuration || recordLimit, 15));
+      recordingLockRef.current = false;
+      setIsRecording(false);
+      clearElapsedTimer();
+      setCameraError('');
+      if (!opts?.keepModePill) {
+        /* leave pill alone unless caller asks */
+      }
+    },
+    [selectedDuration, recordLimit, clearElapsedTimer]
+  );
+
   const safeNavigateHome = useCallback(
     (params: Record<string, unknown>) => {
       if (navigatingRef.current) return;
       navigatingRef.current = true;
-      setShowPreview(false);
-      setShowPostSheet(false);
+      resetCreationSession();
       setHubOpen(false);
       // 300ms after sheet close — prevents SPARKS/JOSH unmount race crashes
       setTimeout(() => {
@@ -937,7 +1003,7 @@ export default function UniversalCamera({
         }
       }, 300);
     },
-    [navigation]
+    [navigation, resetCreationSession]
   );
 
   const handleClose = useCallback(() => {
@@ -948,14 +1014,13 @@ export default function UniversalCamera({
         /* ignore */
       }
     }
-    setShowPreview(false);
-    setShowPostSheet(false);
+    resetCreationSession();
     setHubOpen(false);
     setTimeout(() => {
       if (navigation?.canGoBack?.()) navigation.goBack?.();
       else navigation?.navigate?.('Main', { tab: 'Arena' });
     }, 80);
-  }, [isRecording, navigation]);
+  }, [isRecording, navigation, resetCreationSession]);
 
   const openBattleChallengeForm = useCallback(() => {
     setShowPreview(false);
@@ -1010,6 +1075,16 @@ export default function UniversalCamera({
       return;
     }
 
+    // Clear any prior preview/post/slomo before a new take (crash guard)
+    setShowPreview(false);
+    setShowPostSheet(false);
+    setRecordedVideoUri(null);
+    setSlowMoEnabled(false);
+    setSlowMoRate(0.5);
+    setSlowMoStartSec(0);
+    setSlowMoEndSec(safeDurationSec(recordLimit, 15));
+    setCameraError('');
+
     recordingLockRef.current = true;
     setIsRecording(true);
     fadeTimePill(true);
@@ -1032,12 +1107,18 @@ export default function UniversalCamera({
         return;
       }
 
+      const clipDur = safeDurationSec(recordLimit, 15);
       setRecordedVideoUri(uri);
-      setSlowMoEndSec(recordLimit);
+      setSlowMoEnabled(false);
+      setSlowMoRate(0.5);
+      setSlowMoStartSec(0);
+      setSlowMoEndSec(clipDur);
 
       if (mode === 'SPARKS' || mode === 'JOSH') {
+        setShowPostSheet(false);
         setShowPreview(true);
       } else {
+        setShowPreview(false);
         setShowPostSheet(true);
       }
     } catch (e) {
@@ -1045,6 +1126,9 @@ export default function UniversalCamera({
       clearElapsedTimer();
       setIsRecording(false);
       recordingLockRef.current = false;
+      setShowPreview(false);
+      setShowPostSheet(false);
+      setRecordedVideoUri(null);
       setCameraError('Could not save this clip. Try again.');
     }
   }, [
@@ -1109,16 +1193,20 @@ export default function UniversalCamera({
           : recordLimit;
 
       setCameraError('');
+      setShowPreview(false);
+      setShowPostSheet(false);
       setRecordedVideoUri(uri);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
-      setSlowMoEndSec(assetDurationSec);
+      setSlowMoEndSec(safeDurationSec(assetDurationSec, recordLimit));
       fadeTimePill(true);
 
       if (mode === 'SPARKS' || mode === 'JOSH') {
+        setShowPostSheet(false);
         setShowPreview(true);
       } else {
+        setShowPreview(false);
         setShowPostSheet(true);
       }
     } catch (err) {
@@ -1318,10 +1406,7 @@ export default function UniversalCamera({
           uri={recordedVideoUri}
           fallbackDuration={recordLimit}
           onRetake={() => {
-            setShowPreview(false);
-            setRecordedVideoUri(null);
-            setSlowMoEnabled(false);
-            setSlowMoRate(0.5);
+            resetCreationSession();
             revealTimePill();
           }}
           onNext={({
@@ -1330,10 +1415,17 @@ export default function UniversalCamera({
             slowMoStartSec: s,
             slowMoEndSec: e,
           }) => {
-            setSlowMoEnabled(sm);
-            setSlowMoRate(rate);
-            setSlowMoStartSec(s);
-            setSlowMoEndSec(e);
+            const clipDur = safeDurationSec(
+              e,
+              safeDurationSec(recordLimit, 15)
+            );
+            const start = Math.max(0, Number(s) || 0);
+            setSlowMoEnabled(!!sm);
+            setSlowMoRate(clampSlowMoRate(rate));
+            setSlowMoStartSec(
+              Number.isFinite(start) ? Math.min(start, clipDur - 0.5) : 0
+            );
+            setSlowMoEndSec(clipDur);
             setShowPreview(false);
             setTimeout(() => setShowPostSheet(true), 60);
           }}
@@ -1344,16 +1436,19 @@ export default function UniversalCamera({
         visible={showPostSheet}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowPostSheet(false)}
+        onRequestClose={() => {
+          setShowPostSheet(false);
+          setShowPreview(false);
+        }}
       >
         <CreationPostSheet
           mode={mode}
           videoUri={recordedVideoUri}
           slowMoEnabled={slowMoEnabled}
-          slowMoRate={slowMoRate}
-          slowMoStartSec={slowMoStartSec}
-          slowMoEndSec={slowMoEndSec}
-          durationSec={recordLimit}
+          slowMoRate={clampSlowMoRate(slowMoRate)}
+          slowMoStartSec={Math.max(0, Number(slowMoStartSec) || 0)}
+          slowMoEndSec={safeDurationSec(slowMoEndSec, recordLimit)}
+          durationSec={safeDurationSec(recordLimit, 15)}
           onClose={() => {
             setShowPreview(false);
             setShowPostSheet(false);
@@ -1374,6 +1469,8 @@ export default function UniversalCamera({
               timestamp: Date.now(),
               feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
             };
+            // Reset slomo/camera session BEFORE navigating home
+            resetCreationSession();
             safeNavigateHome({
               tab,
               ...(tab === 'Arena' ? { newArenaPost: safePost } : {}),

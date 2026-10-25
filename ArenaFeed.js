@@ -264,6 +264,8 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
+  /** When false, keep player mounted but paused (viewport lazy-play). */
+  active = true,
 }) {
   return (
     <View style={[styles.clipShell, style]} pointerEvents="none">
@@ -273,7 +275,8 @@ const ClipSurface = memo(function ClipSurface({
         style={styles.clipVideoFill}
         muted={muted}
         loop
-        autoPlay
+        autoPlay={active}
+        paused={!active}
         contentFit="cover"
         nativeControls={false}
       />
@@ -369,7 +372,12 @@ function ingestArenaPost(prev, post) {
   return [thread, ...prev];
 }
 
-const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) {
+const GeneralReelCard = memo(function GeneralReelCard({
+  item,
+  onOpen,
+  onHype,
+  active = true,
+}) {
   const [engageOpen, setEngageOpen] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -467,6 +475,7 @@ const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) 
         label={null}
         style={styles.reelFullBleed}
         muted={muted}
+        active={active}
       />
 
       <MuteToggleButton
@@ -542,12 +551,19 @@ const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) 
         </Animated.View>
 
         <TouchableOpacity
-          style={[styles.engageToggle, engageOpen && styles.engageToggleOpen]}
+          style={styles.engageToggle}
           onPress={() => setEngageOpen((v) => !v)}
           activeOpacity={0.85}
           accessibilityLabel={engageOpen ? 'Close engage menu' : 'Open engage menu'}
         >
-          <Text style={styles.engageToggleText}>{engageOpen ? '✕' : '⋮'}</Text>
+          <Text
+            style={[
+              styles.engageToggleText,
+              engageOpen && styles.engageToggleTextOpen,
+            ]}
+          >
+            {engageOpen ? '✕' : '⋮'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -560,7 +576,11 @@ const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) 
   );
 });
 
-const BattleCard = memo(function BattleCard({ item, onOpenResponses }) {
+const BattleCard = memo(function BattleCard({
+  item,
+  onOpenResponses,
+  active = true,
+}) {
   const responses = sortResponses(item.responses, 'top');
   const leader = responses[0];
   const responseCount = responses.length;
@@ -587,6 +607,7 @@ const BattleCard = memo(function BattleCard({ item, onOpenResponses }) {
             uri={item.challengeVideoUri}
             label={item.opponent}
             style={styles.splitClip}
+            active={active}
           />
         </View>
         <View style={styles.splitDivider}>
@@ -602,6 +623,7 @@ const BattleCard = memo(function BattleCard({ item, onOpenResponses }) {
                   : `@${leader.creator}`
                 : 'LEADER'
             }
+            active={active}
             style={styles.splitClip}
           />
         </View>
@@ -634,7 +656,22 @@ export default function ArenaFeed({ navigation, route }) {
   const [feedItems, setFeedItems] = useState(() => seedArenaFeed());
   const [hubThread, setHubThread] = useState(null);
   const [activeReel, setActiveReel] = useState(null);
+  /** Viewport-visible reel ids — only those decode/play (fast first paint). */
+  const [activeVideoIds, setActiveVideoIds] = useState(() => new Set());
   const ingestedIds = useRef(new Set());
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+    const next = new Set();
+    for (const entry of viewableItems || []) {
+      if (entry?.isViewable && entry?.item?.id != null) {
+        next.add(entry.item.id);
+      }
+    }
+    setActiveVideoIds(next);
+  }).current;
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 40,
+    minimumViewTime: 60,
+  }).current;
 
   const absorbPost = useCallback((post) => {
     if (!post) return;
@@ -720,18 +757,34 @@ export default function ArenaFeed({ navigation, route }) {
   }, []);
 
   const renderFeedItem = useCallback(
-    ({ item }) => {
+    ({ item, index }) => {
+      // Before first viewability pass, play the top 2 cells so launch feels instant
+      const active =
+        activeVideoIds.size === 0
+          ? index < 2
+          : activeVideoIds.has(item.id);
       if (item.type === 'reel') {
         return (
-          <GeneralReelCard item={item} onOpen={openReel} onHype={hypeReel} />
+          <GeneralReelCard
+            item={item}
+            onOpen={openReel}
+            onHype={hypeReel}
+            active={active}
+          />
         );
       }
       if (item.type === 'battle_thread') {
-        return <BattleCard item={item} onOpenResponses={openResponses} />;
+        return (
+          <BattleCard
+            item={item}
+            onOpenResponses={openResponses}
+            active={active}
+          />
+        );
       }
       return null;
     },
-    [openReel, openResponses, hypeReel]
+    [openReel, openResponses, hypeReel, activeVideoIds]
   );
 
   const feedKeyExtractor = useCallback((item) => String(item.id), []);
@@ -836,10 +889,13 @@ export default function ArenaFeed({ navigation, route }) {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
-        initialNumToRender={3}
-        maxToRenderPerBatch={4}
-        windowSize={7}
-        updateCellsBatchingPeriod={50}
+        // Lean first paint — decode only near-viewport cells
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+        updateCellsBatchingPeriod={40}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
       />
 
       <ArenaReelViewer
@@ -1041,24 +1097,26 @@ const styles = StyleSheet.create({
     zIndex: 14,
   },
   engageToggle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(232,236,233,0.35)',
+    // Icon-only — no dark circle bubble (matches mute megaphone)
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  engageToggleOpen: {
-    borderColor: FLAME_ORANGE,
-    backgroundColor: 'rgba(0, 0, 0,0.9)',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
   engageToggleText: {
     color: WHITE,
-    fontSize: 16,
+    fontSize: 22,
     fontWeight: '900',
+    lineHeight: 24,
     marginTop: -1,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  engageToggleTextOpen: {
+    color: FLAME_ORANGE,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
   },
   engageDrawer: {
     backgroundColor: 'rgba(0, 0, 0,0.92)',

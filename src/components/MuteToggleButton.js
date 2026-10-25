@@ -1,6 +1,6 @@
 /**
  * Floating mute / unmute — icon only (no circle/box).
- * BAWAAL megaphone assets with neon-white glow for any video background.
+ * White megaphone + black drop shadow so it floats over any video backdrop.
  */
 import React, { memo } from 'react';
 import { Pressable, View, Image, StyleSheet, Platform } from 'react-native';
@@ -21,8 +21,8 @@ function MuteToggleButton({ muted, onPress, style }) {
         style,
       ]}
     >
-      {/* Transparent glow host — no fill/border/circle; shadow needs a View on Android */}
-      <View style={styles.glow}>
+      {/* Transparent host — black drop shadow (no fill / border / circle) */}
+      <View style={styles.shadowHost}>
         <Image
           source={muted ? ICON_MUTED : ICON_UNMUTED}
           style={styles.icon}
@@ -45,15 +45,15 @@ const styles = StyleSheet.create({
     opacity: 0.72,
     transform: [{ scale: 0.92 }],
   },
-  glow: {
+  shadowHost: {
     backgroundColor: 'transparent',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 6,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 3,
     ...Platform.select({
       android: {
-        elevation: 8,
+        elevation: 5,
       },
       default: {},
     }),

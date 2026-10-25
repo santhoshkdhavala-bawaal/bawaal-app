@@ -143,10 +143,10 @@ function SafeFeedVideo({
       // Silence via volume only; keep muted=false for continuous video frames.
       p.muted = false;
       p.volume = mutedRef.current ? 0 : 1;
-      // Smooth start: keep ~15s ahead, resume after ~1.5s buffered (Android ExoPlayer)
+      // Fast start: ~5s ahead (maxBufferMs≈5000), play after ~0.5s buffered
       p.bufferOptions = {
-        preferredForwardBufferDuration: 15,
-        minBufferForPlayback: 1.5,
+        preferredForwardBufferDuration: 5,
+        minBufferForPlayback: 0.5,
         prioritizeTimeOverSizeThreshold: true,
         waitsToMinimizeStalling: true,
       };
@@ -162,8 +162,8 @@ function SafeFeedVideo({
     if (!player) return;
     try {
       player.bufferOptions = {
-        preferredForwardBufferDuration: 15,
-        minBufferForPlayback: 1.5,
+        preferredForwardBufferDuration: 5,
+        minBufferForPlayback: 0.5,
         prioritizeTimeOverSizeThreshold: true,
         waitsToMinimizeStalling: true,
       };
