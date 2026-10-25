@@ -460,7 +460,7 @@ function PostCreationSheet({
           console.warn('[PostCreationSheet] upload returned null — aborting post');
           Alert.alert(
             'Upload failed',
-            'Could not upload your video to BAWAAL cloud storage. Check your connection and that EXPO_PUBLIC_SUPABASE_ANON_KEY is the classic JWT anon key (eyJ…), then try again.',
+            'Could not upload your video to BAWAAL cloud storage. Check your connection and Supabase Storage settings, then try again. Your post was not published.',
             [{ text: 'OK' }]
           );
           return;
