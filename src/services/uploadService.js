@@ -70,37 +70,19 @@ export function isRemoteHttpsUri(uri) {
 }
 
 /**
- * Expand relative / incomplete Storage paths into the public object URL:
- * `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/...`
+ * Force the exact public bucket URL shape required for playback:
+ * `${SUPABASE_URL}/storage/v1/object/public/bawaalvideos/battles/${fileName}`
+ *
+ * Fixes missing `/public/` (audio may play via redirect; video/Android crashes).
  */
-export function toPublicFeedVideoUrl(raw) {
+export function ensurePublicBawaalVideoUrl(raw) {
   if (raw == null || typeof raw !== 'string') return null;
   let uri = raw.trim();
   if (!uri || uri === 'null' || uri === 'undefined') return null;
 
   const base = getEnvSupabaseUrl();
 
-  if (/^https:\/\//i.test(uri)) {
-    if (
-      uri.includes('/storage/v1/object/') &&
-      !uri.includes('/storage/v1/object/public/') &&
-      uri.includes('/bawaalvideos/')
-    ) {
-      uri = uri
-        .replace(
-          '/storage/v1/object/bawaalvideos/',
-          '/storage/v1/object/public/bawaalvideos/'
-        )
-        .replace(
-          '/storage/v1/object/sign/bawaalvideos/',
-          '/storage/v1/object/public/bawaalvideos/'
-        );
-    }
-    return uri;
-  }
-
-  if (/^http:\/\//i.test(uri)) return uri;
-
+  // Local device URIs — leave alone
   if (
     uri.startsWith('file://') ||
     uri.startsWith('content://') ||
@@ -110,15 +92,52 @@ export function toPublicFeedVideoUrl(raw) {
     return uri;
   }
 
+  // Insert /public/ when Storage object URL omits it
+  if (uri.includes('/storage/v1/object/') && uri.includes('bawaalvideos')) {
+    uri = uri
+      .replace(
+        '/storage/v1/object/bawaalvideos/',
+        '/storage/v1/object/public/bawaalvideos/'
+      )
+      .replace(
+        '/storage/v1/object/sign/bawaalvideos/',
+        '/storage/v1/object/public/bawaalvideos/'
+      )
+      .replace(
+        '/storage/v1/object/authenticated/bawaalvideos/',
+        '/storage/v1/object/public/bawaalvideos/'
+      );
+    // Collapse accidental double public
+    uri = uri.replace(
+      '/storage/v1/object/public/public/bawaalvideos/',
+      '/storage/v1/object/public/bawaalvideos/'
+    );
+  }
+
+  // Absolute http(s) after repair
+  if (/^https?:\/\//i.test(uri)) {
+    const rebuilt = uri.match(
+      /^(https?:\/\/[^/?#]+)\/storage\/v1\/object\/(?:public\/)?bawaalvideos\/(.+?)(?:\?.*)?$/i
+    );
+    if (rebuilt) {
+      return `${rebuilt[1]}/storage/v1/object/public/bawaalvideos/${rebuilt[2]}`;
+    }
+    return uri;
+  }
+
   if (!base) return null;
 
-  if (uri.startsWith('/storage/v1/object/public/')) return `${base}${uri}`;
-  if (uri.startsWith('storage/v1/object/public/')) return `${base}/${uri}`;
+  if (uri.startsWith('/storage/v1/object/public/bawaalvideos/')) {
+    return `${base}${uri}`;
+  }
   if (uri.startsWith('/storage/v1/object/bawaalvideos/')) {
     return `${base}${uri.replace(
       '/storage/v1/object/bawaalvideos/',
       '/storage/v1/object/public/bawaalvideos/'
     )}`;
+  }
+  if (uri.startsWith('storage/v1/object/public/bawaalvideos/')) {
+    return `${base}/${uri}`;
   }
 
   const cleaned = uri.replace(/^\//, '');
@@ -128,8 +147,17 @@ export function toPublicFeedVideoUrl(raw) {
   if (cleaned.startsWith('battles/')) {
     return `${base}/storage/v1/object/public/bawaalvideos/${cleaned}`;
   }
+  // Bare filename → battles/<file>
+  if (/^[\w.\-]+\.mp4$/i.test(cleaned)) {
+    return `${base}/storage/v1/object/public/bawaalvideos/battles/${cleaned}`;
+  }
 
   return null;
+}
+
+/** @deprecated Use ensurePublicBawaalVideoUrl — kept as stable alias for feed helpers */
+export function toPublicFeedVideoUrl(raw) {
+  return ensurePublicBawaalVideoUrl(raw);
 }
 
 /**
@@ -139,7 +167,7 @@ export function toPublicFeedVideoUrl(raw) {
 export function resolvePlayableVideoUri(source) {
   if (!source) return null;
   if (typeof source === 'string') {
-    return toPublicFeedVideoUrl(source.trim()) || source.trim() || null;
+    return ensurePublicBawaalVideoUrl(source.trim()) || source.trim() || null;
   }
 
   const candidates = [
@@ -155,17 +183,17 @@ export function resolvePlayableVideoUri(source) {
 
   for (const c of candidates) {
     if (typeof c === 'string' && isRemoteHttpsUri(c)) {
-      return toPublicFeedVideoUrl(c) || c.trim();
+      return ensurePublicBawaalVideoUrl(c) || c.trim();
     }
   }
   for (const c of candidates) {
     if (typeof c === 'string' && /^http:\/\//i.test(c.trim())) {
-      return toPublicFeedVideoUrl(c) || c.trim();
+      return ensurePublicBawaalVideoUrl(c) || c.trim();
     }
   }
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim().length > 0) {
-      return toPublicFeedVideoUrl(c) || c.trim();
+      return ensurePublicBawaalVideoUrl(c) || c.trim();
     }
   }
   return null;
@@ -290,13 +318,18 @@ export async function uploadVideoToSupabase(videoUri, fileName) {
     }
 
     if (isRemoteHttpsUri(resolvedUri)) {
-      console.log('UPLOAD_SKIP: already remote HTTPS');
-      return resolvedUri.trim();
+      const publicExisting =
+        ensurePublicBawaalVideoUrl(resolvedUri) || resolvedUri.trim();
+      console.log('UPLOAD_SKIP: already remote HTTPS ->', publicExisting);
+      return publicExisting;
     }
 
     const safeName = makeObjectFileName(fileName);
     const uploadUrl = buildUploadUrl(SUPABASE_URL, safeName);
-    const publicUrl = buildPublicUrl(SUPABASE_URL, safeName);
+    // Exact public playback URL (must include /public/)
+    const publicUrl =
+      ensurePublicBawaalVideoUrl(buildPublicUrl(SUPABASE_URL, safeName)) ||
+      buildPublicUrl(SUPABASE_URL, safeName);
 
     console.log('UPLOAD_REST_URL:', uploadUrl);
     console.log(

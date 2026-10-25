@@ -2,6 +2,8 @@
  * BAWAAL Battles feed store — persistent battlesList for Rewind + HOT FEATURE cards.
  * Page key: BAWAAL_BATTLES_PAGE
  */
+import { ensurePublicBawaalVideoUrl } from './src/services/uploadService';
+
 
 /** @typedef {'OPEN' | 'HOT' | 'LIVE' | 'SCHEDULED'} BattleStatus */
 
@@ -73,8 +75,11 @@ function pickVideoUri(source) {
   const https = candidates.find(
     (u) => typeof u === 'string' && /^https:\/\//i.test(u)
   );
-  if (https) return https;
-  return candidates.find((u) => typeof u === 'string' && u.length > 0) || null;
+  const raw =
+    https ||
+    candidates.find((u) => typeof u === 'string' && u.length > 0) ||
+    null;
+  return ensurePublicBawaalVideoUrl(raw) || raw || null;
 }
 
 /** Push an async Battle Rewind challenge — prepends to battlesList. */
@@ -96,10 +101,8 @@ export function pushBattleChallenge(battle) {
     target: String(battle.target || title),
     description: battle.description ?? null,
     videoUri,
-    publicCloudUrl:
-      typeof battle.publicCloudUrl === 'string' ? battle.publicCloudUrl : null,
-    remoteVideoUri:
-      typeof battle.remoteVideoUri === 'string' ? battle.remoteVideoUri : null,
+    publicCloudUrl: videoUri,
+    remoteVideoUri: videoUri,
     localVideoUri:
       typeof battle.localVideoUri === 'string' ? battle.localVideoUri : null,
     targetReps: Number(battle.targetReps) || 0,
@@ -129,10 +132,8 @@ export function pushHotFeatureBattle(feature) {
     id: feature.id || `live-bawaal-${timestamp}`,
     timestamp,
     videoUri,
-    publicCloudUrl:
-      typeof feature.publicCloudUrl === 'string' ? feature.publicCloudUrl : null,
-    remoteVideoUri:
-      typeof feature.remoteVideoUri === 'string' ? feature.remoteVideoUri : null,
+    publicCloudUrl: videoUri,
+    remoteVideoUri: videoUri,
     localVideoUri:
       typeof feature.localVideoUri === 'string' ? feature.localVideoUri : null,
     liveMatch: feature.liveMatch || {

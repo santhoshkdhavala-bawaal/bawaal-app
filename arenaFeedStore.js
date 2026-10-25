@@ -1,7 +1,7 @@
 /**
  * BAWAAL Arena feed store — persistent list so posts survive camera modal / freezeOnBlur.
  */
-import { toPublicFeedVideoUrl } from './src/services/uploadService';
+import { ensurePublicBawaalVideoUrl } from './src/services/uploadService';
 
 /** @type {object[]} */
 let arenaPosts = [];
@@ -17,6 +17,27 @@ function emit(post) {
   });
 }
 
+function pickPublicVideoUri(post) {
+  const candidates = [
+    post.publicCloudUrl,
+    post.remoteVideoUri,
+    post.videoUrl,
+    post.video_url,
+    post.videoUri,
+    post.recordedVideoUri,
+    post.uri,
+    post.localVideoUri,
+  ];
+  const httpsUri = candidates.find(
+    (u) => typeof u === 'string' && /^https:\/\//i.test(u)
+  );
+  const rawUri =
+    httpsUri ||
+    candidates.find((u) => typeof u === 'string' && u.length > 0) ||
+    null;
+  return ensurePublicBawaalVideoUrl(rawUri) || rawUri || null;
+}
+
 /**
  * Safely prepend a reel/challenge to the Arena feed.
  * Alias: addPost (used by SPARKS / JOSH publish path).
@@ -26,25 +47,8 @@ export function pushArenaPost(post) {
     if (!post || typeof post !== 'object') return null;
     const ts = Number(post.timestamp || post.createdAt) || Date.now();
     const id = String(post.id || `arena-${ts}`);
-    // Prefer remote HTTPS (Supabase) over temporary file:// URIs
-    const candidates = [
-      post.publicCloudUrl,
-      post.remoteVideoUri,
-      post.videoUrl,
-      post.video_url,
-      post.videoUri,
-      post.recordedVideoUri,
-      post.uri,
-      post.localVideoUri,
-    ];
-    const httpsUri = candidates.find(
-      (u) => typeof u === 'string' && /^https:\/\//i.test(u)
-    );
-    const rawUri =
-      httpsUri ||
-      candidates.find((u) => typeof u === 'string' && u.length > 0) ||
-      null;
-    const videoUri = toPublicFeedVideoUrl(rawUri) || rawUri;
+    // Always store the /object/public/bawaalvideos/... form for Android playback
+    const videoUri = pickPublicVideoUri(post);
     const normalized = {
       type: 'reel',
       sport: post.category || post.sport || 'GYM',
@@ -65,13 +69,13 @@ export function pushArenaPost(post) {
       videoUri,
       uri: videoUri,
       recordedVideoUri: videoUri,
-      publicCloudUrl:
-        typeof post.publicCloudUrl === 'string' ? post.publicCloudUrl : httpsUri || null,
-      remoteVideoUri:
-        typeof post.remoteVideoUri === 'string' ? post.remoteVideoUri : httpsUri || null,
+      publicCloudUrl: videoUri,
+      remoteVideoUri: videoUri,
       localVideoUri:
         typeof post.localVideoUri === 'string' ? post.localVideoUri : null,
     };
+
+    console.log('[arenaFeedStore] videoUri ->', videoUri);
 
     arenaPosts = [
       normalized,

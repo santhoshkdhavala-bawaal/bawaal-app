@@ -24,6 +24,7 @@ import {
   pushHotFeatureBattle,
 } from './battlesFeedStore';
 import {
+  ensurePublicBawaalVideoUrl,
   isRemoteHttpsUri,
   resolvePlayableVideoUri,
   sanitizeVideoUriForUpload,
@@ -152,10 +153,14 @@ export function dispatchToFeeds(
   payload: PostCreationPayload
 ): PostCreationPayload {
   const timestamp = Date.now();
-  const remote =
+  const remoteRaw =
     (typeof payload.publicCloudUrl === 'string' && payload.publicCloudUrl) ||
     (typeof payload.remoteVideoUri === 'string' && payload.remoteVideoUri) ||
+    (typeof payload.videoUri === 'string' && payload.videoUri) ||
     null;
+  // Always force /storage/v1/object/public/bawaalvideos/...
+  const remote =
+    (remoteRaw && ensurePublicBawaalVideoUrl(remoteRaw)) || remoteRaw || null;
   const local =
     (typeof payload.localVideoUri === 'string' && payload.localVideoUri) ||
     null;
@@ -166,13 +171,13 @@ export function dispatchToFeeds(
       remoteVideoUri: remote,
       videoUri: payload.videoUri,
       localVideoUri: local,
-    }) || null;
+    }) || remote || null;
   const title = safeStr(payload.title, 'BAWAAL Drop');
   const mediaMeta = {
     videoUri,
     uri: videoUri,
     recordedVideoUri: videoUri,
-    localVideoUri: local || payload.videoUri || null,
+    localVideoUri: local || null,
     publicCloudUrl: remote,
     remoteVideoUri: remote,
   };
@@ -499,9 +504,13 @@ function PostCreationSheet({
       const requiresCloudVideo = Boolean(localVideoUri) && mode !== 'BATTLE_BAWAAL';
 
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
-        publicCloudUrl = localVideoUri.trim();
+        publicCloudUrl =
+          ensurePublicBawaalVideoUrl(localVideoUri) || localVideoUri.trim();
       } else if (localVideoUri) {
-        publicCloudUrl = await uploadClipOrAbort(localVideoUri);
+        const uploaded = await uploadClipOrAbort(localVideoUri);
+        publicCloudUrl = uploaded
+          ? ensurePublicBawaalVideoUrl(uploaded) || uploaded
+          : null;
         if (!publicCloudUrl) {
           Alert.alert(
             'Upload failed',
@@ -515,8 +524,10 @@ function PostCreationSheet({
         return;
       }
 
-      // Safety: never create a feed/DB post without a playable remote URL
-      const playbackUri = publicCloudUrl;
+      // Exact public URL: .../storage/v1/object/public/bawaalvideos/battles/...
+      const playbackUri = publicCloudUrl
+        ? ensurePublicBawaalVideoUrl(publicCloudUrl) || publicCloudUrl
+        : null;
       if (requiresCloudVideo && !playbackUri) {
         console.error(
           '[PostCreationSheet] aborting post — missing publicCloudUrl after upload'
@@ -528,13 +539,30 @@ function PostCreationSheet({
         );
         return;
       }
+      if (
+        playbackUri &&
+        /\/storage\/v1\/object\//.test(playbackUri) &&
+        !playbackUri.includes('/object/public/')
+      ) {
+        console.error(
+          '[PostCreationSheet] refusing non-public Storage URL:',
+          playbackUri
+        );
+        Alert.alert(
+          'Upload failed',
+          'Cloud video URL is missing /public/ and cannot play. Post was not published.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      console.log('[PostCreationSheet] public playback URL:', playbackUri);
 
       const payload: PostCreationPayload = {
         mode,
         videoUri: playbackUri,
         localVideoUri,
-        publicCloudUrl,
-        remoteVideoUri: publicCloudUrl,
+        publicCloudUrl: playbackUri,
+        remoteVideoUri: playbackUri,
         title: trimmed,
         slowMoEnabled: !!slowMoEnabled,
         slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
