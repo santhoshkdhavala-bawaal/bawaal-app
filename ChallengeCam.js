@@ -39,7 +39,8 @@ function snapChallengeDuration(sec) {
 const ACTIVE_REC = '#FF0033';
 const PLATINUM = '#E5E5E5';
 const OBSIDIAN = '#000000';
-const VIDEO_QUALITY = '1080p';
+/** Balanced hardware encode — avoids oversized files / upload lag */
+const VIDEO_QUALITY = '720p';
 const TARGET_FPS = 30;
 
 /** Bundled opponent fallback when Arena does not pass a target URI. */

@@ -788,6 +788,26 @@ export default function UniversalCamera({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Camera / recorder lifecycle — stop recording + clear timers on unmount
+  useEffect(() => {
+    return () => {
+      recordingLockRef.current = false;
+      try {
+        cameraRef.current?.stopRecording?.();
+      } catch {
+        /* ignore */
+      }
+      if (elapsedTimerRef.current) {
+        clearInterval(elapsedTimerRef.current);
+        elapsedTimerRef.current = null;
+      }
+      if (hidePillTimerRef.current) {
+        clearTimeout(hidePillTimerRef.current);
+        hidePillTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const clearElapsedTimer = useCallback(() => {
     if (elapsedTimerRef.current) {
       clearInterval(elapsedTimerRef.current);
@@ -1069,6 +1089,7 @@ export default function UniversalCamera({
         facing={facing}
         mode="video"
         mute={false}
+        videoQuality="720p"
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(err) => {
           setCameraError(err?.message || 'Could not start camera.');

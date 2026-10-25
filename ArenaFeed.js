@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  memo,
+} from 'react';
 import {
   StyleSheet,
   Text,
@@ -251,7 +257,7 @@ function mapPostToReel(post) {
 
 function ClipSurface({ uri, label, style }) {
   return (
-    <View style={[styles.clipShell, style]}>
+    <View style={[styles.clipShell, style]} pointerEvents="none">
       <SafeFeedVideo
         uri={uri}
         label={label}
@@ -354,7 +360,7 @@ function ingestArenaPost(prev, post) {
   return [thread, ...prev];
 }
 
-function GeneralReelCard({ item, onOpen, onHype }) {
+const GeneralReelCard = memo(function GeneralReelCard({ item, onOpen, onHype }) {
   const [engageOpen, setEngageOpen] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const menuAnim = useRef(new Animated.Value(0)).current;
@@ -405,9 +411,15 @@ function GeneralReelCard({ item, onOpen, onHype }) {
     playFireBurst();
   }, [item.id, onHype, playFireBurst]);
 
+  /** Open reel modal via JS navigation only — never native VideoView fullscreen. */
   const openImmersive = useCallback(() => {
-    setEngageOpen(false);
-    onOpen?.(item);
+    try {
+      setEngageOpen(false);
+      setBanterOpen(false);
+      onOpen?.(item);
+    } catch (err) {
+      console.warn('[ArenaFeed] openImmersive failed:', err?.message || err);
+    }
   }, [item, onOpen]);
 
   const openBanterSheet = useCallback(() => {
@@ -435,9 +447,10 @@ function GeneralReelCard({ item, onOpen, onHype }) {
 
   return (
     <View style={styles.reelCard}>
+      {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
       <ClipSurface uri={item.videoUri} label={null} style={styles.reelFullBleed} />
 
-      {/* Middle-screen tap → Full Immersive View */}
+      {/* Safe middle tap → ArenaReelViewer (no native fullscreen) */}
       <Pressable
         style={styles.reelMiddleTap}
         onPress={openImmersive}
@@ -520,9 +533,9 @@ function GeneralReelCard({ item, onOpen, onHype }) {
       />
     </View>
   );
-}
+});
 
-function BattleCard({ item, onOpenResponses }) {
+const BattleCard = memo(function BattleCard({ item, onOpenResponses }) {
   const responses = sortResponses(item.responses, 'top');
   const leader = responses[0];
   const responseCount = responses.length;
@@ -587,7 +600,7 @@ function BattleCard({ item, onOpenResponses }) {
       </View>
     </View>
   );
-}
+});
 
 export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway } = useMainTabs();

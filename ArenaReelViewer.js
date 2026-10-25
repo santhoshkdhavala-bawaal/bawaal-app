@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
   TextInput,
@@ -48,15 +49,24 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const [showBanter, setShowBanter] = useState(false);
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [activeGifs, setActiveGifs] = useState([
     { id: 'g1', emoji: '🔥', x: 0.72, y: 0.28 },
     { id: 'g2', emoji: '💪', x: 0.18, y: 0.42 },
   ]);
+  const toastTimerRef = useRef(null);
 
-  const flashToast = (msg) => {
+  const flashToast = useCallback((msg) => {
     setToast(msg);
-    setTimeout(() => setToast(''), 1400);
-  };
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(''), 1400);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const uri = (() => {
     const raw =
@@ -79,9 +89,15 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setDraft('');
     setShowBanter(false);
     setMoreOpen(false);
+    setPaused(false);
     /* eslint-enable react-hooks/set-state-in-effect */
     return undefined;
   }, [visible, reel?.id, reel]);
+
+  const togglePlayPause = useCallback(() => {
+    // JS-only play/pause — never enter native VideoView fullscreen
+    setPaused((p) => !p);
+  }, []);
 
   if (!reel) return null;
 
@@ -122,7 +138,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
-        <View style={styles.videoShell}>
+        <View style={styles.videoShell} pointerEvents="box-none">
           {uri ? (
             <SafeFeedVideo
               key={`reel-video-${reel.id || uri}`}
@@ -131,6 +147,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
               muted={false}
               loop
               autoPlay
+              paused={paused}
               contentFit="cover"
               nativeControls={false}
             />
@@ -139,6 +156,17 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
               <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
             </View>
           )}
+          {/* Dedicated tap layer — play/pause only; banter/UI stay above */}
+          <Pressable
+            style={styles.videoTapLayer}
+            onPress={togglePlayPause}
+            accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+          />
+          {paused ? (
+            <View style={styles.pauseBadge} pointerEvents="none">
+              <Text style={styles.pauseBadgeText}>PAUSED</Text>
+            </View>
+          ) : null}
         </View>
 
         {activeGifs.map((g) => (
@@ -312,6 +340,32 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#000',
+  },
+  videoTapLayer: {
+    position: 'absolute',
+    top: '18%',
+    bottom: '32%',
+    left: '10%',
+    right: '22%',
+    zIndex: 4,
+  },
+  pauseBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '46%',
+    zIndex: 5,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  pauseBadgeText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.2,
   },
   placeholder: {
     width: '100%',

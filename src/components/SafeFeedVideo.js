@@ -92,6 +92,8 @@ export default function SafeFeedVideo({
   muted = true,
   loop = true,
   autoPlay = true,
+  /** When true, keep player mounted but paused (no remount). */
+  paused = false,
   contentFit = 'cover',
   label = null,
   nativeControls = false,
@@ -115,10 +117,41 @@ export default function SafeFeedVideo({
     try {
       p.loop = loop; // isLooping
       p.muted = muted;
+      // Smooth start: keep ~15s ahead, resume after ~1.5s buffered (Android ExoPlayer)
+      p.bufferOptions = {
+        preferredForwardBufferDuration: 15,
+        minBufferForPlayback: 1.5,
+        prioritizeTimeOverSizeThreshold: true,
+        waitsToMinimizeStalling: true,
+      };
     } catch (err) {
       console.log('Video Player Error:', err);
     }
   });
+
+  useEffect(() => {
+    if (!player) return;
+    try {
+      player.bufferOptions = {
+        preferredForwardBufferDuration: 15,
+        minBufferForPlayback: 1.5,
+        prioritizeTimeOverSizeThreshold: true,
+        waitsToMinimizeStalling: true,
+      };
+    } catch (_) {
+      /* older runtimes may ignore */
+    }
+  }, [player]);
+
+  useEffect(() => {
+    if (!player || failed) return;
+    try {
+      if (paused) player.pause?.();
+      else if (autoPlay) player.play?.();
+    } catch (err) {
+      console.log('Video Player Error:', err);
+    }
+  }, [player, paused, autoPlay, failed]);
 
   useEffect(() => {
     setFailed(false);
@@ -141,9 +174,11 @@ export default function SafeFeedVideo({
         if (cancelled) return;
         player.loop = loop;
         player.muted = muted;
-        if (autoPlay) {
+        if (autoPlay && !paused) {
           // shouldPlay
           player.play?.();
+        } else {
+          player.pause?.();
         }
       } catch (e) {
         console.log('Video Player Error:', e?.message || e);
@@ -165,7 +200,7 @@ export default function SafeFeedVideo({
           if (status === 'readyToPlay') {
             console.log('[SafeFeedVideo] onLoad / readyToPlay:', resolved);
             setLoading(false);
-            if (autoPlay) {
+            if (autoPlay && !paused) {
               try {
                 player.play?.();
               } catch (err) {
@@ -200,7 +235,7 @@ export default function SafeFeedVideo({
         /* ignore */
       }
     };
-  }, [player, resolved, playable, failed, loop, muted, autoPlay]);
+  }, [player, resolved, playable, failed, loop, muted, autoPlay, paused]);
 
   const onFirstFrameRender = () => {
     console.log('[SafeFeedVideo] onLoad / first frame decoded:', resolved);
@@ -240,12 +275,15 @@ export default function SafeFeedVideo({
       }
     >
       {/* Explicit dimensions — Android Surface/TextureView needs a sized parent */}
-      <View style={[styles.shell, style]}>
+      <View style={[styles.shell, style]} pointerEvents="box-none">
         <VideoView
           style={styles.video}
           player={player}
           contentFit={contentFit}
-          nativeControls={nativeControls}
+          nativeControls={false}
+          // Block native fullscreen intents — JS Pressables own all taps
+          fullscreenOptions={{ enable: false }}
+          pointerEvents="none"
           onFirstFrameRender={onFirstFrameRender}
           {...(Platform.OS === 'android'
             ? { surfaceType: 'textureView', useExoShutter: false }
@@ -257,7 +295,7 @@ export default function SafeFeedVideo({
           </View>
         )}
         {!!label && (
-          <View style={styles.cornerTag}>
+          <View style={styles.cornerTag} pointerEvents="none">
             <Text style={styles.cornerTagText}>{label}</Text>
           </View>
         )}
