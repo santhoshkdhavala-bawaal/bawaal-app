@@ -2,7 +2,7 @@
  * PostCreationSheet — Arena / Battles dispatch + branded BAWAAL success modal.
  * Closes modals safely (setTimeout) before onSuccess / navigation to prevent crashes.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -107,6 +107,8 @@ export type PostCreationSheetProps = {
   durationSec?: number;
   onClose: () => void;
   onSuccess: (payload?: PostCreationPayload) => void;
+  /** Kill any lingering preview / camera player audio before post or leave. */
+  onStopMedia?: () => void;
 };
 
 /** Minimalist Black & White — never neon orange */
@@ -390,6 +392,7 @@ function PostCreationSheet({
   durationSec,
   onClose,
   onSuccess,
+  onStopMedia,
 }: PostCreationSheetProps) {
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
@@ -410,6 +413,22 @@ function PostCreationSheet({
   const showBattleFields =
     mode === 'BATTLE_REWIND' || mode === 'BATTLE_BAWAAL';
 
+  const stopMedia = useCallback(() => {
+    try {
+      onStopMedia?.();
+    } catch (err) {
+      console.warn('[PostCreationSheet] onStopMedia failed:', err);
+    }
+  }, [onStopMedia]);
+
+  // Ghost-audio shield: stop preview players when this sheet mounts / unmounts
+  useEffect(() => {
+    stopMedia();
+    return () => {
+      stopMedia();
+    };
+  }, [stopMedia]);
+
   const clipHint = useMemo(() => {
     if (!videoUri) return 'No clip attached';
     const short = videoUri.split('/').pop() || videoUri;
@@ -420,6 +439,7 @@ function PostCreationSheet({
     const payload = pendingPayload;
     setSuccessVisible(false);
     setPendingPayload(null);
+    stopMedia();
     // Crash shield: close sheet, then delay onSuccess / goBack (unmount race)
     onClose();
     setTimeout(() => {
@@ -506,6 +526,9 @@ function PostCreationSheet({
         return;
       }
     }
+
+    // Kill any lingering preview audio BEFORE upload / navigation
+    stopMedia();
 
     // Paint loading UI first, then run upload after the next idle/frame
     setUploading(true);
@@ -620,7 +643,10 @@ function PostCreationSheet({
       <TouchableOpacity
         style={styles.dismissHit}
         activeOpacity={1}
-        onPress={onClose}
+        onPress={() => {
+          stopMedia();
+          onClose();
+        }}
         accessibilityLabel="Dismiss post sheet"
       />
 
@@ -636,7 +662,13 @@ function PostCreationSheet({
           <Text style={styles.headerTitle} numberOfLines={2}>
             {headerForMode(mode)}
           </Text>
-          <TouchableOpacity onPress={onClose} hitSlop={12}>
+          <TouchableOpacity
+            onPress={() => {
+              stopMedia();
+              onClose();
+            }}
+            hitSlop={12}
+          >
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
         </View>

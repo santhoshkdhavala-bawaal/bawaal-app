@@ -1,10 +1,9 @@
 /**
- * Instagram-style floating mute / unmute control.
- * Uses BAWAAL megaphone assets: bmute.png / bunmute.png.
- * Neon-white glow chip — readable on any video background.
+ * Floating mute / unmute — icon only (no circle/box).
+ * BAWAAL megaphone assets with neon-white glow for any video background.
  */
 import React, { memo } from 'react';
-import { Pressable, Image, StyleSheet, Platform } from 'react-native';
+import { Pressable, View, Image, StyleSheet, Platform } from 'react-native';
 
 const ICON_MUTED = require('../../assets/bmute.png');
 const ICON_UNMUTED = require('../../assets/bunmute.png');
@@ -13,58 +12,55 @@ function MuteToggleButton({ muted, onPress, style }) {
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={10}
+      hitSlop={14}
       accessibilityRole="button"
       accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
       style={({ pressed }) => [
-        styles.btn,
-        pressed && styles.btnPressed,
+        styles.hit,
+        pressed && styles.hitPressed,
         style,
       ]}
     >
-      <Image
-        source={muted ? ICON_MUTED : ICON_UNMUTED}
-        style={styles.icon}
-        resizeMode="contain"
-        // Force crisp bright white against dark glass chip
-        tintColor="#FFFFFF"
-      />
+      {/* Transparent glow host — no fill/border/circle; shadow needs a View on Android */}
+      <View style={styles.glow}>
+        <Image
+          source={muted ? ICON_MUTED : ICON_UNMUTED}
+          style={styles.icon}
+          resizeMode="contain"
+          tintColor="#FFFFFF"
+        />
+      </View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  btn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+  hit: {
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    // iOS neon white glow
+    padding: 4,
+  },
+  hitPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.92 }],
+  },
+  glow: {
+    backgroundColor: 'transparent',
     shadowColor: '#FFFFFF',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 8,
-    // Android glow
-    elevation: 6,
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
     ...Platform.select({
       android: {
-        // elevation alone is gray — reinforce edge with border
-        borderColor: 'rgba(255,255,255,0.95)',
+        elevation: 8,
       },
       default: {},
     }),
   },
-  btnPressed: {
-    opacity: 0.78,
-    transform: [{ scale: 0.94 }],
-  },
   icon: {
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     tintColor: '#FFFFFF',
   },
 });

@@ -376,6 +376,38 @@ const hubStyles = StyleSheet.create({
   },
 });
 
+/** Pause + unload so preview audio cannot ghost after Post / leave. */
+function stopAndUnloadPlayer(player: {
+  pause?: () => void;
+  muted?: boolean;
+  volume?: number;
+  replace?: (source: null) => void;
+  replaceAsync?: (source: null) => Promise<unknown>;
+} | null) {
+  if (!player) return;
+  try {
+    player.pause?.();
+  } catch {
+    /* ignore */
+  }
+  try {
+    player.muted = true;
+    player.volume = 0;
+  } catch {
+    /* ignore */
+  }
+  try {
+    // expo-video equivalent of unloadAsync — clears decoder + audio session
+    if (typeof player.replace === 'function') {
+      player.replace(null);
+    } else if (typeof player.replaceAsync === 'function') {
+      void player.replaceAsync(null);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function ClipPreviewModal({
   visible,
   uri,
@@ -418,18 +450,27 @@ function ClipPreviewModal({
     rateRef.current = slowMoRate > 0 ? slowMoRate : 1;
   }, [slowMoRate]);
 
-  const player = useVideoPlayer(uri ? { uri } : null, (p) => {
-    p.loop = true;
-    p.muted = false;
-    try {
-      p.timeUpdateEventInterval = 0.08;
-    } catch {
-      /* ignore */
+  // Only attach a source while the preview is on-screen — kills ghost audio
+  const player = useVideoPlayer(
+    visible && uri ? { uri } : null,
+    (p) => {
+      p.loop = true;
+      p.muted = false;
+      try {
+        p.timeUpdateEventInterval = 0.08;
+      } catch {
+        /* ignore */
+      }
     }
-  });
+  );
 
+  // Play / pause while visible; when hidden → hard stop + unload (ghost fix)
   useEffect(() => {
-    if (!player || !visible) return;
+    if (!player) return;
+    if (!visible) {
+      stopAndUnloadPlayer(player);
+      return;
+    }
     try {
       if (playing) player.play();
       else player.pause();
@@ -437,6 +478,13 @@ function ClipPreviewModal({
       /* ignore */
     }
   }, [player, playing, visible]);
+
+  // Unmount safety net — always tear down audio
+  useEffect(() => {
+    return () => {
+      stopAndUnloadPlayer(player);
+    };
+  }, [player]);
 
   useEffect(() => {
     if (!player || !visible) return;
@@ -492,6 +540,23 @@ function ClipPreviewModal({
       }
     };
   }, [player, visible]);
+
+  const handleRetake = useCallback(() => {
+    setPlaying(false);
+    stopAndUnloadPlayer(player);
+    onRetake();
+  }, [player, onRetake]);
+
+  const handleNextToPost = useCallback(() => {
+    setPlaying(false);
+    stopAndUnloadPlayer(player);
+    onNext({
+      slowMoEnabled,
+      slowMoRate: slowMoEnabled ? slowMoRate : 1,
+      slowMoStartSec: startSec,
+      slowMoEndSec: endSec,
+    });
+  }, [player, onNext, slowMoEnabled, slowMoRate, startSec, endSec]);
 
   if (!visible || !uri) return null;
 
@@ -575,21 +640,14 @@ function ClipPreviewModal({
         <View style={previewStyles.actions}>
           <TouchableOpacity
             style={previewStyles.secondaryBtn}
-            onPress={onRetake}
+            onPress={handleRetake}
             activeOpacity={0.85}
           >
             <Text style={previewStyles.secondaryText}>RETAKE</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={previewStyles.primaryBtn}
-            onPress={() =>
-              onNext({
-                slowMoEnabled,
-                slowMoRate: slowMoEnabled ? slowMoRate : 1,
-                slowMoStartSec: startSec,
-                slowMoEndSec: endSec,
-              })
-            }
+            onPress={handleNextToPost}
             activeOpacity={0.9}
           >
             <Text style={previewStyles.primaryText}>NEXT TO POST</Text>
@@ -1252,32 +1310,35 @@ export default function UniversalCamera({
         onToggleJosh3m={() => setJoshUnlocked3m((v) => !v)}
       />
 
-      <ClipPreviewModal
-        key={recordedVideoUri || 'preview'}
-        visible={showPreview}
-        uri={recordedVideoUri}
-        fallbackDuration={recordLimit}
-        onRetake={() => {
-          setShowPreview(false);
-          setRecordedVideoUri(null);
-          setSlowMoEnabled(false);
-          setSlowMoRate(0.5);
-          revealTimePill();
-        }}
-        onNext={({
-          slowMoEnabled: sm,
-          slowMoRate: rate,
-          slowMoStartSec: s,
-          slowMoEndSec: e,
-        }) => {
-          setSlowMoEnabled(sm);
-          setSlowMoRate(rate);
-          setSlowMoStartSec(s);
-          setSlowMoEndSec(e);
-          setShowPreview(false);
-          setTimeout(() => setShowPostSheet(true), 60);
-        }}
-      />
+      {/* Fully unmount preview when hidden so useVideoPlayer releases native audio */}
+      {showPreview && recordedVideoUri ? (
+        <ClipPreviewModal
+          key={recordedVideoUri}
+          visible
+          uri={recordedVideoUri}
+          fallbackDuration={recordLimit}
+          onRetake={() => {
+            setShowPreview(false);
+            setRecordedVideoUri(null);
+            setSlowMoEnabled(false);
+            setSlowMoRate(0.5);
+            revealTimePill();
+          }}
+          onNext={({
+            slowMoEnabled: sm,
+            slowMoRate: rate,
+            slowMoStartSec: s,
+            slowMoEndSec: e,
+          }) => {
+            setSlowMoEnabled(sm);
+            setSlowMoRate(rate);
+            setSlowMoStartSec(s);
+            setSlowMoEndSec(e);
+            setShowPreview(false);
+            setTimeout(() => setShowPostSheet(true), 60);
+          }}
+        />
+      ) : null}
 
       <Modal
         visible={showPostSheet}
@@ -1293,7 +1354,14 @@ export default function UniversalCamera({
           slowMoStartSec={slowMoStartSec}
           slowMoEndSec={slowMoEndSec}
           durationSec={recordLimit}
-          onClose={() => setShowPostSheet(false)}
+          onClose={() => {
+            setShowPreview(false);
+            setShowPostSheet(false);
+          }}
+          onStopMedia={() => {
+            // Belt-and-suspenders: ensure preview is gone before/during upload
+            setShowPreview(false);
+          }}
           onSuccess={(payload) => {
             if (payload) onPublished?.(payload);
             const tab =
