@@ -116,7 +116,10 @@ export default function SafeFeedVideo({
   const player = useVideoPlayer(playerSource, (p) => {
     try {
       p.loop = loop; // isLooping
-      p.muted = muted;
+      // Never flip native `muted` (Android tears down decoder → black flash).
+      // Silence via volume only; keep muted=false for continuous video frames.
+      p.muted = false;
+      p.volume = muted ? 0 : 1;
       // Smooth start: keep ~15s ahead, resume after ~1.5s buffered (Android ExoPlayer)
       p.bufferOptions = {
         preferredForwardBufferDuration: 15,
@@ -153,10 +156,12 @@ export default function SafeFeedVideo({
     }
   }, [player, paused, autoPlay, failed]);
 
+  // Soft mute: volume 0/1 — keeps decoder + VideoView mounted (no black flicker)
   useEffect(() => {
     if (!player) return;
     try {
-      player.muted = muted;
+      player.muted = false;
+      player.volume = muted ? 0 : 1;
     } catch (err) {
       console.log('Video Player Error:', err);
     }
@@ -182,7 +187,8 @@ export default function SafeFeedVideo({
         }
         if (cancelled) return;
         player.loop = loop;
-        player.muted = muted;
+        player.muted = false;
+        player.volume = muted ? 0 : 1;
         if (autoPlay && !paused) {
           // shouldPlay
           player.play?.();
