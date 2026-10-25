@@ -377,6 +377,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
   onOpen,
   onHype,
   active = true,
+  /** When true, this card is open in ArenaReelViewer — hide duplicate mute/menu. */
+  immersiveOpen = false,
 }) {
   const [engageOpen, setEngageOpen] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
@@ -434,11 +436,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
     try {
       setEngageOpen(false);
       setBanterOpen(false);
-      onOpen?.(item);
+      // Pass current mute so immersive inherits audio without a second control flash
+      onOpen?.(item, { muted });
     } catch (err) {
       console.warn('[ArenaFeed] openImmersive failed:', err?.message || err);
     }
-  }, [item, onOpen]);
+  }, [item, onOpen, muted]);
 
   const openBanterSheet = useCallback(() => {
     setEngageOpen(false);
@@ -475,14 +478,18 @@ const GeneralReelCard = memo(function GeneralReelCard({
         label={null}
         style={styles.reelFullBleed}
         muted={muted}
-        active={active}
+        // Pause feed decoder while immersive uses the same URI (no double-audio / lag)
+        active={active && !immersiveOpen}
       />
 
-      <MuteToggleButton
-        muted={muted}
-        onPress={toggleMute}
-        style={styles.reelMuteBtn}
-      />
+      {/* Hide feed mute while fullscreen is open — prevents duplicate megaphones */}
+      {!immersiveOpen ? (
+        <MuteToggleButton
+          muted={muted}
+          onPress={toggleMute}
+          style={styles.reelMuteBtn}
+        />
+      ) : null}
 
       {/* Safe middle tap → ArenaReelViewer (no native fullscreen) */}
       <Pressable
@@ -513,59 +520,63 @@ const GeneralReelCard = memo(function GeneralReelCard({
         </Text>
       </View>
 
-      <View style={styles.reelEngageWrap}>
-        <Animated.View
-          pointerEvents={engageOpen ? 'auto' : 'none'}
-          style={[
-            styles.engageDrawer,
-            {
-              opacity: menuOpacity,
-              transform: [{ translateY: menuTranslateY }],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.reelActionBtn}
-            onPress={onFirePress}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.reelActionEmoji}>🔥</Text>
-            <Text style={styles.reelActionCount}>{item.hypeCount || 0}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.reelActionBtn}
-            onPress={openBanterSheet}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.reelActionEmoji}>💬</Text>
-            <Text style={styles.reelActionCount}>BANTER</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.reelActionBtn}
-            onPress={onSharePress}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.reelActionEmoji}>🚀</Text>
-            <Text style={styles.reelActionCount}>SHARE</Text>
-          </TouchableOpacity>
-        </Animated.View>
-
-        <TouchableOpacity
-          style={styles.engageToggle}
-          onPress={() => setEngageOpen((v) => !v)}
-          activeOpacity={0.85}
-          accessibilityLabel={engageOpen ? 'Close engage menu' : 'Open engage menu'}
-        >
-          <Text
+      {!immersiveOpen ? (
+        <View style={styles.reelEngageWrap}>
+          <Animated.View
+            pointerEvents={engageOpen ? 'auto' : 'none'}
             style={[
-              styles.engageToggleText,
-              engageOpen && styles.engageToggleTextOpen,
+              styles.engageDrawer,
+              {
+                opacity: menuOpacity,
+                transform: [{ translateY: menuTranslateY }],
+              },
             ]}
           >
-            {engageOpen ? '✕' : '⋮'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <TouchableOpacity
+              style={styles.reelActionBtn}
+              onPress={onFirePress}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reelActionEmoji}>🔥</Text>
+              <Text style={styles.reelActionCount}>{item.hypeCount || 0}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.reelActionBtn}
+              onPress={openBanterSheet}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reelActionEmoji}>💬</Text>
+              <Text style={styles.reelActionCount}>BANTER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.reelActionBtn}
+              onPress={onSharePress}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.reelActionEmoji}>🚀</Text>
+              <Text style={styles.reelActionCount}>SHARE</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <TouchableOpacity
+            style={styles.engageToggle}
+            onPress={() => setEngageOpen((v) => !v)}
+            activeOpacity={0.85}
+            accessibilityLabel={
+              engageOpen ? 'Close engage menu' : 'Open engage menu'
+            }
+          >
+            <Text
+              style={[
+                styles.engageToggleText,
+                engageOpen && styles.engageToggleTextOpen,
+              ]}
+            >
+              {engageOpen ? '✕' : '⋮'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <BanterBottomSheet
         visible={banterOpen}
@@ -656,6 +667,9 @@ export default function ArenaFeed({ navigation, route }) {
   const [feedItems, setFeedItems] = useState(() => seedArenaFeed());
   const [hubThread, setHubThread] = useState(null);
   const [activeReel, setActiveReel] = useState(null);
+  /** Keep last reel mounted under the modal so reopen skips a cold buffer. */
+  const [warmReel, setWarmReel] = useState(null);
+  const [immersiveMuted, setImmersiveMuted] = useState(false);
   /** Viewport-visible reel ids — only those decode/play (fast first paint). */
   const [activeVideoIds, setActiveVideoIds] = useState(() => new Set());
   const ingestedIds = useRef(new Set());
@@ -748,7 +762,9 @@ export default function ArenaFeed({ navigation, route }) {
     [activeTab, feedItems]
   );
 
-  const openReel = useCallback((item) => {
+  const openReel = useCallback((item, opts) => {
+    setImmersiveMuted(!!opts?.muted);
+    setWarmReel(item);
     setActiveReel(item);
   }, []);
 
@@ -770,6 +786,7 @@ export default function ArenaFeed({ navigation, route }) {
             onOpen={openReel}
             onHype={hypeReel}
             active={active}
+            immersiveOpen={activeReel?.id === item.id}
           />
         );
       }
@@ -784,7 +801,7 @@ export default function ArenaFeed({ navigation, route }) {
       }
       return null;
     },
-    [openReel, openResponses, hypeReel, activeVideoIds]
+    [openReel, openResponses, hypeReel, activeVideoIds, activeReel?.id]
   );
 
   const feedKeyExtractor = useCallback((item) => String(item.id), []);
@@ -900,7 +917,8 @@ export default function ArenaFeed({ navigation, route }) {
 
       <ArenaReelViewer
         visible={!!activeReel}
-        reel={activeReel}
+        reel={activeReel || warmReel}
+        initialMuted={immersiveMuted}
         onClose={() => setActiveReel(null)}
       />
       <ResponseReelDrawer
@@ -1103,6 +1121,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 6,
     paddingHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 6,
   },
   engageToggleText: {
     color: WHITE,
@@ -1111,7 +1134,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     marginTop: -1,
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
+    textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
   engageToggleTextOpen: {

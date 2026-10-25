@@ -834,6 +834,8 @@ export default function UniversalCamera({
 
   const cameraRef = useRef<CameraView>(null);
   const recordingLockRef = useRef(false);
+  /** Bumped after each publish/close so CameraView remounts a clean native recorder. */
+  const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hidePillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigatingRef = useRef(false);
@@ -922,6 +924,35 @@ export default function UniversalCamera({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const clearElapsedTimer = useCallback(() => {
+    if (elapsedTimerRef.current) {
+      clearInterval(elapsedTimerRef.current);
+      elapsedTimerRef.current = null;
+    }
+  }, []);
+
+  const clearHidePillTimer = useCallback(() => {
+    if (hidePillTimerRef.current) {
+      clearTimeout(hidePillTimerRef.current);
+      hidePillTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Release native recorder resources so a second take never hits a stale session.
+   */
+  const releaseCameraRecorder = useCallback(() => {
+    const cam = cameraRef.current;
+    recordingLockRef.current = false;
+    try {
+      cam?.stopRecording?.();
+    } catch {
+      /* ignore — may not be recording */
+    }
+    setIsRecording(false);
+    clearElapsedTimer();
+  }, [clearElapsedTimer]);
+
   // Camera / recorder lifecycle — stop recording + clear timers on unmount
   useEffect(() => {
     return () => {
@@ -942,13 +973,6 @@ export default function UniversalCamera({
     };
   }, []);
 
-  const clearElapsedTimer = useCallback(() => {
-    if (elapsedTimerRef.current) {
-      clearInterval(elapsedTimerRef.current);
-      elapsedTimerRef.current = null;
-    }
-  }, []);
-
   const startElapsedTimer = useCallback(() => {
     clearElapsedTimer();
     setElapsedSec(0);
@@ -958,11 +982,12 @@ export default function UniversalCamera({
   }, [clearElapsedTimer]);
 
   /**
-   * Hard reset of preview / post / slow-mo session state.
-   * Prevents stale trimmer/rate indexes from crashing the next recording.
+   * Hard reset of preview / post / slow-mo / camera session state.
+   * Prevents stale trimmer/rate indexes and recorder crashes on the next take.
    */
   const resetCreationSession = useCallback(
-    (opts?: { keepModePill?: boolean }) => {
+    (opts?: { remountCamera?: boolean }) => {
+      releaseCameraRecorder();
       setShowPreview(false);
       setShowPostSheet(false);
       setRecordedVideoUri(null);
@@ -970,15 +995,20 @@ export default function UniversalCamera({
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
       setSlowMoEndSec(safeDurationSec(selectedDuration || recordLimit, 15));
-      recordingLockRef.current = false;
-      setIsRecording(false);
-      clearElapsedTimer();
       setCameraError('');
-      if (!opts?.keepModePill) {
-        /* leave pill alone unless caller asks */
+      clearHidePillTimer();
+      if (opts?.remountCamera !== false) {
+        // Remount CameraView → fresh native recorder binding for multi-clip sessions
+        setIsCameraReady(false);
+        setCameraSessionKey((k) => k + 1);
       }
     },
-    [selectedDuration, recordLimit, clearElapsedTimer]
+    [
+      selectedDuration,
+      recordLimit,
+      releaseCameraRecorder,
+      clearHidePillTimer,
+    ]
   );
 
   const safeNavigateHome = useCallback(
@@ -1066,16 +1096,12 @@ export default function UniversalCamera({
       openBattleChallengeForm();
       return;
     }
-    if (
-      !cameraRef.current ||
-      !isCameraReady ||
-      isRecording ||
-      recordingLockRef.current
-    ) {
+    if (!isCameraReady || isRecording || recordingLockRef.current) {
       return;
     }
 
-    // Clear any prior preview/post/slomo before a new take (crash guard)
+    // Strict pre-roll cleanup — never start on a lingering recorder session
+    releaseCameraRecorder();
     setShowPreview(false);
     setShowPostSheet(false);
     setRecordedVideoUri(null);
@@ -1085,13 +1111,24 @@ export default function UniversalCamera({
     setSlowMoEndSec(safeDurationSec(recordLimit, 15));
     setCameraError('');
 
+    // Yield one frame so stopRecording settles before recordAsync
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+    });
+
+    const cam = cameraRef.current;
+    if (!cam) {
+      setCameraError('Camera not ready. Try again.');
+      return;
+    }
+
     recordingLockRef.current = true;
     setIsRecording(true);
     fadeTimePill(true);
     startElapsedTimer();
 
     try {
-      const video = await cameraRef.current.recordAsync({
+      const video = await cam.recordAsync({
         maxDuration: recordLimit,
       });
       const uri =
@@ -1123,13 +1160,14 @@ export default function UniversalCamera({
       }
     } catch (e) {
       console.error('[UniversalCamera] Recording error:', e);
-      clearElapsedTimer();
-      setIsRecording(false);
-      recordingLockRef.current = false;
+      releaseCameraRecorder();
       setShowPreview(false);
       setShowPostSheet(false);
       setRecordedVideoUri(null);
       setCameraError('Could not save this clip. Try again.');
+      // Remount camera after a failed record to clear native stuck state
+      setIsCameraReady(false);
+      setCameraSessionKey((k) => k + 1);
     }
   }, [
     mode,
@@ -1140,6 +1178,7 @@ export default function UniversalCamera({
     startElapsedTimer,
     clearElapsedTimer,
     openBattleChallengeForm,
+    releaseCameraRecorder,
   ]);
 
   const stopRecording = useCallback(() => {
@@ -1263,6 +1302,7 @@ export default function UniversalCamera({
       <StatusBar barStyle="light-content" />
 
       <CameraView
+        key={`bawaal-cam-${cameraSessionKey}`}
         ref={cameraRef}
         style={styles.camera}
         facing={facing}
@@ -1271,6 +1311,9 @@ export default function UniversalCamera({
         videoQuality="720p"
         onCameraReady={() => setIsCameraReady(true)}
         onMountError={(err) => {
+          recordingLockRef.current = false;
+          setIsRecording(false);
+          setIsCameraReady(false);
           setCameraError(err?.message || 'Could not start camera.');
         }}
       />
@@ -1454,8 +1497,9 @@ export default function UniversalCamera({
             setShowPostSheet(false);
           }}
           onStopMedia={() => {
-            // Belt-and-suspenders: ensure preview is gone before/during upload
+            // Kill preview + release any lingering recorder before/during upload
             setShowPreview(false);
+            releaseCameraRecorder();
           }}
           onSuccess={(payload) => {
             if (payload) onPublished?.(payload);
@@ -1469,8 +1513,9 @@ export default function UniversalCamera({
               timestamp: Date.now(),
               feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
             };
-            // Reset slomo/camera session BEFORE navigating home
-            resetCreationSession();
+            // Full recorder + session teardown BEFORE navigating (multi-clip safe)
+            releaseCameraRecorder();
+            resetCreationSession({ remountCamera: true });
             safeNavigateHome({
               tab,
               ...(tab === 'Arena' ? { newArenaPost: safePost } : {}),

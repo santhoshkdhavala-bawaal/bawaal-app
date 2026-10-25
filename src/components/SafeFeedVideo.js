@@ -202,6 +202,9 @@ function SafeFeedVideo({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [resolved]);
 
+  // Track last loaded URI so reopen / fullscreen handoff skips a full re-fetch
+  const lastLoadedUriRef = useRef(null);
+
   // Source load ONLY — muted / paused / autoPlay intentionally omitted from deps
   useEffect(() => {
     let cancelled = false;
@@ -211,9 +214,18 @@ function SafeFeedVideo({
     (async () => {
       if (!playable || !resolved || !player || failed) return;
       try {
-        console.log('[SafeFeedVideo] loading URI:', resolved);
-        if (typeof player.replaceAsync === 'function') {
-          await player.replaceAsync({ uri: resolved, contentType: 'auto' });
+        const alreadyLoaded = lastLoadedUriRef.current === resolved;
+        if (!alreadyLoaded) {
+          console.log('[SafeFeedVideo] loading URI:', resolved);
+          if (typeof player.replaceAsync === 'function') {
+            await player.replaceAsync({ uri: resolved, contentType: 'auto' });
+          }
+          if (cancelled) return;
+          lastLoadedUriRef.current = resolved;
+        } else {
+          // Same URI already buffered — skip replaceAsync (instant resume)
+          setLoading(false);
+          setHasFrame(true);
         }
         if (cancelled) return;
         player.loop = loop;

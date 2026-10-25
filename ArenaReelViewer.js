@@ -42,7 +42,13 @@ const DEMO_BANTER = [
  * LOCK-IN layout: single safe top header; right rail bottom:180 (HYPE/BANTER/MORE);
  * emoji quick-reactions above caption, hidden while Banter drawer is open.
  */
-export default function ArenaReelViewer({ visible, reel, onClose }) {
+export default function ArenaReelViewer({
+  visible,
+  reel,
+  onClose,
+  /** Inherit mute from the feed card so fullscreen doesn't flash a second control set. */
+  initialMuted = false,
+}) {
   const insets = useSafeAreaInsets();
   const [hype, setHype] = useState(0);
   const [banter, setBanter] = useState(DEMO_BANTER);
@@ -51,7 +57,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(!!initialMuted);
   const [activeGifs, setActiveGifs] = useState([
     { id: 'g1', emoji: '🔥', x: 0.72, y: 0.28 },
     { id: 'g2', emoji: '💪', x: 0.18, y: 0.42 },
@@ -92,10 +98,10 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setShowBanter(false);
     setMoreOpen(false);
     setPaused(false);
-    setMuted(false);
+    setMuted(!!initialMuted);
     /* eslint-enable react-hooks/set-state-in-effect */
     return undefined;
-  }, [visible, reel?.id, reel]);
+  }, [visible, reel?.id, reel, initialMuted]);
 
   const togglePlayPause = useCallback(() => {
     // JS-only play/pause — never enter native VideoView fullscreen
@@ -106,6 +112,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
     setMuted((m) => !m);
   }, []);
 
+  // Keep tree warm when closed (visible=false) so the same URI resumes instantly
   if (!reel) return null;
 
   const handle = reel.author?.startsWith('@')
@@ -142,19 +149,27 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
   const bottomStackPad = Math.max(insets.bottom, 12);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal
+      visible={visible}
+      // Instant open — no slide lag; feed already pre-buffered the same URI
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      presentationStyle="fullScreen"
+      hardwareAccelerated
+    >
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
         <View style={styles.videoShell} pointerEvents="box-none">
           {uri ? (
             <SafeFeedVideo
-              key={`reel-video-${reel.id || uri}`}
+              // Stable identity — do NOT remount on every open (avoids re-fetch lag)
               uri={uri}
               style={styles.videoFill}
               muted={muted}
               loop
-              autoPlay
-              paused={paused}
+              autoPlay={visible}
+              paused={paused || !visible}
               contentFit="cover"
               nativeControls={false}
             />
@@ -169,6 +184,7 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
             onPress={togglePlayPause}
             accessibilityLabel={paused ? 'Play video' : 'Pause video'}
           />
+          {/* Single mute control for immersive — feed card mute is hidden while open */}
           <MuteToggleButton
             muted={muted}
             onPress={toggleMute}
@@ -264,7 +280,9 @@ export default function ArenaReelViewer({ visible, reel, onClose }) {
             accessibilityRole="button"
             accessibilityLabel="More actions"
           >
-            <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
+            <View style={styles.moreShadowHost}>
+              <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
+            </View>
             <Text style={styles.actionCount}>MORE</Text>
           </TouchableOpacity>
         </View>
@@ -452,16 +470,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0, 0, 0,0.65)',
+    // Icon-only — no dark circle bubble
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(160,176,168,0.35)',
+    padding: 6,
   },
-  closeText: { color: WHITE, fontSize: 16, fontWeight: '700' },
+  closeText: {
+    color: WHITE,
+    fontSize: 18,
+    fontWeight: '700',
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
   actionStack: {
     position: 'absolute',
     right: 12,
@@ -472,18 +494,30 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     alignItems: 'center',
+    backgroundColor: 'transparent',
   },
   actionEmoji: {
     fontSize: 28,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  moreShadowHost: {
+    backgroundColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 6,
   },
   moreDots: {
     color: WHITE,
     fontSize: 28,
     fontWeight: '900',
     lineHeight: 30,
-    // Float over video — no circle; black drop shadow only
+    backgroundColor: 'transparent',
     textShadowColor: 'rgba(0, 0, 0, 0.8)',
-    textShadowOffset: { width: 0, height: 1 },
+    textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
   },
   actionCount: {
@@ -491,9 +525,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     marginTop: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   bottomStack: {
     position: 'absolute',
