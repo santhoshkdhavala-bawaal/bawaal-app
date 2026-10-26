@@ -1076,7 +1076,8 @@ export default function UniversalCamera({
         /* ignore */
       }
     }
-    resetCreationSession({ remountCamera: true });
+    // Soft reset only — remounting CameraView on every back makes the next open lag
+    resetCreationSession({ remountCamera: false });
     setHubOpen(false);
     setTimeout(() => {
       if (navigation?.canGoBack?.()) navigation.goBack?.();
@@ -1265,10 +1266,26 @@ export default function UniversalCamera({
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
       const picked = result.assets[0];
-      const uri = picked.uri;
-      const pickedAssetId =
+      let uri = picked.uri;
+      // Copy out of content:// so Android upload can read bytes reliably
+      try {
+        uri = (await stabilizeLocalVideoUri(uri)) || uri;
+      } catch (stabErr) {
+        console.warn(
+          '[UniversalCamera] gallery pick stabilize failed:',
+          (stabErr as Error)?.message || stabErr
+        );
+      }
+      const rawAssetId =
         typeof (picked as { assetId?: string | null }).assetId === 'string'
           ? (picked as { assetId?: string }).assetId || null
+          : null;
+      // Only keep a real MediaLibrary id (never a URI) for precise single-clip delete
+      const pickedAssetId =
+        rawAssetId &&
+        !/^(file|content|ph|assets-library|http):/i.test(rawAssetId) &&
+        !rawAssetId.includes('://')
+          ? rawAssetId
           : null;
       const assetDurationSec =
         typeof picked.duration === 'number' && picked.duration > 0

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Camera } from 'expo-camera';
 import CustomTabBar from './CustomTabBar';
 import ArenaFeed from './ArenaFeed';
 import BattlesScreen from './BattlesScreen';
@@ -73,6 +74,17 @@ export default function MainTabs({ navigation, route }) {
   ]);
 
   const openCreate = useCallback(() => {
+    // Pre-warm camera/mic permissions so UniversalCamera skips the grant spinner
+    void (async () => {
+      try {
+        await Promise.all([
+          Camera.requestCameraPermissionsAsync(),
+          Camera.requestMicrophonePermissionsAsync(),
+        ]);
+      } catch (err) {
+        console.warn('[MainTabs] camera prewarm failed:', err?.message || err);
+      }
+    })();
     // Central "+" → Universal Creation Engine (mode strip: SPARKS / JOSH / REWIND / BAWAAL)
     navigation?.navigate?.('UniversalCamera', {
       initialMode: 'SPARKS',

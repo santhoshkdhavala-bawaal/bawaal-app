@@ -522,10 +522,12 @@ async function uploadVideoBytes(
     },
   ];
 
-  // Android prefers Blob paths first; iOS still tries SDK then native binary
+  // Android: Blob/SDK first for file:// (required for reliable Storage body),
+  // then native FileSystem binary as last resort (avoids multipart corruption).
+  // iOS: SDK → native binary → Blob fetch.
   const ordered =
     Platform.OS === 'android'
-      ? attempts
+      ? [attempts[0], attempts[1], attempts[2]]
       : [attempts[0], attempts[2], attempts[1]];
 
   let lastErr = null;
@@ -630,10 +632,15 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
         fileUri = sanitizeVideoUriForUpload(persisted) || persisted;
       }
     } catch (persistErr) {
-      console.warn(
-        '[upload] persist skipped, using sanitized URI:',
-        persistErr?.message || persistErr
-      );
+      const persistMsg = persistErr?.message || String(persistErr);
+      console.warn('[upload] persist failed:', persistMsg);
+      // content:// often cannot be read as base64 — abort rather than upload junk
+      if (/^content:\/\//i.test(resolvedUri)) {
+        reportError(
+          `Could not copy gallery clip to app storage before upload: ${persistMsg}`
+        );
+        return null;
+      }
       fileUri = sanitizeVideoUriForUpload(resolvedUri) || resolvedUri;
     }
 

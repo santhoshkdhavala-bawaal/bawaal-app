@@ -34,6 +34,7 @@ import {
   uploadVideoToSupabase,
 } from './src/services/uploadService';
 import GalleryDeleteButton from './src/components/GalleryDeleteButton';
+import { normalizeMediaLibraryAssetId } from './src/services/galleryMediaService';
 
 /** Yield a frame so uploading indicators paint before native transfer starts. */
 function yieldToUI(): Promise<void> {
@@ -214,8 +215,9 @@ export async function dispatchToFeeds(
       tagline: payload.tagline || '#DailyGrind',
       creator: 'You',
       author: '@you',
-      category: 'ALL',
-      sport: 'ALL',
+      // GYM default so sport-tab filters still show the new post (ALL tab shows all)
+      category: 'GYM',
+      sport: 'GYM',
       target: title,
       timestamp,
       createdAt: timestamp,
@@ -421,9 +423,10 @@ function PostCreationSheet({
   const [clearedGalleryAssetId, setClearedGalleryAssetId] = useState<
     string | null
   >(null);
+  const safeGalleryAssetId = normalizeMediaLibraryAssetId(galleryAssetId);
   const linkedGalleryAssetId =
-    galleryAssetId && galleryAssetId !== clearedGalleryAssetId
-      ? galleryAssetId
+    safeGalleryAssetId && safeGalleryAssetId !== clearedGalleryAssetId
+      ? safeGalleryAssetId
       : null;
   const [successVisible, setSuccessVisible] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<PostCreationPayload | null>(
@@ -660,6 +663,17 @@ function PostCreationSheet({
         dispatched?.newPost?.id,
         dispatched?.newPost?.videoUri || dispatched?.videoUri
       );
+      if (dispatched?.newPost?._persistOk === false) {
+        console.warn(
+          '[PostCreationSheet] local feed updated but DB persist failed:',
+          dispatched?.newPost?._persistError
+        );
+        Alert.alert(
+          'Posted locally',
+          'Your clip is on this device feed, but cloud save failed. It may disappear after restart.',
+          [{ text: 'OK' }]
+        );
+      }
       setPendingPayload(dispatched);
       setSuccessVisible(true);
     } catch (err) {
@@ -722,6 +736,7 @@ function PostCreationSheet({
             <GalleryDeleteButton
               compact
               assetId={linkedGalleryAssetId}
+              label="Delete this clip only"
               onDeleted={(id: string) => {
                 setClearedGalleryAssetId(id || linkedGalleryAssetId);
                 onGalleryAssetDeleted?.();
@@ -729,18 +744,6 @@ function PostCreationSheet({
             />
           ) : null}
         </View>
-
-        {linkedGalleryAssetId ? (
-          <GalleryDeleteButton
-            assetId={linkedGalleryAssetId}
-            label="Delete clip from phone gallery"
-            onDeleted={(id: string) => {
-              setClearedGalleryAssetId(id || linkedGalleryAssetId);
-              onGalleryAssetDeleted?.();
-            }}
-            style={styles.galleryDeleteRow}
-          />
-        ) : null}
 
         <InlineError message={formError} onDismiss={() => setFormError('')} />
 
@@ -923,9 +926,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   clipHint: { color: '#737373', fontSize: 11, flex: 1 },
-  galleryDeleteRow: {
-    marginBottom: 10,
-  },
   inlineError: {
     backgroundColor: 'rgba(255,59,48,0.18)',
     borderColor: '#FF3B30',

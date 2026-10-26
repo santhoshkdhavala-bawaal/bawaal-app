@@ -105,7 +105,8 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const minSplashMs = 1600;
+    // Keep splash brief — session read is fast; long delay felt like feed lag
+    const minSplashMs = 400;
     const started = Date.now();
 
     (async () => {

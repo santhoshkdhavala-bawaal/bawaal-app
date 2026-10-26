@@ -156,14 +156,20 @@ export async function pushArenaPostAndPersist(post) {
         '[arenaFeedStore] DB persist failed (feed still updated locally):',
         res?.error || res?.reason
       );
+      return { ...normalized, _persistOk: false, _persistError: res?.error || res?.reason };
     }
+    return { ...normalized, _persistOk: true };
   } catch (err) {
     console.warn(
       '[arenaFeedStore] DB persist threw (feed still updated locally):',
       err?.message || err
     );
+    return {
+      ...normalized,
+      _persistOk: false,
+      _persistError: err?.message || String(err),
+    };
   }
-  return normalized;
 }
 
 export function getArenaPosts() {
@@ -172,14 +178,8 @@ export function getArenaPosts() {
 
 export function subscribeArenaPosts(fn) {
   listeners.add(fn);
-  // Catch-up: deliver current list (newest first) without wiping the store
-  arenaPosts.forEach((p) => {
-    try {
-      fn(p);
-    } catch (_) {
-      /* ignore */
-    }
-  });
+  // Do NOT catch-up emit every post here — that caused N setState storms on Arena mount.
+  // ArenaFeed already drains via drainPendingArenaPosts() before subscribe.
   return () => listeners.delete(fn);
 }
 

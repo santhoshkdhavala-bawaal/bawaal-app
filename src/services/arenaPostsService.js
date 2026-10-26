@@ -122,7 +122,8 @@ export async function fetchArenaPostsFromSupabase() {
       .select('*')
       .eq('feed', FEED)
       .order('created_at', { ascending: false })
-      .limit(100);
+      // Lean cold-start page — avoid hydrating 100 decodable rows at once
+      .limit(20);
 
     if (error) {
       console.warn(

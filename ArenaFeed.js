@@ -48,6 +48,12 @@ const FLAME_ORANGE = '#FF5722';
 const CRIMSON = LIVE_CRIMSON;
 const GOLD = FLAME_ORANGE;
 
+/** Stable FlatList viewability config — must not be recreated each render. */
+const ARENA_VIEWABILITY_CONFIG = {
+  itemVisiblePercentThreshold: 55,
+  minimumViewTime: 80,
+};
+
 const PERMANENT_SPORTS_TABS = [
   'ALL',
   'CRICKET',
@@ -690,7 +696,7 @@ export default function ArenaFeed({ navigation, route }) {
   /** Viewport-visible reel ids — only those decode/play (fast first paint). */
   const [activeVideoIds, setActiveVideoIds] = useState(() => new Set());
   const ingestedIds = useRef(new Set());
-  const onViewableItemsChanged = useRef(({ viewableItems }) => {
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const next = new Set();
     for (const entry of viewableItems || []) {
       if (entry?.isViewable && entry?.item?.id != null) {
@@ -698,12 +704,7 @@ export default function ArenaFeed({ navigation, route }) {
       }
     }
     setActiveVideoIds(next);
-  }).current;
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 40,
-    minimumViewTime: 60,
-  }).current;
-
+  }, []);
   const absorbPost = useCallback((post) => {
     if (!post) return;
     const key = post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
@@ -821,7 +822,12 @@ export default function ArenaFeed({ navigation, route }) {
     () =>
       activeTab === 'ALL'
         ? feedItems
-        : feedItems.filter((item) => item.sport === activeTab),
+        : feedItems.filter(
+            (item) =>
+              item.sport === activeTab ||
+              item.sport === 'ALL' ||
+              item.category === 'ALL'
+          ),
     [activeTab, feedItems]
   );
 
@@ -837,10 +843,10 @@ export default function ArenaFeed({ navigation, route }) {
 
   const renderFeedItem = useCallback(
     ({ item, index }) => {
-      // Before first viewability pass, play the top 2 cells so launch feels instant
+      // Before first viewability pass, warm only the top cell (avoid dual decoder lag)
       const active =
         activeVideoIds.size === 0
-          ? index < 2
+          ? index === 0
           : activeVideoIds.has(item.id);
       if (item.type === 'reel') {
         return (
@@ -972,11 +978,11 @@ export default function ArenaFeed({ navigation, route }) {
         removeClippedSubviews
         // Lean first paint — decode only near-viewport cells
         initialNumToRender={1}
-        maxToRenderPerBatch={2}
-        windowSize={4}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={1}
+        windowSize={3}
+        updateCellsBatchingPeriod={80}
         onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+        viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
       />
 
       <ArenaReelViewer
