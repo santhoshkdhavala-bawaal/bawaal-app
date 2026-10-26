@@ -1,31 +1,47 @@
 /**
- * Official BAWAAL verification tick ("blue tick").
- * Electric blue only — chrome stays monochrome.
+ * Official BAWAAL Verified badge — electric blue rounded square with bold "B".
+ * Replaces any standard checkmark / blue tick. Accent-only color against B&W UI.
  */
 import React, { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-/** Striking electric blue against B&W UI */
-export const VERIFIED_BLUE = '#0095F6';
+/** Electric blue — primary verification accent */
+export const VERIFIED_BLUE = '#00E5FF';
 
-function VerifiedBadge({ size = 14, style }) {
-  const dim = Math.max(10, size);
+/**
+ * @param {{ size?: number, style?: object, letterColor?: string }} props
+ */
+function VerifiedBadge({ size = 14, style, letterColor = '#000000' }) {
+  const dim = Math.max(12, size);
+  const radius = Math.max(3, Math.round(dim * 0.28));
+  const fontSize = Math.max(8, dim * 0.62);
+
   return (
     <View
-      accessibilityLabel="Verified account"
+      accessibilityLabel="BAWAAL Verified"
       accessibilityRole="image"
       style={[
         styles.badge,
         {
           width: dim,
           height: dim,
-          borderRadius: dim / 2,
+          borderRadius: radius,
         },
         style,
       ]}
     >
-      <Text style={[styles.check, { fontSize: dim * 0.62, lineHeight: dim }]}>
-        ✓
+      <Text
+        style={[
+          styles.letter,
+          {
+            color: letterColor,
+            fontSize,
+            lineHeight: dim,
+          },
+        ]}
+        allowFontScaling={false}
+      >
+        B
       </Text>
     </View>
   );
@@ -36,12 +52,16 @@ const styles = StyleSheet.create({
     backgroundColor: VERIFIED_BLUE,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    // Keeps badge optically centered next to @handle text
+    marginTop: 1,
   },
-  check: {
-    color: '#FFFFFF',
+  letter: {
     fontWeight: '900',
     textAlign: 'center',
     includeFontPadding: false,
+    textAlignVertical: 'center',
+    letterSpacing: 0,
   },
 });
 

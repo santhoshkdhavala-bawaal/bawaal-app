@@ -230,7 +230,7 @@ export function isHandleVerified(handle) {
   return Boolean(athlete?.verified);
 }
 
-/** Accent tokens — stats/metrics only (UI chrome stays B&W). Verification tick uses VERIFIED_BLUE. */
+/** Accent tokens — stats/metrics only (UI chrome stays B&W). Verified "B" badge uses VERIFIED_BLUE. */
 export const STAT_ACCENTS = {
   red: '#FF3B30',
   green: '#39FF14',

@@ -1,7 +1,7 @@
 /**
  * Full-page athlete passport — reels, photo grid, history.
  * Opened from Passport inline preview via "VIEW FULL PROFILE".
- * B&W chrome; accents only on stats/metrics + official blue tick.
+ * B&W chrome; accents only on stats/metrics + official BAWAAL "B" badge.
  */
 import React, { useMemo } from 'react';
 import {

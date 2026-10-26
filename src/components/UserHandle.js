@@ -1,5 +1,5 @@
 /**
- * @handle row with optional official VerifiedBadge.
+ * @handle row with optional BAWAAL Verified "B" badge.
  * Use across feeds, comments, and profile headers.
  */
 import React, { memo } from 'react';
@@ -24,7 +24,7 @@ function UserHandle({
   badgeSize,
 }) {
   const display = formatHandle(handle);
-  const showTick =
+  const showBadge =
     verified === true ||
     (verified !== false && isHandleVerified(display));
 
@@ -36,8 +36,8 @@ function UserHandle({
       >
         {display}
       </Text>
-      {showTick ? (
-        <VerifiedBadge size={badgeSize ?? Math.max(12, size - 1)} />
+      {showBadge ? (
+        <VerifiedBadge size={badgeSize ?? Math.max(13, size)} />
       ) : null}
     </View>
   );
