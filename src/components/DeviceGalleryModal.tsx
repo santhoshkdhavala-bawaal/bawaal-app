@@ -2,13 +2,15 @@
  * In-app device gallery — checkbox multi-select + delete only selected clips.
  * Also supports picking one video to import into the creation flow.
  */
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
   FlatList,
   Image,
   Modal,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -20,6 +22,14 @@ import {
   listDeviceVideos,
   openGallerySettings,
 } from '../services/galleryMediaService';
+
+const SCREEN_W = Dimensions.get('window').width;
+const GALLERY_GAP = 4;
+const GALLERY_PAD = 6;
+const GALLERY_COLS = 3;
+const GALLERY_CELL =
+  (SCREEN_W - GALLERY_PAD * 2 - GALLERY_GAP * (GALLERY_COLS - 1)) /
+  GALLERY_COLS;
 
 export type DeviceGalleryAsset = {
   id: string;
@@ -65,9 +75,10 @@ function DeviceGalleryModal({
   const selectedCount = selectedIds.size;
 
   const loadPage = useCallback(
-    async (opts?: { reset?: boolean; cursor?: string }) => {
+    async (opts?: { reset?: boolean; cursor?: string; soft?: boolean }) => {
       const reset = !!opts?.reset;
-      if (reset) {
+      const soft = !!opts?.soft;
+      if (reset && !soft) {
         setLoading(true);
         setSelectedIds(new Set());
       } else setRefreshing(true);
@@ -85,7 +96,7 @@ function DeviceGalleryModal({
         }
 
         const res = await listDeviceVideos({
-          first: 24,
+          first: 36,
           after: opts?.cursor,
         });
         if (!res.ok) {
@@ -113,6 +124,19 @@ function DeviceGalleryModal({
     },
     []
   );
+
+  // Warm permission + first page as soon as the modal becomes visible
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void (async () => {
+      await ensureGalleryReadPermission();
+      if (!cancelled) void loadPage({ reset: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, loadPage]);
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -160,7 +184,7 @@ function DeviceGalleryModal({
       const selected = selectedIds.has(item.id);
       return (
         <Pressable
-          style={styles.cell}
+          style={[styles.cell, { width: GALLERY_CELL }]}
           onPress={() => toggleSelect(item.id)}
           onLongPress={() => {
             if (onPickVideo) {
@@ -175,13 +199,19 @@ function DeviceGalleryModal({
           {item.uri ? (
             <Image
               source={{ uri: item.uri }}
-              style={styles.thumb}
+              style={[styles.thumb, { height: GALLERY_CELL }]}
               resizeMode="cover"
               fadeDuration={0}
             />
           ) : (
-            <View style={[styles.thumb, styles.thumbFallback]}>
-              <Text style={styles.thumbFallbackText}>🎬</Text>
+            <View
+              style={[
+                styles.thumb,
+                styles.thumbFallback,
+                { height: GALLERY_CELL },
+              ]}
+            >
+              <Text style={styles.thumbFallbackText}>CLIP</Text>
             </View>
           )}
           <View style={styles.durationPill}>
@@ -208,9 +238,6 @@ function DeviceGalleryModal({
       visible={visible}
       animationType="slide"
       onRequestClose={onClose}
-      onShow={() => {
-        void loadPage({ reset: true });
-      }}
       presentationStyle="fullScreen"
     >
       <View
@@ -277,22 +304,30 @@ function DeviceGalleryModal({
           <FlatList
             data={assets}
             keyExtractor={(item) => item.id}
-            numColumns={3}
+            numColumns={GALLERY_COLS}
             renderItem={renderItem}
             contentContainerStyle={styles.list}
-            refreshing={refreshing}
-            onRefresh={() => void loadPage({ reset: true })}
+            columnWrapperStyle={styles.row}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => void loadPage({ reset: true, soft: true })}
+                tintColor="#FFFFFF"
+                colors={['#FFFFFF']}
+                progressBackgroundColor="#121212"
+              />
+            }
             onEndReached={() => {
               if (hasNextPage && endCursor && !loading && !refreshing) {
                 void loadPage({ cursor: endCursor });
               }
             }}
-            onEndReachedThreshold={0.6}
-            initialNumToRender={12}
-            maxToRenderPerBatch={9}
-            windowSize={5}
+            onEndReachedThreshold={0.55}
+            initialNumToRender={18}
+            maxToRenderPerBatch={12}
+            windowSize={7}
             removeClippedSubviews
-            updateCellsBatchingPeriod={40}
+            updateCellsBatchingPeriod={32}
             ListEmptyComponent={
               <Text style={styles.empty}>No videos found on this device.</Text>
             }
@@ -372,13 +407,15 @@ const styles = StyleSheet.create({
     opacity: 0.35,
   },
   list: {
-    padding: 6,
+    paddingHorizontal: GALLERY_PAD,
+    paddingTop: GALLERY_PAD,
     paddingBottom: 24,
   },
+  row: {
+    gap: GALLERY_GAP,
+    marginBottom: GALLERY_GAP,
+  },
   cell: {
-    flex: 1 / 3,
-    aspectRatio: 0.72,
-    margin: 4,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: '#151515',
@@ -387,7 +424,6 @@ const styles = StyleSheet.create({
   },
   thumb: {
     width: '100%',
-    flex: 1,
     backgroundColor: '#222',
   },
   thumbFallback: {
@@ -395,7 +431,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   thumbFallbackText: {
-    fontSize: 22,
+    color: '#A0A0A0',
+    fontSize: 11,
+    fontWeight: '800',
   },
   durationPill: {
     position: 'absolute',

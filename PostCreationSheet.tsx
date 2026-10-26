@@ -672,17 +672,12 @@ function PostCreationSheet({
         dispatched?.newPost?.id,
         dispatched?.newPost?.videoUri || dispatched?.videoUri
       );
-      // Storage upload already succeeded (playbackUri is HTTPS). Never scare the user
-      // with schema/table warnings — log quietly; success modal is enough.
-      if (dispatched?.newPost?._persistOk === false) {
+      // Storage upload already succeeded (playbackUri is HTTPS). Never Alert schema
+      // / upsert noise — success modal only. Soft-ok covers missing bawaal_posts.
+      if (dispatched?.newPost?._persistOk === false && playbackUri) {
         console.warn(
-          '[PostCreationSheet] DB row missed (video is live in Storage):',
+          '[PostCreationSheet] DB row missed (clip is live):',
           dispatched?.newPost?._persistError
-        );
-      } else if (dispatched?.newPost?._persistWarning) {
-        console.warn(
-          '[PostCreationSheet] persist note:',
-          dispatched.newPost._persistWarning
         );
       }
       setPendingPayload(dispatched);

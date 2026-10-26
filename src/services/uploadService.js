@@ -553,26 +553,40 @@ async function uploadVideoBytes(
     },
   ];
 
-  // Android: Blob/SDK first for file:// (required for reliable Storage body),
-  // then native FileSystem binary as last resort (avoids multipart corruption).
-  // iOS: SDK → native binary → Blob fetch.
-  const ordered =
-    Platform.OS === 'android'
+  // Large F1 / racing clips: stream via native FileSystem first (no full-file
+  // ArrayBuffer in JS heap → fewer Android OOM crashes).
+  let fileSize = 0;
+  try {
+    const info = await FileSystem.getInfoAsync(fileUri);
+    fileSize = Number(info?.size) || 0;
+  } catch (_) {
+    /* ignore */
+  }
+  const LARGE_CLIP_BYTES = 6 * 1024 * 1024;
+  const preferStreaming =
+    Platform.OS === 'android' && fileSize >= LARGE_CLIP_BYTES;
+
+  // Android small: SDK → Blob → FS. Android large: FS → SDK → Blob.
+  // iOS: SDK → FS → Blob.
+  const ordered = preferStreaming
+    ? [attempts[2], attempts[0], attempts[1]]
+    : Platform.OS === 'android'
       ? [attempts[0], attempts[1], attempts[2]]
       : [attempts[0], attempts[2], attempts[1]];
 
   let lastErr = null;
   for (const step of ordered) {
     try {
-      console.log('[upload] trying', step.name);
+      console.log(
+        '[upload] trying',
+        step.name,
+        fileSize ? `(~${Math.round(fileSize / 1024 / 1024)}MB)` : ''
+      );
       await step.run();
       return true;
     } catch (err) {
       lastErr = err;
-      console.warn(
-        `[upload] ${step.name} failed:`,
-        err?.message || err
-      );
+      console.warn(`[upload] ${step.name} failed:`, err?.message || err);
     }
   }
   throw lastErr || new Error('All storage upload strategies failed');

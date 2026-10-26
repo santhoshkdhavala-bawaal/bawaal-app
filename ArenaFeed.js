@@ -17,6 +17,7 @@ import {
   Animated,
   Share,
   Easing,
+  RefreshControl,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { consumeLatestBattleClip, peekLatestBattleClip } from './battleClipStore';
@@ -25,6 +26,7 @@ import {
   drainPendingArenaPosts,
   getArenaPosts,
   hydrateArenaPostsFromSupabase,
+  refreshArenaPostsFromSupabase,
 } from './arenaFeedStore';
 import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
@@ -271,6 +273,20 @@ function videoIdentityKey(uri) {
   return clean;
 }
 
+/** Fresh publishes always sort above older cloud / demo clips (no MMA flash). */
+function feedSortScore(item) {
+  const ts = Number(item?.createdAt) || 0;
+  const fresh =
+    item?._freshPublish === true || ts > Date.now() - 120_000 ? 1e15 : 0;
+  return fresh + ts;
+}
+
+function sortFeedItems(list) {
+  return [...(list || [])].sort(
+    (a, b) => feedSortScore(b) - feedSortScore(a)
+  );
+}
+
 function mapPostToReel(post) {
   const uri = resolveFeedVideoUri(post);
   const ts = post.timestamp || post.createdAt || Date.now();
@@ -288,6 +304,10 @@ function mapPostToReel(post) {
     post.id || (videoKey ? `reel-${videoKey}` : `reel-${ts}-${author}`)
   );
   const sport = resolvePostSport(post, 'GYM');
+  const fresh =
+    post._freshPublish === true ||
+    ts > Date.now() - 120_000 ||
+    author === '@you';
   return {
     id,
     type: 'reel',
@@ -299,7 +319,35 @@ function mapPostToReel(post) {
     hypeCount: post.hypeCount || 0,
     videoUri: uri,
     createdAt: ts,
+    _freshPublish: !!fresh,
   };
+}
+
+function buildInitialFeed(route) {
+  let items = [];
+  const store = getArenaPosts();
+  if (store.length > 0) {
+    const ordered = [...store].sort(
+      (a, b) =>
+        (Number(a.timestamp || a.createdAt) || 0) -
+        (Number(b.timestamp || b.createdAt) || 0)
+    );
+    for (const post of ordered) {
+      items = ingestArenaPost(items, post);
+    }
+  } else {
+    items = seedArenaFeedLean();
+  }
+  const incoming = route?.params?.newArenaPost;
+  if (incoming) {
+    items = ingestArenaPost(items, {
+      ...incoming,
+      _freshPublish: true,
+      createdAt: Date.now(),
+      timestamp: Date.now(),
+    });
+  }
+  return sortFeedItems(items);
 }
 
 const ClipSurface = memo(function ClipSurface({
@@ -732,16 +780,19 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway } = useMainTabs();
   const [activeTab, setActiveTab] = useState('ALL');
   const [filtersOpen, setFiltersOpen] = useState(false);
-  // Lean seed for instant first paint — demos + cloud hydrate after idle
-  const [feedItems, setFeedItems] = useState(() => seedArenaFeedLean());
+  // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
+  const [feedItems, setFeedItems] = useState(() => buildInitialFeed(route));
   const [hubThread, setHubThread] = useState(null);
   const [activeReel, setActiveReel] = useState(null);
   /** Keep last reel mounted under the modal so reopen skips a cold buffer. */
   const [warmReel, setWarmReel] = useState(null);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   /** Viewport index ±1 — only those cells mount decoders (prefetch neighbors). */
   const [warmIndices, setWarmIndices] = useState(() => new Set([0, 1]));
   const ingestedIds = useRef(new Set());
+  const demosSeededRef = useRef(false);
+  const listRef = useRef(null);
   const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const next = new Set();
     for (const entry of viewableItems || []) {
@@ -763,15 +814,33 @@ export default function ArenaFeed({ navigation, route }) {
     const key = post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
     // Always re-ingest if this is a fresh publish (newer timestamp) so it stays at index 0
     const ts = Number(post.timestamp || post.createdAt) || 0;
-    const forceTop = ts > Date.now() - 15_000;
+    const forceTop =
+      post._freshPublish === true ||
+      ts > Date.now() - 120_000 ||
+      post.author === '@you' ||
+      post.creator === 'You' ||
+      post.creator === 'YOU';
     if (key && ingestedIds.current.has(key) && !forceTop) return;
     if (key) ingestedIds.current.add(key);
-    setFeedItems((prev) => {
-      const next = ingestArenaPost(prev, post);
-      return next.sort(
-        (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
-      );
-    });
+    setFeedItems((prev) =>
+      sortFeedItems(
+        ingestArenaPost(prev, {
+          ...post,
+          _freshPublish: forceTop || post._freshPublish,
+          createdAt: forceTop ? Date.now() : post.createdAt || ts,
+          timestamp: forceTop ? Date.now() : post.timestamp || ts,
+        })
+      )
+    );
+    if (forceTop) {
+      requestAnimationFrame(() => {
+        try {
+          listRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+        } catch (_) {
+          /* ignore */
+        }
+      });
+    }
   }, []);
 
   const hypeReel = useCallback((id) => {
@@ -817,27 +886,26 @@ export default function ArenaFeed({ navigation, route }) {
               if (key) ingestedIds.current.add(key);
               next = ingestArenaPost(next, post);
             }
-            // Stable newest-first (protects freshly uploaded clip at index 0)
-            return next.sort(
-              (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
-            );
+            // Fresh publishes stay pinned above older cloud / demo clips
+            return sortFeedItems(next);
           });
         }
 
         if (cancelled) return;
-        // Demo shells after cloud — never jump above real / just-posted clips
-        setFeedItems((prev) => {
-          let next = prev;
-          const seen = new Set(prev.map((p) => p.id));
-          for (const item of seedArenaFeedDemoBattles()) {
-            if (seen.has(item.id)) continue;
-            seen.add(item.id);
-            next = [...next, item];
-          }
-          return next.sort(
-            (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
-          );
-        });
+        // Demo shells once only — never re-seed on refresh (avoids MMA flash)
+        if (!demosSeededRef.current) {
+          demosSeededRef.current = true;
+          setFeedItems((prev) => {
+            let next = prev;
+            const seen = new Set(prev.map((p) => p.id));
+            for (const item of seedArenaFeedDemoBattles()) {
+              if (seen.has(item.id)) continue;
+              seen.add(item.id);
+              next = [...next, item];
+            }
+            return sortFeedItems(next);
+          });
+        }
       } catch (err) {
         console.warn(
           '[ArenaFeed] deferred hydrate failed:',
@@ -879,6 +947,7 @@ export default function ArenaFeed({ navigation, route }) {
     // Stamp as newest so hydrate / demos cannot bury it
     absorbPost({
       ...fromParams,
+      _freshPublish: true,
       createdAt: Date.now(),
       timestamp: Date.now(),
     });
@@ -892,19 +961,52 @@ export default function ArenaFeed({ navigation, route }) {
       if (fromParams) {
         absorbPost({
           ...fromParams,
+          _freshPublish: true,
           createdAt: Date.now(),
           timestamp: Date.now(),
         });
       }
       getArenaPosts().forEach(absorbPost);
       const fromStore = consumeLatestBattleClip();
-      if (fromStore) absorbPost(fromStore);
+      if (fromStore) absorbPost({ ...fromStore, _freshPublish: true });
       else {
         const peek = peekLatestBattleClip();
         if (peek) absorbPost(peek);
       }
     }, [absorbPost, route?.params?.newArenaPost])
   );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const posts = await refreshArenaPostsFromSupabase();
+      setFeedItems((prev) => {
+        // Keep freshly published clips pinned while merging cloud rows
+        let next = prev.filter(
+          (p) =>
+            p?._freshPublish ||
+            (Number(p?.createdAt) || 0) > Date.now() - 120_000
+        );
+        const ordered = [...(posts || [])].sort(
+          (a, b) =>
+            (Number(a.timestamp || a.createdAt) || 0) -
+            (Number(b.timestamp || b.createdAt) || 0)
+        );
+        for (const post of ordered) {
+          const key =
+            post.id ||
+            `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
+          if (key) ingestedIds.current.add(key);
+          next = ingestArenaPost(next, post);
+        }
+        return sortFeedItems(next);
+      });
+    } catch (err) {
+      console.warn('[ArenaFeed] pull-to-refresh failed:', err?.message || err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const visibleFeed = useMemo(() => {
     const tab = canonicalizeSport(activeTab) || 'ALL';
@@ -1103,6 +1205,7 @@ export default function ArenaFeed({ navigation, route }) {
       />
 
       <FlatList
+        ref={listRef}
         data={visibleFeed}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
@@ -1124,6 +1227,15 @@ export default function ArenaFeed({ navigation, route }) {
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
         // Remount list window when filter changes so indices/warm state stay correct
         extraData={`${activeTab}:${warmIndices.size}:${visibleFeed.length}`}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+            progressBackgroundColor="#121212"
+          />
+        }
       />
 
       <ArenaReelViewer

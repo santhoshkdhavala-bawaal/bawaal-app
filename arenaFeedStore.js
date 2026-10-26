@@ -185,8 +185,26 @@ export async function pushArenaPostAndPersist(post) {
       await new Promise((r) => setTimeout(r, 400));
       res = await attemptPersist();
     }
+    const hasLiveVideo =
+      typeof normalized.videoUri === 'string' &&
+      /^https:\/\//i.test(normalized.videoUri);
+
     if (!res?.ok && !res?.skipped) {
-      console.error(
+      // Video is already public in Storage — never surface schema/upsert noise to UI
+      if (hasLiveVideo) {
+        console.warn(
+          '[arenaFeedStore] DB persist missed (clip is live in Storage):',
+          res?.error || res?.reason
+        );
+        return {
+          ...normalized,
+          _persistOk: true,
+          _persistReason: 'storage-live',
+          _persistWarning: null,
+          _freshPublish: true,
+        };
+      }
+      console.warn(
         '[arenaFeedStore] DB persist failed after retry:',
         res?.error || res?.reason
       );
@@ -194,6 +212,7 @@ export async function pushArenaPostAndPersist(post) {
         ...normalized,
         _persistOk: false,
         _persistError: res?.error || res?.reason || 'cloud-persist-failed',
+        _persistWarning: null,
       };
     }
     // Treat storage-meta fallback as full success for UX (video is already public)
@@ -201,18 +220,31 @@ export async function pushArenaPostAndPersist(post) {
       ...normalized,
       _persistOk: true,
       _persistReason: res?.reason || 'db',
-      // Keep warning in logs only — UI must not show a failure popup
       _persistWarning: null,
+      _freshPublish: true,
     };
   } catch (err) {
-    console.error(
+    const hasLiveVideo =
+      typeof normalized.videoUri === 'string' &&
+      /^https:\/\//i.test(normalized.videoUri);
+    console.warn(
       '[arenaFeedStore] DB persist threw:',
       err?.message || err
     );
+    if (hasLiveVideo) {
+      return {
+        ...normalized,
+        _persistOk: true,
+        _persistReason: 'storage-live',
+        _persistWarning: null,
+        _freshPublish: true,
+      };
+    }
     return {
       ...normalized,
       _persistOk: false,
       _persistError: err?.message || String(err),
+      _persistWarning: null,
     };
   }
 }

@@ -145,8 +145,8 @@ function SafeFeedVideo({
       p.volume = mutedRef.current ? 0 : 1;
       // Fast start: short gate so first frame appears quickly while still buffering ahead
       p.bufferOptions = {
-        preferredForwardBufferDuration: 4,
-        minBufferForPlayback: 0.15,
+        preferredForwardBufferDuration: 8,
+        minBufferForPlayback: 0.1,
         prioritizeTimeOverSizeThreshold: true,
         waitsToMinimizeStalling: false,
       };
@@ -162,8 +162,8 @@ function SafeFeedVideo({
     if (!player) return;
     try {
       player.bufferOptions = {
-        preferredForwardBufferDuration: 4,
-        minBufferForPlayback: 0.15,
+        preferredForwardBufferDuration: 8,
+        minBufferForPlayback: 0.1,
         prioritizeTimeOverSizeThreshold: true,
         waitsToMinimizeStalling: false,
       };

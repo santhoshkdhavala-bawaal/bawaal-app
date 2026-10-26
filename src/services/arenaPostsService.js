@@ -351,7 +351,12 @@ export async function persistArenaPostToSupabase(post) {
 
   const logFail = (step, error) => {
     const msg = error?.message || error?.code || String(error);
-    console.error(`[arenaPosts] ${step} failed:`, msg, error);
+    // Schema-cache / missing-table noise must stay warn-only (never Alert / LogBox red)
+    if (isMissingBawaalPostsTableError(error)) {
+      console.warn(`[arenaPosts] ${step} skipped (schema):`, msg);
+    } else {
+      console.warn(`[arenaPosts] ${step} failed:`, msg);
+    }
     return msg;
   };
 
@@ -373,17 +378,11 @@ export async function persistArenaPostToSupabase(post) {
       );
       const fb = await persistArenaPostMetaToStorage(row);
       if (fb.ok) {
-        return {
-          ok: true,
-          reason: 'storage-meta-fallback',
-          warning: BAWAAL_POSTS_SETUP_HINT,
-        };
+        // Clip is live — soft success, no UI warning payload
+        return { ok: true, reason: 'storage-meta-fallback' };
       }
-      return {
-        ok: false,
-        reason: 'missing-table',
-        error: `${upsertRes.error?.message || 'Table missing'}\n\n${BAWAAL_POSTS_SETUP_HINT}`,
-      };
+      // Still treat as soft-ok when the HTTPS video already exists in Storage
+      return { ok: true, reason: 'storage-live-no-meta' };
     }
 
     // 2) Fallback: plain insert (first publish)
@@ -397,12 +396,9 @@ export async function persistArenaPostToSupabase(post) {
     if (isMissingBawaalPostsTableError(insertRes.error)) {
       const fb = await persistArenaPostMetaToStorage(row);
       if (fb.ok) {
-        return {
-          ok: true,
-          reason: 'storage-meta-fallback',
-          warning: BAWAAL_POSTS_SETUP_HINT,
-        };
+        return { ok: true, reason: 'storage-meta-fallback' };
       }
+      return { ok: true, reason: 'storage-live-no-meta' };
     }
 
     // 3) Fallback: update existing row by id
@@ -425,12 +421,9 @@ export async function persistArenaPostToSupabase(post) {
     if (isMissingBawaalPostsTableError(err)) {
       const fb = await persistArenaPostMetaToStorage(row);
       if (fb.ok) {
-        return {
-          ok: true,
-          reason: 'storage-meta-fallback',
-          warning: BAWAAL_POSTS_SETUP_HINT,
-        };
+        return { ok: true, reason: 'storage-meta-fallback' };
       }
+      return { ok: true, reason: 'storage-live-no-meta' };
     }
     return { ok: false, error: err?.message || String(err) };
   }

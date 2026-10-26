@@ -6,6 +6,7 @@
 import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +24,7 @@ import {
 import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import VerifiedBadge from './src/components/VerifiedBadge';
+import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -267,6 +269,7 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
 export default function ProfileScreen({ navigation }) {
   const { openProfileGateway } = useMainTabs();
   const [selected, setSelected] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [followedIds, setFollowedIds] = useState(
     () => new Set(FOLLOWING.map((a) => a.id))
   );
@@ -295,6 +298,19 @@ export default function ProfileScreen({ navigation }) {
     });
   }, [navigation, selected]);
 
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshArenaPostsFromSupabase();
+      // Re-sync follow set from demo graph (swap for Supabase follows later)
+      setFollowedIds(new Set(FOLLOWING.map((a) => a.id)));
+    } catch (err) {
+      console.warn('[Passport] refresh failed:', err?.message || err);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   return (
     <View style={styles.container}>
       <BrandHeader
@@ -316,6 +332,15 @@ export default function ProfileScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={WHITE}
+            colors={[WHITE]}
+            progressBackgroundColor={SURFACE}
+          />
+        }
       >
         {selected ? (
           <InlineAthletePreview
