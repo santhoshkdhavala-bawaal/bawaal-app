@@ -18,7 +18,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { addPost as addArenaPost, pushArenaPost } from './arenaFeedStore';
+import {
+  pushArenaPostAndPersist,
+  pushArenaPost,
+} from './arenaFeedStore';
 import {
   pushBattleChallenge,
   pushHotFeatureBattle,
@@ -30,6 +33,7 @@ import {
   sanitizeVideoUriForUpload,
   uploadVideoToSupabase,
 } from './src/services/uploadService';
+import GalleryDeleteButton from './src/components/GalleryDeleteButton';
 
 /** Yield a frame so uploading indicators paint before native transfer starts. */
 function yieldToUI(): Promise<void> {
@@ -105,10 +109,13 @@ export type PostCreationSheetProps = {
   slowMoStartSec?: number;
   slowMoEndSec?: number;
   durationSec?: number;
+  /** Media-library asset id for optional "delete from gallery" control. */
+  galleryAssetId?: string | null;
   onClose: () => void;
   onSuccess: (payload?: PostCreationPayload) => void;
   /** Kill any lingering preview / camera player audio before post or leave. */
   onStopMedia?: () => void;
+  onGalleryAssetDeleted?: () => void;
 };
 
 /** Minimalist Black & White — never neon orange */
@@ -163,9 +170,9 @@ function safeNum(v: unknown, fallback = 0): number {
 }
 
 /** SPARKS/JOSH → arenaFeedStore · REWIND/BAWAAL → battlesFeedStore */
-export function dispatchToFeeds(
+export async function dispatchToFeeds(
   payload: PostCreationPayload
-): PostCreationPayload {
+): Promise<PostCreationPayload> {
   const timestamp = Date.now();
   const remoteRaw =
     (typeof payload.publicCloudUrl === 'string' && payload.publicCloudUrl) ||
@@ -207,8 +214,8 @@ export function dispatchToFeeds(
       tagline: payload.tagline || '#DailyGrind',
       creator: 'You',
       author: '@you',
-      category: 'GYM',
-      sport: 'GYM',
+      category: 'ALL',
+      sport: 'ALL',
       target: title,
       timestamp,
       createdAt: timestamp,
@@ -223,8 +230,11 @@ export function dispatchToFeeds(
       hypeCount: 0,
       feed: 'ARENA',
     };
+    // Prepend local feed + await bawaal_posts upsert
     const arenaCard =
-      addArenaPost(arenaPayload) || pushArenaPost(arenaPayload) || arenaPayload;
+      (await pushArenaPostAndPersist(arenaPayload)) ||
+      pushArenaPost(arenaPayload) ||
+      arenaPayload;
 
     const newPost: FeedPostCard = {
       id: safeStr(arenaCard?.id, `arena-${timestamp}`),
@@ -390,9 +400,11 @@ function PostCreationSheet({
   slowMoStartSec = 0,
   slowMoEndSec,
   durationSec,
+  galleryAssetId = null,
   onClose,
   onSuccess,
   onStopMedia,
+  onGalleryAssetDeleted,
 }: PostCreationSheetProps) {
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
@@ -404,6 +416,15 @@ function PostCreationSheet({
   const [formError, setFormError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [uploadErrorDetail, setUploadErrorDetail] = useState('');
+  /** Cleared after user deletes from gallery — avoids syncing prop via useEffect. */
+  const [clearedGalleryAssetId, setClearedGalleryAssetId] = useState<
+    string | null
+  >(null);
+  const linkedGalleryAssetId =
+    galleryAssetId && galleryAssetId !== clearedGalleryAssetId
+      ? galleryAssetId
+      : null;
   const [successVisible, setSuccessVisible] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<PostCreationPayload | null>(
     null
@@ -472,12 +493,13 @@ function PostCreationSheet({
 
   /**
    * Upload clip → public HTTPS URL, or null (caller must NOT create a feed post).
-   * Native FileSystem task + InteractionManager keep the JS thread responsive.
+   * Local file:// → Blob/ArrayBuffer → Supabase `bawaalvideos` (see uploadService).
    */
   const uploadClipOrAbort = useCallback(
     async (rawLocalUri: string): Promise<string | null> => {
       const formattedUri = formatVideoUriForUpload(rawLocalUri);
       const fileName = `video_${Date.now()}.mp4`;
+      setUploadErrorDetail('');
 
       console.log('[PostCreationSheet] formattedUri ->', formattedUri);
       console.log('[PostCreationSheet] upload fileName ->', fileName);
@@ -485,7 +507,8 @@ function PostCreationSheet({
 
       try {
         const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName, {
-          onProgress: (pct) => setUploadPct(pct),
+          onProgress: (pct: number) => setUploadPct(pct),
+          onError: (msg: string) => setUploadErrorDetail(String(msg || '')),
         });
 
         if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
@@ -499,10 +522,9 @@ function PostCreationSheet({
         );
         return null;
       } catch (err) {
-        console.error(
-          '[PostCreationSheet] upload threw:',
-          (err as Error)?.message || err
-        );
+        const msg = (err as Error)?.message || String(err);
+        console.error('[PostCreationSheet] upload threw:', msg);
+        setUploadErrorDetail(msg);
         return null;
       }
     },
@@ -565,7 +587,9 @@ function PostCreationSheet({
         if (!publicCloudUrl) {
           Alert.alert(
             'Upload failed',
-            'Could not upload a playable video to BAWAAL cloud storage. Your post was not published (this prevents black-screen crashes in the feed).',
+            uploadErrorDetail
+              ? `Could not upload to BAWAAL cloud storage:\n${uploadErrorDetail}`
+              : 'Could not upload a playable video to BAWAAL cloud storage. Your post was not published.',
             [{ text: 'OK' }]
           );
           return;
@@ -629,7 +653,7 @@ function PostCreationSheet({
         payload.timeLimitSec = secs;
       }
 
-      const dispatched = dispatchToFeeds(payload);
+      const dispatched = await dispatchToFeeds(payload);
       console.log(
         '[PostCreationSheet] feed dispatch ok:',
         dispatched?.feedTarget,
@@ -689,10 +713,34 @@ function PostCreationSheet({
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.clipHint} numberOfLines={1}>
-          🎬 {clipHint}
-          {slowMoEnabled ? ' · SLOW-MO REGION ON' : ''}
-        </Text>
+        <View style={styles.clipHintRow}>
+          <Text style={styles.clipHint} numberOfLines={1}>
+            🎬 {clipHint}
+            {slowMoEnabled ? ' · SLOW-MO REGION ON' : ''}
+          </Text>
+          {linkedGalleryAssetId ? (
+            <GalleryDeleteButton
+              compact
+              assetId={linkedGalleryAssetId}
+              onDeleted={(id: string) => {
+                setClearedGalleryAssetId(id || linkedGalleryAssetId);
+                onGalleryAssetDeleted?.();
+              }}
+            />
+          ) : null}
+        </View>
+
+        {linkedGalleryAssetId ? (
+          <GalleryDeleteButton
+            assetId={linkedGalleryAssetId}
+            label="Delete clip from phone gallery"
+            onDeleted={(id: string) => {
+              setClearedGalleryAssetId(id || linkedGalleryAssetId);
+              onGalleryAssetDeleted?.();
+            }}
+            style={styles.galleryDeleteRow}
+          />
+        ) : null}
 
         <InlineError message={formError} onDismiss={() => setFormError('')} />
 
@@ -867,7 +915,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   closeText: { color: '#A3A3A3', fontSize: 18, fontWeight: '700' },
-  clipHint: { color: '#737373', fontSize: 11, marginBottom: 10 },
+  clipHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 6,
+  },
+  clipHint: { color: '#737373', fontSize: 11, flex: 1 },
+  galleryDeleteRow: {
+    marginBottom: 10,
+  },
   inlineError: {
     backgroundColor: 'rgba(255,59,48,0.18)',
     borderColor: '#FF3B30',

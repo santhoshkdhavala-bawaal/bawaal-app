@@ -136,6 +136,36 @@ export function addPost(post) {
   return pushArenaPost(post);
 }
 
+/**
+ * Prepend to local feed AND await Supabase `bawaal_posts` upsert.
+ * Use from PostCreationSheet so DB write finishes before success UI.
+ */
+export async function pushArenaPostAndPersist(post) {
+  const normalized = pushArenaPost(
+    post ? { ...post, _skipPersist: true } : post
+  );
+  if (!normalized) return null;
+  try {
+    const res = await persistArenaPostToSupabase({
+      ...normalized,
+      _fromRemote: false,
+      _skipPersist: false,
+    });
+    if (!res?.ok && !res?.skipped) {
+      console.warn(
+        '[arenaFeedStore] DB persist failed (feed still updated locally):',
+        res?.error || res?.reason
+      );
+    }
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] DB persist threw (feed still updated locally):',
+      err?.message || err
+    );
+  }
+  return normalized;
+}
+
 export function getArenaPosts() {
   return arenaPosts.slice();
 }
@@ -220,6 +250,7 @@ export async function refreshArenaPostsFromSupabase() {
 
 const arenaFeedStore = {
   pushArenaPost,
+  pushArenaPostAndPersist,
   addPost,
   getArenaPosts,
   subscribeArenaPosts,

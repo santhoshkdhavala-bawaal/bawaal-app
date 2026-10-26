@@ -29,12 +29,6 @@ import {
   type CameraType,
 } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-// Legacy API still exposes createAssetAsync (SDK 58 next API uses Asset.create)
-import {
-  createAssetAsync,
-  getPermissionsAsync,
-  requestPermissionsAsync,
-} from 'expo-media-library/legacy';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreationPostSheet from './PostCreationSheet';
@@ -44,36 +38,8 @@ import type {
 } from './PostCreationSheet';
 import FilmStripTrimmer from './FilmStripTrimmer';
 import { stabilizeLocalVideoUri } from './src/services/uploadService';
+import { saveVideoToGallery } from './src/services/galleryMediaService';
 export type { CreationMode, PostCreationPayload };
-
-/**
- * Instagram-style auto-save: request permission if needed, then write the
- * recorded clip into the device Camera Roll / Gallery.
- */
-async function saveClipToDeviceGallery(videoUri: string): Promise<boolean> {
-  if (!videoUri || typeof videoUri !== 'string') return false;
-  try {
-    const current = await getPermissionsAsync(true);
-    let status = current.status;
-    if (status !== 'granted') {
-      const asked = await requestPermissionsAsync(true);
-      status = asked.status;
-    }
-    if (status !== 'granted') {
-      console.warn('[UniversalCamera] gallery save skipped — permission denied');
-      return false;
-    }
-    await createAssetAsync(videoUri);
-    console.log('[UniversalCamera] clip saved to device gallery');
-    return true;
-  } catch (err) {
-    console.warn(
-      '[UniversalCamera] gallery save failed:',
-      (err as Error)?.message || err
-    );
-    return false;
-  }
-}
 
 /** Minimalist Black & White accent — never neon orange */
 const ACCENT = '#FFFFFF';
@@ -861,6 +827,7 @@ export default function UniversalCamera({
   const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
+  const [galleryAssetId, setGalleryAssetId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showPostSheet, setShowPostSheet] = useState(false);
   const [slowMoEnabled, setSlowMoEnabled] = useState(false);
@@ -1030,6 +997,7 @@ export default function UniversalCamera({
       setShowPostSheet(false);
       setHubOpen(false);
       setRecordedVideoUri(null);
+      setGalleryAssetId(null);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
@@ -1061,6 +1029,7 @@ export default function UniversalCamera({
     setShowPreview(false);
     setShowPostSheet(false);
     setRecordedVideoUri(null);
+    setGalleryAssetId(null);
     setSlowMoEnabled(false);
     setSlowMoRate(0.5);
     setSlowMoStartSec(0);
@@ -1214,8 +1183,10 @@ export default function UniversalCamera({
         );
       }
 
-      // Instagram-style: auto-save to Camera Roll (non-blocking)
-      void saveClipToDeviceGallery(stableUri);
+      // Instagram-style: auto-save to Camera Roll (keep asset id for optional delete)
+      void saveVideoToGallery(stableUri).then((res) => {
+        if (res.ok && res.assetId) setGalleryAssetId(res.assetId);
+      });
 
       const clipDur = safeDurationSec(recordLimit, 15);
       setRecordedVideoUri(stableUri);
@@ -1293,16 +1264,21 @@ export default function UniversalCamera({
 
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
-      const uri = result.assets[0].uri;
+      const picked = result.assets[0];
+      const uri = picked.uri;
+      const pickedAssetId =
+        typeof (picked as { assetId?: string | null }).assetId === 'string'
+          ? (picked as { assetId?: string }).assetId || null
+          : null;
       const assetDurationSec =
-        typeof result.assets[0].duration === 'number' &&
-        result.assets[0].duration > 0
-          ? Math.ceil(result.assets[0].duration / 1000)
+        typeof picked.duration === 'number' && picked.duration > 0
+          ? Math.ceil(picked.duration / 1000)
           : recordLimit;
 
       setCameraError('');
       setShowPreview(false);
       setShowPostSheet(false);
+      setGalleryAssetId(pickedAssetId);
       setRecordedVideoUri(uri);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
@@ -1554,6 +1530,7 @@ export default function UniversalCamera({
         <CreationPostSheet
           mode={mode}
           videoUri={recordedVideoUri}
+          galleryAssetId={galleryAssetId}
           slowMoEnabled={slowMoEnabled}
           slowMoRate={clampSlowMoRate(slowMoRate)}
           slowMoStartSec={Math.max(0, Number(slowMoStartSec) || 0)}
@@ -1563,6 +1540,7 @@ export default function UniversalCamera({
             setShowPreview(false);
             setShowPostSheet(false);
           }}
+          onGalleryAssetDeleted={() => setGalleryAssetId(null)}
           onStopMedia={() => {
             // Kill preview + release any lingering recorder before/during upload
             setShowPreview(false);

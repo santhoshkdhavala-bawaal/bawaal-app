@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { isCloudAuthError } from './supabase';
+import { isCloudAuthError, isSupabaseConfigured, supabase } from './supabase';
 
 /**
  * Yield so React can paint loading UI before heavy file / network work.
@@ -312,8 +312,99 @@ function base64ToUint8Array(base64) {
 }
 
 /**
- * Android-safe path: read local file:// as base64 → ArrayBuffer/Uint8Array → fetch POST.
- * Avoids FormData multipart corruption and flaky native uploadAsync on some devices.
+ * Read local `file://` / `content://` video into Uint8Array.
+ * Prefer fetch → ArrayBuffer/Blob first, then FileSystem base64 fallback.
+ */
+async function readLocalVideoBytes(fileUri) {
+  console.log('UPLOAD_READ_BYTES:', fileUri);
+
+  // Path A: fetch local URI → ArrayBuffer (RN / Expo often supports file://)
+  try {
+    const res = await fetch(fileUri);
+    if (res.ok) {
+      const buffer = await res.arrayBuffer();
+      if (buffer && buffer.byteLength >= MIN_VIDEO_BYTES) {
+        console.log('UPLOAD_READ_BYTES: arrayBuffer size=', buffer.byteLength);
+        return new Uint8Array(buffer);
+      }
+      console.warn(
+        'UPLOAD_READ_BYTES: arrayBuffer too small:',
+        buffer?.byteLength
+      );
+    }
+  } catch (fetchErr) {
+    console.warn(
+      'UPLOAD_READ_BYTES: fetch/arrayBuffer failed:',
+      fetchErr?.message || fetchErr
+    );
+  }
+
+  // Path B: FileSystem base64 decode
+  const encoding =
+    FileSystem.EncodingType?.Base64 ||
+    FileSystem.EncodingType?.BASE64 ||
+    'base64';
+  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding });
+  const bytes = base64ToUint8Array(base64);
+  console.log('UPLOAD_READ_BYTES: base64 size=', bytes.byteLength);
+  if (bytes.byteLength < MIN_VIDEO_BYTES) {
+    throw new Error(
+      `Decoded video too small (${bytes.byteLength} bytes) — refusing upload`
+    );
+  }
+  return bytes;
+}
+
+/** RN-safe binary body: prefer Blob (Uint8Array alone often fails on Android fetch). */
+function bytesToUploadBody(bytes) {
+  if (typeof Blob !== 'undefined') {
+    try {
+      return new Blob([bytes], { type: 'video/mp4' });
+    } catch (_) {
+      try {
+        return new Blob([bytes.buffer], { type: 'video/mp4' });
+      } catch (__) {
+        /* fall through */
+      }
+    }
+  }
+  return bytes;
+}
+
+/**
+ * Preferred path: Supabase JS client upload (handles Blob/ArrayBuffer correctly).
+ */
+async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client not configured');
+  }
+  if (onProgress) onProgress(12);
+  const bytes = await readLocalVideoBytes(fileUri);
+  if (onProgress) onProgress(40);
+  const body = bytesToUploadBody(bytes);
+
+  console.log('UPLOAD_SDK: path=', objectPath, 'bodyType=', body?.constructor?.name);
+  const { data, error } = await supabase.storage
+    .from(BAWAAL_VIDEO_BUCKET)
+    .upload(objectPath, body, {
+      contentType: 'video/mp4',
+      upsert: true,
+      cacheControl: '3600',
+    });
+
+  if (error) {
+    console.error('REST_UPLOAD_ERROR (sdk):', error.message || error);
+    throw new Error(error.message || 'Supabase SDK storage upload failed');
+  }
+
+  if (onProgress) onProgress(100);
+  console.log('SDK_UPLOAD_OK:', data?.path || objectPath);
+  return true;
+}
+
+/**
+ * Android-safe REST path: file:// → bytes → Blob → fetch POST.
+ * Avoids FormData multipart corruption.
  */
 async function uploadViaFetchArrayBuffer(
   uploadUrl,
@@ -321,38 +412,29 @@ async function uploadViaFetchArrayBuffer(
   anonKey,
   onProgress
 ) {
-  console.log('UPLOAD_ARRAYBUFFER: reading', fileUri);
+  console.log('UPLOAD_BLOB_FETCH: reading', fileUri);
   if (onProgress) onProgress(15);
 
-  const base64 = await FileSystem.readAsStringAsync(fileUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const bytes = base64ToUint8Array(base64);
-  console.log('UPLOAD_ARRAYBUFFER: bytes=', bytes.byteLength);
-
-  if (bytes.byteLength < MIN_VIDEO_BYTES) {
-    throw new Error(
-      `Decoded video too small (${bytes.byteLength} bytes) — refusing upload`
-    );
-  }
+  const bytes = await readLocalVideoBytes(fileUri);
+  const body = bytesToUploadBody(bytes);
   if (onProgress) onProgress(45);
 
   const res = await fetch(uploadUrl, {
     method: 'POST',
     headers: STORAGE_HEADERS(anonKey),
-    body: bytes,
+    body,
   });
 
   const bodyText = await res.text().catch(() => '');
   if (!res.ok) {
-    console.error('REST_UPLOAD_ERROR (arraybuffer):', res.status, bodyText);
+    console.error('REST_UPLOAD_ERROR (blob/fetch):', res.status, bodyText);
     throw new Error(
-      bodyText || `Storage ArrayBuffer upload failed with status ${res.status}`
+      bodyText || `Storage Blob upload failed with status ${res.status}`
     );
   }
 
   if (onProgress) onProgress(100);
-  console.log('ARRAYBUFFER_UPLOAD_OK: status=', res.status);
+  console.log('BLOB_FETCH_UPLOAD_OK: status=', res.status);
   return true;
 }
 
@@ -414,37 +496,53 @@ async function uploadViaFileSystemBinary(
 }
 
 /**
- * Upload bytes to Supabase Storage with platform-aware strategy + fallback.
+ * Upload bytes to Supabase Storage — SDK → Blob fetch → native FileSystem.
  */
-async function uploadVideoBytes(uploadUrl, fileUri, anonKey, onProgress) {
-  const tryArrayBuffer = async () =>
-    uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress);
-  const tryNativeBinary = async () =>
-    uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey, onProgress);
+async function uploadVideoBytes(
+  uploadUrl,
+  objectPath,
+  fileUri,
+  anonKey,
+  onProgress
+) {
+  const attempts = [
+    {
+      name: 'supabase-sdk',
+      run: () => uploadViaSupabaseSdk(objectPath, fileUri, onProgress),
+    },
+    {
+      name: 'blob-fetch',
+      run: () =>
+        uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress),
+    },
+    {
+      name: 'filesystem-binary',
+      run: () =>
+        uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey, onProgress),
+    },
+  ];
 
-  // Android: ArrayBuffer/fetch first (rock-solid for file:// cache URIs)
-  // iOS: native FileSystem binary first, ArrayBuffer fallback
-  if (Platform.OS === 'android') {
+  // Android prefers Blob paths first; iOS still tries SDK then native binary
+  const ordered =
+    Platform.OS === 'android'
+      ? attempts
+      : [attempts[0], attempts[2], attempts[1]];
+
+  let lastErr = null;
+  for (const step of ordered) {
     try {
-      return await tryArrayBuffer();
+      console.log('[upload] trying', step.name);
+      await step.run();
+      return true;
     } catch (err) {
+      lastErr = err;
       console.warn(
-        '[upload] Android ArrayBuffer upload failed, trying FileSystem binary:',
+        `[upload] ${step.name} failed:`,
         err?.message || err
       );
-      return tryNativeBinary();
     }
   }
-
-  try {
-    return await tryNativeBinary();
-  } catch (err) {
-    console.warn(
-      '[upload] FileSystem binary failed, trying ArrayBuffer fetch:',
-      err?.message || err
-    );
-    return tryArrayBuffer();
-  }
+  throw lastErr || new Error('All storage upload strategies failed');
 }
 
 /**
@@ -457,7 +555,7 @@ async function uploadVideoBytes(uploadUrl, fileUri, anonKey, onProgress) {
  *
  * @param {string} videoUri
  * @param {string} [fileName]
- * @param {{ onProgress?: (pct: number) => void }} [options]
+ * @param {{ onProgress?: (pct: number) => void, onError?: (msg: string) => void }} [options]
  * @returns {Promise<string|null>} public HTTPS URL or null (caller must abort post)
  */
 export async function uploadVideoToSupabase(videoUri, fileName, options) {
@@ -465,6 +563,16 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     options && typeof options.onProgress === 'function'
       ? options.onProgress
       : null;
+  const reportError = (msg) => {
+    console.error('UPLOAD_CATCH_ERROR:', msg);
+    if (typeof options?.onError === 'function') {
+      try {
+        options.onError(String(msg || 'Upload failed'));
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  };
 
   try {
     console.log('START_UPLOAD: videoUri ->', videoUri);
@@ -477,15 +585,15 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     const ANON_KEY = getEnvAnonKey();
 
     if (!SUPABASE_URL || !ANON_KEY) {
-      console.error(
-        'REST_UPLOAD_ERROR: missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY'
+      reportError(
+        'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY'
       );
       return null;
     }
 
     const resolvedUri = sanitizeVideoUriForUpload(videoUri);
     if (!resolvedUri) {
-      console.error('REST_UPLOAD_ERROR: missing videoUri');
+      reportError('Missing or invalid local videoUri');
       return null;
     }
 
@@ -498,6 +606,7 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     }
 
     const safeName = makeObjectFileName(fileName);
+    const objectPath = `battles/${safeName}`;
     const uploadUrl = buildUploadUrl(SUPABASE_URL, safeName);
     // Exact public playback URL (must include /public/)
     const publicUrl =
@@ -505,6 +614,7 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
       buildPublicUrl(SUPABASE_URL, safeName);
 
     console.log('UPLOAD_REST_URL:', uploadUrl);
+    console.log('UPLOAD_OBJECT_PATH:', objectPath);
     console.log(
       'UPLOAD_KEY_PREFIX:',
       ANON_KEY.slice(0, 18) + '…',
@@ -543,14 +653,22 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     // Yield again right before transfer so UI stays buttery
     await yieldToUI();
 
-    // Android: file:// → ArrayBuffer → fetch; iOS: native binary (with fallbacks)
-    await uploadVideoBytes(uploadUrl, fileUri, ANON_KEY, (pct) => {
-      if (onProgress) onProgress(Math.max(8, Math.min(100, pct)));
-    });
+    // SDK (Blob) → fetch Blob → native FileSystem binary
+    await uploadVideoBytes(
+      uploadUrl,
+      objectPath,
+      fileUri,
+      ANON_KEY,
+      (pct) => {
+        if (onProgress) onProgress(Math.max(8, Math.min(100, pct)));
+      }
+    );
     console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
-    console.error('UPLOAD_CATCH_ERROR:', err?.message || err, err);
+    const msg = err?.message || String(err);
+    console.error('UPLOAD_CATCH_ERROR:', msg, err);
+    reportError(msg);
     return null;
   }
 }
