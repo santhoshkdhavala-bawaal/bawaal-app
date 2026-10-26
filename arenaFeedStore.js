@@ -50,11 +50,23 @@ function pickPublicVideoUri(post) {
   return ensurePublicBawaalVideoUrl(rawUri) || rawUri || null;
 }
 
+/** Same battles/*.mp4 should not appear twice under different post ids. */
+function videoIdentityKey(uri) {
+  if (!uri || typeof uri !== 'string') return '';
+  const clean = uri.split('?')[0].trim().toLowerCase();
+  const battles = clean.match(/\/battles\/([^/]+)$/);
+  if (battles) return `battles/${battles[1]}`;
+  return clean;
+}
+
 function normalizeArenaPost(post) {
   if (!post || typeof post !== 'object') return null;
   const ts = Number(post.timestamp || post.createdAt) || Date.now();
-  const id = String(post.id || `arena-${ts}`);
   const videoUri = pickPublicVideoUri(post);
+  const videoKey = videoIdentityKey(videoUri);
+  const id = String(
+    post.id || (videoKey ? `arena-${videoKey}` : `arena-${ts}`)
+  );
   return {
     type: 'reel',
     sport: post.category || post.sport || 'GYM',
@@ -84,9 +96,15 @@ function normalizeArenaPost(post) {
 
 function mergeIntoStore(normalized, { emitEvent = true } = {}) {
   if (!normalized?.id) return null;
+  const videoKey = videoIdentityKey(normalized.videoUri);
   arenaPosts = [
     normalized,
-    ...arenaPosts.filter((p) => p && p.id !== normalized.id),
+    ...arenaPosts.filter((p) => {
+      if (!p) return false;
+      if (p.id === normalized.id) return false;
+      if (videoKey && videoIdentityKey(p.videoUri) === videoKey) return false;
+      return true;
+    }),
   ];
   // Keep newest-first by timestamp
   arenaPosts.sort(

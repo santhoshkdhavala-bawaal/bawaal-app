@@ -17,7 +17,8 @@ import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 
 enableScreens(true);
 
-SplashScreen.hideAsync().catch(() => {});
+// Keep native splash visible until session boot finishes (avoids black flash)
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const ROOT_BG = '#000000';
 
@@ -100,10 +101,6 @@ export default function App() {
   const [bootError, setBootError] = useState(null);
 
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -115,11 +112,12 @@ export default function App() {
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
       } finally {
-        // No artificial splash delay — enter UI as soon as session resolves
         if (cancelled) return;
         try {
           setBootReady(true);
           setShowSplash(false);
+          // Hide native splash only after first JS frame is ready to paint Arena
+          await SplashScreen.hideAsync().catch(() => {});
         } catch (err) {
           setBootError(err);
         }

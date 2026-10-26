@@ -16,7 +16,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   confirmAndDeleteSelectedGalleryAssets,
+  ensureGalleryReadPermission,
   listDeviceVideos,
+  openGallerySettings,
 } from '../services/galleryMediaService';
 
 export type DeviceGalleryAsset = {
@@ -57,6 +59,8 @@ function DeviceGalleryModal({
   const [endCursor, setEndCursor] = useState<string | undefined>();
   const [hasNextPage, setHasNextPage] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [needsPermission, setNeedsPermission] = useState(false);
+  const [canAskAgain, setCanAskAgain] = useState(true);
 
   const selectedCount = selectedIds.size;
 
@@ -68,15 +72,29 @@ function DeviceGalleryModal({
         setSelectedIds(new Set());
       } else setRefreshing(true);
       setError('');
+      setNeedsPermission(false);
       try {
+        // Explicit await BEFORE getAssetsAsync (Android rejects otherwise)
+        const perm = await ensureGalleryReadPermission();
+        if (!perm.granted) {
+          setNeedsPermission(true);
+          setCanAskAgain(perm.canAskAgain !== false);
+          setError('Gallery permission is required to browse your videos.');
+          if (reset) setAssets([]);
+          return;
+        }
+
         const res = await listDeviceVideos({
           first: 48,
           after: opts?.cursor,
         });
         if (!res.ok) {
+          const denied = res.error === 'permission-denied';
+          setNeedsPermission(denied);
+          setCanAskAgain(res.canAskAgain !== false);
           setError(
-            res.error === 'permission-denied'
-              ? 'Gallery permission is required.'
+            denied
+              ? 'Gallery permission is required to browse your videos.'
               : res.error || 'Could not load gallery.'
           );
           if (reset) setAssets([]);
@@ -226,14 +244,28 @@ function DeviceGalleryModal({
             <ActivityIndicator color="#FFFFFF" size="large" />
             <Text style={styles.hint}>Loading videos…</Text>
           </View>
-        ) : error ? (
+        ) : error || needsPermission ? (
           <View style={styles.center}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>
+              {error || 'Gallery permission is required.'}
+            </Text>
             <Pressable
               style={styles.retryBtn}
-              onPress={() => void loadPage({ reset: true })}
+              onPress={() => {
+                if (needsPermission && canAskAgain === false) {
+                  void openGallerySettings();
+                  return;
+                }
+                void loadPage({ reset: true });
+              }}
             >
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>
+                {needsPermission
+                  ? canAskAgain === false
+                    ? 'Open Settings'
+                    : 'Allow gallery access'
+                  : 'Retry'}
+              </Text>
             </Pressable>
           </View>
         ) : (

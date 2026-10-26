@@ -259,8 +259,18 @@ function isOfficialBattlePost(post) {
   return false;
 }
 
+/** Stable key for the same cloud clip (dedupe storage fallback vs DB rows). */
+function videoIdentityKey(uri) {
+  if (!uri || typeof uri !== 'string') return '';
+  const clean = uri.split('?')[0].trim().toLowerCase();
+  const battles = clean.match(/\/battles\/([^/]+)$/);
+  if (battles) return `battles/${battles[1]}`;
+  return clean;
+}
+
 function mapPostToReel(post) {
   const uri = resolveFeedVideoUri(post);
+  const ts = post.timestamp || post.createdAt || Date.now();
   const rawHandle =
     post.author ||
     post.handle ||
@@ -269,15 +279,20 @@ function mapPostToReel(post) {
   const author = String(rawHandle).startsWith('@')
     ? String(rawHandle)
     : `@${String(rawHandle).replace(/^@/, '')}`;
+  const videoKey = videoIdentityKey(uri);
+  // Prefer real id; never use bare Date.now() alone (collides in same tick)
+  const id = String(
+    post.id || (videoKey ? `reel-${videoKey}` : `reel-${ts}-${author}`)
+  );
   return {
-    id: post.id || `reel-${Date.now()}`,
+    id,
     type: 'reel',
     sport: post.category || post.sport || 'ALL',
     author,
     caption: post.caption || post.title || post.target || 'Arena drop',
     hypeCount: post.hypeCount || 0,
     videoUri: uri,
-    createdAt: post.timestamp || post.createdAt || Date.now(),
+    createdAt: ts,
   };
 }
 
@@ -286,28 +301,31 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  /** When false, do not mount a decoder (cold-start / offscreen). */
+  /** When false, pause / skip decoder to keep cold-start light. */
   active = true,
 }) {
-  // Lazy mount: only create expo-video players for viewport-active cells
-  if (!uri || !active) {
+  if (!uri) {
     return (
       <View
         style={[styles.clipShell, style, styles.clipPlaceholder]}
         pointerEvents="none"
-      />
+      >
+        <Text style={styles.clipPlaceholderLabel}>LOADING CLIP</Text>
+      </View>
     );
   }
+  // Keep player keyed by URI so FlatList recycle never shows the wrong clip
   return (
     <View style={[styles.clipShell, style]} pointerEvents="none">
       <SafeFeedVideo
+        key={uri}
         uri={uri}
         label={label}
         style={styles.clipVideoFill}
         muted={muted}
         loop
-        autoPlay
-        paused={false}
+        autoPlay={active}
+        paused={!active}
         contentFit="cover"
         nativeControls={false}
       />
@@ -343,7 +361,14 @@ function ingestArenaPost(prev, post) {
   // General uploads → Arena reel only (never invent a battle card)
   if (!isOfficialBattlePost(post)) {
     const reel = mapPostToReel(post);
-    const withoutDup = prev.filter((item) => item.id !== reel.id);
+    const videoKey = videoIdentityKey(reel.videoUri);
+    // Drop same id OR same underlying video file (fixes repeating baseball clip)
+    const withoutDup = prev.filter((item) => {
+      if (!item || item.type !== 'reel') return true;
+      if (item.id === reel.id) return false;
+      if (videoKey && videoIdentityKey(item.videoUri) === videoKey) return false;
+      return true;
+    });
     return [reel, ...withoutDup];
   }
 
@@ -505,6 +530,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
     <View style={styles.reelCard}>
       {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
       <ClipSurface
+        key={`clip-${item.id}`}
         uri={item.videoUri}
         label={null}
         style={styles.reelFullBleed}
@@ -783,16 +809,16 @@ export default function ArenaFeed({ navigation, route }) {
       }
     };
 
-    // Wait for first frame + idle so Arena chrome paints before network/decoders
+    // Paint Arena chrome first, then hydrate quickly (avoid long black wait)
     timeoutId = setTimeout(() => {
       if (typeof globalThis.requestIdleCallback === 'function') {
         idleId = globalThis.requestIdleCallback(() => {
           void runDeferred();
-        }, { timeout: 900 });
+        }, { timeout: 250 });
       } else {
         void runDeferred();
       }
-    }, 120);
+    }, 16);
 
     return () => {
       cancelled = true;
@@ -829,8 +855,8 @@ export default function ArenaFeed({ navigation, route }) {
     }, [absorbPost, route?.params?.newArenaPost])
   );
 
-  const visibleFeed = useMemo(
-    () =>
+  const visibleFeed = useMemo(() => {
+    const filtered =
       activeTab === 'ALL'
         ? feedItems
         : feedItems.filter(
@@ -838,9 +864,21 @@ export default function ArenaFeed({ navigation, route }) {
               item.sport === activeTab ||
               item.sport === 'ALL' ||
               item.category === 'ALL'
-          ),
-    [activeTab, feedItems]
-  );
+          );
+    // Final safety: unique ids + unique video files in the FlatList
+    const seenIds = new Set();
+    const seenVideos = new Set();
+    const out = [];
+    for (const item of filtered) {
+      if (!item?.id || seenIds.has(item.id)) continue;
+      const vKey = videoIdentityKey(item.videoUri);
+      if (item.type === 'reel' && vKey && seenVideos.has(vKey)) continue;
+      seenIds.add(item.id);
+      if (vKey) seenVideos.add(vKey);
+      out.push(item);
+    }
+    return out;
+  }, [activeTab, feedItems]);
 
   const openReel = useCallback((item, opts) => {
     setImmersiveMuted(!!opts?.muted);
@@ -885,7 +923,10 @@ export default function ArenaFeed({ navigation, route }) {
     [openReel, openResponses, hypeReel, activeVideoIds, activeReel]
   );
 
-  const feedKeyExtractor = useCallback((item) => String(item.id), []);
+  const feedKeyExtractor = useCallback((item, index) => {
+    // Guarantee uniqueness even if a bad hydrate slips duplicate ids
+    return item?.id != null ? String(item.id) : `feed-row-${index}`;
+  }, []);
 
   const listHeader = useMemo(() => {
     if (!filtersOpen) return null;

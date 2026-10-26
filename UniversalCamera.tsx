@@ -824,8 +824,6 @@ export default function UniversalCamera({
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [isCameraReady, setIsCameraReady] = useState(false);
-  /** Defer native CameraView one frame so the modal chrome paints first. */
-  const [cameraViewMounted, setCameraViewMounted] = useState(false);
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
   const [cameraError, setCameraError] = useState('');
@@ -912,20 +910,6 @@ export default function UniversalCamera({
     requestCameraPermission,
     requestMicPermission,
   ]);
-
-  // Mount CameraView after first paint — reduces open-transition jank from feed
-  useEffect(() => {
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!cancelled) setCameraViewMounted(true);
-      });
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-    };
-  }, []);
 
   useEffect(() => {
     scheduleHidePill();
@@ -1369,28 +1353,22 @@ export default function UniversalCamera({
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {cameraViewMounted ? (
-        <CameraView
-          key={`bawaal-cam-${cameraSessionKey}`}
-          ref={cameraRef}
-          style={styles.camera}
-          facing={facing}
-          mode="video"
-          mute={false}
-          videoQuality="720p"
-          onCameraReady={() => setIsCameraReady(true)}
-          onMountError={(err) => {
-            recordingLockRef.current = false;
-            setIsRecording(false);
-            setIsCameraReady(false);
-            setCameraError(err?.message || 'Could not start camera.');
-          }}
-        />
-      ) : (
-        <View style={[styles.camera, styles.cameraWarming]}>
-          <ActivityIndicator color={ACCENT} size="large" />
-        </View>
-      )}
+      <CameraView
+        key={`bawaal-cam-${cameraSessionKey}`}
+        ref={cameraRef}
+        style={styles.camera}
+        facing={facing}
+        mode="video"
+        mute={false}
+        videoQuality="720p"
+        onCameraReady={() => setIsCameraReady(true)}
+        onMountError={(err) => {
+          recordingLockRef.current = false;
+          setIsRecording(false);
+          setIsCameraReady(false);
+          setCameraError(err?.message || 'Could not start camera.');
+        }}
+      />
 
       <Pressable
         style={styles.viewfinderTap}
@@ -1612,11 +1590,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
   absoluteFill: { ...ABSOLUTE_FILL },
   camera: { ...ABSOLUTE_FILL },
-  cameraWarming: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#000000',
-  },
   viewfinderTap: {
     ...ABSOLUTE_FILL,
     top: 100,

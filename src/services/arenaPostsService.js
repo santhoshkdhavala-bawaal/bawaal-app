@@ -12,6 +12,29 @@ const FEED = 'ARENA';
 /** Storage folder for JSON post metadata when `bawaal_posts` table is missing. */
 const POSTS_META_PREFIX = 'posts';
 
+function videoIdentityKey(uri) {
+  if (!uri || typeof uri !== 'string') return '';
+  const clean = uri.split('?')[0].trim().toLowerCase();
+  const battles = clean.match(/\/battles\/([^/]+)$/);
+  if (battles) return `battles/${battles[1]}`;
+  return clean;
+}
+
+/** Prefer earlier entries (DB/meta) when the same mp4 appears again. */
+function dedupePostsByVideo(posts) {
+  const seen = new Set();
+  const out = [];
+  for (const p of posts || []) {
+    if (!p) continue;
+    const key =
+      videoIdentityKey(p.videoUri || p.video_url || p.uri) || String(p.id || '');
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+  }
+  return out;
+}
+
 /** PostgREST / Postgres signals that the table is absent from schema cache. */
 export function isMissingBawaalPostsTableError(error) {
   const msg = String(error?.message || error?.details || error || '');
@@ -148,10 +171,10 @@ export async function fetchArenaPostsFromSupabase() {
         '[arenaPosts] table fetch failed:',
         error.message || error.code || error
       );
-      // Table missing / schema cache → Storage JSON + video list
+      // Table missing / schema cache → Storage JSON + video list (deduped)
       const fromMeta = await fetchArenaPostsFromMetaJson();
-      if (fromMeta.length > 0) return fromMeta;
-      return fetchArenaPostsFromStorageFallback();
+      const fromFiles = await fetchArenaPostsFromStorageFallback();
+      return dedupePostsByVideo([...fromMeta, ...fromFiles]);
     }
 
     const mapped = (data || [])
@@ -160,18 +183,20 @@ export async function fetchArenaPostsFromSupabase() {
 
     if (mapped.length > 0) {
       console.log('[arenaPosts] loaded', mapped.length, 'rows from', TABLE);
-      return mapped;
+      // Merge storage-only clips that aren't already in the table (no duplicates)
+      const extras = await fetchArenaPostsFromStorageFallback();
+      return dedupePostsByVideo([...mapped, ...extras]);
     }
 
     // Empty table → try Storage so older uploads still appear
     const fromMeta = await fetchArenaPostsFromMetaJson();
-    if (fromMeta.length > 0) return fromMeta;
-    return fetchArenaPostsFromStorageFallback();
+    const fromFiles = await fetchArenaPostsFromStorageFallback();
+    return dedupePostsByVideo([...fromMeta, ...fromFiles]);
   } catch (err) {
     console.warn('[arenaPosts] fetch crashed:', err?.message || err);
     const fromMeta = await fetchArenaPostsFromMetaJson();
-    if (fromMeta.length > 0) return fromMeta;
-    return fetchArenaPostsFromStorageFallback();
+    const fromFiles = await fetchArenaPostsFromStorageFallback();
+    return dedupePostsByVideo([...fromMeta, ...fromFiles]);
   }
 }
 

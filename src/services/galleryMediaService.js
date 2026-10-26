@@ -1,8 +1,8 @@
 /**
  * Device gallery helpers for BAWAAL clips (expo-media-library).
- * Delete always uses MediaLibrary asset ids — never file:// / content:// URIs.
+ * READ permission is required before getAssetsAsync; WRITE for save/delete.
  */
-import { Alert } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import {
   createAssetAsync,
   deleteAssetsAsync,
@@ -12,6 +12,9 @@ import {
   requestPermissionsAsync,
   SortBy,
 } from 'expo-media-library/legacy';
+
+/** Android 13+ granular scopes for video library access. */
+const VIDEO_GRANULAR = ['video'];
 
 /**
  * MediaLibrary asset ids only — reject file:// / content:// / paths.
@@ -36,19 +39,73 @@ export function normalizeMediaLibraryAssetId(value) {
   return id;
 }
 
+function isGranted(perm) {
+  if (!perm) return false;
+  if (perm.status === 'granted') return true;
+  // iOS limited library still allows listing granted assets
+  if (perm.accessPrivileges === 'limited' || perm.accessPrivileges === 'all') {
+    return true;
+  }
+  return false;
+}
+
 /**
- * Ensure write access to the media library.
+ * READ access — required before getAssetsAsync.
+ * IMPORTANT: writeOnly must be false (true only grants save, not list).
+ * @returns {Promise<{ granted: boolean, canAskAgain?: boolean, status?: string }>}
+ */
+export async function ensureGalleryReadPermission() {
+  try {
+    const current = await getPermissionsAsync(
+      false,
+      Platform.OS === 'android' ? VIDEO_GRANULAR : undefined
+    );
+    if (isGranted(current)) {
+      return { granted: true, status: current.status, canAskAgain: current.canAskAgain };
+    }
+
+    const asked = await requestPermissionsAsync(
+      false,
+      Platform.OS === 'android' ? VIDEO_GRANULAR : undefined
+    );
+    return {
+      granted: isGranted(asked),
+      status: asked.status,
+      canAskAgain: asked.canAskAgain,
+    };
+  } catch (err) {
+    console.warn(
+      '[galleryMedia] read permission failed:',
+      err?.message || err
+    );
+    return { granted: false, status: 'undetermined', canAskAgain: true };
+  }
+}
+
+/**
+ * WRITE access — save / delete assets.
  * @returns {Promise<boolean>}
  */
 export async function ensureGalleryWritePermission() {
   try {
-    const current = await getPermissionsAsync(true);
-    if (current.status === 'granted') return true;
-    const asked = await requestPermissionsAsync(true);
-    return asked.status === 'granted';
+    // Need full library access for delete on Android 13+
+    const read = await ensureGalleryReadPermission();
+    if (!read.granted) return false;
+
+    const current = await getPermissionsAsync(
+      true,
+      Platform.OS === 'android' ? VIDEO_GRANULAR : undefined
+    );
+    if (isGranted(current)) return true;
+
+    const asked = await requestPermissionsAsync(
+      true,
+      Platform.OS === 'android' ? VIDEO_GRANULAR : undefined
+    );
+    return isGranted(asked);
   } catch (err) {
     console.warn(
-      '[galleryMedia] permission check failed:',
+      '[galleryMedia] write permission failed:',
       err?.message || err
     );
     return false;
@@ -57,15 +114,21 @@ export async function ensureGalleryWritePermission() {
 
 /**
  * List device videos for the in-app gallery picker.
+ * Always awaits READ permission before getAssetsAsync.
  * @param {{ first?: number, after?: string }} [opts]
- * @returns {Promise<{ ok: boolean, assets: object[], endCursor?: string, hasNextPage?: boolean, error?: string }>}
+ * @returns {Promise<{ ok: boolean, assets: object[], endCursor?: string, hasNextPage?: boolean, error?: string, canAskAgain?: boolean }>}
  */
 export async function listDeviceVideos(opts = {}) {
   const first = Math.max(1, Math.min(100, Number(opts.first) || 48));
   try {
-    const granted = await ensureGalleryWritePermission();
-    if (!granted) {
-      return { ok: false, assets: [], error: 'permission-denied' };
+    const perm = await ensureGalleryReadPermission();
+    if (!perm.granted) {
+      return {
+        ok: false,
+        assets: [],
+        error: 'permission-denied',
+        canAskAgain: perm.canAskAgain !== false,
+      };
     }
 
     const page = await getAssetsAsync({
@@ -101,7 +164,13 @@ export async function listDeviceVideos(opts = {}) {
   } catch (err) {
     const msg = err?.message || String(err);
     console.warn('[galleryMedia] listDeviceVideos failed:', msg);
-    return { ok: false, assets: [], error: msg };
+    const missingPerm = /MEDIA_LIBRARY|permission|denied|Missing/i.test(msg);
+    return {
+      ok: false,
+      assets: [],
+      error: missingPerm ? 'permission-denied' : msg,
+      canAskAgain: true,
+    };
   }
 }
 
@@ -158,11 +227,13 @@ export async function deleteGalleryAssetsByIds(assetIds) {
       return { ok: false, error: 'permission-denied' };
     }
     console.log('[galleryMedia] deleting selected assets only:', ids);
-    // Prefer one call with exact selection; if the platform rejects the batch,
-    // delete each selected id individually (still never touches unselected).
+    // Exact selection only — never album-wide / never unselected ids
+    await deleteAssetsAsync(ids);
+    console.log('[galleryMedia] deleted selected assets ok:', ids.length);
+    return { ok: true, deletedIds: ids };
+  } catch (batchErr) {
+    // Fallback: delete each selected id alone (still never touches others)
     try {
-      await deleteAssetsAsync(ids);
-    } catch (batchErr) {
       console.warn(
         '[galleryMedia] batch delete failed, deleting one-by-one:',
         batchErr?.message || batchErr
@@ -170,13 +241,12 @@ export async function deleteGalleryAssetsByIds(assetIds) {
       for (const id of ids) {
         await deleteAssetsAsync([id]);
       }
+      return { ok: true, deletedIds: ids };
+    } catch (err) {
+      const msg = err?.message || String(err);
+      console.warn('[galleryMedia] multi-delete failed:', msg);
+      return { ok: false, error: msg };
     }
-    console.log('[galleryMedia] deleted selected assets ok:', ids.length);
-    return { ok: true, deletedIds: ids };
-  } catch (err) {
-    const msg = err?.message || String(err);
-    console.warn('[galleryMedia] multi-delete failed:', msg);
-    return { ok: false, error: msg };
   }
 }
 
@@ -248,51 +318,21 @@ export function confirmAndDeleteSelectedGalleryAssets(assetIds) {
 /**
  * Confirm with the user, then delete ONLY that one clip.
  * @param {string} assetId
- * @param {{ title?: string, message?: string }} [copy]
  * @returns {Promise<boolean>}
  */
-export function confirmAndDeleteGalleryAsset(assetId, copy = {}) {
-  return new Promise((resolve) => {
-    const id = normalizeMediaLibraryAssetId(assetId);
-    if (!id) {
-      Alert.alert(
-        'Nothing to delete',
-        'This clip is not linked to a single gallery asset id.'
-      );
-      resolve(false);
-      return;
-    }
-
+export function confirmAndDeleteGalleryAsset(assetId) {
+  const id = normalizeMediaLibraryAssetId(assetId);
+  if (!id) {
     Alert.alert(
-      copy.title || 'Delete this clip?',
-      copy.message ||
-        'Only this selected video will be removed from your phone gallery. Other clips stay untouched.',
-      [
-        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            void (async () => {
-              const res = await deleteGalleryAsset(id);
-              if (!res.ok) {
-                Alert.alert(
-                  'Delete failed',
-                  res.error === 'permission-denied'
-                    ? 'Gallery permission is required to delete clips.'
-                    : res.error === 'invalid-asset-id' ||
-                        res.error === 'missing-asset-id'
-                      ? 'Could not identify this single clip to delete.'
-                      : res.error || 'Could not delete this clip.'
-                );
-                resolve(false);
-                return;
-              }
-              resolve(true);
-            })();
-          },
-        },
-      ]
+      'Nothing to delete',
+      'This clip is not linked to a single gallery asset id.'
     );
-  });
+    return Promise.resolve(false);
+  }
+  return confirmAndDeleteSelectedGalleryAssets([id]);
+}
+
+/** Open system settings when the user permanently denied gallery access. */
+export function openGallerySettings() {
+  return Linking.openSettings().catch(() => {});
 }
