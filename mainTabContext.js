@@ -5,6 +5,7 @@ export const MainTabContext = createContext({
   setTab: (_t) => {},
   openCreate: () => {},
   openProfileGateway: () => {},
+  openSideDrawer: () => {},
   challengeAlertActive: false,
 });
 

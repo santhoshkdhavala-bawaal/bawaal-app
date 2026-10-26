@@ -77,7 +77,7 @@ function featuredSubtitle(featured) {
 }
 
 export default function BattlesScreen({ navigation }) {
-  const { openProfileGateway } = useMainTabs();
+  const { openProfileGateway, openSideDrawer } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [hotFeatureOverride, setHotFeatureOverride] = useState(() =>
@@ -274,7 +274,11 @@ export default function BattlesScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <BrandHeader screenName="BATTLES" onBrandPress={openProfileGateway} />
+      <BrandHeader
+        screenName="BATTLES"
+        onBrandPress={openProfileGateway}
+        onMenuPress={openSideDrawer}
+      />
 
       <View style={styles.filterRow}>
         {['OPEN', 'HOT', 'MINE'].map((f) => (

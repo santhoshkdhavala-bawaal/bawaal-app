@@ -10,13 +10,14 @@ import BrandHeader from './BrandHeader';
 import { useMainTabs } from './mainTabContext';
 
 export default function ProfileScreen({ navigation }) {
-  const { openProfileGateway } = useMainTabs();
+  const { openProfileGateway, openSideDrawer } = useMainTabs();
 
   return (
     <View style={styles.container}>
       <BrandHeader
         screenName="PASSPORT"
         onBrandPress={openProfileGateway}
+        onMenuPress={openSideDrawer}
         rightSlot={
           <TouchableOpacity
             style={styles.backBtn}

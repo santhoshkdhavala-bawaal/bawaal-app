@@ -9,6 +9,7 @@ import LockerRoom from './LockerRoom';
 import ProfileScreen from './ProfileScreen';
 import ProfileGatewayModal from './ProfileGatewayModal';
 import ChallengeAlertModal from './ChallengeAlertModal';
+import SideDrawerMenu from './SideDrawerMenu';
 import { MainTabContext } from './mainTabContext';
 
 export { useMainTabs } from './mainTabContext';
@@ -43,6 +44,7 @@ export default function MainTabs({ navigation, route }) {
     },
   });
   const [profileOpen, setProfileOpen] = useState(false);
+  const [sideDrawerOpen, setSideDrawerOpen] = useState(false);
   const [challengeAlert, setChallengeAlert] = useState(DEMO_CHALLENGE);
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
 
@@ -97,6 +99,8 @@ export default function MainTabs({ navigation, route }) {
   }, [navigation]);
 
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
+  const openSideDrawer = useCallback(() => setSideDrawerOpen(true), []);
+  const closeSideDrawer = useCallback(() => setSideDrawerOpen(false), []);
 
   /** Center FAB is create-only; thunder alerts live on the BATTLES tab. */
   const onCreatePress = useCallback(() => {
@@ -184,9 +188,10 @@ export default function MainTabs({ navigation, route }) {
       setTab,
       openCreate,
       openProfileGateway,
+      openSideDrawer,
       challengeAlertActive,
     }),
-    [tab, openCreate, openProfileGateway, challengeAlertActive]
+    [tab, openCreate, openProfileGateway, openSideDrawer, challengeAlertActive]
   );
   const bottomPad = Math.max(insets.bottom, 8);
 
@@ -216,6 +221,15 @@ export default function MainTabs({ navigation, route }) {
           visible={profileOpen}
           onClose={() => setProfileOpen(false)}
           onOpenPassport={() => setTab('Passport')}
+        />
+        <SideDrawerMenu
+          visible={sideDrawerOpen}
+          onClose={closeSideDrawer}
+          onInviteFriends={() => {
+            /* Wire share sheet / invite deep-link when ready */
+          }}
+          onOpenSettings={() => setTab('Passport')}
+          onOpenHelp={() => setTab('Passport')}
         />
         <ChallengeAlertModal
           visible={challengeModalOpen}
