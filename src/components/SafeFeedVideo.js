@@ -1,9 +1,10 @@
 /**
- * Crash-safe feed / reel video surface for BAWAAL (expo-video).
- * - Clean public Supabase URLs (.../object/public/bawaalvideos/...)
- * - Explicit 100% sized wrapper (Android black-surface fix)
- * - textureView on Android; loop + autoplay; no native controls
- * - Logs load/error instead of crashing; error boundary fallback
+ * Crash-safe Arena feed video surface.
+ *
+ * Uses expo-av `<Video>` (not expo-video VideoView) so we never hit the native
+ * Fabric crash: "Cannot set prop 'player' on view …".
+ *
+ * Same public API as before — uri / muted / paused / loop / autoPlay / contentFit.
  */
 import React, {
   Component,
@@ -17,10 +18,9 @@ import {
   View,
   Text,
   StyleSheet,
-  Platform,
   ActivityIndicator,
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { Video, ResizeMode } from 'expo-av';
 import {
   isRemoteHttpsUri,
   resolvePlayableVideoUri,
@@ -85,13 +85,12 @@ class VideoErrorBoundary extends Component {
   }
 }
 
-/**
- * expo-video equivalents of expo-av:
- *   resizeMode="cover"     → contentFit="cover"
- *   useNativeControls={false}
- *   shouldPlay={true}      → autoPlay + player.play()
- *   isLooping={true}       → player.loop = true
- */
+function mapContentFit(contentFit) {
+  if (contentFit === 'contain') return ResizeMode.CONTAIN;
+  if (contentFit === 'fill' || contentFit === 'stretch') return ResizeMode.STRETCH;
+  return ResizeMode.COVER;
+}
+
 function SafeFeedVideo({
   uri: uriProp,
   source,
@@ -99,7 +98,7 @@ function SafeFeedVideo({
   muted = true,
   loop = true,
   autoPlay = true,
-  /** When true, keep player mounted but paused (no remount). */
+  /** When true, keep mounted but paused (no remount). */
   paused = false,
   contentFit = 'cover',
   label = null,
@@ -114,190 +113,66 @@ function SafeFeedVideo({
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [hasFrame, setHasFrame] = useState(false);
+  const videoRef = useRef(null);
+  const readyFallback = useRef(null);
 
-  // Refs keep mute/pause out of the source-load effect — toggling must NEVER
-  // call replaceAsync or remount VideoView (Android black-screen flash).
-  const mutedRef = useRef(muted);
-  const pausedRef = useRef(paused);
-  const autoPlayRef = useRef(autoPlay);
-
+  // Reset load UI when URI changes
   useEffect(() => {
-    mutedRef.current = muted;
-  }, [muted]);
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
-  useEffect(() => {
-    autoPlayRef.current = autoPlay;
-  }, [autoPlay]);
-
-  const playerSource =
-    playable && !failed && resolved
-      ? { uri: resolved, contentType: 'auto' }
-      : null;
-
-  const player = useVideoPlayer(playerSource, (p) => {
-    try {
-      p.loop = loop; // isLooping
-      // Never flip native `muted` (Android tears down decoder → black flash).
-      // Silence via volume only; keep muted=false for continuous video frames.
-      p.muted = false;
-      p.volume = mutedRef.current ? 0 : 1;
-      // Fast start: short gate so first frame appears quickly while still buffering ahead
-      p.bufferOptions = {
-        preferredForwardBufferDuration: 8,
-        minBufferForPlayback: 0.1,
-        prioritizeTimeOverSizeThreshold: true,
-        waitsToMinimizeStalling: false,
-      };
-    } catch (err) {
-      console.log('Video Player Error:', err);
-    }
-  });
-
-  /* expo-video `player` is a mutable native handle — React Compiler immutability
-     rules do not apply. All effects below intentionally mutate player APIs. */
-  /* eslint-disable react-hooks/immutability */
-  useEffect(() => {
-    if (!player) return;
-    try {
-      player.bufferOptions = {
-        preferredForwardBufferDuration: 8,
-        minBufferForPlayback: 0.1,
-        prioritizeTimeOverSizeThreshold: true,
-        waitsToMinimizeStalling: false,
-      };
-    } catch (_) {
-      /* older runtimes may ignore */
-    }
-  }, [player]);
-
-  // Play / pause only — never touches source or VideoView identity
-  useEffect(() => {
-    if (!player || failed) return;
-    try {
-      if (paused) player.pause?.();
-      else if (autoPlay) player.play?.();
-    } catch (err) {
-      console.log('Video Player Error:', err);
-    }
-  }, [player, paused, autoPlay, failed]);
-
-  // Soft mute: volume 0/1 only — keeps decoder + VideoView mounted (no black flicker)
-  useEffect(() => {
-    if (!player) return;
-    try {
-      player.muted = false;
-      player.volume = muted ? 0 : 1;
-    } catch (err) {
-      console.log('Video Player Error:', err);
-    }
-  }, [player, muted]);
-
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- reset load UI when URI changes */
+    /* eslint-disable react-hooks/set-state-in-effect */
     setFailed(false);
     setLoading(true);
     setHasFrame(false);
     /* eslint-enable react-hooks/set-state-in-effect */
+    if (readyFallback.current) clearTimeout(readyFallback.current);
+    readyFallback.current = setTimeout(() => {
+      setLoading(false);
+    }, 1400);
+    return () => {
+      if (readyFallback.current) clearTimeout(readyFallback.current);
+    };
   }, [resolved]);
 
-  // Track last loaded URI so reopen / fullscreen handoff skips a full re-fetch
-  const lastLoadedUriRef = useRef(null);
-
-  // Source load ONLY — muted / paused / autoPlay intentionally omitted from deps.
-  // useVideoPlayer already owns the URI; avoid a second replaceAsync (that caused
-  // prolonged black / LOADING CLIP on cold start and filter remounts).
+  // Play / pause / mute via status — never remounts the native view
   useEffect(() => {
+    const node = videoRef.current;
+    if (!node || !playable || failed) return undefined;
     let cancelled = false;
-    let statusSub = null;
-    let playingSub = null;
-    let readyFallback = null;
-
-    if (!playable || !resolved || !player || failed) return undefined;
-
-    try {
-      const alreadyLoaded = lastLoadedUriRef.current === resolved;
-      if (alreadyLoaded) {
-        /* eslint-disable react-hooks/set-state-in-effect -- resume cached URI without reload flash */
-        setLoading(false);
-        setHasFrame(true);
-        /* eslint-enable react-hooks/set-state-in-effect */
-      } else {
-        lastLoadedUriRef.current = resolved;
-      }
-      player.loop = loop;
-      player.muted = false;
-      player.volume = mutedRef.current ? 0 : 1;
-      if (autoPlayRef.current && !pausedRef.current) {
-        player.play?.();
-      } else {
-        player.pause?.();
-      }
-    } catch (e) {
-      console.log('Video Player Error:', e?.message || e);
-      setFailed(true);
-      setLoading(false);
-    }
-
-    // Failsafe: never leave the B&W spinner up for more than ~1.2s
-    readyFallback = setTimeout(() => {
-      if (!cancelled) setLoading(false);
-    }, 1200);
-
-    try {
-      statusSub = player?.addListener?.('statusChange', ({ status, error }) => {
-        if (cancelled) return;
-        if (status === 'error') {
-          console.log('Video Player Error:', error || status);
-          setFailed(true);
-          setLoading(false);
-        } else if (status === 'readyToPlay') {
-          setLoading(false);
-          if (autoPlayRef.current && !pausedRef.current) {
-            try {
-              player.play?.();
-            } catch (err) {
-              console.log('Video Player Error:', err);
-            }
-          }
+    (async () => {
+      try {
+        await node.setStatusAsync({
+          shouldPlay: !!autoPlay && !paused,
+          isLooping: !!loop,
+          // volume-first soft mute (avoids some Android decoder tears)
+          isMuted: !!muted,
+          volume: muted ? 0 : 1,
+          progressUpdateIntervalMillis: 800,
+        });
+      } catch (err) {
+        if (!cancelled) {
+          console.log('Video Player Error:', err?.message || err);
         }
-      });
-      playingSub = player?.addListener?.('playingChange', ({ isPlaying }) => {
-        if (isPlaying && !cancelled) {
-          setLoading(false);
-          setHasFrame(true);
-        }
-      });
-    } catch (err) {
-      console.log('Video Player Error:', err);
-    }
-
+      }
+    })();
     return () => {
       cancelled = true;
-      if (readyFallback) clearTimeout(readyFallback);
+    };
+  }, [autoPlay, paused, muted, loop, playable, failed, resolved]);
+
+  // Unload on unmount so FlatList recycle does not leak decoders
+  useEffect(() => {
+    const node = videoRef.current;
+    return () => {
+      if (!node) return;
       try {
-        statusSub?.remove?.();
-        playingSub?.remove?.();
-      } catch (_) {
-        /* ignore */
-      }
-      // Do NOT call player.release() — useVideoPlayer owns lifecycle.
-      try {
-        player?.pause?.();
+        node.stopAsync?.().catch?.(() => {});
+        node.unloadAsync?.().catch?.(() => {});
       } catch (_) {
         /* ignore */
       }
     };
-  }, [player, resolved, playable, failed, loop]);
-  /* eslint-enable react-hooks/immutability */
+  }, []);
 
-  const onFirstFrameRender = () => {
-    setHasFrame(true);
-    setLoading(false);
-  };
-
-  if (!playable || failed || !player) {
+  if (!playable || failed) {
     return (
       <View style={[styles.shell, style]}>
         <View style={styles.placeholder}>
@@ -328,25 +203,46 @@ function SafeFeedVideo({
         </View>
       }
     >
-      {/* Static shell — mute/pause must never remount this tree */}
       <View style={[styles.shell, style]} pointerEvents="box-none">
-        <VideoView
+        {/* B&W placeholder sits under the video until first frame */}
+        <View style={styles.underlay} pointerEvents="none">
+          <Text style={styles.placeholderText}>{label || 'BAWAAL'}</Text>
+        </View>
+
+        <Video
+          ref={videoRef}
           style={styles.video}
-          player={player}
-          contentFit={contentFit}
-          nativeControls={false}
-          fullscreenOptions={{ enable: false }}
-          pointerEvents="none"
-          onFirstFrameRender={onFirstFrameRender}
-          {...(Platform.OS === 'android'
-            ? { surfaceType: 'textureView', useExoShutter: false }
-            : {})}
+          source={{ uri: resolved }}
+          resizeMode={mapContentFit(contentFit)}
+          shouldPlay={!!autoPlay && !paused}
+          isLooping={!!loop}
+          isMuted={!!muted}
+          volume={muted ? 0 : 1}
+          useNativeControls={!!nativeControls}
+          progressUpdateIntervalMillis={800}
+          onLoadStart={() => {
+            setLoading(true);
+          }}
+          onLoad={() => {
+            setLoading(false);
+          }}
+          onReadyForDisplay={() => {
+            setHasFrame(true);
+            setLoading(false);
+          }}
+          onError={(err) => {
+            console.log('Video Player Error:', err?.error || err);
+            setFailed(true);
+            setLoading(false);
+          }}
         />
+
         {loading && !hasFrame ? (
           <View style={styles.loadingOverlay} pointerEvents="none">
             <ActivityIndicator color="#FFFFFF" />
           </View>
         ) : null}
+
         {!!label && (
           <View style={styles.cornerTag} pointerEvents="none">
             <Text style={styles.cornerTagText}>{label}</Text>
@@ -366,16 +262,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     overflow: 'hidden',
   },
+  underlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#121212',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   video: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#000000',
+    backgroundColor: 'transparent',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   placeholder: {
     flex: 1,

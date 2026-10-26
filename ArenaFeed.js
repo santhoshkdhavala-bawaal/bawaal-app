@@ -1218,10 +1218,10 @@ export default function ArenaFeed({ navigation, route }) {
         }
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
-        // Lean first paint — decode only near-viewport cells
+        // 60fps scroll budget — warm neighbors only via ClipSurface `active`
         initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        maxToRenderPerBatch={3}
+        windowSize={5}
         updateCellsBatchingPeriod={40}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
