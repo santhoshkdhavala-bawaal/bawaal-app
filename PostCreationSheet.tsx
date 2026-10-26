@@ -31,8 +31,12 @@ import {
   isRemoteHttpsUri,
   resolvePlayableVideoUri,
   sanitizeVideoUriForUpload,
-  uploadVideoToSupabase,
 } from './src/services/uploadService';
+import {
+  makeBawaalClipFileName,
+  publishRecordedClipToArena,
+  uploadLockedClip,
+} from './src/services/recordToPostService';
 import GalleryDeleteButton from './src/components/GalleryDeleteButton';
 import { normalizeMediaLibraryAssetId } from './src/services/galleryMediaService';
 import {
@@ -508,7 +512,7 @@ function PostCreationSheet({
   const uploadClipOrAbort = useCallback(
     async (rawLocalUri: string): Promise<string | null> => {
       const formattedUri = formatVideoUriForUpload(rawLocalUri);
-      const fileName = `video_${Date.now()}.mp4`;
+      const fileName = makeBawaalClipFileName();
       setUploadErrorDetail('');
 
       console.log('[PostCreationSheet] formattedUri ->', formattedUri);
@@ -516,19 +520,20 @@ function PostCreationSheet({
       console.log('[PostCreationSheet] platform ->', Platform.OS);
 
       try {
-        const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName, {
+        const uploaded = await uploadLockedClip(formattedUri, {
+          fileName,
           onProgress: (pct: number) => setUploadPct(pct),
           onError: (msg: string) => setUploadErrorDetail(String(msg || '')),
         });
 
-        if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
-          console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
-          return remoteUrl.trim();
+        if (uploaded.ok && uploaded.publicUrl && isRemoteHttpsUri(uploaded.publicUrl)) {
+          console.log('[PostCreationSheet] cloud URL ready:', uploaded.publicUrl);
+          return uploaded.publicUrl.trim();
         }
 
         console.error(
-          '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL:',
-          remoteUrl
+          '[PostCreationSheet] Storage upload failed:',
+          uploaded.error
         );
         return null;
       } catch (err) {
@@ -580,6 +585,61 @@ function PostCreationSheet({
     await yieldToUI();
 
     try {
+      // Locked Arena path — Storage + DB + feed prepend in one service
+      if ((mode === 'SPARKS' || mode === 'JOSH') && localVideoUri) {
+        const published = await publishRecordedClipToArena({
+          localUri: localVideoUri,
+          title: trimmed,
+          tagline: showTaglines ? tagline : undefined,
+          caption: showTaglines ? `${trimmed} ${tagline}` : trimmed,
+          sport,
+          category: sport,
+          mode,
+          author: '@you',
+          creator: 'You',
+          durationSec: safeNum(durationSec, 30),
+          onProgress: (pct: number) => setUploadPct(pct),
+          onError: (msg: string) => setUploadErrorDetail(String(msg || '')),
+        });
+
+        if (!published.ok || !published.publicUrl || !published.post) {
+          Alert.alert(
+            'Upload failed',
+            uploadErrorDetail
+              ? `Could not upload to BAWAAL cloud storage:\n${uploadErrorDetail}`
+              : 'Could not upload a playable video. Your post was not published.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        const playbackUri =
+          ensurePublicBawaalVideoUrl(published.publicUrl) || published.publicUrl;
+        console.log('[PostCreationSheet] Arena publish ok:', playbackUri);
+
+        setPendingPayload({
+          mode,
+          videoUri: playbackUri,
+          localVideoUri,
+          publicCloudUrl: playbackUri,
+          remoteVideoUri: playbackUri,
+          title: trimmed,
+          tagline: showTaglines ? tagline : undefined,
+          sport,
+          category: sport,
+          slowMoEnabled: !!slowMoEnabled,
+          slowMoRate: slowMoEnabled ? safeNum(slowMoRate, 0.5) : 1,
+          slowMoStartSec: safeNum(slowMoStartSec, 0),
+          slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
+          durationSec: safeNum(durationSec, 30),
+          uploadSkipped: false,
+          feedTarget: 'ARENA',
+          newPost: published.post as FeedPostCard,
+        });
+        setSuccessVisible(true);
+        return;
+      }
+
       let publicCloudUrl: string | null = null;
 
       // Modes with a clip MUST get a cloud HTTPS URL — never save a broken local-only post
@@ -672,14 +732,6 @@ function PostCreationSheet({
         dispatched?.newPost?.id,
         dispatched?.newPost?.videoUri || dispatched?.videoUri
       );
-      // Storage upload already succeeded (playbackUri is HTTPS). Never Alert schema
-      // / upsert noise — success modal only. Soft-ok covers missing bawaal_posts.
-      if (dispatched?.newPost?._persistOk === false && playbackUri) {
-        console.warn(
-          '[PostCreationSheet] DB row missed (clip is live):',
-          dispatched?.newPost?._persistError
-        );
-      }
       setPendingPayload(dispatched);
       setSuccessVisible(true);
     } catch (err) {

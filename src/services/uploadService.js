@@ -74,7 +74,7 @@ function makeObjectFileName(fileName) {
   const raw =
     typeof fileName === 'string' && fileName.trim().length > 0
       ? fileName.trim()
-      : `video_${Date.now()}.mp4`;
+      : `bawaal_${Date.now()}.mp4`;
   // Always keep .mp4 so Storage / CDN serve video/mp4
   const cleaned = raw.replace(/[^\w.\-]+/g, '_');
   return cleaned.toLowerCase().endsWith('.mp4') ? cleaned : `${cleaned}.mp4`;
@@ -244,11 +244,13 @@ export async function persistLocalVideoUri(localUri) {
       throw new Error(`Local video file not found at ${uri}`);
     }
 
-    if (uri.includes('/battle_clips/')) return uri;
+    if (uri.includes('/battle_clips/') || uri.includes('/bawaal_clips/')) {
+      return uri;
+    }
 
-    const dir = `${FileSystem.documentDirectory}battle_clips`;
+    const dir = `${FileSystem.documentDirectory}bawaal_clips`;
     await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-    const dest = `${dir}/clip_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.mp4`;
+    const dest = `${dir}/bawaal_${Date.now()}.mp4`;
     await FileSystem.copyAsync({ from: uri, to: dest });
     return dest;
   } catch (err) {

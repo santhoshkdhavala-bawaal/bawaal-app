@@ -40,6 +40,7 @@ import DeviceGalleryModal, {
   type DeviceGalleryAsset,
 } from './src/components/DeviceGalleryModal';
 import { stabilizeLocalVideoUri } from './src/services/uploadService';
+import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 export type { CreationMode, PostCreationPayload };
 
@@ -826,6 +827,7 @@ export default function UniversalCamera({
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
+  const [torchOn, setTorchOn] = useState(false);
   const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
@@ -897,19 +899,25 @@ export default function UniversalCamera({
     scheduleHidePill();
   }, [mode, isRecording, fadeTimePill, scheduleHidePill]);
 
+  // One-shot permission request on mount — avoids black / dead camera states
   useEffect(() => {
-    if (cameraPermission && !cameraPermission.granted) {
-      void requestCameraPermission();
-    }
-    if (micPermission && !micPermission.granted) {
-      void requestMicPermission();
-    }
-  }, [
-    cameraPermission,
-    micPermission,
-    requestCameraPermission,
-    requestMicPermission,
-  ]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        await Promise.all([requestCameraPermission(), requestMicPermission()]);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn(
+            '[UniversalCamera] permission request failed:',
+            (err as Error)?.message || err
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestCameraPermission, requestMicPermission]);
 
   useEffect(() => {
     scheduleHidePill();
@@ -1176,16 +1184,20 @@ export default function UniversalCamera({
         return;
       }
 
-      // Persist out of cache BEFORE gallery save / post so Android GC can't nuke the URI
+      // Persist to documentDirectory/bawaal_clips/bawaal_*.mp4 before gallery/post
       let stableUri = uri;
       try {
-        stableUri = (await stabilizeLocalVideoUri(uri)) || uri;
+        stableUri =
+          (await lockLocalRecording(uri)) ||
+          (await stabilizeLocalVideoUri(uri)) ||
+          uri;
       } catch (stabErr) {
         console.warn(
-          '[UniversalCamera] stabilize failed, using raw uri:',
+          '[UniversalCamera] lock/stabilize failed, using raw uri:',
           (stabErr as Error)?.message || stabErr
         );
       }
+      setCameraError('');
 
       // Instagram-style: auto-save to Camera Roll (keep asset id for optional delete)
       void saveVideoToGallery(stableUri).then((res) => {
@@ -1245,8 +1257,14 @@ export default function UniversalCamera({
 
   const flipCamera = useCallback(() => {
     if (isRecording) return;
+    setTorchOn(false);
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
   }, [isRecording]);
+
+  const toggleTorch = useCallback(() => {
+    if (isRecording || facing !== 'back') return;
+    setTorchOn((v) => !v);
+  }, [isRecording, facing]);
 
   /** Open in-app gallery (checkbox select + targeted delete / import). */
   const openDeviceGallery = useCallback(() => {
@@ -1262,10 +1280,13 @@ export default function UniversalCamera({
       if (!picked?.uri) return;
       let uri = picked.uri;
       try {
-        uri = (await stabilizeLocalVideoUri(uri)) || uri;
+        uri =
+          (await lockLocalRecording(uri)) ||
+          (await stabilizeLocalVideoUri(uri)) ||
+          uri;
       } catch (stabErr) {
         console.warn(
-          '[UniversalCamera] gallery pick stabilize failed:',
+          '[UniversalCamera] gallery pick lock failed:',
           (stabErr as Error)?.message || stabErr
         );
       }
@@ -1361,11 +1382,16 @@ export default function UniversalCamera({
         mode="video"
         mute={false}
         videoQuality="720p"
-        onCameraReady={() => setIsCameraReady(true)}
+        enableTorch={torchOn && facing === 'back'}
+        onCameraReady={() => {
+          setIsCameraReady(true);
+          setCameraError('');
+        }}
         onMountError={(err) => {
           recordingLockRef.current = false;
           setIsRecording(false);
           setIsCameraReady(false);
+          setTorchOn(false);
           setCameraError(err?.message || 'Could not start camera.');
         }}
       />
@@ -1402,14 +1428,35 @@ export default function UniversalCamera({
             </Text>
           </View>
 
-          <TouchableOpacity
-            onPress={flipCamera}
-            style={styles.flipPill}
-            disabled={isRecording}
-            accessibilityLabel="Flip camera"
-          >
-            <Text style={styles.flipPillText}>🔄 FLIP</Text>
-          </TouchableOpacity>
+          <View style={styles.topRightControls}>
+            <TouchableOpacity
+              onPress={toggleTorch}
+              style={[
+                styles.flipPill,
+                torchOn && styles.torchPillOn,
+                (facing !== 'back' || isRecording) && styles.controlDisabled,
+              ]}
+              disabled={isRecording || facing !== 'back'}
+              accessibilityLabel="Toggle flash"
+            >
+              <Text
+                style={[
+                  styles.flipPillText,
+                  torchOn && styles.torchPillTextOn,
+                ]}
+              >
+                {torchOn ? 'FLASH ON' : 'FLASH'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={flipCamera}
+              style={styles.flipPill}
+              disabled={isRecording}
+              accessibilityLabel="Flip camera"
+            >
+              <Text style={styles.flipPillText}>FLIP</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {!!cameraError && (
@@ -1643,6 +1690,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  topRightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   flipPill: {
     backgroundColor: 'rgba(0,0,0,0.4)',
     borderRadius: 20,
@@ -1650,6 +1702,16 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.35)',
+  },
+  torchPillOn: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  torchPillTextOn: {
+    color: '#000000',
+  },
+  controlDisabled: {
+    opacity: 0.35,
   },
   flipPillText: {
     color: '#FFFFFF',
