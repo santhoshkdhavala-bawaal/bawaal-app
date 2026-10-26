@@ -12,19 +12,20 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import UserHandle from './src/components/UserHandle';
+import { isHandleVerified } from './src/data/athleteSocial';
 
 const BG = '#000000';
 const CARD = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ACCENT = '#FF5722';
 
 const GIF_STICKERS = ['🔥', '💀', '🐐', '💪', '🚀', '😂', '⚡', '🏆'];
 
 const DEMO_BANTER = [
-  { id: 'b1', handle: '@Neha_Lift', text: 'That pull was filthy 🔥', gif: '🔥' },
-  { id: 'b2', handle: '@Dev_Snatch', text: 'GIF energy only', gif: '💀' },
-  { id: 'b3', handle: '@Mia_Torque', text: 'Send the angle next time', gif: '🐐' },
+  { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy 🔥', gif: '🔥' },
+  { id: 'b2', handle: '@Dev_Snatch', verified: false, text: 'GIF energy only', gif: '💀' },
+  { id: 'b3', handle: '@Mia_Torque', verified: true, text: 'Send the angle next time', gif: '🐐' },
 ];
 
 /**
@@ -72,9 +73,19 @@ export default function BanterBottomSheet({ visible, reel, onClose }) {
           <View style={styles.header}>
             <View style={styles.headerMeta}>
               <Text style={styles.title}>BANTER</Text>
-              <Text style={styles.sub} numberOfLines={1}>
-                {handle} · {reel?.caption || 'Arena reel'}
-              </Text>
+              <View style={styles.subRow}>
+                <UserHandle
+                  handle={handle}
+                  verified={reel?.verified ?? isHandleVerified(handle)}
+                  size={11}
+                  color={MUTED}
+                  badgeSize={12}
+                />
+                <Text style={styles.sub} numberOfLines={1}>
+                  {' '}
+                  · {reel?.caption || 'Arena reel'}
+                </Text>
+              </View>
             </View>
             <TouchableOpacity onPress={onClose} hitSlop={12}>
               <Text style={styles.close}>✕</Text>
@@ -103,7 +114,13 @@ export default function BanterBottomSheet({ visible, reel, onClose }) {
               <View key={c.id} style={styles.row}>
                 <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
                 <View style={styles.rowBody}>
-                  <Text style={styles.rowHandle}>{c.handle}</Text>
+                  <UserHandle
+                    handle={c.handle}
+                    verified={c.verified ?? isHandleVerified(c.handle)}
+                    size={11}
+                    color={WHITE}
+                    badgeSize={12}
+                  />
                   <Text style={styles.rowText}>{c.text}</Text>
                 </View>
               </View>
@@ -173,10 +190,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.2,
   },
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    flexShrink: 1,
+  },
   sub: {
     color: MUTED,
     fontSize: 11,
-    marginTop: 2,
+    flexShrink: 1,
   },
   close: { color: WHITE, fontSize: 18, fontWeight: '700' },
   gifTray: {
@@ -204,7 +227,6 @@ const styles = StyleSheet.create({
   },
   rowGif: { fontSize: 16, marginTop: 1 },
   rowBody: { flex: 1 },
-  rowHandle: { color: ACCENT, fontSize: 11, fontWeight: '800' },
   rowText: { color: WHITE, fontSize: 12, marginTop: 1 },
   compose: {
     flexDirection: 'row',
@@ -223,13 +245,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   sendBtn: {
-    backgroundColor: ACCENT,
+    backgroundColor: WHITE,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   sendText: {
-    color: WHITE,
+    color: BG,
     fontSize: 11,
     fontWeight: '900',
   },

@@ -8,13 +8,15 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import UserHandle from './src/components/UserHandle';
+import RoleBadge from './src/components/RoleBadge';
+import { isHandleVerified } from './src/data/athleteSocial';
+import { STAT_ACCENTS } from './src/data/athleteSocial';
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#888888';
-const ORANGE = '#FF5722';
-const CYAN = '#00E5FF';
 
 function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
   const insets = useSafeAreaInsets();
@@ -26,6 +28,11 @@ function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
   const initial = String(handle.replace(/^@/, '') || 'A')
     .charAt(0)
     .toUpperCase();
+  const role =
+    athlete.role ||
+    (String(roleLabel || '').toLowerCase().includes('scout')
+      ? 'scout'
+      : 'athlete');
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -33,19 +40,27 @@ function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.handleBar} />
-          <Text style={styles.roleChip}>{roleLabel}</Text>
+          <RoleBadge role={role} style={styles.roleChipWrap} />
 
           <View style={styles.heroRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{initial}</Text>
             </View>
             <View style={styles.heroMeta}>
-              <Text style={styles.handle}>{handle}</Text>
+              <UserHandle
+                handle={handle}
+                verified={athlete.verified ?? isHandleVerified(handle)}
+                size={16}
+                color={WHITE}
+              />
               <Text style={styles.region}>
                 {flag} {label}
               </Text>
               <Text style={styles.stats}>
-                {athlete.reps ?? 0} REPS · {athlete.votes ?? 0} VOTES
+                <Text style={{ color: STAT_ACCENTS.blue }}>{athlete.reps ?? 0}</Text>
+                {' REPS · '}
+                <Text style={{ color: STAT_ACCENTS.green }}>{athlete.votes ?? 0}</Text>
+                {' VOTES'}
               </Text>
             </View>
           </View>
@@ -117,12 +132,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
     marginBottom: 12,
   },
-  roleChip: {
-    alignSelf: 'flex-start',
-    color: ORANGE,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+  roleChipWrap: {
     marginBottom: 12,
   },
   heroRow: {
@@ -137,7 +147,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     backgroundColor: SURFACE,
     borderWidth: 1.5,
-    borderColor: ORANGE,
+    borderColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -149,11 +159,6 @@ const styles = StyleSheet.create({
   heroMeta: {
     flex: 1,
   },
-  handle: {
-    color: WHITE,
-    fontSize: 18,
-    fontWeight: '900',
-  },
   region: {
     color: MUTED,
     fontSize: 13,
@@ -161,14 +166,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   stats: {
-    color: CYAN,
+    color: MUTED,
     fontSize: 11,
     fontWeight: '800',
     marginTop: 6,
     letterSpacing: 0.4,
   },
   followBtn: {
-    backgroundColor: ORANGE,
+    backgroundColor: WHITE,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
@@ -177,16 +182,16 @@ const styles = StyleSheet.create({
   followBtnOn: {
     backgroundColor: SURFACE,
     borderWidth: 1.5,
-    borderColor: ORANGE,
+    borderColor: WHITE,
   },
   followBtnText: {
-    color: WHITE,
+    color: '#000000',
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.6,
   },
   followBtnTextOn: {
-    color: ORANGE,
+    color: WHITE,
   },
   closeBtn: {
     alignItems: 'center',

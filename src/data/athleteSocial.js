@@ -3,6 +3,13 @@
  * Swap for Supabase follows + profiles when auth ships.
  */
 
+const DEMO_PHOTOS = (seed, captions) =>
+  captions.map((caption, i) => ({
+    id: `${seed}-p${i + 1}`,
+    uri: `https://picsum.photos/seed/${seed}${i + 1}/400/400`,
+    caption,
+  }));
+
 export const CURRENT_USER = {
   id: 'me',
   displayName: 'Rohit Kumar',
@@ -12,6 +19,8 @@ export const CURRENT_USER = {
   city: 'Virar West, Mumbai',
   primarySport: 'COMBAT',
   avatarUri: null,
+  verified: true,
+  role: 'athlete',
   statusBadge: 'SCOUT VERIFIED',
   stats: {
     bawaalPts: 3850,
@@ -30,6 +39,14 @@ export const CURRENT_USER = {
     { id: 'c2', title: 'Pad work PR', sport: 'COMBAT' },
     { id: 'c3', title: 'Footwork drill', sport: 'COMBAT' },
   ],
+  photos: DEMO_PHOTOS('rohit', [
+    'Sparring still',
+    'Pad work',
+    'Ring walk',
+    'Gym mural',
+    'Gloves detail',
+    'Team huddle',
+  ]),
 };
 
 export const FOLLOWING = [
@@ -39,6 +56,8 @@ export const FOLLOWING = [
     handle: '@Mia_Torque',
     sport: 'GYM',
     online: true,
+    verified: true,
+    role: 'pro',
     bio: 'Floor PR hunter · chalk & chaos',
     statusBadge: 'PRO',
     stats: { bawaalPts: 4120, rank: 2, battlesWon: 22, followers: 890, following: 40, winRate: 81 },
@@ -50,6 +69,7 @@ export const FOLLOWING = [
       { id: 'mc1', title: 'Deadlift lockout', sport: 'GYM' },
       { id: 'mc2', title: 'Push press sets', sport: 'GYM' },
     ],
+    photos: DEMO_PHOTOS('mia', ['PR chalk', 'Bar setup', 'Lift still', 'Gym night']),
   },
   {
     id: 'f2',
@@ -57,6 +77,8 @@ export const FOLLOWING = [
     handle: '@Aman_Combat',
     sport: 'COMBAT',
     online: false,
+    verified: false,
+    role: 'athlete',
     bio: 'Southpaw striker · Mumbai circuit',
     statusBadge: 'RISING',
     stats: { bawaalPts: 2980, rank: 5, battlesWon: 14, followers: 560, following: 120, winRate: 72 },
@@ -68,6 +90,7 @@ export const FOLLOWING = [
       { id: 'ac1', title: 'Jab-cross ladder', sport: 'COMBAT' },
       { id: 'ac2', title: 'Clinch escape', sport: 'COMBAT' },
     ],
+    photos: DEMO_PHOTOS('aman', ['Pads', 'Shadow']),
   },
   {
     id: 'f3',
@@ -75,6 +98,8 @@ export const FOLLOWING = [
     handle: '@Rohit_Cricket',
     sport: 'CRICKET',
     online: true,
+    verified: true,
+    role: 'athlete',
     bio: 'Opening bat · net sessions daily',
     statusBadge: 'VERIFIED',
     stats: { bawaalPts: 3510, rank: 3, battlesWon: 11, followers: 2100, following: 55, winRate: 69 },
@@ -86,6 +111,7 @@ export const FOLLOWING = [
       { id: 'rc1', title: 'Cover drive nets', sport: 'CRICKET' },
       { id: 'rc2', title: 'Pull shot drill', sport: 'CRICKET' },
     ],
+    photos: DEMO_PHOTOS('bat', ['Nets', 'Drive still', 'Kit bag']),
   },
 ];
 
@@ -96,6 +122,8 @@ export const SUGGESTED = [
     handle: '@Karan_FreeKick',
     sport: 'FOOTBALL',
     online: false,
+    verified: false,
+    role: 'athlete',
     bio: 'Set-piece specialist · left foot',
     statusBadge: 'SUGGESTED',
     stats: { bawaalPts: 2740, rank: 8, battlesWon: 9, followers: 430, following: 200, winRate: 64 },
@@ -107,6 +135,7 @@ export const SUGGESTED = [
       { id: 'kc1', title: 'Free-kick wall', sport: 'FOOTBALL' },
       { id: 'kc2', title: 'Crossing drills', sport: 'FOOTBALL' },
     ],
+    photos: DEMO_PHOTOS('karan', ['Wall kick', 'Crossing']),
   },
   {
     id: 's2',
@@ -114,6 +143,8 @@ export const SUGGESTED = [
     handle: '@RaceQueen_IN',
     sport: 'THROTTLE',
     online: true,
+    verified: true,
+    role: 'pro',
     bio: 'Night pulls · 0–100 focus',
     statusBadge: 'HOT',
     stats: { bawaalPts: 3890, rank: 4, battlesWon: 16, followers: 3200, following: 90, winRate: 77 },
@@ -125,6 +156,7 @@ export const SUGGESTED = [
       { id: 'rq1', title: 'Launch practice', sport: 'THROTTLE' },
       { id: 'rq2', title: 'Corner exit', sport: 'THROTTLE' },
     ],
+    photos: DEMO_PHOTOS('race', ['Launch', 'Corner', 'Pit lane', 'Night']),
   },
   {
     id: 's3',
@@ -132,7 +164,9 @@ export const SUGGESTED = [
     handle: '@Yuki_Lift',
     sport: 'GYM',
     online: false,
-    bio: 'Olympic lifts · Tokyo prep',
+    verified: true,
+    role: 'scout',
+    bio: 'Olympic lifts · Tokyo prep · recruiting Asia circuit',
     statusBadge: 'ELITE',
     stats: { bawaalPts: 4450, rank: 1, battlesWon: 27, followers: 5100, following: 33, winRate: 85 },
     metrics: [
@@ -143,8 +177,30 @@ export const SUGGESTED = [
       { id: 'yk1', title: 'Snatch singles', sport: 'GYM' },
       { id: 'yk2', title: 'Jerk recovery', sport: 'GYM' },
     ],
+    photos: DEMO_PHOTOS('yuki', ['Snatch', 'Platform', 'Warm-up', 'Meet day', 'Bar', 'Crowd']),
   },
 ];
+
+/** Extra verified handles that appear in Arena / banter demos */
+const EXTRA_VERIFIED = new Set(
+  [
+    '@Mia_Torque',
+    '@Neha_Lift',
+    '@RaceQueen_IN',
+    '@Rohit_Cricket',
+    '@rohit_vk7',
+    '@Yuki_Lift',
+    '@VirarStriker',
+  ].map((h) => h.toLowerCase())
+);
+
+function normalizeHandle(handle) {
+  const s = String(handle || '')
+    .trim()
+    .toLowerCase();
+  if (!s) return '';
+  return s.startsWith('@') ? s : `@${s}`;
+}
 
 export function findAthleteById(id) {
   if (!id || id === 'me') return CURRENT_USER;
@@ -155,7 +211,26 @@ export function findAthleteById(id) {
   );
 }
 
-/** Accent tokens — stats/metrics only (UI chrome stays B&W). */
+export function findAthleteByHandle(handle) {
+  const key = normalizeHandle(handle);
+  if (!key) return null;
+  if (normalizeHandle(CURRENT_USER.handle) === key) return CURRENT_USER;
+  return (
+    FOLLOWING.find((a) => normalizeHandle(a.handle) === key) ||
+    SUGGESTED.find((a) => normalizeHandle(a.handle) === key) ||
+    null
+  );
+}
+
+export function isHandleVerified(handle) {
+  const key = normalizeHandle(handle);
+  if (!key) return false;
+  if (EXTRA_VERIFIED.has(key)) return true;
+  const athlete = findAthleteByHandle(key);
+  return Boolean(athlete?.verified);
+}
+
+/** Accent tokens — stats/metrics only (UI chrome stays B&W). Verification tick uses VERIFIED_BLUE. */
 export const STAT_ACCENTS = {
   red: '#FF3B30',
   green: '#39FF14',

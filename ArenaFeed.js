@@ -35,6 +35,8 @@ import SafeFeedVideo, {
   resolveFeedVideoUri,
 } from './src/components/SafeFeedVideo';
 import MuteToggleButton from './src/components/MuteToggleButton';
+import UserHandle from './src/components/UserHandle';
+import { isHandleVerified } from './src/data/athleteSocial';
 
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
@@ -129,6 +131,7 @@ function seedArenaFeedLean() {
       type: 'reel',
       sport: 'GYM',
       author: '@Mia_Torque',
+      verified: true,
       caption: 'Floor PR session · chalk & chaos',
       hypeCount: 1204,
       videoUri: null,
@@ -152,6 +155,7 @@ function seedArenaFeedDemoBattles() {
       type: 'reel',
       sport: 'THROTTLE',
       author: '@RaceQueen_IN',
+      verified: true,
       caption: 'Night pull on the expressway · 0–100',
       hypeCount: 842,
       videoUri: null,
@@ -162,6 +166,7 @@ function seedArenaFeedDemoBattles() {
       type: 'reel',
       sport: 'FOOTBALL',
       author: '@Karan_FreeKick',
+      verified: false,
       caption: 'Free-kick practice · top bins',
       hypeCount: 312,
       videoUri: null,
@@ -172,6 +177,7 @@ function seedArenaFeedDemoBattles() {
       type: 'reel',
       sport: 'GYM',
       author: '@Mia_Torque',
+      verified: true,
       caption: 'Floor PR session · chalk & chaos',
       hypeCount: 1204,
       videoUri: null,
@@ -182,6 +188,7 @@ function seedArenaFeedDemoBattles() {
       type: 'reel',
       sport: 'CRICKET',
       author: '@StreetBat_MUM',
+      verified: false,
       caption: 'Gully yorker · street cricket heat',
       hypeCount: 560,
       videoUri: null,
@@ -192,6 +199,7 @@ function seedArenaFeedDemoBattles() {
       type: 'reel',
       sport: 'COMBAT',
       author: '@VirarStriker',
+      verified: true,
       caption: 'Pad work · late night gym lights',
       hypeCount: 991,
       videoUri: null,
@@ -569,7 +577,13 @@ const GeneralReelCard = memo(function GeneralReelCard({
       </Animated.View>
 
       <View style={styles.reelBottomLeft} pointerEvents="none">
-        <Text style={styles.reelHandle}>{handle}</Text>
+        <UserHandle
+          handle={handle}
+          verified={item.verified ?? isHandleVerified(handle)}
+          size={13}
+          color={WHITE}
+          textStyle={styles.reelHandle}
+        />
         <Text style={styles.reelCaptionOverlay} numberOfLines={2}>
           {item.caption}
         </Text>

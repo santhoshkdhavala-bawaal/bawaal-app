@@ -20,6 +20,8 @@ import SafeFeedVideo, {
   toPublicFeedVideoUrl,
 } from './src/components/SafeFeedVideo';
 import MuteToggleButton from './src/components/MuteToggleButton';
+import UserHandle from './src/components/UserHandle';
+import { isHandleVerified } from './src/data/athleteSocial';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -31,9 +33,9 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const GIF_STICKERS = ['🔥', '💀', '🐐', '💪', '🚀', '😂', '⚡', '🏆'];
 
 const DEMO_BANTER = [
-  { id: 'b1', handle: '@Neha_Lift', text: 'That pull was filthy 🔥', gif: '🔥' },
-  { id: 'b2', handle: '@Dev_Snatch', text: 'GIF energy only', gif: '💀' },
-  { id: 'b3', handle: '@Mia_Torque', text: 'Send the angle next time', gif: '🐐' },
+  { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy 🔥', gif: '🔥' },
+  { id: 'b2', handle: '@Dev_Snatch', verified: false, text: 'GIF energy only', gif: '💀' },
+  { id: 'b3', handle: '@Mia_Torque', verified: true, text: 'Send the angle next time', gif: '🐐' },
 ];
 
 /**
@@ -212,9 +214,13 @@ export default function ArenaReelViewer({
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
           <View style={styles.topBar}>
             <View style={styles.topTitleBlock}>
-              <Text style={styles.topHandle} numberOfLines={1}>
-                {handle}
-              </Text>
+              <UserHandle
+                handle={handle}
+                verified={reel.verified ?? isHandleVerified(handle)}
+                size={15}
+                color={WHITE}
+                textStyle={styles.topHandle}
+              />
               <Text style={styles.topHint}>ARENA REEL</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
@@ -323,7 +329,14 @@ export default function ArenaReelViewer({
                   <View key={c.id} style={styles.banterRow}>
                     <Text style={styles.banterGif}>{c.gif || '💬'}</Text>
                     <View style={styles.banterBody}>
-                      <Text style={styles.banterHandle}>{c.handle}</Text>
+                      <UserHandle
+                        handle={c.handle}
+                        verified={c.verified ?? isHandleVerified(c.handle)}
+                        size={11}
+                        color={WHITE}
+                        textStyle={styles.banterHandle}
+                        badgeSize={12}
+                      />
                       <Text style={styles.banterText}>{c.text}</Text>
                     </View>
                   </View>

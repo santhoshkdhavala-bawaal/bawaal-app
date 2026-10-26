@@ -20,6 +20,9 @@ import {
   STAT_ACCENTS,
   SUGGESTED,
 } from './src/data/athleteSocial';
+import UserHandle from './src/components/UserHandle';
+import RoleBadge from './src/components/RoleBadge';
+import VerifiedBadge from './src/components/VerifiedBadge';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -85,12 +88,21 @@ function MeCard({ user }) {
         <Avatar uri={user.avatarUri} name={user.displayName} size={64} />
         <View style={styles.meMeta}>
           <Text style={styles.meName}>{user.displayName}</Text>
-          <Text style={styles.meHandle}>{user.handle}</Text>
-          {user.statusBadge ? (
-            <View style={styles.badgeBw}>
-              <Text style={styles.badgeBwText}>{user.statusBadge}</Text>
-            </View>
-          ) : null}
+          <UserHandle
+            handle={user.handle}
+            verified={user.verified}
+            size={12}
+            color={MUTED}
+            textStyle={styles.meHandle}
+          />
+          <View style={styles.roleRow}>
+            <RoleBadge role={user.role || 'athlete'} compact />
+            {user.statusBadge ? (
+              <View style={styles.badgeBw}>
+                <Text style={styles.badgeBwText}>{user.statusBadge}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
       </View>
       <Text style={styles.bio}>{user.bio}</Text>
@@ -124,9 +136,12 @@ const FollowChip = memo(function FollowChip({ athlete, onPress }) {
     >
       <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={48} />
       {athlete.online ? <View style={styles.onlineDot} /> : null}
-      <Text style={styles.followChipName} numberOfLines={1}>
-        {athlete.displayName.split(' ')[0]}
-      </Text>
+      <View style={styles.followChipNameRow}>
+        <Text style={styles.followChipName} numberOfLines={1}>
+          {athlete.displayName.split(' ')[0]}
+        </Text>
+        {athlete.verified ? <VerifiedBadge size={11} /> : null}
+      </View>
       <Text style={styles.followChipSport}>{athlete.sport}</Text>
     </TouchableOpacity>
   );
@@ -146,12 +161,21 @@ const SuggestedRow = memo(function SuggestedRow({
     >
       <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={44} />
       <View style={styles.suggestedMeta}>
-        <Text style={styles.suggestedName} numberOfLines={1}>
-          {athlete.displayName}
-        </Text>
-        <Text style={styles.suggestedHandle} numberOfLines={1}>
-          {athlete.handle} · {athlete.sport}
-        </Text>
+        <View style={styles.suggestedNameRow}>
+          <Text style={styles.suggestedName} numberOfLines={1}>
+            {athlete.displayName}
+          </Text>
+          <RoleBadge role={athlete.role || 'athlete'} compact />
+        </View>
+        <View style={styles.suggestedHandleRow}>
+          <UserHandle
+            handle={athlete.handle}
+            verified={athlete.verified}
+            size={11}
+            color={MUTED}
+          />
+          <Text style={styles.suggestedHandle}> · {athlete.sport}</Text>
+        </View>
       </View>
       <TouchableOpacity
         style={[styles.followBtn, following && styles.followBtnOn]}
@@ -178,9 +202,18 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
           <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={60} />
           <View style={styles.previewHeaderMeta}>
             <Text style={styles.meName}>{athlete.displayName}</Text>
-            <Text style={styles.meHandle}>
-              {athlete.handle} · {athlete.sport}
-            </Text>
+            <View style={styles.suggestedHandleRow}>
+              <UserHandle
+                handle={athlete.handle}
+                verified={athlete.verified}
+                size={12}
+                color={MUTED}
+              />
+              <Text style={styles.meHandle}> · {athlete.sport}</Text>
+            </View>
+            <View style={styles.roleRow}>
+              <RoleBadge role={athlete.role || 'athlete'} compact />
+            </View>
             <TouchableOpacity
               style={styles.viewFullBtn}
               onPress={onOpenFull}
@@ -362,12 +395,17 @@ const styles = StyleSheet.create({
   meHandle: {
     color: MUTED,
     fontSize: 12,
-    marginTop: 3,
     fontWeight: '600',
+  },
+  roleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+    flexWrap: 'wrap',
   },
   badgeBw: {
     alignSelf: 'flex-start',
-    marginTop: 8,
     borderWidth: 1,
     borderColor: WHITE,
     borderRadius: 6,
@@ -439,11 +477,17 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     backgroundColor: SURFACE,
   },
+  followChipNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
   followChipName: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '800',
-    marginTop: 8,
+    maxWidth: 62,
   },
   followChipSport: {
     color: MUTED,
@@ -478,15 +522,26 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  suggestedNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   suggestedName: {
     color: WHITE,
     fontSize: 14,
     fontWeight: '800',
+    flexShrink: 1,
+  },
+  suggestedHandleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    flexWrap: 'wrap',
   },
   suggestedHandle: {
     color: MUTED,
     fontSize: 11,
-    marginTop: 2,
   },
   followBtn: {
     borderWidth: 1,

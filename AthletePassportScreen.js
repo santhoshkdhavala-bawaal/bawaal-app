@@ -1,7 +1,7 @@
 /**
- * Full-page athlete passport — clips + history.
+ * Full-page athlete passport — reels, photo grid, history.
  * Opened from Passport inline preview via "VIEW FULL PROFILE".
- * B&W chrome; accent color reserved for stats/metrics only.
+ * B&W chrome; accents only on stats/metrics + official blue tick.
  */
 import React, { useMemo } from 'react';
 import {
@@ -16,6 +16,9 @@ import {
   findAthleteById,
   STAT_ACCENTS,
 } from './src/data/athleteSocial';
+import UserHandle from './src/components/UserHandle';
+import RoleBadge from './src/components/RoleBadge';
+import ProfileMediaTabs from './src/components/ProfileMediaTabs';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -38,6 +41,8 @@ export default function AthletePassportScreen({ route, navigation }) {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const sport = athlete.sport || athlete.primarySport;
 
   return (
     <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
@@ -67,14 +72,23 @@ export default function AthletePassportScreen({ route, navigation }) {
             <Text style={styles.avatarText}>{initials}</Text>
           </View>
           <Text style={styles.name}>{athlete.displayName}</Text>
-          <Text style={styles.handle}>
-            {athlete.handle} · {athlete.sport || athlete.primarySport}
-          </Text>
-          {athlete.statusBadge ? (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{athlete.statusBadge}</Text>
-            </View>
-          ) : null}
+          <View style={styles.handleRow}>
+            <UserHandle
+              handle={athlete.handle}
+              verified={athlete.verified}
+              size={13}
+              color={MUTED}
+            />
+            {sport ? <Text style={styles.sportSep}> · {sport}</Text> : null}
+          </View>
+          <View style={styles.roleRow}>
+            <RoleBadge role={athlete.role || 'athlete'} />
+            {athlete.statusBadge ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{athlete.statusBadge}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.bio}>{athlete.bio}</Text>
         </View>
 
@@ -122,23 +136,11 @@ export default function AthletePassportScreen({ route, navigation }) {
           );
         })}
 
-        <Text style={styles.section}>Recorded Clips</Text>
-        <View style={styles.clipGrid}>
-          {(athlete.clips || []).map((clip) => (
-            <View key={clip.id} style={styles.clipCard}>
-              <View style={styles.clipThumb}>
-                <Text style={styles.clipPlay}>▶</Text>
-              </View>
-              <Text style={styles.clipTitle} numberOfLines={2}>
-                {clip.title}
-              </Text>
-              <Text style={styles.clipSport}>{clip.sport}</Text>
-            </View>
-          ))}
-          {(athlete.clips || []).length === 0 ? (
-            <Text style={styles.empty}>No clips yet.</Text>
-          ) : null}
-        </View>
+        <Text style={styles.section}>Media</Text>
+        <ProfileMediaTabs
+          clips={athlete.clips || []}
+          photos={athlete.photos || []}
+        />
 
         <Text style={styles.section}>History</Text>
         <View style={styles.historyCard}>
@@ -217,13 +219,24 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
   },
-  handle: {
+  handleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  sportSep: {
     color: MUTED,
     fontSize: 13,
-    marginTop: 4,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
   },
   badge: {
-    marginTop: 10,
     borderWidth: 1,
     borderColor: WHITE,
     borderRadius: 8,
@@ -309,50 +322,6 @@ const styles = StyleSheet.create({
   fill: {
     height: '100%',
     borderRadius: 3,
-  },
-  clipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 12,
-  },
-  clipCard: {
-    width: '47.5%',
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 12,
-    backgroundColor: SURFACE,
-    overflow: 'hidden',
-  },
-  clipThumb: {
-    height: 96,
-    backgroundColor: '#111',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-  clipPlay: {
-    color: WHITE,
-    fontSize: 18,
-  },
-  clipTitle: {
-    color: WHITE,
-    fontSize: 12,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
-  clipSport: {
-    color: MUTED,
-    fontSize: 10,
-    paddingHorizontal: 8,
-    paddingBottom: 10,
-    paddingTop: 2,
-  },
-  empty: {
-    color: MUTED,
-    fontSize: 12,
   },
   historyCard: {
     borderWidth: 1,

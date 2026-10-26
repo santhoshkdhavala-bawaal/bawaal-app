@@ -36,6 +36,8 @@ export const COLORS = {
   ACTIVE_RECORDING: '#FF5722',
   GOLD: '#FF5722',
   CRIMSON: '#FF5722',
+  /** Official verification tick — only color accent besides athlete stats */
+  VERIFIED_BLUE: '#0095F6',
 };
 
 export const RADIUS = {

@@ -16,6 +16,8 @@ export const ACTIVE_USER = Object.freeze({
   streamId: 'rtc-local-santhosh',
   reps: 0,
   votes: 0,
+  verified: true,
+  role: 'athlete',
 });
 
 export function toChallengerAthlete(overrides = {}) {
