@@ -6,6 +6,7 @@ import {
   BAWAAL_VIDEO_BUCKET,
   ensurePublicBawaalVideoUrl,
 } from './uploadService';
+import { resolvePostSport } from '../utils/sportCategory';
 
 const TABLE = 'bawaal_posts';
 const FEED = 'ARENA';
@@ -87,8 +88,8 @@ export function mapDbRowToArenaPost(row) {
     tagline: row.tagline || null,
     author,
     creator: row.creator || author.replace(/^@/, '') || 'You',
-    category: row.category || row.sport || 'GYM',
-    sport: row.sport || row.category || 'GYM',
+    category: resolvePostSport(row, 'GYM'),
+    sport: resolvePostSport(row, 'GYM'),
     videoUri,
     uri: videoUri,
     recordedVideoUri: videoUri,
@@ -131,8 +132,8 @@ export function mapArenaPostToDbRow(post) {
     tagline: post.tagline || null,
     author: post.author || '@you',
     creator: post.creator || 'You',
-    category: post.category || post.sport || 'GYM',
-    sport: post.sport || post.category || 'GYM',
+    category: resolvePostSport(post, 'GYM'),
+    sport: resolvePostSport(post, 'GYM'),
     video_url: videoUrl,
     hype_count: Number(post.hypeCount) || 0,
     duration_sec: post.durationSec != null ? Number(post.durationSec) : null,

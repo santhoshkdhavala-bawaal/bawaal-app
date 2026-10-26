@@ -35,6 +35,10 @@ import {
 } from './src/services/uploadService';
 import GalleryDeleteButton from './src/components/GalleryDeleteButton';
 import { normalizeMediaLibraryAssetId } from './src/services/galleryMediaService';
+import {
+  ARENA_SPORT_OPTIONS,
+  resolvePostSport,
+} from './src/utils/sportCategory';
 
 /** Yield a frame so uploading indicators paint before native transfer starts. */
 function yieldToUI(): Promise<void> {
@@ -89,6 +93,9 @@ export type PostCreationPayload = {
   remoteVideoUri?: string | null;
   title: string;
   tagline?: SportyTagline;
+  /** Canonical Arena sport key (FOOTBALL, GYM, …) */
+  sport?: string;
+  category?: string;
   targetReps?: number;
   timeLimitSec?: number;
   slowMoEnabled?: boolean;
@@ -215,9 +222,8 @@ export async function dispatchToFeeds(
       tagline: payload.tagline || '#DailyGrind',
       creator: 'You',
       author: '@you',
-      // GYM default so sport-tab filters still show the new post (ALL tab shows all)
-      category: 'GYM',
-      sport: 'GYM',
+      category: resolvePostSport(payload, 'GYM'),
+      sport: resolvePostSport(payload, 'GYM'),
       target: title,
       timestamp,
       createdAt: timestamp,
@@ -256,7 +262,7 @@ export async function dispatchToFeeds(
   if (payload.mode === 'BATTLE_REWIND') {
     const battleCard = pushBattleChallenge({
       id: `rewind-${timestamp}`,
-      sport: 'GYM',
+      sport: resolvePostSport(payload, 'GYM'),
       title,
       target: title,
       description: payload.tagline || null,
@@ -411,6 +417,7 @@ function PostCreationSheet({
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [tagline, setTagline] = useState<SportyTagline>('#DailyGrind');
+  const [sport, setSport] = useState('GYM');
   const [targetReps, setTargetReps] = useState('50');
   const [timeLimit, setTimeLimit] = useState(
     String(durationSec && durationSec > 0 ? durationSec : 30)
@@ -651,6 +658,8 @@ function PostCreationSheet({
       };
 
       if (showTaglines) payload.tagline = tagline;
+      payload.sport = resolvePostSport({ sport, category: sport }, 'GYM');
+      payload.category = payload.sport;
       if (showBattleFields) {
         payload.targetReps = reps;
         payload.timeLimitSec = secs;
@@ -764,6 +773,27 @@ function PostCreationSheet({
             maxLength={80}
             returnKeyType="done"
           />
+
+          <Text style={styles.label}>Sport Category</Text>
+          <View style={styles.tagRow}>
+            {ARENA_SPORT_OPTIONS.map((opt) => {
+              const active = sport === opt;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.tagChip, active && styles.activeTagChip]}
+                  onPress={() => setSport(opt)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[styles.tagText, active && styles.activeTagText]}
+                  >
+                    {opt}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           {showTaglines && (
             <>

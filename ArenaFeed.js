@@ -37,6 +37,12 @@ import SafeFeedVideo, {
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
+import {
+  ARENA_SPORT_TABS,
+  canonicalizeSport,
+  matchesSportFilter,
+  resolvePostSport,
+} from './src/utils/sportCategory';
 
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
@@ -56,18 +62,7 @@ const ARENA_VIEWABILITY_CONFIG = {
   minimumViewTime: 80,
 };
 
-const PERMANENT_SPORTS_TABS = [
-  'ALL',
-  'CRICKET',
-  'FOOTBALL',
-  'GYM',
-  'KABADDI',
-  'COMBAT',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
-];
+const PERMANENT_SPORTS_TABS = ARENA_SPORT_TABS;
 
 const LIVE_SCORE_SAMPLES = [
   {
@@ -292,10 +287,13 @@ function mapPostToReel(post) {
   const id = String(
     post.id || (videoKey ? `reel-${videoKey}` : `reel-${ts}-${author}`)
   );
+  const sport = resolvePostSport(post, 'GYM');
   return {
     id,
     type: 'reel',
-    sport: post.category || post.sport || 'ALL',
+    sport,
+    category: sport,
+    verified: !!post.verified,
     author,
     caption: post.caption || post.title || post.target || 'Arena drop',
     hypeCount: post.hypeCount || 0,
@@ -309,10 +307,11 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  /** When false, keep player mounted but paused (prefetch / neighbor warm). */
+  /** When false, skip decoder entirely (far cells). Neighbors pass active=true to warm. */
   active = true,
 }) {
-  if (!uri) {
+  // B&W shell only — no LOADING CLIP spinner on empty / offscreen cells
+  if (!uri || !active) {
     return (
       <View
         style={[styles.clipShell, style, styles.clipPlaceholder]}
@@ -330,8 +329,8 @@ const ClipSurface = memo(function ClipSurface({
         style={styles.clipVideoFill}
         muted={muted}
         loop
-        autoPlay={active}
-        paused={!active}
+        autoPlay
+        paused={false}
         contentFit="cover"
         nativeControls={false}
       />
@@ -378,7 +377,7 @@ function ingestArenaPost(prev, post) {
     return [reel, ...withoutDup];
   }
 
-  const sport = post.category || post.sport || 'GYM';
+  const sport = resolvePostSport(post, 'GYM');
   const opponent =
     post.opponent ||
     (post.challengeOf ? `@${String(post.challengeOf).replace(/^@/, '')}` : '@Challenger');
@@ -740,26 +739,24 @@ export default function ArenaFeed({ navigation, route }) {
   /** Keep last reel mounted under the modal so reopen skips a cold buffer. */
   const [warmReel, setWarmReel] = useState(null);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
-  /** Viewport-visible reel ids — only those decode/play (fast first paint). */
-  const [activeVideoIds, setActiveVideoIds] = useState(() => new Set());
+  /** Viewport index ±1 — only those cells mount decoders (prefetch neighbors). */
+  const [warmIndices, setWarmIndices] = useState(() => new Set([0, 1]));
   const ingestedIds = useRef(new Set());
   const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const next = new Set();
-    const entries = (viewableItems || []).filter(
-      (e) => e?.isViewable && e?.item?.id != null
-    );
-    for (const entry of entries) {
-      next.add(entry.item.id);
-    }
-    // Prefetch neighbors in the current list so scroll doesn't cold-start decoders
-    for (const entry of entries) {
+    for (const entry of viewableItems || []) {
+      if (!entry?.isViewable) continue;
       const idx = typeof entry.index === 'number' ? entry.index : -1;
       if (idx < 0) continue;
-      // Neighbor ids resolved in render via index ± 1; mark placeholders by index key
-      next.add(`__idx_${idx - 1}`);
-      next.add(`__idx_${idx + 1}`);
+      next.add(idx - 1);
+      next.add(idx);
+      next.add(idx + 1);
     }
-    setActiveVideoIds(next);
+    if (next.size === 0) {
+      next.add(0);
+      next.add(1);
+    }
+    setWarmIndices(next);
   }, []);
   const absorbPost = useCallback((post) => {
     if (!post) return;
@@ -849,16 +846,19 @@ export default function ArenaFeed({ navigation, route }) {
       }
     };
 
-    // Paint Arena chrome first, then hydrate quickly (avoid long black wait)
+    // Paint Arena chrome one frame, then hydrate immediately (no long black wait)
     timeoutId = setTimeout(() => {
       if (typeof globalThis.requestIdleCallback === 'function') {
-        idleId = globalThis.requestIdleCallback(() => {
-          void runDeferred();
-        }, { timeout: 250 });
+        idleId = globalThis.requestIdleCallback(
+          () => {
+            void runDeferred();
+          },
+          { timeout: 80 }
+        );
       } else {
         void runDeferred();
       }
-    }, 16);
+    }, 0);
 
     return () => {
       cancelled = true;
@@ -907,15 +907,12 @@ export default function ArenaFeed({ navigation, route }) {
   );
 
   const visibleFeed = useMemo(() => {
+    const tab = canonicalizeSport(activeTab) || 'ALL';
+    // Case-insensitive sport/category match (football ≡ FOOTBALL, mma ≡ COMBAT)
     const filtered =
-      activeTab === 'ALL'
+      tab === 'ALL'
         ? feedItems
-        : feedItems.filter(
-            (item) =>
-              item.sport === activeTab ||
-              item.sport === 'ALL' ||
-              item.category === 'ALL'
-          );
+        : feedItems.filter((item) => matchesSportFilter(item, tab));
     // Final safety: unique ids + unique video files in the FlatList
     const seenIds = new Set();
     const seenVideos = new Set();
@@ -933,6 +930,11 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [activeTab, feedItems]);
 
+  // Reset warm window when filter changes so the first filtered clip plays ASAP
+  useEffect(() => {
+    setWarmIndices(new Set([0, 1]));
+  }, [activeTab]);
+
   const openReel = useCallback((item, opts) => {
     setImmersiveMuted(!!opts?.muted);
     setWarmReel(item);
@@ -947,10 +949,7 @@ export default function ArenaFeed({ navigation, route }) {
     ({ item, index }) => {
       // Warm viewport + ±1 neighbor for instant playback while scrolling
       const active =
-        activeVideoIds.size === 0
-          ? index < 2
-          : activeVideoIds.has(item.id) ||
-            activeVideoIds.has(`__idx_${index}`);
+        warmIndices.size === 0 ? index < 2 : warmIndices.has(index);
       if (item.type === 'reel') {
         return (
           <GeneralReelCard
@@ -974,8 +973,37 @@ export default function ArenaFeed({ navigation, route }) {
       }
       return null;
     },
-    [openReel, openResponses, hypeReel, activeVideoIds, activeReel]
+    [openReel, openResponses, hypeReel, warmIndices, activeReel]
   );
+
+  const emptyFilter = useMemo(() => {
+    const tab = canonicalizeSport(activeTab) || 'ALL';
+    if (tab === 'ALL') {
+      return (
+        <View style={styles.emptyFeed}>
+          <Text style={styles.emptyFeedTitle}>NO CLIPS YET</Text>
+          <Text style={styles.emptyFeedSub}>
+            Drop a SPARKS or JOSH clip to light up Arena.
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyFeed}>
+        <Text style={styles.emptyFeedTitle}>NO {tab} CLIPS</Text>
+        <Text style={styles.emptyFeedSub}>
+          Switch to ALL or post a clip tagged {tab}.
+        </Text>
+        <TouchableOpacity
+          style={styles.emptyFeedBtn}
+          onPress={() => setActiveTab('ALL')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.emptyFeedBtnText}>SHOW ALL</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }, [activeTab]);
 
   const feedKeyExtractor = useCallback((item, index) => {
     // Guarantee uniqueness even if a bad hydrate slips duplicate ids
@@ -1036,7 +1064,7 @@ export default function ArenaFeed({ navigation, route }) {
                     styles.tabButton,
                     isActive ? styles.activeTabButton : styles.inactiveTabButton,
                   ]}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => setActiveTab(canonicalizeSport(tab) || tab)}
                 >
                   <Text
                     style={[
@@ -1079,16 +1107,23 @@ export default function ArenaFeed({ navigation, route }) {
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
         ListHeaderComponent={listHeader}
-        contentContainerStyle={styles.scrollContent}
+        ListEmptyComponent={emptyFilter}
+        contentContainerStyle={
+          visibleFeed.length === 0
+            ? styles.scrollContentEmpty
+            : styles.scrollContent
+        }
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         // Lean first paint — decode only near-viewport cells
         initialNumToRender={2}
         maxToRenderPerBatch={2}
-        windowSize={5}
-        updateCellsBatchingPeriod={50}
+        windowSize={3}
+        updateCellsBatchingPeriod={40}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
+        // Remount list window when filter changes so indices/warm state stay correct
+        extraData={`${activeTab}:${warmIndices.size}:${visibleFeed.length}`}
       />
 
       <ArenaReelViewer
@@ -1114,6 +1149,48 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 110,
     paddingTop: 0,
+  },
+  scrollContentEmpty: {
+    flexGrow: 1,
+    paddingBottom: 110,
+    paddingTop: 0,
+  },
+  emptyFeed: {
+    flex: 1,
+    minHeight: 320,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    backgroundColor: DARK_BG,
+  },
+  emptyFeedTitle: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    textAlign: 'center',
+  },
+  emptyFeedSub: {
+    color: MUTED,
+    fontSize: 12,
+    marginTop: 10,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  emptyFeedBtn: {
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: WHITE,
+  },
+  emptyFeedBtnText: {
+    color: DARK_BG,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   scoresPill: {
     paddingHorizontal: 10,

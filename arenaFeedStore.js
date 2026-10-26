@@ -7,6 +7,7 @@ import {
   fetchArenaPostsFromSupabase,
   persistArenaPostToSupabase,
 } from './src/services/arenaPostsService';
+import { resolvePostSport } from './src/utils/sportCategory';
 
 /** @type {object[]} */
 let arenaPosts = [];
@@ -67,9 +68,9 @@ function normalizeArenaPost(post) {
   const id = String(
     post.id || (videoKey ? `arena-${videoKey}` : `arena-${ts}`)
   );
+  const sport = resolvePostSport(post, 'GYM');
   return {
     type: 'reel',
-    sport: post.category || post.sport || 'GYM',
     author:
       post.author ||
       (post.creator === 'You' || post.creator === 'YOU'
@@ -83,6 +84,8 @@ function normalizeArenaPost(post) {
     createdAt: ts,
     ...post,
     id,
+    sport,
+    category: sport,
     timestamp: ts,
     videoUri,
     uri: videoUri,

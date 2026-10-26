@@ -205,45 +205,45 @@ function SafeFeedVideo({
   // Track last loaded URI so reopen / fullscreen handoff skips a full re-fetch
   const lastLoadedUriRef = useRef(null);
 
-  // Source load ONLY — muted / paused / autoPlay intentionally omitted from deps
+  // Source load ONLY — muted / paused / autoPlay intentionally omitted from deps.
+  // useVideoPlayer already owns the URI; avoid a second replaceAsync (that caused
+  // prolonged black / LOADING CLIP on cold start and filter remounts).
   useEffect(() => {
     let cancelled = false;
     let statusSub = null;
     let playingSub = null;
+    let readyFallback = null;
 
-    (async () => {
-      if (!playable || !resolved || !player || failed) return;
-      try {
-        const alreadyLoaded = lastLoadedUriRef.current === resolved;
-        if (!alreadyLoaded) {
-          console.log('[SafeFeedVideo] loading URI:', resolved);
-          if (typeof player.replaceAsync === 'function') {
-            await player.replaceAsync({ uri: resolved, contentType: 'auto' });
-          }
-          if (cancelled) return;
-          lastLoadedUriRef.current = resolved;
-        } else {
-          // Same URI already buffered — skip replaceAsync (instant resume)
-          setLoading(false);
-          setHasFrame(true);
-        }
-        if (cancelled) return;
-        player.loop = loop;
-        player.muted = false;
-        player.volume = mutedRef.current ? 0 : 1;
-        if (autoPlayRef.current && !pausedRef.current) {
-          player.play?.();
-        } else {
-          player.pause?.();
-        }
-      } catch (e) {
-        console.log('Video Player Error:', e?.message || e);
-        if (!cancelled) {
-          setFailed(true);
-          setLoading(false);
-        }
+    if (!playable || !resolved || !player || failed) return undefined;
+
+    try {
+      const alreadyLoaded = lastLoadedUriRef.current === resolved;
+      if (alreadyLoaded) {
+        /* eslint-disable react-hooks/set-state-in-effect -- resume cached URI without reload flash */
+        setLoading(false);
+        setHasFrame(true);
+        /* eslint-enable react-hooks/set-state-in-effect */
+      } else {
+        lastLoadedUriRef.current = resolved;
       }
-    })();
+      player.loop = loop;
+      player.muted = false;
+      player.volume = mutedRef.current ? 0 : 1;
+      if (autoPlayRef.current && !pausedRef.current) {
+        player.play?.();
+      } else {
+        player.pause?.();
+      }
+    } catch (e) {
+      console.log('Video Player Error:', e?.message || e);
+      setFailed(true);
+      setLoading(false);
+    }
+
+    // Failsafe: never leave the B&W spinner up for more than ~1.2s
+    readyFallback = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 1200);
 
     try {
       statusSub = player?.addListener?.('statusChange', ({ status, error }) => {
@@ -253,7 +253,6 @@ function SafeFeedVideo({
           setFailed(true);
           setLoading(false);
         } else if (status === 'readyToPlay') {
-          console.log('[SafeFeedVideo] onLoad / readyToPlay:', resolved);
           setLoading(false);
           if (autoPlayRef.current && !pausedRef.current) {
             try {
@@ -267,6 +266,7 @@ function SafeFeedVideo({
       playingSub = player?.addListener?.('playingChange', ({ isPlaying }) => {
         if (isPlaying && !cancelled) {
           setLoading(false);
+          setHasFrame(true);
         }
       });
     } catch (err) {
@@ -275,6 +275,7 @@ function SafeFeedVideo({
 
     return () => {
       cancelled = true;
+      if (readyFallback) clearTimeout(readyFallback);
       try {
         statusSub?.remove?.();
         playingSub?.remove?.();
@@ -292,7 +293,6 @@ function SafeFeedVideo({
   /* eslint-enable react-hooks/immutability */
 
   const onFirstFrameRender = () => {
-    console.log('[SafeFeedVideo] onLoad / first frame decoded:', resolved);
     setHasFrame(true);
     setLoading(false);
   };
@@ -342,11 +342,11 @@ function SafeFeedVideo({
             ? { surfaceType: 'textureView', useExoShutter: false }
             : {})}
         />
-        {(loading || !hasFrame) && (
+        {loading && !hasFrame ? (
           <View style={styles.loadingOverlay} pointerEvents="none">
             <ActivityIndicator color="#FFFFFF" />
           </View>
-        )}
+        ) : null}
         {!!label && (
           <View style={styles.cornerTag} pointerEvents="none">
             <Text style={styles.cornerTagText}>{label}</Text>
