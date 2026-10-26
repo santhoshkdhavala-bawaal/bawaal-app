@@ -355,8 +355,20 @@ async function readLocalVideoBytes(fileUri) {
   return bytes;
 }
 
-/** RN-safe binary body: prefer Blob (Uint8Array alone often fails on Android fetch). */
+/**
+ * RN-safe binary body for Storage.
+ * Prefer ArrayBuffer (Supabase JS accepts it cleanly on Android), then Blob.
+ */
 function bytesToUploadBody(bytes) {
+  try {
+    if (bytes?.buffer instanceof ArrayBuffer) {
+      const start = bytes.byteOffset || 0;
+      const end = start + bytes.byteLength;
+      return bytes.buffer.slice(start, end);
+    }
+  } catch (_) {
+    /* fall through */
+  }
   if (typeof Blob !== 'undefined') {
     try {
       return new Blob([bytes], { type: 'video/mp4' });
@@ -372,7 +384,7 @@ function bytesToUploadBody(bytes) {
 }
 
 /**
- * Preferred path: Supabase JS client upload (handles Blob/ArrayBuffer correctly).
+ * Preferred path: Supabase JS client upload (ArrayBuffer / Blob).
  */
 async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
   if (!isSupabaseConfigured()) {
@@ -383,7 +395,14 @@ async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
   if (onProgress) onProgress(40);
   const body = bytesToUploadBody(bytes);
 
-  console.log('UPLOAD_SDK: path=', objectPath, 'bodyType=', body?.constructor?.name);
+  console.log(
+    'UPLOAD_SDK: path=',
+    objectPath,
+    'bodyType=',
+    body?.constructor?.name,
+    'bytes=',
+    bytes.byteLength
+  );
   const { data, error } = await supabase.storage
     .from(BAWAAL_VIDEO_BUCKET)
     .upload(objectPath, body, {
@@ -395,6 +414,18 @@ async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
   if (error) {
     console.error('REST_UPLOAD_ERROR (sdk):', error.message || error);
     throw new Error(error.message || 'Supabase SDK storage upload failed');
+  }
+
+  // Confirm public URL is resolvable (catches bucket/policy misconfig early)
+  try {
+    const { data: pub } = supabase.storage
+      .from(BAWAAL_VIDEO_BUCKET)
+      .getPublicUrl(objectPath);
+    if (pub?.publicUrl) {
+      console.log('SDK_UPLOAD_PUBLIC_URL:', pub.publicUrl);
+    }
+  } catch (_) {
+    /* non-fatal */
   }
 
   if (onProgress) onProgress(100);

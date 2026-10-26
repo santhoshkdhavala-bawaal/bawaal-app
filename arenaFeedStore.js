@@ -145,23 +145,40 @@ export async function pushArenaPostAndPersist(post) {
     post ? { ...post, _skipPersist: true } : post
   );
   if (!normalized) return null;
-  try {
-    const res = await persistArenaPostToSupabase({
+
+  const attemptPersist = async () =>
+    persistArenaPostToSupabase({
       ...normalized,
       _fromRemote: false,
       _skipPersist: false,
     });
+
+  try {
+    let res = await attemptPersist();
+    // One automatic retry — transient network / RLS race
     if (!res?.ok && !res?.skipped) {
       console.warn(
-        '[arenaFeedStore] DB persist failed (feed still updated locally):',
+        '[arenaFeedStore] DB persist failed, retrying once:',
         res?.error || res?.reason
       );
-      return { ...normalized, _persistOk: false, _persistError: res?.error || res?.reason };
+      await new Promise((r) => setTimeout(r, 400));
+      res = await attemptPersist();
+    }
+    if (!res?.ok && !res?.skipped) {
+      console.error(
+        '[arenaFeedStore] DB persist failed after retry:',
+        res?.error || res?.reason
+      );
+      return {
+        ...normalized,
+        _persistOk: false,
+        _persistError: res?.error || res?.reason || 'cloud-persist-failed',
+      };
     }
     return { ...normalized, _persistOk: true };
   } catch (err) {
-    console.warn(
-      '[arenaFeedStore] DB persist threw (feed still updated locally):',
+    console.error(
+      '[arenaFeedStore] DB persist threw:',
       err?.message || err
     );
     return {

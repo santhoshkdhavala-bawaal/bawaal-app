@@ -206,11 +206,13 @@ async function fetchArenaPostsFromStorageFallback() {
 
 /**
  * Upsert a post into `bawaal_posts` so it survives app restart.
- * @returns {Promise<{ ok: boolean, skipped?: boolean, error?: string }>}
+ * Tries upsert → insert → update so RLS / conflict quirks don't strand posts locally.
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
  */
 export async function persistArenaPostToSupabase(post) {
   if (!isSupabaseConfigured()) {
-    return { ok: false, skipped: true, reason: 'not-configured' };
+    console.error('[arenaPosts] persist skipped — Supabase not configured');
+    return { ok: false, skipped: false, reason: 'not-configured', error: 'Supabase not configured' };
   }
   if (post?._fromRemote || post?._skipPersist) {
     return { ok: true, skipped: true, reason: 'from-remote' };
@@ -218,24 +220,61 @@ export async function persistArenaPostToSupabase(post) {
 
   const row = mapArenaPostToDbRow(post);
   if (!row) {
-    return { ok: false, skipped: true, reason: 'missing-https-url' };
+    console.error('[arenaPosts] persist skipped — missing https video_url', {
+      id: post?.id,
+      videoUri: post?.videoUri,
+      publicCloudUrl: post?.publicCloudUrl,
+    });
+    return {
+      ok: false,
+      skipped: false,
+      reason: 'missing-https-url',
+      error: 'Missing public HTTPS video URL for database insert',
+    };
   }
 
+  const logFail = (step, error) => {
+    const msg = error?.message || error?.code || String(error);
+    console.error(`[arenaPosts] ${step} failed:`, msg, error);
+    return msg;
+  };
+
   try {
-    const { error } = await supabase.from(TABLE).upsert(row, {
+    // 1) Preferred: upsert on primary key
+    const upsertRes = await supabase.from(TABLE).upsert(row, {
       onConflict: 'id',
     });
-    if (error) {
-      console.warn(
-        '[arenaPosts] persist failed:',
-        error.message || error.code || error
-      );
-      return { ok: false, error: error.message || String(error) };
+    if (!upsertRes.error) {
+      console.log('[arenaPosts] upserted', row.id, row.video_url);
+      return { ok: true };
     }
-    console.log('[arenaPosts] persisted', row.id);
-    return { ok: true };
+    logFail('upsert', upsertRes.error);
+
+    // 2) Fallback: plain insert (first publish)
+    const insertRes = await supabase.from(TABLE).insert(row);
+    if (!insertRes.error) {
+      console.log('[arenaPosts] inserted', row.id);
+      return { ok: true };
+    }
+    logFail('insert', insertRes.error);
+
+    // 3) Fallback: update existing row by id
+    const updateRes = await supabase.from(TABLE).update(row).eq('id', row.id);
+    if (!updateRes.error) {
+      console.log('[arenaPosts] updated', row.id);
+      return { ok: true };
+    }
+    const errMsg = logFail('update', updateRes.error);
+
+    return {
+      ok: false,
+      error:
+        errMsg ||
+        upsertRes.error?.message ||
+        'Could not save post to bawaal_posts (check RLS/GRANTs)',
+    };
   } catch (err) {
-    console.warn('[arenaPosts] persist crashed:', err?.message || err);
+    console.error('[arenaPosts] persist crashed:', err?.message || err);
     return { ok: false, error: err?.message || String(err) };
   }
 }

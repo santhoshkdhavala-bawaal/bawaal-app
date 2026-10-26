@@ -1,18 +1,20 @@
 /**
  * Device gallery helpers for BAWAAL clips (expo-media-library).
- * Delete always targets ONE MediaLibrary asset id — never a file/content URI.
+ * Delete always uses MediaLibrary asset ids — never file:// / content:// URIs.
  */
 import { Alert } from 'react-native';
 import {
   createAssetAsync,
   deleteAssetsAsync,
+  getAssetsAsync,
   getPermissionsAsync,
+  MediaType,
   requestPermissionsAsync,
+  SortBy,
 } from 'expo-media-library/legacy';
 
 /**
  * MediaLibrary asset ids only — reject file:// / content:// / paths.
- * Passing a URI to deleteAssetsAsync can mis-target or wipe unexpected items.
  * @param {unknown} value
  * @returns {string|null}
  */
@@ -54,6 +56,56 @@ export async function ensureGalleryWritePermission() {
 }
 
 /**
+ * List device videos for the in-app gallery picker.
+ * @param {{ first?: number, after?: string }} [opts]
+ * @returns {Promise<{ ok: boolean, assets: object[], endCursor?: string, hasNextPage?: boolean, error?: string }>}
+ */
+export async function listDeviceVideos(opts = {}) {
+  const first = Math.max(1, Math.min(100, Number(opts.first) || 48));
+  try {
+    const granted = await ensureGalleryWritePermission();
+    if (!granted) {
+      return { ok: false, assets: [], error: 'permission-denied' };
+    }
+
+    const page = await getAssetsAsync({
+      first,
+      after: opts.after || undefined,
+      mediaType: [MediaType.video],
+      sortBy: [[SortBy.creationTime, false]],
+    });
+
+    const assets = (page?.assets || [])
+      .map((a) => {
+        const id = normalizeMediaLibraryAssetId(a?.id);
+        if (!id) return null;
+        return {
+          id,
+          uri: typeof a.uri === 'string' ? a.uri : '',
+          filename: a.filename || 'video.mp4',
+          duration: typeof a.duration === 'number' ? a.duration : 0,
+          width: a.width || 0,
+          height: a.height || 0,
+          creationTime: a.creationTime || 0,
+          mediaType: a.mediaType,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      ok: true,
+      assets,
+      endCursor: page?.endCursor,
+      hasNextPage: !!page?.hasNextPage,
+    };
+  } catch (err) {
+    const msg = err?.message || String(err);
+    console.warn('[galleryMedia] listDeviceVideos failed:', msg);
+    return { ok: false, assets: [], error: msg };
+  }
+}
+
+/**
  * Save a local video URI into the Camera Roll / Gallery.
  * @param {string} videoUri
  * @returns {Promise<{ ok: boolean, assetId?: string, error?: string }>}
@@ -68,7 +120,6 @@ export async function saveVideoToGallery(videoUri) {
       return { ok: false, error: 'permission-denied' };
     }
     const asset = await createAssetAsync(videoUri);
-    // ONLY MediaLibrary `id` — never fall back to uri (breaks precise delete)
     const assetId = normalizeMediaLibraryAssetId(asset?.id);
     console.log('[galleryMedia] saved asset id:', assetId || '(none)');
     return {
@@ -83,14 +134,22 @@ export async function saveVideoToGallery(videoUri) {
 }
 
 /**
- * Delete exactly one gallery asset by MediaLibrary id.
- * @param {string} assetId
- * @returns {Promise<{ ok: boolean, error?: string }>}
+ * Delete exactly the given MediaLibrary asset ids (one or many).
+ * Never expands beyond the provided selection.
+ * @param {string|string[]} assetIds
+ * @returns {Promise<{ ok: boolean, deletedIds?: string[], error?: string }>}
  */
-export async function deleteGalleryAsset(assetId) {
-  const id = normalizeMediaLibraryAssetId(assetId);
-  if (!id) {
-    return { ok: false, error: 'invalid-asset-id' };
+export async function deleteGalleryAssetsByIds(assetIds) {
+  const ids = [
+    ...new Set(
+      (Array.isArray(assetIds) ? assetIds : [assetIds])
+        .map((id) => normalizeMediaLibraryAssetId(id))
+        .filter(Boolean)
+    ),
+  ];
+
+  if (ids.length === 0) {
+    return { ok: false, error: 'missing-asset-id' };
   }
 
   try {
@@ -98,22 +157,80 @@ export async function deleteGalleryAsset(assetId) {
     if (!granted) {
       return { ok: false, error: 'permission-denied' };
     }
-    // Strict single-id array — never batch / never URI
-    console.log('[galleryMedia] deleting single asset:', id);
-    await deleteAssetsAsync([id]);
-    console.log('[galleryMedia] deleted single asset ok:', id);
-    return { ok: true };
+    console.log('[galleryMedia] deleting selected assets:', ids);
+    await deleteAssetsAsync(ids);
+    console.log('[galleryMedia] deleted selected assets ok:', ids.length);
+    return { ok: true, deletedIds: ids };
   } catch (err) {
     const msg = err?.message || String(err);
-    console.warn('[galleryMedia] delete failed:', msg);
+    console.warn('[galleryMedia] multi-delete failed:', msg);
     return { ok: false, error: msg };
   }
 }
 
-/** @deprecated Use deleteGalleryAsset — kept for callers that pass one id */
+/**
+ * Delete exactly one gallery asset by MediaLibrary id.
+ * @param {string} assetId
+ * @returns {Promise<{ ok: boolean, error?: string }>}
+ */
+export async function deleteGalleryAsset(assetId) {
+  return deleteGalleryAssetsByIds([assetId]);
+}
+
+/** @deprecated Prefer deleteGalleryAssetsByIds */
 export async function deleteGalleryAssets(assetIds) {
-  const first = Array.isArray(assetIds) ? assetIds[0] : assetIds;
-  return deleteGalleryAsset(first);
+  return deleteGalleryAssetsByIds(assetIds);
+}
+
+/**
+ * Confirm, then delete ONLY the provided selected ids.
+ * @param {string[]} assetIds
+ * @returns {Promise<boolean>}
+ */
+export function confirmAndDeleteSelectedGalleryAssets(assetIds) {
+  return new Promise((resolve) => {
+    const ids = [
+      ...new Set(
+        (Array.isArray(assetIds) ? assetIds : [])
+          .map((id) => normalizeMediaLibraryAssetId(id))
+          .filter(Boolean)
+      ),
+    ];
+
+    if (ids.length === 0) {
+      Alert.alert('Nothing selected', 'Select one or more videos to delete.');
+      resolve(false);
+      return;
+    }
+
+    Alert.alert(
+      ids.length === 1 ? 'Delete this clip?' : `Delete ${ids.length} clips?`,
+      'Only the videos you checked will be removed from your phone gallery. Everything else stays untouched.',
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              const res = await deleteGalleryAssetsByIds(ids);
+              if (!res.ok) {
+                Alert.alert(
+                  'Delete failed',
+                  res.error === 'permission-denied'
+                    ? 'Gallery permission is required to delete clips.'
+                    : res.error || 'Could not delete the selected clips.'
+                );
+                resolve(false);
+                return;
+              }
+              resolve(true);
+            })();
+          },
+        },
+      ]
+    );
+  });
 }
 
 /**
@@ -151,7 +268,8 @@ export function confirmAndDeleteGalleryAsset(assetId, copy = {}) {
                   'Delete failed',
                   res.error === 'permission-denied'
                     ? 'Gallery permission is required to delete clips.'
-                    : res.error === 'invalid-asset-id'
+                    : res.error === 'invalid-asset-id' ||
+                        res.error === 'missing-asset-id'
                       ? 'Could not identify this single clip to delete.'
                       : res.error || 'Could not delete this clip.'
                 );

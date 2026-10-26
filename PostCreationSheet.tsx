@@ -664,15 +664,19 @@ function PostCreationSheet({
         dispatched?.newPost?.videoUri || dispatched?.videoUri
       );
       if (dispatched?.newPost?._persistOk === false) {
-        console.warn(
-          '[PostCreationSheet] local feed updated but DB persist failed:',
-          dispatched?.newPost?._persistError
+        const detail = String(
+          dispatched?.newPost?._persistError || 'Unknown database error'
+        );
+        console.error(
+          '[PostCreationSheet] cloud DB persist failed after storage upload:',
+          detail
         );
         Alert.alert(
-          'Posted locally',
-          'Your clip is on this device feed, but cloud save failed. It may disappear after restart.',
+          'Cloud save failed',
+          `Video reached storage, but saving to the Arena database failed:\n\n${detail}\n\nRun migration 003_bawaal_posts_grants.sql in the Supabase SQL editor, then try posting again.`,
           [{ text: 'OK' }]
         );
+        // Still show success for local feed so the clip isn't lost on this device
       }
       setPendingPayload(dispatched);
       setSuccessVisible(true);

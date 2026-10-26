@@ -28,7 +28,6 @@ import {
   useMicrophonePermissions,
   type CameraType,
 } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CreationPostSheet from './PostCreationSheet';
@@ -37,6 +36,9 @@ import type {
   PostCreationPayload,
 } from './PostCreationSheet';
 import FilmStripTrimmer from './FilmStripTrimmer';
+import DeviceGalleryModal, {
+  type DeviceGalleryAsset,
+} from './src/components/DeviceGalleryModal';
 import { stabilizeLocalVideoUri } from './src/services/uploadService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 export type { CreationMode, PostCreationPayload };
@@ -294,7 +296,7 @@ function BawaalHubDrawer({
         >
           <Text style={hubStyles.cardTitle}>Gallery</Text>
           <Text style={hubStyles.cardSub}>
-            Import a video from your phone library
+            Select clips with checkboxes — delete or use for a post
           </Text>
         </TouchableOpacity>
       </View>
@@ -828,6 +830,7 @@ export default function UniversalCamera({
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
   const [galleryAssetId, setGalleryAssetId] = useState<string | null>(null);
+  const [showDeviceGallery, setShowDeviceGallery] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showPostSheet, setShowPostSheet] = useState(false);
   const [slowMoEnabled, setSlowMoEnabled] = useState(false);
@@ -1245,29 +1248,19 @@ export default function UniversalCamera({
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
   }, [isRecording]);
 
-  /** Gallery → same preview / post sheet path as a fresh recording (then uploadVideoToSupabase). */
-  const pickFromGallery = useCallback(async () => {
+  /** Open in-app gallery (checkbox select + targeted delete / import). */
+  const openDeviceGallery = useCallback(() => {
     if (isRecording || mode === 'BATTLE_BAWAAL') return;
+    setShowDeviceGallery(true);
+  }, [isRecording, mode]);
 
-    try {
-      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!perm.granted) {
-        setCameraError('Gallery access is needed to pick a video.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: false,
-        quality: 1,
-        videoMaxDuration: modeCeiling(mode, joshUnlocked3m) || undefined,
-      });
-
-      if (result.canceled || !result.assets?.[0]?.uri) return;
-
-      const picked = result.assets[0];
+  /**
+   * Import one device gallery asset into the same preview / post path as a recording.
+   */
+  const importGalleryAsset = useCallback(
+    async (picked: DeviceGalleryAsset) => {
+      if (!picked?.uri) return;
       let uri = picked.uri;
-      // Copy out of content:// so Android upload can read bytes reliably
       try {
         uri = (await stabilizeLocalVideoUri(uri)) || uri;
       } catch (stabErr) {
@@ -1276,23 +1269,22 @@ export default function UniversalCamera({
           (stabErr as Error)?.message || stabErr
         );
       }
-      const rawAssetId =
-        typeof (picked as { assetId?: string | null }).assetId === 'string'
-          ? (picked as { assetId?: string }).assetId || null
-          : null;
-      // Only keep a real MediaLibrary id (never a URI) for precise single-clip delete
+
       const pickedAssetId =
-        rawAssetId &&
-        !/^(file|content|ph|assets-library|http):/i.test(rawAssetId) &&
-        !rawAssetId.includes('://')
-          ? rawAssetId
+        typeof picked.id === 'string' &&
+        picked.id &&
+        !/^(file|content|ph|assets-library|http):/i.test(picked.id) &&
+        !picked.id.includes('://')
+          ? picked.id
           : null;
+
       const assetDurationSec =
         typeof picked.duration === 'number' && picked.duration > 0
-          ? Math.ceil(picked.duration / 1000)
+          ? Math.ceil(picked.duration)
           : recordLimit;
 
       setCameraError('');
+      setShowDeviceGallery(false);
       setShowPreview(false);
       setShowPostSheet(false);
       setGalleryAssetId(pickedAssetId);
@@ -1310,11 +1302,9 @@ export default function UniversalCamera({
         setShowPreview(false);
         setShowPostSheet(true);
       }
-    } catch (err) {
-      console.error('[UniversalCamera] Gallery pick failed:', err);
-      setCameraError('Could not open gallery. Try again.');
-    }
-  }, [isRecording, mode, joshUnlocked3m, recordLimit, fadeTimePill]);
+    },
+    [mode, recordLimit, fadeTimePill]
+  );
 
   const progress =
     isRecording && recordLimit > 0
@@ -1495,12 +1485,18 @@ export default function UniversalCamera({
         visible={hubOpen}
         onClose={() => setHubOpen(false)}
         onSelect={handleHubSelect}
-        onPickGallery={() => {
-          void pickFromGallery();
-        }}
+        onPickGallery={openDeviceGallery}
         galleryDisabled={isRecording || mode === 'BATTLE_BAWAAL'}
         joshUnlocked3m={joshUnlocked3m}
         onToggleJosh3m={() => setJoshUnlocked3m((v) => !v)}
+      />
+
+      <DeviceGalleryModal
+        visible={showDeviceGallery}
+        onClose={() => setShowDeviceGallery(false)}
+        onPickVideo={(asset) => {
+          void importGalleryAsset(asset);
+        }}
       />
 
       {/* Fully unmount preview when hidden so useVideoPlayer releases native audio */}
