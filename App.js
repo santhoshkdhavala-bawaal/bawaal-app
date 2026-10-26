@@ -105,10 +105,6 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    // Keep splash brief — session read is fast; long delay felt like feed lag
-    const minSplashMs = 400;
-    const started = Date.now();
-
     (async () => {
       try {
         const session = await getRegisteredSession();
@@ -119,16 +115,14 @@ export default function App() {
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
       } finally {
-        const wait = Math.max(0, minSplashMs - (Date.now() - started));
-        setTimeout(() => {
-          if (cancelled) return;
-          try {
-            setBootReady(true);
-            setShowSplash(false);
-          } catch (err) {
-            setBootError(err);
-          }
-        }, wait);
+        // No artificial splash delay — enter UI as soon as session resolves
+        if (cancelled) return;
+        try {
+          setBootReady(true);
+          setShowSplash(false);
+        } catch (err) {
+          setBootError(err);
+        }
       }
     })();
 

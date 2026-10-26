@@ -286,9 +286,18 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  /** When false, keep player mounted but paused (viewport lazy-play). */
+  /** When false, do not mount a decoder (cold-start / offscreen). */
   active = true,
 }) {
+  // Lazy mount: only create expo-video players for viewport-active cells
+  if (!uri || !active) {
+    return (
+      <View
+        style={[styles.clipShell, style, styles.clipPlaceholder]}
+        pointerEvents="none"
+      />
+    );
+  }
   return (
     <View style={[styles.clipShell, style]} pointerEvents="none">
       <SafeFeedVideo
@@ -297,8 +306,8 @@ const ClipSurface = memo(function ClipSurface({
         style={styles.clipVideoFill}
         muted={muted}
         loop
-        autoPlay={active}
-        paused={!active}
+        autoPlay
+        paused={false}
         contentFit="cover"
         nativeControls={false}
       />
@@ -738,7 +747,24 @@ export default function ArenaFeed({ navigation, route }) {
     const runDeferred = async () => {
       if (cancelled) return;
       try {
-        // One batched setState for demo shells (no N re-renders)
+        // Cloud hydrate first (real posts) — demos load later so they don't block UI
+        const posts = await hydrateArenaPostsFromSupabase({ silent: true });
+        if (!cancelled && Array.isArray(posts) && posts.length > 0) {
+          setFeedItems((prev) => {
+            let next = prev;
+            for (const post of posts) {
+              const key =
+                post.id ||
+                `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
+              if (key) ingestedIds.current.add(key);
+              next = ingestArenaPost(next, post);
+            }
+            return next;
+          });
+        }
+
+        if (cancelled) return;
+        // Demo shells after cloud — lowest priority for cold start
         setFeedItems((prev) => {
           let next = prev;
           const seen = new Set(prev.map((p) => p.id));
@@ -749,21 +775,6 @@ export default function ArenaFeed({ navigation, route }) {
           }
           return next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
         });
-
-        const posts = await hydrateArenaPostsFromSupabase({ silent: true });
-        if (cancelled || !Array.isArray(posts) || posts.length === 0) return;
-
-        setFeedItems((prev) => {
-          let next = prev;
-          for (const post of posts) {
-            const key =
-              post.id ||
-              `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
-            if (key) ingestedIds.current.add(key);
-            next = ingestArenaPost(next, post);
-          }
-          return next;
-        });
       } catch (err) {
         console.warn(
           '[ArenaFeed] deferred hydrate failed:',
@@ -772,16 +783,16 @@ export default function ArenaFeed({ navigation, route }) {
       }
     };
 
-    // Wait for first frame + short idle so Arena UI appears immediately
+    // Wait for first frame + idle so Arena chrome paints before network/decoders
     timeoutId = setTimeout(() => {
       if (typeof globalThis.requestIdleCallback === 'function') {
         idleId = globalThis.requestIdleCallback(() => {
           void runDeferred();
-        }, { timeout: 400 });
+        }, { timeout: 900 });
       } else {
         void runDeferred();
       }
-    }, 48);
+    }, 120);
 
     return () => {
       cancelled = true;

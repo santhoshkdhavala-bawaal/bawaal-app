@@ -175,7 +175,12 @@ export async function pushArenaPostAndPersist(post) {
         _persistError: res?.error || res?.reason || 'cloud-persist-failed',
       };
     }
-    return { ...normalized, _persistOk: true };
+    return {
+      ...normalized,
+      _persistOk: true,
+      _persistReason: res?.reason || 'db',
+      _persistWarning: res?.warning || null,
+    };
   } catch (err) {
     console.error(
       '[arenaFeedStore] DB persist threw:',

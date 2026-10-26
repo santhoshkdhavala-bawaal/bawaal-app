@@ -9,6 +9,24 @@ import {
 
 const TABLE = 'bawaal_posts';
 const FEED = 'ARENA';
+/** Storage folder for JSON post metadata when `bawaal_posts` table is missing. */
+const POSTS_META_PREFIX = 'posts';
+
+/** PostgREST / Postgres signals that the table is absent from schema cache. */
+export function isMissingBawaalPostsTableError(error) {
+  const msg = String(error?.message || error?.details || error || '');
+  const code = String(error?.code || '');
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    /schema cache/i.test(msg) ||
+    /could not find the table/i.test(msg) ||
+    /relation ["']?public\.?bawaal_posts["']? does not exist/i.test(msg)
+  );
+}
+
+export const BAWAAL_POSTS_SETUP_HINT =
+  'Open Supabase → SQL Editor → paste and run supabase/ENSURE_BAWAAL_POSTS.sql (creates public.bawaal_posts + reloads schema cache).';
 
 function toMs(value) {
   if (value == null) return Date.now();
@@ -122,15 +140,17 @@ export async function fetchArenaPostsFromSupabase() {
       .select('*')
       .eq('feed', FEED)
       .order('created_at', { ascending: false })
-      // Lean cold-start page — avoid hydrating 100 decodable rows at once
-      .limit(20);
+      // Lean cold-start page — keep first paint snappy
+      .limit(12);
 
     if (error) {
       console.warn(
         '[arenaPosts] table fetch failed:',
         error.message || error.code || error
       );
-      // Recover clips that were uploaded to Storage before the table existed
+      // Table missing / schema cache → Storage JSON + video list
+      const fromMeta = await fetchArenaPostsFromMetaJson();
+      if (fromMeta.length > 0) return fromMeta;
       return fetchArenaPostsFromStorageFallback();
     }
 
@@ -144,9 +164,13 @@ export async function fetchArenaPostsFromSupabase() {
     }
 
     // Empty table → try Storage so older uploads still appear
+    const fromMeta = await fetchArenaPostsFromMetaJson();
+    if (fromMeta.length > 0) return fromMeta;
     return fetchArenaPostsFromStorageFallback();
   } catch (err) {
     console.warn('[arenaPosts] fetch crashed:', err?.message || err);
+    const fromMeta = await fetchArenaPostsFromMetaJson();
+    if (fromMeta.length > 0) return fromMeta;
     return fetchArenaPostsFromStorageFallback();
   }
 }
@@ -205,9 +229,75 @@ async function fetchArenaPostsFromStorageFallback() {
 }
 
 /**
+ * When `bawaal_posts` is missing from schema cache, store metadata JSON in Storage
+ * so the clip still appears on cold start via storage hydrate.
+ */
+async function persistArenaPostMetaToStorage(row) {
+  const objectPath = `${POSTS_META_PREFIX}/${row.id}.json`;
+  const body =
+    typeof Blob !== 'undefined'
+      ? new Blob([JSON.stringify(row)], { type: 'application/json' })
+      : JSON.stringify(row);
+
+  const { error } = await supabase.storage
+    .from(BAWAAL_VIDEO_BUCKET)
+    .upload(objectPath, body, {
+      contentType: 'application/json',
+      upsert: true,
+      cacheControl: '60',
+    });
+
+  if (error) {
+    console.warn(
+      '[arenaPosts] storage meta fallback failed:',
+      error.message || error
+    );
+    return { ok: false, error: error.message || String(error) };
+  }
+  console.log('[arenaPosts] stored meta JSON fallback:', objectPath);
+  return { ok: true, reason: 'storage-meta-fallback' };
+}
+
+async function fetchArenaPostsFromMetaJson() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase.storage
+      .from(BAWAAL_VIDEO_BUCKET)
+      .list(POSTS_META_PREFIX, {
+        limit: 40,
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+    if (error || !Array.isArray(data)) return [];
+
+    const base = getSupabaseUrl();
+    const posts = [];
+    for (const file of data) {
+      if (!file?.name || !/\.json$/i.test(file.name)) continue;
+      try {
+        const url = `${base}/storage/v1/object/public/${BAWAAL_VIDEO_BUCKET}/${POSTS_META_PREFIX}/${file.name}`;
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const row = await res.json();
+        const mapped = mapDbRowToArenaPost(row);
+        if (mapped) posts.push(mapped);
+      } catch (_) {
+        /* skip bad meta files */
+      }
+    }
+    if (posts.length) {
+      console.log('[arenaPosts] loaded', posts.length, 'posts from storage JSON');
+    }
+    return posts;
+  } catch (err) {
+    console.warn('[arenaPosts] meta json fetch failed:', err?.message || err);
+    return [];
+  }
+}
+
+/**
  * Upsert a post into `bawaal_posts` so it survives app restart.
- * Tries upsert → insert → update so RLS / conflict quirks don't strand posts locally.
- * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
+ * If the table is missing from PostgREST schema cache, falls back to Storage JSON.
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string, warning?: string }>}
  */
 export async function persistArenaPostToSupabase(post) {
   if (!isSupabaseConfigured()) {
@@ -250,6 +340,26 @@ export async function persistArenaPostToSupabase(post) {
     }
     logFail('upsert', upsertRes.error);
 
+    // Table missing from schema cache → Storage JSON fallback (video already uploaded)
+    if (isMissingBawaalPostsTableError(upsertRes.error)) {
+      console.warn(
+        '[arenaPosts] public.bawaal_posts missing from schema cache — using Storage meta fallback'
+      );
+      const fb = await persistArenaPostMetaToStorage(row);
+      if (fb.ok) {
+        return {
+          ok: true,
+          reason: 'storage-meta-fallback',
+          warning: BAWAAL_POSTS_SETUP_HINT,
+        };
+      }
+      return {
+        ok: false,
+        reason: 'missing-table',
+        error: `${upsertRes.error?.message || 'Table missing'}\n\n${BAWAAL_POSTS_SETUP_HINT}`,
+      };
+    }
+
     // 2) Fallback: plain insert (first publish)
     const insertRes = await supabase.from(TABLE).insert(row);
     if (!insertRes.error) {
@@ -257,6 +367,17 @@ export async function persistArenaPostToSupabase(post) {
       return { ok: true };
     }
     logFail('insert', insertRes.error);
+
+    if (isMissingBawaalPostsTableError(insertRes.error)) {
+      const fb = await persistArenaPostMetaToStorage(row);
+      if (fb.ok) {
+        return {
+          ok: true,
+          reason: 'storage-meta-fallback',
+          warning: BAWAAL_POSTS_SETUP_HINT,
+        };
+      }
+    }
 
     // 3) Fallback: update existing row by id
     const updateRes = await supabase.from(TABLE).update(row).eq('id', row.id);
@@ -275,6 +396,16 @@ export async function persistArenaPostToSupabase(post) {
     };
   } catch (err) {
     console.error('[arenaPosts] persist crashed:', err?.message || err);
+    if (isMissingBawaalPostsTableError(err)) {
+      const fb = await persistArenaPostMetaToStorage(row);
+      if (fb.ok) {
+        return {
+          ok: true,
+          reason: 'storage-meta-fallback',
+          warning: BAWAAL_POSTS_SETUP_HINT,
+        };
+      }
+    }
     return { ok: false, error: err?.message || String(err) };
   }
 }

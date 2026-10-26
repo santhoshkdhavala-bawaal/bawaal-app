@@ -673,10 +673,20 @@ function PostCreationSheet({
         );
         Alert.alert(
           'Cloud save failed',
-          `Video reached storage, but saving to the Arena database failed:\n\n${detail}\n\nRun migration 003_bawaal_posts_grants.sql in the Supabase SQL editor, then try posting again.`,
+          `Video reached storage, but the Arena database row failed:\n\n${detail}`,
           [{ text: 'OK' }]
         );
-        // Still show success for local feed so the clip isn't lost on this device
+      } else if (dispatched?.newPost?._persistWarning) {
+        // Soft success — Storage meta fallback while bawaal_posts is missing
+        console.warn(
+          '[PostCreationSheet] persist warning:',
+          dispatched.newPost._persistWarning
+        );
+        Alert.alert(
+          'Posted to cloud',
+          `Your video is live. For full Arena database posts, run ENSURE_BAWAAL_POSTS.sql in the Supabase SQL editor once.\n\n${dispatched.newPost._persistWarning}`,
+          [{ text: 'OK' }]
+        );
       }
       setPendingPayload(dispatched);
       setSuccessVisible(true);

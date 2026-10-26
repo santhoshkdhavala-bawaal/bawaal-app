@@ -73,18 +73,24 @@ export default function MainTabs({ navigation, route }) {
     navigation,
   ]);
 
+  // Pre-warm camera/mic while user is on feed — first FAB open skips grant spinner
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          await Promise.all([
+            Camera.requestCameraPermissionsAsync(),
+            Camera.requestMicrophonePermissionsAsync(),
+          ]);
+        } catch (err) {
+          console.warn('[MainTabs] camera prewarm failed:', err?.message || err);
+        }
+      })();
+    }, 600);
+    return () => clearTimeout(t);
+  }, []);
+
   const openCreate = useCallback(() => {
-    // Pre-warm camera/mic permissions so UniversalCamera skips the grant spinner
-    void (async () => {
-      try {
-        await Promise.all([
-          Camera.requestCameraPermissionsAsync(),
-          Camera.requestMicrophonePermissionsAsync(),
-        ]);
-      } catch (err) {
-        console.warn('[MainTabs] camera prewarm failed:', err?.message || err);
-      }
-    })();
     // Central "+" → Universal Creation Engine (mode strip: SPARKS / JOSH / REWIND / BAWAAL)
     navigation?.navigate?.('UniversalCamera', {
       initialMode: 'SPARKS',

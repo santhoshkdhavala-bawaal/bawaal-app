@@ -157,8 +157,20 @@ export async function deleteGalleryAssetsByIds(assetIds) {
     if (!granted) {
       return { ok: false, error: 'permission-denied' };
     }
-    console.log('[galleryMedia] deleting selected assets:', ids);
-    await deleteAssetsAsync(ids);
+    console.log('[galleryMedia] deleting selected assets only:', ids);
+    // Prefer one call with exact selection; if the platform rejects the batch,
+    // delete each selected id individually (still never touches unselected).
+    try {
+      await deleteAssetsAsync(ids);
+    } catch (batchErr) {
+      console.warn(
+        '[galleryMedia] batch delete failed, deleting one-by-one:',
+        batchErr?.message || batchErr
+      );
+      for (const id of ids) {
+        await deleteAssetsAsync([id]);
+      }
+    }
     console.log('[galleryMedia] deleted selected assets ok:', ids.length);
     return { ok: true, deletedIds: ids };
   } catch (err) {
