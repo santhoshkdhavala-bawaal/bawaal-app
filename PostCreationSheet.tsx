@@ -481,20 +481,30 @@ function PostCreationSheet({
 
       console.log('[PostCreationSheet] formattedUri ->', formattedUri);
       console.log('[PostCreationSheet] upload fileName ->', fileName);
+      console.log('[PostCreationSheet] platform ->', Platform.OS);
 
-      const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName, {
-        onProgress: (pct) => setUploadPct(pct),
-      });
+      try {
+        const remoteUrl = await uploadVideoToSupabase(formattedUri, fileName, {
+          onProgress: (pct) => setUploadPct(pct),
+        });
 
-      if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
-        console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
-        return remoteUrl.trim();
+        if (typeof remoteUrl === 'string' && isRemoteHttpsUri(remoteUrl)) {
+          console.log('[PostCreationSheet] cloud URL ready:', remoteUrl);
+          return remoteUrl.trim();
+        }
+
+        console.error(
+          '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL:',
+          remoteUrl
+        );
+        return null;
+      } catch (err) {
+        console.error(
+          '[PostCreationSheet] upload threw:',
+          (err as Error)?.message || err
+        );
+        return null;
       }
-
-      console.error(
-        '[PostCreationSheet] Storage upload failed or returned non-HTTPS URL — skipping DB/feed post'
-      );
-      return null;
     },
     []
   );
@@ -620,6 +630,12 @@ function PostCreationSheet({
       }
 
       const dispatched = dispatchToFeeds(payload);
+      console.log(
+        '[PostCreationSheet] feed dispatch ok:',
+        dispatched?.feedTarget,
+        dispatched?.newPost?.id,
+        dispatched?.newPost?.videoUri || dispatched?.videoUri
+      );
       setPendingPayload(dispatched);
       setSuccessVisible(true);
     } catch (err) {

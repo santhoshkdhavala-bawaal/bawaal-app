@@ -105,7 +105,12 @@ export function pushArenaPost(post) {
     const normalized = normalizeArenaPost(post);
     if (!normalized) return null;
 
-    console.log('[arenaFeedStore] videoUri ->', normalized.videoUri);
+    console.log(
+      '[arenaFeedStore] prepend post',
+      normalized.id,
+      'videoUri ->',
+      normalized.videoUri
+    );
     mergeIntoStore(normalized, { emitEvent: true });
 
     // Fire-and-forget cloud persist (skip rows that came from hydrate)
@@ -113,6 +118,8 @@ export function pushArenaPost(post) {
       void persistArenaPostToSupabase(normalized).then((res) => {
         if (!res?.ok && !res?.skipped) {
           console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
+        } else if (res?.ok) {
+          console.log('[arenaFeedStore] row persisted to bawaal_posts');
         }
       });
     }

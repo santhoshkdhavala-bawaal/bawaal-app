@@ -283,17 +283,82 @@ function buildUploadUrl(supabaseUrl, safeName) {
   return `${supabaseUrl}/storage/v1/object/bawaalvideos/battles/${safeName}`;
 }
 
+const STORAGE_HEADERS = (anonKey) => ({
+  apikey: anonKey,
+  Authorization: `Bearer ${anonKey}`,
+  'Content-Type': 'video/mp4',
+  'x-upsert': 'true',
+});
+
+/** Decode base64 → Uint8Array without external deps (Hermes / RN safe). */
+function base64ToUint8Array(base64) {
+  const cleaned = String(base64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
+  if (!cleaned) throw new Error('Empty base64 video payload');
+
+  if (typeof globalThis.Buffer === 'function') {
+    return new Uint8Array(globalThis.Buffer.from(cleaned, 'base64'));
+  }
+
+  if (typeof globalThis.atob !== 'function') {
+    throw new Error('No base64 decoder available on this runtime');
+  }
+
+  const binary = globalThis.atob(cleaned);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 /**
- * Native binary upload ONLY (runs off the JS thread via FileSystem native task).
- *
- * Supabase Storage `/object/{bucket}/{path}` expects the raw file bytes with
- * `Content-Type: video/mp4`. Multipart FormData wraps the file in boundary
- * markers and produces black/corrupt playback in players.
- *
- * @param {string} uploadUrl
- * @param {string} fileUri
- * @param {string} anonKey
- * @param {(pct: number) => void} [onProgress] 0–100
+ * Android-safe path: read local file:// as base64 → ArrayBuffer/Uint8Array → fetch POST.
+ * Avoids FormData multipart corruption and flaky native uploadAsync on some devices.
+ */
+async function uploadViaFetchArrayBuffer(
+  uploadUrl,
+  fileUri,
+  anonKey,
+  onProgress
+) {
+  console.log('UPLOAD_ARRAYBUFFER: reading', fileUri);
+  if (onProgress) onProgress(15);
+
+  const base64 = await FileSystem.readAsStringAsync(fileUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const bytes = base64ToUint8Array(base64);
+  console.log('UPLOAD_ARRAYBUFFER: bytes=', bytes.byteLength);
+
+  if (bytes.byteLength < MIN_VIDEO_BYTES) {
+    throw new Error(
+      `Decoded video too small (${bytes.byteLength} bytes) — refusing upload`
+    );
+  }
+  if (onProgress) onProgress(45);
+
+  const res = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: STORAGE_HEADERS(anonKey),
+    body: bytes,
+  });
+
+  const bodyText = await res.text().catch(() => '');
+  if (!res.ok) {
+    console.error('REST_UPLOAD_ERROR (arraybuffer):', res.status, bodyText);
+    throw new Error(
+      bodyText || `Storage ArrayBuffer upload failed with status ${res.status}`
+    );
+  }
+
+  if (onProgress) onProgress(100);
+  console.log('ARRAYBUFFER_UPLOAD_OK: status=', res.status);
+  return true;
+}
+
+/**
+ * Native binary upload via FileSystem (iOS / fallback).
+ * Supabase Storage expects raw MP4 bytes — never multipart FormData.
  */
 async function uploadViaFileSystemBinary(
   uploadUrl,
@@ -301,22 +366,14 @@ async function uploadViaFileSystemBinary(
   anonKey,
   onProgress
 ) {
-  const headers = {
-    apikey: anonKey,
-    Authorization: `Bearer ${anonKey}`,
-    'Content-Type': 'video/mp4',
-    'x-upsert': 'true',
-  };
   const options = {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-    headers,
+    headers: STORAGE_HEADERS(anonKey),
   };
 
   let result;
 
-  // Prefer createUploadTask — native background transfer + progress callbacks
-  // so the JS thread stays responsive during multi‑MB video uploads.
   if (typeof FileSystem.createUploadTask === 'function') {
     const task = FileSystem.createUploadTask(
       uploadUrl,
@@ -354,6 +411,40 @@ async function uploadViaFileSystemBinary(
   if (typeof onProgress === 'function') onProgress(100);
   console.log('BINARY_UPLOAD_OK: status=', result.status);
   return true;
+}
+
+/**
+ * Upload bytes to Supabase Storage with platform-aware strategy + fallback.
+ */
+async function uploadVideoBytes(uploadUrl, fileUri, anonKey, onProgress) {
+  const tryArrayBuffer = async () =>
+    uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress);
+  const tryNativeBinary = async () =>
+    uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey, onProgress);
+
+  // Android: ArrayBuffer/fetch first (rock-solid for file:// cache URIs)
+  // iOS: native FileSystem binary first, ArrayBuffer fallback
+  if (Platform.OS === 'android') {
+    try {
+      return await tryArrayBuffer();
+    } catch (err) {
+      console.warn(
+        '[upload] Android ArrayBuffer upload failed, trying FileSystem binary:',
+        err?.message || err
+      );
+      return tryNativeBinary();
+    }
+  }
+
+  try {
+    return await tryNativeBinary();
+  } catch (err) {
+    console.warn(
+      '[upload] FileSystem binary failed, trying ArrayBuffer fetch:',
+      err?.message || err
+    );
+    return tryArrayBuffer();
+  }
 }
 
 /**
@@ -449,19 +540,40 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     await assertUploadableVideoFile(fileUri);
     if (onProgress) onProgress(8);
 
-    // Yield again right before native transfer so UI stays buttery
+    // Yield again right before transfer so UI stays buttery
     await yieldToUI();
 
-    // Binary only — FormData multipart corrupts objects in Supabase Storage
-    await uploadViaFileSystemBinary(uploadUrl, fileUri, ANON_KEY, (pct) => {
-      // Map native 0–100 into 8–100 so prep steps stay visible
+    // Android: file:// → ArrayBuffer → fetch; iOS: native binary (with fallbacks)
+    await uploadVideoBytes(uploadUrl, fileUri, ANON_KEY, (pct) => {
       if (onProgress) onProgress(Math.max(8, Math.min(100, pct)));
     });
     console.log('PUBLIC_URL:', publicUrl);
     return publicUrl;
   } catch (err) {
-    console.error('UPLOAD_CATCH_ERROR:', err);
+    console.error('UPLOAD_CATCH_ERROR:', err?.message || err, err);
     return null;
+  }
+}
+
+/**
+ * Copy a camera/cache URI into app document storage so gallery-save / GC
+ * cannot invalidate the path before feed upload.
+ * @param {string} videoUri
+ * @returns {Promise<string>} stable file:// URI (or original on soft failure)
+ */
+export async function stabilizeLocalVideoUri(videoUri) {
+  const sanitized = sanitizeVideoUriForUpload(videoUri);
+  if (!sanitized) return videoUri;
+  if (isRemoteHttpsUri(sanitized)) return sanitized;
+  try {
+    const persisted = await persistLocalVideoUri(sanitized);
+    return sanitizeVideoUriForUpload(persisted) || persisted || sanitized;
+  } catch (err) {
+    console.warn(
+      '[upload] stabilizeLocalVideoUri failed:',
+      err?.message || err
+    );
+    return sanitized;
   }
 }
 

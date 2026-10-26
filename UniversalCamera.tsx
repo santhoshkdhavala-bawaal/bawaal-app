@@ -43,6 +43,7 @@ import type {
   PostCreationPayload,
 } from './PostCreationSheet';
 import FilmStripTrimmer from './FilmStripTrimmer';
+import { stabilizeLocalVideoUri } from './src/services/uploadService';
 export type { CreationMode, PostCreationPayload };
 
 /**
@@ -1037,8 +1038,9 @@ export default function UniversalCamera({
       setCameraError('');
       clearHidePillTimer();
       recordingLockRef.current = false;
-      // 3) Remount CameraView → fresh native session for football-after-baseball takes
-      if (opts?.remountCamera !== false) {
+      // 3) Remount CameraView ONLY when explicitly requested (post-publish / crash recovery)
+      // NEVER remount on Retake — remount blacks the live preview until user leaves the screen.
+      if (opts?.remountCamera === true) {
         setIsCameraReady(false);
         setCameraSessionKey((k) => k + 1);
       }
@@ -1051,11 +1053,32 @@ export default function UniversalCamera({
     ]
   );
 
+  /**
+   * Retake → drop clip/preview and return to the SAME live CameraView session.
+   * Must not remount <CameraView/> or flip isCameraReady (Android black viewfinder).
+   */
+  const returnToLiveCamera = useCallback(() => {
+    setShowPreview(false);
+    setShowPostSheet(false);
+    setRecordedVideoUri(null);
+    setSlowMoEnabled(false);
+    setSlowMoRate(0.5);
+    setSlowMoStartSec(0);
+    setSlowMoEndSec(safeDurationSec(selectedDuration || recordLimit, 15));
+    setElapsedSec(0);
+    setCameraError('');
+    recordingLockRef.current = false;
+    setIsRecording(false);
+    // Keep cameraSessionKey + isCameraReady untouched so the live feed stays attached
+    revealTimePill();
+  }, [selectedDuration, recordLimit, revealTimePill]);
+
   const safeNavigateHome = useCallback(
     (params: Record<string, unknown>) => {
       if (navigatingRef.current) return;
       navigatingRef.current = true;
-      resetCreationSession();
+      // Leaving the camera screen — remount is safe / desired for next entry
+      resetCreationSession({ remountCamera: true });
       setHubOpen(false);
       // 300ms after sheet close — prevents SPARKS/JOSH unmount race crashes
       setTimeout(() => {
@@ -1084,7 +1107,7 @@ export default function UniversalCamera({
         /* ignore */
       }
     }
-    resetCreationSession();
+    resetCreationSession({ remountCamera: true });
     setHubOpen(false);
     setTimeout(() => {
       if (navigation?.canGoBack?.()) navigation.goBack?.();
@@ -1180,11 +1203,22 @@ export default function UniversalCamera({
         return;
       }
 
+      // Persist out of cache BEFORE gallery save / post so Android GC can't nuke the URI
+      let stableUri = uri;
+      try {
+        stableUri = (await stabilizeLocalVideoUri(uri)) || uri;
+      } catch (stabErr) {
+        console.warn(
+          '[UniversalCamera] stabilize failed, using raw uri:',
+          (stabErr as Error)?.message || stabErr
+        );
+      }
+
       // Instagram-style: auto-save to Camera Roll (non-blocking)
-      void saveClipToDeviceGallery(uri);
+      void saveClipToDeviceGallery(stableUri);
 
       const clipDur = safeDurationSec(recordLimit, 15);
-      setRecordedVideoUri(uri);
+      setRecordedVideoUri(stableUri);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
@@ -1483,10 +1517,7 @@ export default function UniversalCamera({
           visible
           uri={recordedVideoUri}
           fallbackDuration={recordLimit}
-          onRetake={() => {
-            resetCreationSession();
-            revealTimePill();
-          }}
+          onRetake={returnToLiveCamera}
           onNext={({
             slowMoEnabled: sm,
             slowMoRate: rate,
@@ -1504,6 +1535,7 @@ export default function UniversalCamera({
               Number.isFinite(start) ? Math.min(start, clipDur - 0.5) : 0
             );
             setSlowMoEndSec(clipDur);
+            // Keep recordedVideoUri — only dismiss preview, open post sheet
             setShowPreview(false);
             setTimeout(() => setShowPostSheet(true), 60);
           }}
