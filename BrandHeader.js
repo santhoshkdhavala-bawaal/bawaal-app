@@ -8,13 +8,12 @@ const ACCENT = '#FF5722';
 const MUTED = '#A0A0A0';
 
 /**
- * Global brand header: optional hamburger (left drawer) + BAWAAL + screen subtitle.
- * Optional rightSlot aligns opposite the screen-name row (e.g. ARENA).
+ * Global brand header: BAWAAL + screen subtitle.
+ * Optional rightSlot aligns opposite the screen-name row.
  */
 export default function BrandHeader({
   screenName = 'ARENA',
   onBrandPress,
-  onMenuPress = null,
   rightSlot = null,
 }) {
   const insets = useSafeAreaInsets();
@@ -23,20 +22,6 @@ export default function BrandHeader({
     <View style={[styles.wrap, { paddingTop: Math.max(insets.top, 12) }]}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
       <View style={styles.topRow}>
-        {typeof onMenuPress === 'function' ? (
-          <TouchableOpacity
-            onPress={onMenuPress}
-            activeOpacity={0.75}
-            accessibilityRole="button"
-            accessibilityLabel="Open menu"
-            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-            style={styles.menuBtn}
-          >
-            <View style={styles.burgerLine} />
-            <View style={[styles.burgerLine, styles.burgerLineMid]} />
-            <View style={styles.burgerLine} />
-          </TouchableOpacity>
-        ) : null}
         <TouchableOpacity
           onPress={onBrandPress}
           activeOpacity={0.75}
@@ -69,27 +54,6 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  menuBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(232, 236, 233, 0.22)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  burgerLine: {
-    width: 16,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: WHITE,
-  },
-  burgerLineMid: {
-    width: 12,
   },
   brandWrap: {
     flexShrink: 1,

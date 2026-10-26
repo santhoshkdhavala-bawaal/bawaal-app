@@ -1,105 +1,328 @@
-import React from 'react';
+/**
+ * PASSPORT tab hub — my profile + Following + Suggested.
+ * Tap an athlete → inline preview; "VIEW FULL PROFILE" → AthletePassport stack screen.
+ * Chrome is strict B&W; only stats / metrics / badges use accent color.
+ */
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
+  Image,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
   TouchableOpacity,
-  ScrollView,
+  View,
 } from 'react-native';
 import BrandHeader from './BrandHeader';
 import { useMainTabs } from './mainTabContext';
+import {
+  CURRENT_USER,
+  FOLLOWING,
+  STAT_ACCENTS,
+  SUGGESTED,
+} from './src/data/athleteSocial';
+
+const BG = '#000000';
+const SURFACE = '#0A0A0A';
+const WHITE = '#FFFFFF';
+const OFF = '#E8ECE9';
+const MUTED = '#A0A0A0';
+const BORDER = 'rgba(255,255,255,0.22)';
+
+function Avatar({ uri, name, size = 56 }) {
+  const initials = String(name || '?')
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  if (uri) {
+    return (
+      <Image
+        source={{ uri }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: SURFACE,
+          borderWidth: 1,
+          borderColor: BORDER,
+        }}
+      />
+    );
+  }
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: SURFACE,
+        borderWidth: 1,
+        borderColor: WHITE,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text style={[styles.avatarText, { fontSize: size * 0.34 }]}>{initials}</Text>
+    </View>
+  );
+}
+
+function AccentStat({ label, value, accent = 'blue' }) {
+  const color = STAT_ACCENTS[accent] || STAT_ACCENTS.blue;
+  return (
+    <View style={styles.statCell}>
+      <Text style={[styles.statValue, { color }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function MeCard({ user }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.meRow}>
+        <Avatar uri={user.avatarUri} name={user.displayName} size={64} />
+        <View style={styles.meMeta}>
+          <Text style={styles.meName}>{user.displayName}</Text>
+          <Text style={styles.meHandle}>{user.handle}</Text>
+          {user.statusBadge ? (
+            <View style={styles.badgeBw}>
+              <Text style={styles.badgeBwText}>{user.statusBadge}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <Text style={styles.bio}>{user.bio}</Text>
+      <View style={styles.statsRow}>
+        <AccentStat
+          label="FOLLOWERS"
+          value={user.stats.followers}
+          accent="blue"
+        />
+        <AccentStat
+          label="FOLLOWING"
+          value={user.stats.following}
+          accent="green"
+        />
+        <AccentStat
+          label="WIN RATE"
+          value={`${user.stats.winRate}%`}
+          accent="red"
+        />
+      </View>
+    </View>
+  );
+}
+
+const FollowChip = memo(function FollowChip({ athlete, onPress }) {
+  return (
+    <TouchableOpacity
+      style={styles.followChip}
+      onPress={() => onPress(athlete)}
+      activeOpacity={0.85}
+    >
+      <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={48} />
+      {athlete.online ? <View style={styles.onlineDot} /> : null}
+      <Text style={styles.followChipName} numberOfLines={1}>
+        {athlete.displayName.split(' ')[0]}
+      </Text>
+      <Text style={styles.followChipSport}>{athlete.sport}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const SuggestedRow = memo(function SuggestedRow({
+  athlete,
+  following,
+  onOpen,
+  onToggleFollow,
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.suggestedRow}
+      onPress={() => onOpen(athlete)}
+      activeOpacity={0.88}
+    >
+      <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={44} />
+      <View style={styles.suggestedMeta}>
+        <Text style={styles.suggestedName} numberOfLines={1}>
+          {athlete.displayName}
+        </Text>
+        <Text style={styles.suggestedHandle} numberOfLines={1}>
+          {athlete.handle} · {athlete.sport}
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[styles.followBtn, following && styles.followBtnOn]}
+        onPress={() => onToggleFollow(athlete.id)}
+        activeOpacity={0.85}
+      >
+        <Text style={[styles.followBtnText, following && styles.followBtnTextOn]}>
+          {following ? 'Following' : '+ Follow'}
+        </Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+});
+
+function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggleFollow }) {
+  return (
+    <View style={styles.previewWrap}>
+      <TouchableOpacity style={styles.backInline} onPress={onBack} hitSlop={10}>
+        <Text style={styles.backInlineText}>← Back to Passport</Text>
+      </TouchableOpacity>
+
+      <View style={styles.card}>
+        <View style={styles.previewHeader}>
+          <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={60} />
+          <View style={styles.previewHeaderMeta}>
+            <Text style={styles.meName}>{athlete.displayName}</Text>
+            <Text style={styles.meHandle}>
+              {athlete.handle} · {athlete.sport}
+            </Text>
+            <TouchableOpacity
+              style={styles.viewFullBtn}
+              onPress={onOpenFull}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.viewFullBtnText}>VIEW FULL PROFILE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={styles.bio}>{athlete.bio}</Text>
+
+        <View style={styles.statsRow}>
+          <AccentStat
+            label="FOLLOWERS"
+            value={athlete.stats.followers}
+            accent="blue"
+          />
+          <AccentStat
+            label="WINS"
+            value={athlete.stats.battlesWon}
+            accent="green"
+          />
+          <AccentStat
+            label="WIN RATE"
+            value={`${athlete.stats.winRate}%`}
+            accent="red"
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.followBtnWide, following && styles.followBtnOn]}
+          onPress={() => onToggleFollow(athlete.id)}
+          activeOpacity={0.85}
+        >
+          <Text
+            style={[styles.followBtnText, following && styles.followBtnTextOn]}
+          >
+            {following ? 'Following' : '+ Follow'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.sectionHint}>
+        Open their full passport for clips & history.
+      </Text>
+    </View>
+  );
+}
 
 export default function ProfileScreen({ navigation }) {
-  const { openProfileGateway, openSideDrawer } = useMainTabs();
+  const { openProfileGateway } = useMainTabs();
+  const [selected, setSelected] = useState(null);
+  const [followedIds, setFollowedIds] = useState(
+    () => new Set(FOLLOWING.map((a) => a.id))
+  );
+
+  const followingList = useMemo(() => FOLLOWING, []);
+  const suggestedList = useMemo(() => SUGGESTED, []);
+
+  const toggleFollow = useCallback((id) => {
+    setFollowedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const openPreview = useCallback((athlete) => {
+    setSelected(athlete);
+  }, []);
+
+  const openFullPassport = useCallback(() => {
+    if (!selected) return;
+    navigation?.navigate?.('AthletePassport', {
+      athleteId: selected.id,
+      athlete: selected,
+    });
+  }, [navigation, selected]);
 
   return (
     <View style={styles.container}>
       <BrandHeader
         screenName="PASSPORT"
         onBrandPress={openProfileGateway}
-        onMenuPress={openSideDrawer}
         rightSlot={
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => navigation?.navigate?.('Arena')}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityRole="button"
-            accessibilityLabel="Close passport"
-          >
-            <Text style={styles.backBtnText}>✕</Text>
-          </TouchableOpacity>
+          selected ? (
+            <TouchableOpacity
+              style={styles.headerLink}
+              onPress={() => setSelected(null)}
+              hitSlop={10}
+            >
+              <Text style={styles.headerLinkText}>Hub</Text>
+            </TouchableOpacity>
+          ) : null
         }
       />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.profileCard}>
-          <View style={styles.avatarRow}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>R</Text>
-            </View>
-            <View style={styles.profileDetails}>
-              <View style={styles.nameBadgeRow}>
-                <Text style={styles.userName}>Rohit_VK7</Text>
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedText}>✓ SCOUT VERIFIED</Text>
-                </View>
-              </View>
-              <Text style={styles.handleText}>@rohit_vk7 • Virar Boxing Club</Text>
-              <Text style={styles.bioText}>Combat Sports Athlete & Striker</Text>
-            </View>
-          </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {selected ? (
+          <InlineAthletePreview
+            athlete={selected}
+            following={followedIds.has(selected.id)}
+            onBack={() => setSelected(null)}
+            onOpenFull={openFullPassport}
+            onToggleFollow={toggleFollow}
+          />
+        ) : (
+          <>
+            <MeCard user={CURRENT_USER} />
 
-          <View style={styles.statsRow}>
-            <View style={[styles.statCol, styles.statBoxPts]}>
-              <Text style={styles.statNumber}>3,850</Text>
-              <Text style={styles.statLabel}>BAWAAL PTS</Text>
-            </View>
-            <View style={[styles.statCol, styles.statBoxRank]}>
-              <Text style={styles.statNumber}>#1</Text>
-              <Text style={styles.statLabel}>VIRAR RANK</Text>
-            </View>
-            <View style={[styles.statCol, styles.statBoxWins]}>
-              <Text style={styles.statNumber}>18</Text>
-              <Text style={styles.statLabel}>BATTLES WON</Text>
-            </View>
-          </View>
-        </View>
+            <Text style={styles.sectionTitle}>Following</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.followingRow}
+            >
+              {followingList.map((athlete) => (
+                <FollowChip
+                  key={athlete.id}
+                  athlete={athlete}
+                  onPress={openPreview}
+                />
+              ))}
+            </ScrollView>
 
-        <View style={styles.metricsCard}>
-          <Text style={styles.metricsTitle}>AI FORM & SCOUTING METRICS</Text>
-
-          <View style={styles.metricItem}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>Strike Velocity & Speed</Text>
-              <Text style={[styles.metricValue, styles.metricValueVelocity]}>94 / 100</Text>
-            </View>
-            <View style={styles.progressBarTrack}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  styles.progressBarVelocity,
-                  { width: '94%' },
-                ]}
+            <Text style={styles.sectionTitle}>Suggested Athletes</Text>
+            {suggestedList.map((athlete) => (
+              <SuggestedRow
+                key={athlete.id}
+                athlete={athlete}
+                following={followedIds.has(athlete.id)}
+                onOpen={openPreview}
+                onToggleFollow={toggleFollow}
               />
-            </View>
-          </View>
-
-          <View style={styles.metricItem}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>Stamina & Form Check Score</Text>
-              <Text style={[styles.metricValue, styles.metricValueStamina]}>88 / 100</Text>
-            </View>
-            <View style={styles.progressBarTrack}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  styles.progressBarStamina,
-                  { width: '88%' },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
+            ))}
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -108,161 +331,235 @@ export default function ProfileScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-  },
-  backBtn: {
-    padding: 6,
-  },
-  backBtnText: {
-    color: '#E5E5E5',
-    fontSize: 18,
+    backgroundColor: BG,
   },
   scrollContent: {
     padding: 16,
     paddingBottom: 120,
   },
-  profileCard: {
-    backgroundColor: '#121212',
-    borderRadius: 16,
-    padding: 16,
+  card: {
+    backgroundColor: SURFACE,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1A1A1A',
-    marginBottom: 16,
+    borderColor: BORDER,
+    padding: 16,
+    marginBottom: 18,
   },
-  avatarRow: {
+  meRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    gap: 14,
   },
-  avatarCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#FF5722',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    color: '#000000',
-    fontSize: 26,
-    fontWeight: '900',
-  },
-  profileDetails: {
+  meMeta: {
     flex: 1,
+    minWidth: 0,
   },
-  nameBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  userName: {
-    color: '#FFFFFF',
+  meName: {
+    color: WHITE,
     fontSize: 18,
     fontWeight: '900',
   },
-  verifiedBadge: {
-    backgroundColor: 'rgba(255,87,34,0.15)',
-    borderWidth: 1,
-    borderColor: '#FF5722',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  meHandle: {
+    color: MUTED,
+    fontSize: 12,
+    marginTop: 3,
+    fontWeight: '600',
   },
-  verifiedText: {
-    color: '#FF5722',
+  badgeBw: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  badgeBwText: {
+    color: WHITE,
     fontSize: 9,
     fontWeight: '800',
+    letterSpacing: 0.6,
   },
-  handleText: {
-    color: '#A0A0A0',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  bioText: {
-    color: '#E5E5E5',
+  bio: {
+    color: OFF,
     fontSize: 13,
-    marginTop: 4,
+    lineHeight: 19,
+    marginTop: 12,
   },
   statsRow: {
     flexDirection: 'row',
     gap: 8,
+    marginTop: 14,
   },
-  statCol: {
+  statCell: {
     flex: 1,
-    borderRadius: 10,
-    paddingVertical: 10,
     alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: BG,
   },
-  statBoxPts: {
-    backgroundColor: '#000000',
-    borderColor: '#FF5722',
-  },
-  statBoxRank: {
-    backgroundColor: '#000000',
-    borderColor: '#A0A0A0',
-  },
-  statBoxWins: {
-    backgroundColor: '#000000',
-    borderColor: '#A0A0A0',
-  },
-  statNumber: {
-    color: '#FFFFFF',
+  statValue: {
     fontSize: 16,
     fontWeight: '900',
   },
   statLabel: {
-    color: '#A0A0A0',
+    color: MUTED,
     fontSize: 9,
     fontWeight: '800',
-    marginTop: 4,
     letterSpacing: 0.5,
+    marginTop: 4,
   },
-  metricsCard: {
-    backgroundColor: '#121212',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#1A1A1A',
+  avatarText: {
+    color: WHITE,
+    fontWeight: '900',
   },
-  metricsTitle: {
-    color: '#FF5722',
+  sectionTitle: {
+    color: WHITE,
     fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 1,
-    marginBottom: 16,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 12,
+    marginTop: 4,
   },
-  metricItem: {
-    marginBottom: 14,
+  followingRow: {
+    gap: 12,
+    paddingBottom: 8,
+    marginBottom: 18,
   },
-  metricHeader: {
+  followChip: {
+    width: 84,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: SURFACE,
+  },
+  followChipName: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  followChipSport: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  onlineDot: {
+    position: 'absolute',
+    right: 14,
+    top: 10,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: STAT_ACCENTS.green,
+    borderWidth: 2,
+    borderColor: SURFACE,
+  },
+  suggestedRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: SURFACE,
+    marginBottom: 10,
   },
-  metricLabel: {
-    color: '#E5E5E5',
-    fontSize: 13,
-    fontWeight: '600',
+  suggestedMeta: {
+    flex: 1,
+    minWidth: 0,
   },
-  metricValue: {
-    fontSize: 13,
+  suggestedName: {
+    color: WHITE,
+    fontSize: 14,
     fontWeight: '800',
   },
-  metricValueVelocity: { color: '#FF5722' },
-  metricValueStamina: { color: '#A0A0A0' },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#000000',
-    overflow: 'hidden',
+  suggestedHandle: {
+    color: MUTED,
+    fontSize: 11,
+    marginTop: 2,
   },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
+  followBtn: {
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  progressBarVelocity: { backgroundColor: '#FF5722' },
-  progressBarStamina: { backgroundColor: '#A0A0A0' },
+  followBtnOn: {
+    backgroundColor: WHITE,
+  },
+  followBtnText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  followBtnTextOn: {
+    color: BG,
+  },
+  followBtnWide: {
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  previewWrap: {
+    gap: 4,
+  },
+  backInline: {
+    marginBottom: 10,
+  },
+  backInlineText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'flex-start',
+  },
+  previewHeaderMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  viewFullBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: WHITE,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  viewFullBtnText: {
+    color: BG,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  sectionHint: {
+    color: MUTED,
+    fontSize: 12,
+    marginTop: 4,
+  },
+  headerLink: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  headerLinkText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '800',
+  },
 });

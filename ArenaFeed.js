@@ -716,7 +716,7 @@ const BattleCard = memo(function BattleCard({
 });
 
 export default function ArenaFeed({ navigation, route }) {
-  const { openProfileGateway, openSideDrawer } = useMainTabs();
+  const { openProfileGateway } = useMainTabs();
   const [activeTab, setActiveTab] = useState('ALL');
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Lean seed for instant first paint — demos + cloud hydrate after idle
@@ -1046,7 +1046,6 @@ export default function ArenaFeed({ navigation, route }) {
       <BrandHeader
         screenName="ARENA"
         onBrandPress={openProfileGateway}
-        onMenuPress={openSideDrawer}
         rightSlot={
           <TouchableOpacity
             style={styles.scoresPill}

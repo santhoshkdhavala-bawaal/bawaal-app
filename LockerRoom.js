@@ -82,7 +82,7 @@ const MATCH_ROOMS = [
 ];
 
 export default function LockerRoom() {
-  const { openProfileGateway, openSideDrawer } = useMainTabs();
+  const { openProfileGateway } = useMainTabs();
   const [roomMode, setRoomMode] = useState('squad');
   const [query, setQuery] = useState('');
 
@@ -98,7 +98,6 @@ export default function LockerRoom() {
       <BrandHeader
         screenName="LOCKER ROOM"
         onBrandPress={openProfileGateway}
-        onMenuPress={openSideDrawer}
       />
 
       <View style={styles.modeRow}>

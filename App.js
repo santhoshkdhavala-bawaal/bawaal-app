@@ -12,6 +12,7 @@ import LeaderboardScreen from './LeaderboardScreen';
 import Live1v1BattleScreen from './ChallengerArena';
 import RoleSelection from './RoleSelection';
 import AthleteDashboard from './AthleteDashboard';
+import AthletePassportScreen from './AthletePassportScreen';
 import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 
@@ -204,6 +205,11 @@ export default function App() {
                 options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
               />
               <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
+              <Stack.Screen
+                name="AthletePassport"
+                component={AthletePassportScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
               {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
               <Stack.Screen
                 name="Arena"
