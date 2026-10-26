@@ -30,6 +30,13 @@ import {
 } from 'expo-camera';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  GestureHandlerRootView,
+  PinchGestureHandler,
+  State,
+  type PinchGestureHandlerGestureEvent,
+  type PinchGestureHandlerStateChangeEvent,
+} from 'react-native-gesture-handler';
 import CreationPostSheet from './PostCreationSheet';
 import type {
   CreationMode,
@@ -44,14 +51,40 @@ import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 export type { CreationMode, PostCreationPayload };
 
-/** Minimalist Black & White accent — never neon orange */
+/** Minimalist Black & White — electric blue for active FX only */
 const ACCENT = '#FFFFFF';
+const ELECTRIC_BLUE = '#00E5FF';
 const SHUTTER_RED = '#FF3B30';
 const SHEET_BG = 'rgba(10,10,10,0.95)';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
 const PILL_HIDE_MS = 5000;
 const MIN_TRIM_SPAN = 0.5;
 const DOT_COUNT = 28;
+
+/** CameraView zoom is 0–1 of device max; presets approximate optical punches. */
+const ZOOM_PRESETS = [
+  { label: '1×', value: 0 },
+  { label: '2×', value: 0.35 },
+  { label: '3×', value: 0.7 },
+] as const;
+
+function clampZoom(z: number) {
+  if (!Number.isFinite(z)) return 0;
+  return Math.min(1, Math.max(0, z));
+}
+
+function nearestZoomPreset(z: number): (typeof ZOOM_PRESETS)[number] {
+  let best: (typeof ZOOM_PRESETS)[number] = ZOOM_PRESETS[0];
+  let bestDist = Math.abs(z - best.value);
+  for (const p of ZOOM_PRESETS) {
+    const d = Math.abs(z - p.value);
+    if (d < bestDist) {
+      best = p;
+      bestDist = d;
+    }
+  }
+  return best;
+}
 
 type NavLike = {
   goBack?: () => void;
@@ -828,6 +861,8 @@ export default function UniversalCamera({
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
   const [torchOn, setTorchOn] = useState(false);
+  const [zoom, setZoom] = useState(0);
+  const [captureSlowMo, setCaptureSlowMo] = useState(false);
   const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
@@ -842,6 +877,8 @@ export default function UniversalCamera({
 
   const cameraRef = useRef<CameraView>(null);
   const recordingLockRef = useRef(false);
+  const pinchBaseZoomRef = useRef(0);
+  const zoomRef = useRef(0);
   /** Bumped after each publish/close so CameraView remounts a clean native recorder. */
   const [cameraSessionKey, setCameraSessionKey] = useState(0);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -951,6 +988,44 @@ export default function UniversalCamera({
       hidePillTimerRef.current = null;
     }
   }, []);
+
+  const applyZoom = useCallback((next: number) => {
+    const z = clampZoom(next);
+    zoomRef.current = z;
+    setZoom(z);
+  }, []);
+
+  const setZoomPreset = useCallback(
+    (value: number) => {
+      if (mode === 'BATTLE_BAWAAL') return;
+      applyZoom(value);
+    },
+    [applyZoom, mode]
+  );
+
+  const toggleCaptureSlowMo = useCallback(() => {
+    if (isRecording || mode === 'BATTLE_BAWAAL') return;
+    setCaptureSlowMo((v) => !v);
+  }, [isRecording, mode]);
+
+  const onPinchGestureEvent = useCallback(
+    (e: PinchGestureHandlerGestureEvent) => {
+      if (mode === 'BATTLE_BAWAAL') return;
+      const scale = e.nativeEvent.scale;
+      // scale=1 at gesture start; map delta onto CameraView 0–1 zoom
+      applyZoom(pinchBaseZoomRef.current + (scale - 1) * 0.55);
+    },
+    [applyZoom, mode]
+  );
+
+  const onPinchHandlerStateChange = useCallback(
+    (e: PinchGestureHandlerStateChangeEvent) => {
+      if (e.nativeEvent.state === State.BEGAN) {
+        pinchBaseZoomRef.current = zoomRef.current;
+      }
+    },
+    []
+  );
 
   /**
    * Release native recorder resources so a second take never hits a stale session.
@@ -1170,6 +1245,8 @@ export default function UniversalCamera({
     try {
       const video = await cam.recordAsync({
         maxDuration: recordLimit,
+        // Higher bitrate when slow-mo capture is armed (cleaner ramp / punch-ins)
+        ...(captureSlowMo ? { videoBitrate: 12_000_000 } : {}),
       });
       const uri =
         typeof video?.uri === 'string' && video.uri.length > 0
@@ -1206,7 +1283,8 @@ export default function UniversalCamera({
 
       const clipDur = safeDurationSec(recordLimit, 15);
       setRecordedVideoUri(stableUri);
-      setSlowMoEnabled(false);
+      // Capture slow-mo toggle → preview/post ramp defaults to 0.5×
+      setSlowMoEnabled(!!captureSlowMo);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
       setSlowMoEndSec(clipDur);
@@ -1229,6 +1307,7 @@ export default function UniversalCamera({
     isCameraReady,
     isRecording,
     recordLimit,
+    captureSlowMo,
     fadeTimePill,
     startElapsedTimer,
     clearElapsedTimer,
@@ -1370,37 +1449,48 @@ export default function UniversalCamera({
     );
   }
 
+  const activeZoomPreset = nearestZoomPreset(zoom);
+
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <CameraView
-        key={`bawaal-cam-${cameraSessionKey}`}
-        ref={cameraRef}
-        style={styles.camera}
-        facing={facing}
-        mode="video"
-        mute={false}
-        videoQuality="720p"
-        enableTorch={torchOn && facing === 'back'}
-        onCameraReady={() => {
-          setIsCameraReady(true);
-          setCameraError('');
-        }}
-        onMountError={(err) => {
-          recordingLockRef.current = false;
-          setIsRecording(false);
-          setIsCameraReady(false);
-          setTorchOn(false);
-          setCameraError(err?.message || 'Could not start camera.');
-        }}
-      />
+      <PinchGestureHandler
+        enabled={mode !== 'BATTLE_BAWAAL'}
+        onGestureEvent={onPinchGestureEvent}
+        onHandlerStateChange={onPinchHandlerStateChange}
+      >
+        <View style={styles.cameraGestureHost}>
+          <CameraView
+            key={`bawaal-cam-${cameraSessionKey}`}
+            ref={cameraRef}
+            style={styles.camera}
+            facing={facing}
+            mode="video"
+            mute={false}
+            videoQuality={captureSlowMo ? '1080p' : '720p'}
+            zoom={zoom}
+            enableTorch={torchOn && facing === 'back'}
+            onCameraReady={() => {
+              setIsCameraReady(true);
+              setCameraError('');
+            }}
+            onMountError={(err) => {
+              recordingLockRef.current = false;
+              setIsRecording(false);
+              setIsCameraReady(false);
+              setTorchOn(false);
+              setCameraError(err?.message || 'Could not start camera.');
+            }}
+          />
 
-      <Pressable
-        style={styles.viewfinderTap}
-        onPress={revealTimePill}
-        disabled={isRecording || mode === 'BATTLE_BAWAAL'}
-      />
+          <Pressable
+            style={styles.viewfinderTap}
+            onPress={revealTimePill}
+            disabled={isRecording || mode === 'BATTLE_BAWAAL'}
+          />
+        </View>
+      </PinchGestureHandler>
 
       <View
         pointerEvents="box-none"
@@ -1467,6 +1557,59 @@ export default function UniversalCamera({
             <Text style={styles.errorBannerText}>{cameraError}</Text>
           </TouchableOpacity>
         )}
+
+        {/* Pro FX rails — slow-mo left · zoom presets right */}
+        {mode !== 'BATTLE_BAWAAL' ? (
+          <View style={styles.fxRailRow} pointerEvents="box-none">
+            <View style={styles.fxRailLeft}>
+              <TouchableOpacity
+                style={[
+                  styles.fxChip,
+                  captureSlowMo && styles.fxChipActive,
+                  isRecording && styles.controlDisabled,
+                ]}
+                onPress={toggleCaptureSlowMo}
+                disabled={isRecording}
+                activeOpacity={0.85}
+                accessibilityLabel="Toggle slow motion capture"
+              >
+                <Text
+                  style={[
+                    styles.fxChipText,
+                    captureSlowMo && styles.fxChipTextActive,
+                  ]}
+                >
+                  {captureSlowMo ? 'SLOW-MO ON' : 'SLOW-MO'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.fxRailRight}>
+              {ZOOM_PRESETS.map((preset) => {
+                const active =
+                  Math.abs(activeZoomPreset.value - preset.value) < 0.001;
+                return (
+                  <TouchableOpacity
+                    key={preset.label}
+                    style={[styles.fxChip, active && styles.fxChipActive]}
+                    onPress={() => setZoomPreset(preset.value)}
+                    activeOpacity={0.85}
+                    accessibilityLabel={`Zoom ${preset.label}`}
+                  >
+                    <Text
+                      style={[
+                        styles.fxChipText,
+                        active && styles.fxChipTextActive,
+                      ]}
+                    >
+                      {preset.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         <View
           style={[
@@ -1635,13 +1778,16 @@ export default function UniversalCamera({
           }}
         />
       </Modal>
-    </View>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
   absoluteFill: { ...ABSOLUTE_FILL },
+  cameraGestureHost: {
+    ...ABSOLUTE_FILL,
+  },
   camera: { ...ABSOLUTE_FILL },
   viewfinderTap: {
     ...ABSOLUTE_FILL,
@@ -1649,6 +1795,45 @@ const styles = StyleSheet.create({
     bottom: 210,
   },
   overlayRoot: { justifyContent: 'space-between' },
+  fxRailRow: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    bottom: 210,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  fxRailLeft: {
+    gap: 8,
+  },
+  fxRailRight: {
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  fxChip: {
+    minWidth: 54,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.45)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  fxChipActive: {
+    backgroundColor: ELECTRIC_BLUE,
+    borderColor: ELECTRIC_BLUE,
+  },
+  fxChipText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  fxChipTextActive: {
+    color: '#000000',
+  },
   permissionContainer: {
     flex: 1,
     backgroundColor: '#0A0A0A',
