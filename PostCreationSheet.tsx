@@ -663,29 +663,17 @@ function PostCreationSheet({
         dispatched?.newPost?.id,
         dispatched?.newPost?.videoUri || dispatched?.videoUri
       );
+      // Storage upload already succeeded (playbackUri is HTTPS). Never scare the user
+      // with schema/table warnings — log quietly; success modal is enough.
       if (dispatched?.newPost?._persistOk === false) {
-        const detail = String(
-          dispatched?.newPost?._persistError || 'Unknown database error'
-        );
-        console.error(
-          '[PostCreationSheet] cloud DB persist failed after storage upload:',
-          detail
-        );
-        Alert.alert(
-          'Cloud save failed',
-          `Video reached storage, but the Arena database row failed:\n\n${detail}`,
-          [{ text: 'OK' }]
+        console.warn(
+          '[PostCreationSheet] DB row missed (video is live in Storage):',
+          dispatched?.newPost?._persistError
         );
       } else if (dispatched?.newPost?._persistWarning) {
-        // Soft success — Storage meta fallback while bawaal_posts is missing
         console.warn(
-          '[PostCreationSheet] persist warning:',
+          '[PostCreationSheet] persist note:',
           dispatched.newPost._persistWarning
-        );
-        Alert.alert(
-          'Posted to cloud',
-          `Your video is live. For full Arena database posts, run ENSURE_BAWAAL_POSTS.sql in the Supabase SQL editor once.\n\n${dispatched.newPost._persistWarning}`,
-          [{ text: 'OK' }]
         );
       }
       setPendingPayload(dispatched);

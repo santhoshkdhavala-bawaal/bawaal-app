@@ -1571,13 +1571,19 @@ export default function UniversalCamera({
               timestamp: Date.now(),
               feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
             };
-            // Full recorder + session teardown BEFORE navigating (multi-clip safe)
+            // Soft teardown — remounting CameraView here slows the next open
             releaseCameraRecorder();
-            resetCreationSession({ remountCamera: true });
+            resetCreationSession({ remountCamera: false });
+            const freshPost = {
+              ...safePost,
+              // Force newest-first so Arena never flashes an older clip on top
+              createdAt: Date.now(),
+              timestamp: Date.now(),
+            };
             safeNavigateHome({
               tab,
-              ...(tab === 'Arena' ? { newArenaPost: safePost } : {}),
-              ...(tab === 'Battles' ? { newBattlePost: safePost } : {}),
+              ...(tab === 'Arena' ? { newArenaPost: freshPost } : {}),
+              ...(tab === 'Battles' ? { newBattlePost: freshPost } : {}),
             });
           }}
         />

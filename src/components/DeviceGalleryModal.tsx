@@ -85,7 +85,7 @@ function DeviceGalleryModal({
         }
 
         const res = await listDeviceVideos({
-          first: 48,
+          first: 24,
           after: opts?.cursor,
         });
         if (!res.ok) {
@@ -173,7 +173,12 @@ function DeviceGalleryModal({
           accessibilityLabel={item.filename}
         >
           {item.uri ? (
-            <Image source={{ uri: item.uri }} style={styles.thumb} />
+            <Image
+              source={{ uri: item.uri }}
+              style={styles.thumb}
+              resizeMode="cover"
+              fadeDuration={0}
+            />
           ) : (
             <View style={[styles.thumb, styles.thumbFallback]}>
               <Text style={styles.thumbFallbackText}>🎬</Text>
@@ -282,7 +287,12 @@ function DeviceGalleryModal({
                 void loadPage({ cursor: endCursor });
               }
             }}
-            onEndReachedThreshold={0.4}
+            onEndReachedThreshold={0.6}
+            initialNumToRender={12}
+            maxToRenderPerBatch={9}
+            windowSize={5}
+            removeClippedSubviews
+            updateCellsBatchingPeriod={40}
             ListEmptyComponent={
               <Text style={styles.empty}>No videos found on this device.</Text>
             }

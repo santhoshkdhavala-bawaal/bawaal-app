@@ -177,13 +177,13 @@ export default function App() {
               <Stack.Screen
                 name="UniversalCamera"
                 component={UniversalCamera}
-                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
               {/* Legacy "Challenge" route name → same Universal Creation Engine */}
               <Stack.Screen
                 name="Challenge"
                 component={UniversalCamera}
-                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
+                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
               <Stack.Screen

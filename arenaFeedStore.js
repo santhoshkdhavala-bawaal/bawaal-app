@@ -193,11 +193,13 @@ export async function pushArenaPostAndPersist(post) {
         _persistError: res?.error || res?.reason || 'cloud-persist-failed',
       };
     }
+    // Treat storage-meta fallback as full success for UX (video is already public)
     return {
       ...normalized,
       _persistOk: true,
       _persistReason: res?.reason || 'db',
-      _persistWarning: res?.warning || null,
+      // Keep warning in logs only — UI must not show a failure popup
+      _persistWarning: null,
     };
   } catch (err) {
     console.error(

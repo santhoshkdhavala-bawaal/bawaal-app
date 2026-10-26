@@ -143,12 +143,12 @@ function SafeFeedVideo({
       // Silence via volume only; keep muted=false for continuous video frames.
       p.muted = false;
       p.volume = mutedRef.current ? 0 : 1;
-      // Fast start: ~5s ahead (maxBufferMs≈5000), play after ~0.5s buffered
+      // Fast start: short gate so first frame appears quickly while still buffering ahead
       p.bufferOptions = {
-        preferredForwardBufferDuration: 5,
-        minBufferForPlayback: 0.5,
+        preferredForwardBufferDuration: 4,
+        minBufferForPlayback: 0.15,
         prioritizeTimeOverSizeThreshold: true,
-        waitsToMinimizeStalling: true,
+        waitsToMinimizeStalling: false,
       };
     } catch (err) {
       console.log('Video Player Error:', err);
@@ -162,10 +162,10 @@ function SafeFeedVideo({
     if (!player) return;
     try {
       player.bufferOptions = {
-        preferredForwardBufferDuration: 5,
-        minBufferForPlayback: 0.5,
+        preferredForwardBufferDuration: 4,
+        minBufferForPlayback: 0.15,
         prioritizeTimeOverSizeThreshold: true,
-        waitsToMinimizeStalling: true,
+        waitsToMinimizeStalling: false,
       };
     } catch (_) {
       /* older runtimes may ignore */

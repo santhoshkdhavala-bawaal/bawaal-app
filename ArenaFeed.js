@@ -301,7 +301,7 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  /** When false, pause / skip decoder to keep cold-start light. */
+  /** When false, keep player mounted but paused (prefetch / neighbor warm). */
   active = true,
 }) {
   if (!uri) {
@@ -309,9 +309,7 @@ const ClipSurface = memo(function ClipSurface({
       <View
         style={[styles.clipShell, style, styles.clipPlaceholder]}
         pointerEvents="none"
-      >
-        <Text style={styles.clipPlaceholderLabel}>LOADING CLIP</Text>
-      </View>
+      />
     );
   }
   // Keep player keyed by URI so FlatList recycle never shows the wrong clip
@@ -733,19 +731,36 @@ export default function ArenaFeed({ navigation, route }) {
   const ingestedIds = useRef(new Set());
   const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const next = new Set();
-    for (const entry of viewableItems || []) {
-      if (entry?.isViewable && entry?.item?.id != null) {
-        next.add(entry.item.id);
-      }
+    const entries = (viewableItems || []).filter(
+      (e) => e?.isViewable && e?.item?.id != null
+    );
+    for (const entry of entries) {
+      next.add(entry.item.id);
+    }
+    // Prefetch neighbors in the current list so scroll doesn't cold-start decoders
+    for (const entry of entries) {
+      const idx = typeof entry.index === 'number' ? entry.index : -1;
+      if (idx < 0) continue;
+      // Neighbor ids resolved in render via index ± 1; mark placeholders by index key
+      next.add(`__idx_${idx - 1}`);
+      next.add(`__idx_${idx + 1}`);
     }
     setActiveVideoIds(next);
   }, []);
   const absorbPost = useCallback((post) => {
     if (!post) return;
     const key = post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
-    if (key && ingestedIds.current.has(key)) return;
+    // Always re-ingest if this is a fresh publish (newer timestamp) so it stays at index 0
+    const ts = Number(post.timestamp || post.createdAt) || 0;
+    const forceTop = ts > Date.now() - 15_000;
+    if (key && ingestedIds.current.has(key) && !forceTop) return;
     if (key) ingestedIds.current.add(key);
-    setFeedItems((prev) => ingestArenaPost(prev, post));
+    setFeedItems((prev) => {
+      const next = ingestArenaPost(prev, post);
+      return next.sort(
+        (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
+      );
+    });
   }, []);
 
   const hypeReel = useCallback((id) => {
@@ -778,19 +793,28 @@ export default function ArenaFeed({ navigation, route }) {
         if (!cancelled && Array.isArray(posts) && posts.length > 0) {
           setFeedItems((prev) => {
             let next = prev;
-            for (const post of posts) {
+            // Ingest oldest→newest so each prepend leaves the newest post on top
+            const ordered = [...posts].sort(
+              (a, b) =>
+                (Number(a.timestamp || a.createdAt) || 0) -
+                (Number(b.timestamp || b.createdAt) || 0)
+            );
+            for (const post of ordered) {
               const key =
                 post.id ||
                 `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
               if (key) ingestedIds.current.add(key);
               next = ingestArenaPost(next, post);
             }
-            return next;
+            // Stable newest-first (protects freshly uploaded clip at index 0)
+            return next.sort(
+              (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
+            );
           });
         }
 
         if (cancelled) return;
-        // Demo shells after cloud — lowest priority for cold start
+        // Demo shells after cloud — never jump above real / just-posted clips
         setFeedItems((prev) => {
           let next = prev;
           const seen = new Set(prev.map((p) => p.id));
@@ -799,7 +823,9 @@ export default function ArenaFeed({ navigation, route }) {
             seen.add(item.id);
             next = [...next, item];
           }
-          return next.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          return next.sort(
+            (a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0)
+          );
         });
       } catch (err) {
         console.warn(
@@ -836,16 +862,27 @@ export default function ArenaFeed({ navigation, route }) {
   useEffect(() => {
     const fromParams = route?.params?.newArenaPost;
     if (!fromParams) return;
-    absorbPost(fromParams);
+    // Stamp as newest so hydrate / demos cannot bury it
+    absorbPost({
+      ...fromParams,
+      createdAt: Date.now(),
+      timestamp: Date.now(),
+    });
     navigation?.setParams?.({ newArenaPost: undefined });
   }, [route?.params?.newArenaPost, absorbPost, navigation]);
 
   useFocusEffect(
     useCallback(() => {
-      // Re-sync persistent store (camera modal / freezeOnBlur safe)
-      getArenaPosts().forEach(absorbPost);
+      // New post first (index 0), then store catch-up
       const fromParams = route?.params?.newArenaPost;
-      if (fromParams) absorbPost(fromParams);
+      if (fromParams) {
+        absorbPost({
+          ...fromParams,
+          createdAt: Date.now(),
+          timestamp: Date.now(),
+        });
+      }
+      getArenaPosts().forEach(absorbPost);
       const fromStore = consumeLatestBattleClip();
       if (fromStore) absorbPost(fromStore);
       else {
@@ -871,6 +908,8 @@ export default function ArenaFeed({ navigation, route }) {
     const out = [];
     for (const item of filtered) {
       if (!item?.id || seenIds.has(item.id)) continue;
+      // Skip shell reels with no playable URI (avoids LOADING CLIP black cards)
+      if (item.type === 'reel' && !item.videoUri) continue;
       const vKey = videoIdentityKey(item.videoUri);
       if (item.type === 'reel' && vKey && seenVideos.has(vKey)) continue;
       seenIds.add(item.id);
@@ -892,11 +931,12 @@ export default function ArenaFeed({ navigation, route }) {
 
   const renderFeedItem = useCallback(
     ({ item, index }) => {
-      // Before first viewability pass, warm only the top cell (avoid dual decoder lag)
+      // Warm viewport + ±1 neighbor for instant playback while scrolling
       const active =
         activeVideoIds.size === 0
-          ? index === 0
-          : activeVideoIds.has(item.id);
+          ? index < 2
+          : activeVideoIds.has(item.id) ||
+            activeVideoIds.has(`__idx_${index}`);
       if (item.type === 'reel') {
         return (
           <GeneralReelCard
@@ -1029,10 +1069,10 @@ export default function ArenaFeed({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         // Lean first paint — decode only near-viewport cells
-        initialNumToRender={1}
-        maxToRenderPerBatch={1}
-        windowSize={3}
-        updateCellsBatchingPeriod={80}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={5}
+        updateCellsBatchingPeriod={50}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
       />

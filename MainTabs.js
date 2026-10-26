@@ -55,11 +55,12 @@ export default function MainTabs({ navigation, route }) {
     }
     if (route?.params?.newArenaPost) {
       setTab('Arena');
-      setArenaRoute({
-        key: `arena-${Date.now()}`,
+      // Keep a stable Arena key — remounting wiped the feed and flashed older clips
+      setArenaRoute((prev) => ({
+        key: prev?.key || 'arena',
         name: 'Arena',
         params: { newArenaPost: route.params.newArenaPost },
-      });
+      }));
       navigation?.setParams?.({ newArenaPost: undefined, tab: undefined });
     }
     if (route?.params?.newBattlePost) {
@@ -73,7 +74,7 @@ export default function MainTabs({ navigation, route }) {
     navigation,
   ]);
 
-  // Pre-warm camera/mic ASAP so FAB → UniversalCamera opens without grant spinner
+  // Pre-warm camera/mic + preload camera bundle so FAB open feels instant
   useEffect(() => {
     void (async () => {
       try {
@@ -85,10 +86,11 @@ export default function MainTabs({ navigation, route }) {
         console.warn('[MainTabs] camera prewarm failed:', err?.message || err);
       }
     })();
+    // Warm the UniversalCamera JS module without navigating
+    void import('./UniversalCamera').catch(() => {});
   }, []);
 
   const openCreate = useCallback(() => {
-    // Central "+" → Universal Creation Engine (mode strip: SPARKS / JOSH / REWIND / BAWAAL)
     navigation?.navigate?.('UniversalCamera', {
       initialMode: 'SPARKS',
     });
