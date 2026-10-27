@@ -1,15 +1,15 @@
 const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
-const defaultConfig = getDefaultConfig(__dirname);
+/** @type {import('expo/metro-config').MetroConfig} */
+const config = getDefaultConfig(__dirname);
 
-defaultConfig.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
+config.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
 
 /**
- * Expo Go (`npm run start:go`) must never pull react-native-agora / real expo-av
- * bridges into the graph. Dev-client (`npm start`) keeps the real modules.
- *
- * Set by scripts/startExpoGo.js → BAWAAL_EXPO_GO=1
+ * Expo Go (`npm run start:go` → BAWAAL_EXPO_GO=1) must never open
+ * react-native-agora or realNativeModules.real.js.
+ * Dev-client (`npm start`) keeps the real modules.
  */
 const lifecycle = process.env.npm_lifecycle_event || '';
 const stubNativeModules =
@@ -17,59 +17,85 @@ const stubNativeModules =
   lifecycle === 'start:go' ||
   lifecycle === 'web';
 
+const PROJECT_ROOT = __dirname;
 const MOCK_BRIDGE = path.resolve(
-  __dirname,
+  PROJECT_ROOT,
   'src/native/realNativeModules.mock.js'
 );
 const REAL_BRIDGE = path.resolve(
-  __dirname,
+  PROJECT_ROOT,
   'src/native/realNativeModules.real.js'
 );
 const AGORA_STUB = path.resolve(
-  __dirname,
+  PROJECT_ROOT,
   'src/native/stubs/react-native-agora.js'
 );
 
-const previousResolveRequest = defaultConfig.resolver.resolveRequest;
-
-defaultConfig.resolver.resolveRequest = (context, moduleName, platform) => {
-  const resolveDefault = () => {
-    if (typeof previousResolveRequest === 'function') {
-      return previousResolveRequest(context, moduleName, platform);
-    }
-    return context.resolveRequest(context, moduleName, platform);
-  };
-
+function isBridgeModule(moduleName) {
   const normalized = String(moduleName || '').replace(/\\/g, '/');
-  const isBridge =
+  return (
+    normalized === './nativeBridge' ||
+    normalized === '../native/nativeBridge' ||
+    normalized.endsWith('/native/nativeBridge') ||
+    normalized.endsWith('/nativeBridge') ||
+    normalized.endsWith('/nativeBridge.js') ||
     normalized === './realNativeModules' ||
     normalized === '../native/realNativeModules' ||
     normalized.endsWith('/native/realNativeModules') ||
     normalized.endsWith('/realNativeModules') ||
-    normalized.endsWith('/realNativeModules.js');
+    normalized.endsWith('/realNativeModules.js')
+  );
+}
 
-  if (isBridge) {
+const previousResolveRequest = config.resolver.resolveRequest;
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (isBridgeModule(moduleName)) {
     return {
-      filePath: stubNativeModules ? MOCK_BRIDGE : REAL_BRIDGE,
       type: 'sourceFile',
+      filePath: stubNativeModules ? MOCK_BRIDGE : REAL_BRIDGE,
     };
   }
 
   if (stubNativeModules && moduleName === 'react-native-agora') {
     return {
-      filePath: AGORA_STUB,
       type: 'sourceFile',
+      filePath: AGORA_STUB,
     };
   }
 
-  return resolveDefault();
+  if (typeof previousResolveRequest === 'function') {
+    return previousResolveRequest(context, moduleName, platform);
+  }
+  return context.resolveRequest(context, moduleName, platform);
 };
 
+// Keep the real Agora package + real bridge out of the Expo Go graph entirely
 if (stubNativeModules) {
-  // Visible in the Expo CLI terminal when Expo Go stubs are on
+  const agoraRoot = path
+    .resolve(PROJECT_ROOT, 'node_modules/react-native-agora')
+    .replace(/\\/g, '/');
+  const realBridge = REAL_BRIDGE.replace(/\\/g, '/');
+
+  const toRegex = (filePath) =>
+    new RegExp(
+      `^${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]')}`
+    );
+
+  const patterns = [toRegex(agoraRoot), toRegex(realBridge)];
+  const prev = config.resolver.blockList;
+
+  if (Array.isArray(prev)) {
+    config.resolver.blockList = [...prev, ...patterns];
+  } else if (prev instanceof RegExp) {
+    config.resolver.blockList = [prev, ...patterns];
+  } else {
+    config.resolver.blockList = patterns;
+  }
+
   console.log(
-    '[metro] BAWAAL Expo Go stubs active — react-native-agora + realNativeModules → mocks'
+    '[metro] BAWAAL Expo Go stubs active — nativeBridge→mock, Agora blocked'
   );
 }
 
-module.exports = defaultConfig;
+module.exports = config;
