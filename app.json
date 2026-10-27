@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "BAWAAL",
-    "slug": "bawaal-mobile-v2",
+    "slug": "bawaal-mobile",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -44,7 +44,9 @@
         "android.permission.INTERNET",
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES"
       ]
     },
     "web": {
@@ -73,7 +75,10 @@
           "photosPermission": "Allow BAWAAL to access your photo library so you can pick a video to post.",
           "savePhotosPermission": "Allow BAWAAL to save your recorded clips to your camera roll.",
           "isAccessMediaLocationEnabled": false,
-          "granularPermissions": ["video", "photo"]
+          "granularPermissions": [
+            "video",
+            "photo"
+          ]
         }
       ],
       "./plugins/withAgora.js",
