@@ -15,11 +15,16 @@ import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
+import { isExpoGo } from './src/utils/runtimeEnv';
 
 enableScreens(true);
 
-// Keep native splash visible until session boot finishes (avoids black flash)
-SplashScreen.preventAutoHideAsync().catch(() => {});
+// Native builds: keep splash until boot. Expo Go: never block on native splash.
+if (isExpoGo) {
+  SplashScreen.hideAsync().catch(() => {});
+} else {
+  SplashScreen.preventAutoHideAsync().catch(() => {});
+}
 
 const ROOT_BG = '#000000';
 
@@ -96,16 +101,36 @@ function EntryScreen({ navigation }) {
 }
 
 export default function App() {
-  const [showSplash, setShowSplash] = useState(true);
-  const [bootReady, setBootReady] = useState(false);
+  // Expo Go: skip JS splash so a hung session/FS read cannot freeze on "BAWAAL"
+  const [showSplash, setShowSplash] = useState(!isExpoGo);
+  const [bootReady, setBootReady] = useState(isExpoGo);
   const [initialRoute, setInitialRoute] = useState('Entry');
   const [bootError, setBootError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
+    let finished = false;
+
+    const dismissSplash = async () => {
+      if (cancelled || finished) return;
+      finished = true;
+      setBootReady(true);
+      setShowSplash(false);
+      try {
+        await SplashScreen.hideAsync();
+      } catch (err) {
+        console.warn('SplashScreen.hideAsync failed:', err?.message || err);
+      }
+    };
+
     (async () => {
       try {
-        const session = await getRegisteredSession();
+        // File-system session read can hang in Expo Go — race a short timeout
+        const bootTimeoutMs = isExpoGo ? 600 : 3500;
+        const session = await Promise.race([
+          getRegisteredSession(),
+          new Promise((resolve) => setTimeout(() => resolve(null), bootTimeoutMs)),
+        ]);
         // Returning registered users skip onboarding → BAWAAL Arena (Main tabs)
         if (!cancelled && session?.registered) {
           setInitialRoute('Main');
@@ -113,20 +138,19 @@ export default function App() {
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
       } finally {
-        if (cancelled) return;
-        try {
-          setBootReady(true);
-          setShowSplash(false);
-          // Hide native splash only after first JS frame is ready to paint Arena
-          await SplashScreen.hideAsync().catch(() => {});
-        } catch (err) {
-          setBootError(err);
-        }
+        await dismissSplash();
       }
     })();
 
+    // Hard failsafe: never stay on splash (especially under BAWAAL_EXPO_GO=1)
+    const failsafeMs = isExpoGo ? 900 : 5000;
+    const failsafe = setTimeout(() => {
+      dismissSplash();
+    }, failsafeMs);
+
     return () => {
       cancelled = true;
+      clearTimeout(failsafe);
     };
   }, []);
 

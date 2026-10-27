@@ -1,6 +1,6 @@
 /**
  * Starts Expo Go with BAWAAL_EXPO_GO=1 so Metro stubs Agora / real native bridges.
- * Always clears Metro cache so stale `require(moduleId)` transforms cannot linger.
+ * Always clears Metro cache so stale transforms cannot linger.
  */
 const { spawn } = require('child_process');
 

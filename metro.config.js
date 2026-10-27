@@ -7,9 +7,11 @@ const config = getDefaultConfig(__dirname);
 config.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
 
 /**
- * Expo Go (`npm run start:go` → BAWAAL_EXPO_GO=1) must never open
- * react-native-agora or realNativeModules.real.js.
- * Dev-client (`npm start`) keeps the real modules.
+ * Expo Go (`npm run start:go` → BAWAAL_EXPO_GO=1):
+ *   - safeNative → mock-only file (no Agora / expo-av)
+ *   - react-native-agora → stub
+ * Dev-client (`npm start`):
+ *   - safeNative → safeNative.real.js (static native imports)
  */
 const lifecycle = process.env.npm_lifecycle_event || '';
 const stubNativeModules =
@@ -18,6 +20,11 @@ const stubNativeModules =
   lifecycle === 'web';
 
 const PROJECT_ROOT = __dirname;
+const SAFE_NATIVE_MOCK = path.resolve(PROJECT_ROOT, 'src/native/safeNative.js');
+const SAFE_NATIVE_REAL = path.resolve(
+  PROJECT_ROOT,
+  'src/native/safeNative.real.js'
+);
 const MOCK_BRIDGE = path.resolve(
   PROJECT_ROOT,
   'src/native/realNativeModules.mock.js'
@@ -30,6 +37,18 @@ const AGORA_STUB = path.resolve(
   PROJECT_ROOT,
   'src/native/stubs/react-native-agora.js'
 );
+
+function isSafeNativeModule(moduleName) {
+  const normalized = String(moduleName || '').replace(/\\/g, '/');
+  if (normalized.includes('safeNative.real')) return false;
+  return (
+    normalized === './safeNative' ||
+    normalized === '../native/safeNative' ||
+    normalized.endsWith('/native/safeNative') ||
+    normalized.endsWith('/safeNative') ||
+    normalized.endsWith('/safeNative.js')
+  );
+}
 
 function isBridgeModule(moduleName) {
   const normalized = String(moduleName || '').replace(/\\/g, '/');
@@ -50,6 +69,14 @@ function isBridgeModule(moduleName) {
 const previousResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (isSafeNativeModule(moduleName)) {
+    return {
+      type: 'sourceFile',
+      // Expo Go keeps the mock file; remapping to itself is intentional + cache-bust friendly
+      filePath: stubNativeModules ? SAFE_NATIVE_MOCK : SAFE_NATIVE_REAL,
+    };
+  }
+
   if (isBridgeModule(moduleName)) {
     return {
       type: 'sourceFile',
@@ -70,11 +97,11 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
-// Keep the real Agora package + real bridge out of the Expo Go graph entirely
 if (stubNativeModules) {
   const agoraRoot = path
     .resolve(PROJECT_ROOT, 'node_modules/react-native-agora')
     .replace(/\\/g, '/');
+  const realSafe = SAFE_NATIVE_REAL.replace(/\\/g, '/');
   const realBridge = REAL_BRIDGE.replace(/\\/g, '/');
 
   const toRegex = (filePath) =>
@@ -82,7 +109,11 @@ if (stubNativeModules) {
       `^${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]')}`
     );
 
-  const patterns = [toRegex(agoraRoot), toRegex(realBridge)];
+  const patterns = [
+    toRegex(agoraRoot),
+    toRegex(realSafe),
+    toRegex(realBridge),
+  ];
   const prev = config.resolver.blockList;
 
   if (Array.isArray(prev)) {
@@ -94,7 +125,7 @@ if (stubNativeModules) {
   }
 
   console.log(
-    '[metro] BAWAAL Expo Go stubs active — nativeBridge→mock, Agora blocked'
+    '[metro] BAWAAL Expo Go stubs active — safeNative mock, Agora blocked'
   );
 }
 

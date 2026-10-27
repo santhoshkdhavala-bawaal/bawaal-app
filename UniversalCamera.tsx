@@ -61,29 +61,9 @@ const PILL_HIDE_MS = 5000;
 const MIN_TRIM_SPAN = 0.5;
 const DOT_COUNT = 28;
 
-/** CameraView zoom is 0–1 of device max; presets approximate optical punches. */
-const ZOOM_PRESETS = [
-  { label: '1×', value: 0 },
-  { label: '2×', value: 0.35 },
-  { label: '3×', value: 0.7 },
-] as const;
-
 function clampZoom(z: number) {
   if (!Number.isFinite(z)) return 0;
   return Math.min(1, Math.max(0, z));
-}
-
-function nearestZoomPreset(z: number): (typeof ZOOM_PRESETS)[number] {
-  let best: (typeof ZOOM_PRESETS)[number] = ZOOM_PRESETS[0];
-  let bestDist = Math.abs(z - best.value);
-  for (const p of ZOOM_PRESETS) {
-    const d = Math.abs(z - p.value);
-    if (d < bestDist) {
-      best = p;
-      bestDist = d;
-    }
-  }
-  return best;
 }
 
 type NavLike = {
@@ -860,9 +840,7 @@ export default function UniversalCamera({
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [joshUnlocked3m, setJoshUnlocked3m] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
-  const [torchOn, setTorchOn] = useState(false);
   const [zoom, setZoom] = useState(0);
-  const [captureSlowMo, setCaptureSlowMo] = useState(false);
   const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
@@ -994,19 +972,6 @@ export default function UniversalCamera({
     zoomRef.current = z;
     setZoom(z);
   }, []);
-
-  const setZoomPreset = useCallback(
-    (value: number) => {
-      if (mode === 'BATTLE_BAWAAL') return;
-      applyZoom(value);
-    },
-    [applyZoom, mode]
-  );
-
-  const toggleCaptureSlowMo = useCallback(() => {
-    if (isRecording || mode === 'BATTLE_BAWAAL') return;
-    setCaptureSlowMo((v) => !v);
-  }, [isRecording, mode]);
 
   const onPinchGestureEvent = useCallback(
     (e: PinchGestureHandlerGestureEvent) => {
@@ -1246,7 +1211,6 @@ export default function UniversalCamera({
       const video = await cam.recordAsync({
         maxDuration: recordLimit,
         // Higher bitrate when slow-mo capture is armed (cleaner ramp / punch-ins)
-        ...(captureSlowMo ? { videoBitrate: 12_000_000 } : {}),
       });
       const uri =
         typeof video?.uri === 'string' && video.uri.length > 0
@@ -1283,8 +1247,7 @@ export default function UniversalCamera({
 
       const clipDur = safeDurationSec(recordLimit, 15);
       setRecordedVideoUri(stableUri);
-      // Capture slow-mo toggle → preview/post ramp defaults to 0.5×
-      setSlowMoEnabled(!!captureSlowMo);
+      setSlowMoEnabled(false);
       setSlowMoRate(0.5);
       setSlowMoStartSec(0);
       setSlowMoEndSec(clipDur);
@@ -1307,7 +1270,6 @@ export default function UniversalCamera({
     isCameraReady,
     isRecording,
     recordLimit,
-    captureSlowMo,
     fadeTimePill,
     startElapsedTimer,
     clearElapsedTimer,
@@ -1336,14 +1298,8 @@ export default function UniversalCamera({
 
   const flipCamera = useCallback(() => {
     if (isRecording) return;
-    setTorchOn(false);
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
   }, [isRecording]);
-
-  const toggleTorch = useCallback(() => {
-    if (isRecording || facing !== 'back') return;
-    setTorchOn((v) => !v);
-  }, [isRecording, facing]);
 
   /** Open in-app gallery (checkbox select + targeted delete / import). */
   const openDeviceGallery = useCallback(() => {
@@ -1449,8 +1405,6 @@ export default function UniversalCamera({
     );
   }
 
-  const activeZoomPreset = nearestZoomPreset(zoom);
-
   return (
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -1468,9 +1422,9 @@ export default function UniversalCamera({
             facing={facing}
             mode="video"
             mute={false}
-            videoQuality={captureSlowMo ? '1080p' : '720p'}
+            videoQuality="720p"
             zoom={zoom}
-            enableTorch={torchOn && facing === 'back'}
+            enableTorch={false}
             onCameraReady={() => {
               setIsCameraReady(true);
               setCameraError('');
@@ -1479,7 +1433,6 @@ export default function UniversalCamera({
               recordingLockRef.current = false;
               setIsRecording(false);
               setIsCameraReady(false);
-              setTorchOn(false);
               setCameraError(err?.message || 'Could not start camera.');
             }}
           />
@@ -1520,25 +1473,6 @@ export default function UniversalCamera({
 
           <View style={styles.topRightControls}>
             <TouchableOpacity
-              onPress={toggleTorch}
-              style={[
-                styles.flipPill,
-                torchOn && styles.torchPillOn,
-                (facing !== 'back' || isRecording) && styles.controlDisabled,
-              ]}
-              disabled={isRecording || facing !== 'back'}
-              accessibilityLabel="Toggle flash"
-            >
-              <Text
-                style={[
-                  styles.flipPillText,
-                  torchOn && styles.torchPillTextOn,
-                ]}
-              >
-                {torchOn ? 'FLASH ON' : 'FLASH'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               onPress={flipCamera}
               style={styles.flipPill}
               disabled={isRecording}
@@ -1557,59 +1491,6 @@ export default function UniversalCamera({
             <Text style={styles.errorBannerText}>{cameraError}</Text>
           </TouchableOpacity>
         )}
-
-        {/* Pro FX rails — slow-mo left · zoom presets right */}
-        {mode !== 'BATTLE_BAWAAL' ? (
-          <View style={styles.fxRailRow} pointerEvents="box-none">
-            <View style={styles.fxRailLeft}>
-              <TouchableOpacity
-                style={[
-                  styles.fxChip,
-                  captureSlowMo && styles.fxChipActive,
-                  isRecording && styles.controlDisabled,
-                ]}
-                onPress={toggleCaptureSlowMo}
-                disabled={isRecording}
-                activeOpacity={0.85}
-                accessibilityLabel="Toggle slow motion capture"
-              >
-                <Text
-                  style={[
-                    styles.fxChipText,
-                    captureSlowMo && styles.fxChipTextActive,
-                  ]}
-                >
-                  {captureSlowMo ? 'SLOW-MO ON' : 'SLOW-MO'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.fxRailRight}>
-              {ZOOM_PRESETS.map((preset) => {
-                const active =
-                  Math.abs(activeZoomPreset.value - preset.value) < 0.001;
-                return (
-                  <TouchableOpacity
-                    key={preset.label}
-                    style={[styles.fxChip, active && styles.fxChipActive]}
-                    onPress={() => setZoomPreset(preset.value)}
-                    activeOpacity={0.85}
-                    accessibilityLabel={`Zoom ${preset.label}`}
-                  >
-                    <Text
-                      style={[
-                        styles.fxChipText,
-                        active && styles.fxChipTextActive,
-                      ]}
-                    >
-                      {preset.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
 
         <View
           style={[
