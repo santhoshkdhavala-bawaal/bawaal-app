@@ -45,6 +45,7 @@ import {
   matchesSportFilter,
   resolvePostSport,
 } from './src/utils/sportCategory';
+import ScoresSportsPanel from './src/components/ScoresSportsPanel';
 
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
@@ -65,36 +66,6 @@ const ARENA_VIEWABILITY_CONFIG = {
 };
 
 const PERMANENT_SPORTS_TABS = ARENA_SPORT_TABS;
-
-const LIVE_SCORE_SAMPLES = [
-  {
-    id: 'ind-aus-t20',
-    sport: 'CRICKET',
-    tier: 'PRO',
-    title: 'IND vs AUS',
-    line: 'IND 184/4 (18.2 ov) vs AUS',
-    status: 'LIVE',
-    special: true,
-  },
-  {
-    id: 'mum-del-ranji',
-    sport: 'CRICKET',
-    tier: 'DOMESTIC',
-    title: 'MUM vs DEL',
-    line: 'MUM 210/3 vs DEL',
-    status: 'LIVE',
-    special: false,
-  },
-  {
-    id: 'lift-wars',
-    sport: 'GYM',
-    tier: 'EVENT',
-    title: 'LIFT WARS FINAL',
-    line: 'Squad A leading · 12 battles',
-    status: 'LIVE',
-    special: true,
-  },
-];
 
 const DEMO_ATHLETE_HANDLES = [
   'Aarav_Iron',
@@ -1116,6 +1087,8 @@ export default function ArenaFeed({ navigation, route }) {
     if (!filtersOpen) return null;
     return (
       <View style={styles.filtersPanel}>
+        <ScoresSportsPanel />
+
         <View style={styles.subheaderRow}>
           <Text style={styles.subheaderTitle}>LIVE FEED</Text>
           <View style={styles.liveBadge}>
@@ -1123,33 +1096,6 @@ export default function ArenaFeed({ navigation, route }) {
             <Text style={styles.liveBadgeText}>TOKYO GLOBAL LIVE</Text>
           </View>
         </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tickerContainer}
-        >
-          {LIVE_SCORE_SAMPLES.map((score) => (
-            <TouchableOpacity
-              key={score.id}
-              style={[styles.scoreCard, score.special && styles.scoreCardSpecial]}
-            >
-              <View style={styles.scoreCardHeader}>
-                <Text
-                  style={[styles.scoreSport, score.special && styles.scoreSportSpecial]}
-                >
-                  {score.sport} [{score.tier}]
-                </Text>
-                <View style={styles.miniLiveBadge}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.miniLiveText}>{score.status}</Text>
-                </View>
-              </View>
-              <Text style={styles.scoreTitle}>{score.title}</Text>
-              <Text style={styles.scoreLine}>{score.line}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
 
         <View style={styles.tabsWrapper}>
           <ScrollView
@@ -1358,46 +1304,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
-  tickerContainer: {
-    paddingLeft: 16,
-    marginBottom: 12,
-  },
-  scoreCard: {
-    width: 210,
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    padding: 12,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  scoreCardSpecial: {
-    borderColor: FLAME_ORANGE,
-    backgroundColor: 'rgba(255, 85, 0, 0.12)',
-  },
-  scoreCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  scoreSport: {
-    color: LIVE_CRIMSON,
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  scoreSportSpecial: {
-    color: FLAME_ORANGE,
-  },
-  miniLiveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  miniLiveText: {
-    color: LIVE_CRIMSON,
-    fontSize: 9,
-    fontWeight: 'bold',
-  },
   reelCard: {
     height: 520,
     marginHorizontal: 0,
@@ -1537,16 +1443,6 @@ const styles = StyleSheet.create({
   vsRow: {
     paddingHorizontal: 12,
     paddingBottom: 8,
-  },
-  scoreTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 2,
-  },
-  scoreLine: {
-    color: MUTED,
-    fontSize: 11,
   },
   tabsWrapper: {
     marginBottom: 16,
