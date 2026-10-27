@@ -11,14 +11,11 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isExpoGo } from './src/utils/runtimeEnv';
+import { loadAgoraSdk } from './src/native/safeNative';
+import SportsFeedPlaceholder from './src/components/SportsFeedPlaceholder';
 
-let AgoraSdk: any = null;
-try {
-  AgoraSdk = require('react-native-agora');
-} catch (e) {
-  console.warn('Agora SDK load exception');
-}
-
+const AgoraSdk: any = isExpoGo ? null : loadAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView;
 const createAgoraRtcEngine = AgoraSdk?.createAgoraRtcEngine;
 
@@ -62,6 +59,7 @@ export default function ChallengerArena() {
   const rivalPercent = 100 - hostPercent;
 
   useEffect(() => {
+    if (isExpoGo || !createAgoraRtcEngine) return undefined;
     let mounted = true;
     const initEngine = async () => {
       try {
@@ -73,6 +71,7 @@ export default function ChallengerArena() {
         }
         if (createAgoraRtcEngine && AGORA_APP_ID) {
           const engine = createAgoraRtcEngine();
+          if (!mounted) return;
           agoraEngineRef.current = engine;
           engine.initialize({ appId: AGORA_APP_ID });
           engine.enableVideo();
@@ -144,7 +143,16 @@ export default function ChallengerArena() {
       
       {/* 1. TOP HALF: HOST ARENA */}
       <View style={styles.arenaHalf}>
-        {isCamOn && RtcSurfaceView ? (
+        {isExpoGo || !RtcSurfaceView ? (
+          <SportsFeedPlaceholder
+            style={styles.fullScreenStream}
+            variant="battle"
+            handle="@MUMBAI_STRIKER"
+            label={isCamOn ? 'HOST CAM' : 'STANDBY'}
+            sport="COMBAT"
+            seed={1}
+          />
+        ) : isCamOn && RtcSurfaceView ? (
           <RtcSurfaceView style={styles.fullScreenStream} canvas={{ uid: 0 }} />
         ) : (
           <View style={styles.standbyContainer}>
@@ -195,11 +203,22 @@ export default function ChallengerArena() {
 
       {/* 3. BOTTOM HALF: RIVAL ARENA */}
       <View style={styles.arenaHalf}>
-        <View style={styles.standbyContainer}>
-          <Text style={styles.flagEmoji}>🇮🇳</Text>
-          <Text style={styles.handleText}>@SANTHOSH</Text>
-          <Text style={styles.standbyText}>STANDBY</Text>
-        </View>
+        {isExpoGo || !RtcSurfaceView ? (
+          <SportsFeedPlaceholder
+            style={styles.fullScreenStream}
+            variant="battle"
+            handle="@SANTHOSH"
+            label="RIVAL"
+            sport="COMBAT"
+            seed={2}
+          />
+        ) : (
+          <View style={styles.standbyContainer}>
+            <Text style={styles.flagEmoji}>🇮🇳</Text>
+            <Text style={styles.handleText}>@SANTHOSH</Text>
+            <Text style={styles.standbyText}>STANDBY</Text>
+          </View>
+        )}
 
         {/* Rival Badge & Reps - Top of Bottom Half */}
         <View style={styles.bottomTopInfoRow}>

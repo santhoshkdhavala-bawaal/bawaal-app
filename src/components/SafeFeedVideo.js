@@ -1,10 +1,8 @@
 /**
  * Crash-safe Arena feed video surface.
  *
- * Uses expo-av `<Video>` (not expo-video VideoView) so we never hit the native
- * Fabric crash: "Cannot set prop 'player' on view …".
- *
- * Same public API as before — uri / muted / paused / loop / autoPlay / contentFit.
+ * Expo Go (`Constants.appOwnership === 'expo'`) → SportsFeedPlaceholder
+ * (no expo-av / Fabric player). Dev-client & release → expo-av `<Video>`.
  */
 import React, {
   Component,
@@ -20,14 +18,20 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
 import {
   isRemoteHttpsUri,
   resolvePlayableVideoUri,
   toPublicFeedVideoUrl,
 } from '../services/uploadService';
+import { isExpoGo, canUseNativeVideo } from '../utils/runtimeEnv';
+import { loadExpoAv } from '../native/safeNative';
+import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 
 export { toPublicFeedVideoUrl };
+
+const ExpoAv = canUseNativeVideo ? loadExpoAv() : null;
+const Video = ExpoAv?.Video || null;
+const ResizeMode = ExpoAv?.ResizeMode || null;
 
 export function resolveFeedVideoUri(source) {
   const fromHelper = resolvePlayableVideoUri(source);
@@ -86,29 +90,44 @@ class VideoErrorBoundary extends Component {
 }
 
 function mapContentFit(contentFit) {
+  if (!ResizeMode) return undefined;
   if (contentFit === 'contain') return ResizeMode.CONTAIN;
   if (contentFit === 'fill' || contentFit === 'stretch') return ResizeMode.STRETCH;
   return ResizeMode.COVER;
 }
 
-function SafeFeedVideo({
-  uri: uriProp,
-  source,
-  style,
-  muted = true,
-  loop = true,
-  autoPlay = true,
-  /** When true, keep mounted but paused (no remount). */
-  paused = false,
-  contentFit = 'cover',
-  label = null,
-  nativeControls = false,
-}) {
-  const resolved = useMemo(() => {
-    if (uriProp) return toPublicFeedVideoUrl(uriProp) || uriProp;
-    return resolveFeedVideoUri(source);
-  }, [uriProp, source]);
+function hashSeed(value) {
+  const s = String(value || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
+/** JS-only path — no hooks that depend on native Video. */
+function ExpoGoFeedPlaceholder({ style, label, sport, resolved }) {
+  return (
+    <SportsFeedPlaceholder
+      style={style}
+      sport={sport}
+      label={label || 'BAWAAL CLIP'}
+      seed={hashSeed(resolved || label)}
+      variant="feed"
+    />
+  );
+}
+
+function NativeFeedVideo({
+  resolved,
+  style,
+  muted,
+  loop,
+  autoPlay,
+  paused,
+  contentFit,
+  label,
+  nativeControls,
+  sport,
+}) {
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -116,7 +135,6 @@ function SafeFeedVideo({
   const videoRef = useRef(null);
   const readyFallback = useRef(null);
 
-  // Reset load UI when URI changes
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     setFailed(false);
@@ -132,7 +150,6 @@ function SafeFeedVideo({
     };
   }, [resolved]);
 
-  // Play / pause / mute via status — never remounts the native view
   useEffect(() => {
     const node = videoRef.current;
     if (!node || !playable || failed) return undefined;
@@ -142,7 +159,6 @@ function SafeFeedVideo({
         await node.setStatusAsync({
           shouldPlay: !!autoPlay && !paused,
           isLooping: !!loop,
-          // volume-first soft mute (avoids some Android decoder tears)
           isMuted: !!muted,
           volume: muted ? 0 : 1,
           progressUpdateIntervalMillis: 800,
@@ -158,7 +174,6 @@ function SafeFeedVideo({
     };
   }, [autoPlay, paused, muted, loop, playable, failed, resolved]);
 
-  // Unload on unmount so FlatList recycle does not leak decoders
   useEffect(() => {
     const node = videoRef.current;
     return () => {
@@ -175,18 +190,20 @@ function SafeFeedVideo({
   if (!playable || failed) {
     return (
       <View style={[styles.shell, style]}>
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderText}>
-            {label || (failed ? 'CLIP UNAVAILABLE' : 'BAWAAL CLIP')}
-          </Text>
-          {!!resolved && failed ? (
-            <Text style={styles.placeholderSub} numberOfLines={2}>
-              {isRemoteHttpsUri(resolved)
+        <SportsFeedPlaceholder
+          style={StyleSheet.absoluteFill}
+          sport={sport}
+          label={label || (failed ? 'CLIP UNAVAILABLE' : 'BAWAAL CLIP')}
+          subtitle={
+            failed
+              ? isRemoteHttpsUri(resolved)
                 ? 'Cloud clip failed to decode'
-                : 'No playable URL'}
-            </Text>
-          ) : null}
-        </View>
+                : 'No playable URL'
+              : undefined
+          }
+          seed={hashSeed(resolved || label)}
+          showExpoBadge={false}
+        />
       </View>
     );
   }
@@ -197,14 +214,16 @@ function SafeFeedVideo({
       style={style}
       fallback={
         <View style={[styles.shell, style]}>
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
-          </View>
+          <SportsFeedPlaceholder
+            style={StyleSheet.absoluteFill}
+            label="CLIP UNAVAILABLE"
+            showExpoBadge={false}
+            seed={hashSeed(resolved)}
+          />
         </View>
       }
     >
       <View style={[styles.shell, style]} pointerEvents="box-none">
-        {/* B&W placeholder sits under the video until first frame */}
         <View style={styles.underlay} pointerEvents="none">
           <Text style={styles.placeholderText}>{label || 'BAWAAL'}</Text>
         </View>
@@ -253,6 +272,51 @@ function SafeFeedVideo({
   );
 }
 
+function SafeFeedVideo({
+  uri: uriProp,
+  source,
+  style,
+  muted = true,
+  loop = true,
+  autoPlay = true,
+  paused = false,
+  contentFit = 'cover',
+  label = null,
+  nativeControls = false,
+  sport = null,
+}) {
+  const resolved = useMemo(() => {
+    if (uriProp) return toPublicFeedVideoUrl(uriProp) || uriProp;
+    return resolveFeedVideoUri(source);
+  }, [uriProp, source]);
+
+  if (isExpoGo || !Video) {
+    return (
+      <ExpoGoFeedPlaceholder
+        style={style}
+        label={label}
+        sport={sport}
+        resolved={resolved}
+      />
+    );
+  }
+
+  return (
+    <NativeFeedVideo
+      resolved={resolved}
+      style={style}
+      muted={muted}
+      loop={loop}
+      autoPlay={autoPlay}
+      paused={paused}
+      contentFit={contentFit}
+      label={label}
+      nativeControls={nativeControls}
+      sport={sport}
+    />
+  );
+}
+
 export default memo(SafeFeedVideo);
 
 const styles = StyleSheet.create({
@@ -293,12 +357,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
-  },
-  placeholderSub: {
-    color: 'rgba(255,255,255,0.45)',
-    fontSize: 10,
-    marginTop: 6,
-    textAlign: 'center',
   },
   cornerTag: {
     position: 'absolute',

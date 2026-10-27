@@ -12,12 +12,13 @@ import {
   getAgoraJoinCredentials,
   hasAgoraAppId,
 } from '../config/agora';
+import { isExpoGo } from '../utils/runtimeEnv';
+import { loadAgoraSdk } from '../native/safeNative';
 
-let Agora = null;
-try {
-  Agora = require('react-native-agora');
-} catch (err) {
-  console.warn('[agora] Native module unavailable:', err?.message || err);
+/** Null in Expo Go — never touch react-native-agora there. */
+const Agora = isExpoGo ? null : loadAgoraSdk();
+if (!Agora && !isExpoGo) {
+  console.warn('[agora] Native module unavailable in this build');
 }
 
 /** @type {import('react-native-agora').IRtcEngine | null} */

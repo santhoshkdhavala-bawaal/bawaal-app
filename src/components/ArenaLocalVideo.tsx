@@ -1,6 +1,7 @@
 /**
  * Full-bleed local / remote Agora surface inside a 50% Host / Rival half.
  * isCamOn → RtcSurfaceView absolute fill (uid 0 local); else STANDBY overlay.
+ * Expo Go → SportsFeedPlaceholder (no native RTC binary).
  */
 import React, { useEffect, type ReactNode } from 'react';
 import {
@@ -15,8 +16,10 @@ import {
   getAgoraSdk,
   getEngine,
 } from '../services/agoraService';
+import { isExpoGo } from '../utils/runtimeEnv';
+import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 
-const AgoraSdk = getAgoraSdk();
+const AgoraSdk = isExpoGo ? null : getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 const RenderModeType = AgoraSdk?.RenderModeType;
 const VideoSourceType = AgoraSdk?.VideoSourceType;
@@ -55,7 +58,7 @@ export function ArenaLocalVideo({
 
   // Local cam ON → reinforce enableVideo + startPreview (black screen without this).
   useEffect(() => {
-    if (!on || isRemote) return undefined;
+    if (isExpoGo || !RtcSurfaceView || !on || isRemote) return undefined;
     let cancelled = false;
     (async () => {
       const engine = getEngine();
@@ -76,6 +79,23 @@ export function ArenaLocalVideo({
       cancelled = true;
     };
   }, [on, isRemote]);
+
+  if (isExpoGo || !RtcSurfaceView) {
+    return (
+      <View style={[styles.viewportFill, style]} pointerEvents="none">
+        {fallback || (
+          <SportsFeedPlaceholder
+            style={styles.rtcSurface}
+            variant="live"
+            handle={handle}
+            label={on ? 'CAM PREVIEW' : 'STANDBY'}
+            subtitle={isExpoGo ? 'Agora offline in Expo Go' : 'RTC surface unavailable'}
+            seed={uid || handle?.length || 0}
+          />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.viewportFill, style]} pointerEvents="none">
