@@ -17,8 +17,8 @@ const TABS = [
 ];
 
 /**
- * 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
- * Full-width row with even spacing; FAB floats without squishing side tabs.
+ * LOCKED 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
+ * Full-width space-around row; FAB in fixed center slot — do not regress layout.
  */
 export default function CustomTabBar({
   activeTab,

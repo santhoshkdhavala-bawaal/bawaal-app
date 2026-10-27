@@ -24,35 +24,30 @@ const LIVE = '#FF0033';
  * Grouped sport categories for the horizontal ticker.
  * Each sport maps to a default scoring layout format.
  */
+/** Locked baseline taxonomy — B&W ticker groups (do not collapse or restyle). */
 export const SCORE_SPORT_GROUPS = [
   {
-    id: 'core',
-    label: null,
+    id: 'team',
+    label: 'TEAM SPORTS',
     sports: [
       { key: 'CRICKET', format: 'score' },
       { key: 'FOOTBALL', format: 'score' },
-      { key: 'TENNIS', format: 'sets' },
       { key: 'BASKETBALL', format: 'points' },
       { key: 'BASEBALL', format: 'score' },
       { key: 'RUGBY', format: 'points' },
-      { key: 'MMA', format: 'timer' },
-      { key: 'BJJ', format: 'points' },
     ],
   },
   {
-    id: 'racket',
-    label: 'RACKET',
-    sports: [
-      { key: 'BADMINTON', format: 'sets' },
-      { key: 'TABLE TENNIS', format: 'sets' },
-      { key: 'SQUASH', format: 'sets' },
-      { key: 'PADEL', format: 'sets' },
-    ],
+    id: 'motorsports',
+    label: 'MOTORSPORTS',
+    sports: [{ key: 'THROTTLE', format: 'timer' }],
   },
   {
     id: 'combat',
     label: 'COMBAT',
     sports: [
+      { key: 'MMA', format: 'timer' },
+      { key: 'BJJ', format: 'points' },
       { key: 'WRESTLING', format: 'points' },
       { key: 'JUDO', format: 'points' },
       { key: 'KARATE', format: 'points' },
@@ -60,8 +55,19 @@ export const SCORE_SPORT_GROUPS = [
     ],
   },
   {
+    id: 'racket',
+    label: 'RACKET SPORTS',
+    sports: [
+      { key: 'TENNIS', format: 'sets' },
+      { key: 'BADMINTON', format: 'sets' },
+      { key: 'TABLE TENNIS', format: 'sets' },
+      { key: 'SQUASH', format: 'sets' },
+      { key: 'PADEL', format: 'sets' },
+    ],
+  },
+  {
     id: 'precision',
-    label: 'TRACK & PRECISION',
+    label: 'PRECISION / ATHLETICS',
     sports: [
       { key: 'ATHLETICS', format: 'timer' },
       { key: 'GOLF', format: 'points' },
@@ -258,6 +264,39 @@ export const LIVE_MATCHES_BY_SPORT = {
       away: { name: 'MIY', score: '2' },
       detail: 'Gi · Absolute',
       clock: 'Finals',
+    },
+  ],
+  THROTTLE: [
+    {
+      id: 'f1-monaco',
+      format: 'timer',
+      title: 'MONACO GP',
+      competition: 'FORMULA 1',
+      status: 'LIVE',
+      venue: 'Monte Carlo',
+      home: { name: 'VER', score: 'P1' },
+      away: { name: 'Field', score: '—' },
+      detail: 'Lap 48 · Soft tires',
+      clock: '1:12.884',
+      periodLabel: 'RACE',
+      results: [
+        { place: '1', name: 'VER', mark: 'Leader' },
+        { place: '2', name: 'NOR', mark: '+3.2s' },
+        { place: '3', name: 'LEC', mark: '+5.1s' },
+      ],
+    },
+    {
+      id: 'moto-gp',
+      format: 'timer',
+      title: 'MOTOGP — MAIN',
+      competition: 'MOTOGP',
+      status: 'LIVE',
+      venue: 'Assen',
+      home: { name: 'BAG', score: 'P1' },
+      away: { name: 'Field', score: '—' },
+      detail: 'Lap 12 / 26',
+      clock: 'Race',
+      periodLabel: 'RACE',
     },
   ],
 

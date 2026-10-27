@@ -1,6 +1,6 @@
 /**
  * Sleek #121212 dark-mode feed / live placeholder for Expo Go.
- * Drop-in visual stand-in for native video / Agora surfaces.
+ * LOCKED: feed variant must NOT show sport category pills on the media surface.
  */
 import React, { memo, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';

@@ -1,6 +1,7 @@
 /**
- * UniversalCamera — minimal BAWAAL creation engine.
+ * UniversalCamera — LOCKED minimal BAWAAL creation engine.
  * Cancel · flip · shutter · native pinch-to-zoom (works while recording).
+ * Do NOT re-add zoom presets, flash, or slow-mo overlays (see bawaal-ui-baseline).
  */
 import React, {
   useCallback,

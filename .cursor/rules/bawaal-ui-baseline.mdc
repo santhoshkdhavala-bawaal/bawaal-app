@@ -1,0 +1,37 @@
+---
+description: Locked BAWAAL UI/layout baseline — do not regress camera, Arena ticker, feed, or tab bar
+alwaysApply: true
+---
+
+# BAWAAL UI baseline (locked)
+
+This is the **finalized visual baseline**. Do **not** alter these layout structures or re-introduce stripped UI. Further work builds on this state only.
+
+## 1. Camera (`UniversalCamera.tsx`)
+
+- **Keep:** Cancel, Flip, shutter only (plus existing duration/hub flows as already present).
+- **Keep:** Native pinch-to-zoom on the camera surface (works while recording).
+- **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
+
+## 2. Arena header & sports ticker (`ArenaFeed.js` + `src/components/ScoresSportsPanel.js`)
+
+- **Keep:** Black-and-white monochromatic Scores & Sports panel (sport pills → match list → inline score card).
+- **Keep:** Comprehensive sport selector grouped conceptually as Team Sports, Motorsports, Combat, Racket Sports, Precision/Athletics (and Water & Outdoor as already shipped).
+- **Do not** restyle into colorful/dashboard chrome or replace the sport-first dropdown/pill flow.
+
+## 3. Video feed surfaces (`SportsFeedPlaceholder.js` feed variant, Arena reel cards)
+
+- **Keep:** Clean media — **no** sport category pills (e.g. KABADDI, COURT KINGS, FOOTBALL) on the video/placeholder surface.
+- **Never re-add** red/accent bordered category tag rows on feed clips.
+
+## 4. Bottom navigation (`CustomTabBar.js` + `MainTabs.js`)
+
+- **Keep:** Full-width row with `justifyContent: 'space-around'` (or equivalent even spacing).
+- **Keep:** Labels ARENA, BATTLES, LOCKER ROOM, PASSPORT readable without character wrap/clip; central BATTLE FAB in a fixed center slot that does not squeeze side tabs.
+- **Do not** shrink the bar into an icon-only strip or reintroduce overlapping/clipped Passport text.
+
+## Allowed changes
+
+- New features, data, navigation targets, and non-UI logic **behind** or **alongside** this chrome.
+- Bugfixes that preserve the locked look (e.g. safe-area padding) without restoring removed controls.
+---

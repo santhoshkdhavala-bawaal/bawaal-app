@@ -34,6 +34,10 @@ Run lint and typecheck before declaring any task done.
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
 Docs: https://docs.expo.dev/eas/index.md
 
+## UI baseline (locked)
+
+Camera (minimal shutter/cancel/flip + pinch zoom), Arena B&W sports ticker, clean feed surfaces (no category pills), and the spaced bottom tab bar are **finalized**. Do not re-introduce removed chrome or reshape those layouts. See `.cursor/rules/bawaal-ui-baseline.mdc`.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
