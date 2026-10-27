@@ -65,11 +65,16 @@ export default function CustomTabBar({
         }
         const active = activeTab === item.key;
         const isBattles = item.key === 'Battles';
+        const isPassport = item.key === 'Passport';
         const showThunder = isBattles && challengeAlertActive;
         return (
           <TouchableOpacity
             key={item.key}
-            style={[styles.tabItem, isBattles && styles.battlesTabItem]}
+            style={[
+              styles.tabItem,
+              isBattles && styles.battlesTabItem,
+              isPassport && styles.passportTabItem,
+            ]}
             onPress={() => onTabPress(item.key)}
             activeOpacity={0.8}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
@@ -85,9 +90,14 @@ export default function CustomTabBar({
                 <View style={styles.thunderSpacer} />
               ) : null}
               <Text
+                numberOfLines={isPassport ? 1 : 2}
+                adjustsFontSizeToFit={isPassport}
+                minimumFontScale={0.85}
                 style={[
                   styles.tabLabel,
+                  isPassport && styles.passportLabel,
                   active && styles.tabLabelActive,
+                  active && isPassport && styles.passportLabelActive,
                 ]}
               >
                 {item.label}
@@ -134,10 +144,15 @@ const styles = StyleSheet.create({
     paddingRight: 4,
     maxWidth: 84,
   },
+  passportTabItem: {
+    minWidth: 72,
+    paddingHorizontal: 0,
+  },
   tabLabelWrap: {
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingHorizontal: 2,
+    width: '100%',
   },
   battlesLabelWrap: {
     minHeight: 38,
@@ -155,6 +170,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-black' } : null),
   },
+  /** Keep PASSPORT on one line — tighter tracking, no wrap of the final T */
+  passportLabel: {
+    fontSize: 10,
+    letterSpacing: 0.4,
+    lineHeight: 12,
+    flexShrink: 0,
+  },
   tabLabelActive: {
     color: WHITE,
     fontSize: 12,
@@ -162,6 +184,10 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(255,255,255,0.35)',
     textShadowOffset: { width: 0, height: 0 },
     textShadowRadius: 4,
+  },
+  passportLabelActive: {
+    fontSize: 10.5,
+    letterSpacing: 0.5,
   },
   tabDot: {
     width: 5,

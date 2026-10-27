@@ -91,18 +91,26 @@ function SportsFeedPlaceholder({
         <Text style={styles.sub}>{sub}</Text>
       </View>
 
-      <View style={styles.tagRow}>
-        {tags.map((tag) => (
-          <View key={tag} style={styles.tag}>
-            <Text style={styles.tagText}>{tag}</Text>
+      {/* Feed surface stays clean — no sport category pills on the media */}
+      {variant === 'feed' ? (
+        <View style={styles.bottomMeta}>
+          <Text style={styles.metaRight}>JS FALLBACK</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.tagRow}>
+            {tags.map((tag) => (
+              <View key={tag} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
-
-      <View style={styles.bottomMeta}>
-        <Text style={styles.metaLeft}>#{tags[0] || 'ARENA'}</Text>
-        <Text style={styles.metaRight}>JS FALLBACK</Text>
-      </View>
+          <View style={styles.bottomMeta}>
+            <Text style={styles.metaLeft}>#{tags[0] || 'ARENA'}</Text>
+            <Text style={styles.metaRight}>JS FALLBACK</Text>
+          </View>
+        </>
+      )}
     </View>
   );
 }
