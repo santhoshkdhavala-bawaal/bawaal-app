@@ -1,6 +1,7 @@
 /**
  * Sport-first Scores & Sports panel for Arena.
- * Pills → match list → tap for inline live score card.
+ * Grouped pills → match list → tap for inline live score card.
+ * Formats: sets | points | timer | score (board).
  * Pure UI / mock data — does not touch feed video playback.
  */
 import React, { memo, useMemo, useState } from 'react';
@@ -19,23 +20,110 @@ const BORDER = 'rgba(232,236,233,0.28)';
 const MUTED = '#A0A0A0';
 const LIVE = '#FF0033';
 
-/** Major sports for the Scores selector (sport-first). */
-export const SCORE_SPORT_CATEGORIES = [
-  'CRICKET',
-  'FOOTBALL',
-  'TENNIS',
-  'BASKETBALL',
-  'BASEBALL',
-  'RUGBY',
-  'MMA',
-  'BJJ',
+/**
+ * Grouped sport categories for the horizontal ticker.
+ * Each sport maps to a default scoring layout format.
+ */
+export const SCORE_SPORT_GROUPS = [
+  {
+    id: 'core',
+    label: null,
+    sports: [
+      { key: 'CRICKET', format: 'score' },
+      { key: 'FOOTBALL', format: 'score' },
+      { key: 'TENNIS', format: 'sets' },
+      { key: 'BASKETBALL', format: 'points' },
+      { key: 'BASEBALL', format: 'score' },
+      { key: 'RUGBY', format: 'points' },
+      { key: 'MMA', format: 'timer' },
+      { key: 'BJJ', format: 'points' },
+    ],
+  },
+  {
+    id: 'racket',
+    label: 'RACKET',
+    sports: [
+      { key: 'BADMINTON', format: 'sets' },
+      { key: 'TABLE TENNIS', format: 'sets' },
+      { key: 'SQUASH', format: 'sets' },
+      { key: 'PADEL', format: 'sets' },
+    ],
+  },
+  {
+    id: 'combat',
+    label: 'COMBAT',
+    sports: [
+      { key: 'WRESTLING', format: 'points' },
+      { key: 'JUDO', format: 'points' },
+      { key: 'KARATE', format: 'points' },
+      { key: 'TAEKWONDO', format: 'points' },
+    ],
+  },
+  {
+    id: 'precision',
+    label: 'TRACK & PRECISION',
+    sports: [
+      { key: 'ATHLETICS', format: 'timer' },
+      { key: 'GOLF', format: 'points' },
+      { key: 'ARCHERY', format: 'points' },
+      { key: 'SNOOKER', format: 'points' },
+    ],
+  },
+  {
+    id: 'water',
+    label: 'WATER & OUTDOOR',
+    sports: [
+      { key: 'SURFING', format: 'points' },
+      { key: 'SWIMMING', format: 'timer' },
+    ],
+  },
 ];
+
+export const SCORE_SPORT_CATEGORIES = SCORE_SPORT_GROUPS.flatMap((g) =>
+  g.sports.map((s) => s.key)
+);
+
+const SPORT_FORMAT = Object.fromEntries(
+  SCORE_SPORT_GROUPS.flatMap((g) => g.sports.map((s) => [s.key, s.format]))
+);
+
+/** Flat ticker items: optional group label chips + sport pills. */
+export const TICKER_ITEMS = SCORE_SPORT_GROUPS.flatMap((group) => {
+  const items = [];
+  if (group.label) {
+    items.push({ type: 'label', id: `label-${group.id}`, label: group.label });
+  }
+  for (const sport of group.sports) {
+    items.push({
+      type: 'sport',
+      id: sport.key,
+      key: sport.key,
+      format: sport.format,
+    });
+  }
+  return items;
+});
+
+function matchLine(match) {
+  const format = match.format || 'score';
+  if (format === 'sets') {
+    return match.setsLabel || `${match.home.score} · ${match.away.score}`;
+  }
+  if (format === 'timer') {
+    return match.clock || match.home.score;
+  }
+  if (format === 'points') {
+    return `${match.home.score} – ${match.away.score}`;
+  }
+  return `${match.home.score} – ${match.away.score}`;
+}
 
 /** Mock live / active matches keyed by sport. */
 export const LIVE_MATCHES_BY_SPORT = {
   CRICKET: [
     {
       id: 'ind-aus-t20',
+      format: 'score',
       title: 'IND vs AUS',
       competition: 'T20 SERIES',
       status: 'LIVE',
@@ -47,6 +135,7 @@ export const LIVE_MATCHES_BY_SPORT = {
     },
     {
       id: 'mum-del-ranji',
+      format: 'score',
       title: 'MUM vs DEL',
       competition: 'RANJI',
       status: 'LIVE',
@@ -56,21 +145,11 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: 'Day 2 · Session 2',
       clock: 'Stumps soon',
     },
-    {
-      id: 'eng-sa-odi',
-      title: 'ENG vs SA',
-      competition: 'ODI',
-      status: 'LIVE',
-      venue: 'Lords',
-      home: { name: 'ENG', score: '278/7' },
-      away: { name: 'SA', score: '142/3' },
-      detail: '31.4 ov · SA chase',
-      clock: 'Required 7.1 RPO',
-    },
   ],
   FOOTBALL: [
     {
       id: 'mci-liv',
+      format: 'score',
       title: 'MCI vs LIV',
       competition: 'PREMIER LEAGUE',
       status: 'LIVE',
@@ -82,6 +161,7 @@ export const LIVE_MATCHES_BY_SPORT = {
     },
     {
       id: 'rma-bar',
+      format: 'score',
       title: 'RMA vs BAR',
       competition: 'LA LIGA',
       status: 'LIVE',
@@ -91,45 +171,28 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: '54′ · El Clásico',
       clock: '2nd half',
     },
-    {
-      id: 'ind-aus-foot',
-      title: 'IND vs AUS',
-      competition: 'AFC QUALIFIER',
-      status: 'LIVE',
-      venue: 'Kolkata',
-      home: { name: 'IND', score: '0' },
-      away: { name: 'AUS', score: '0' },
-      detail: '22′ · Midfield battle',
-      clock: '1st half',
-    },
   ],
   TENNIS: [
     {
       id: 'djok-alcaraz',
+      format: 'sets',
       title: 'DJOKOVIC vs ALCARAZ',
       competition: 'ATP FINALS',
       status: 'LIVE',
       venue: 'Turin',
-      home: { name: 'DJOK', score: '6-4, 3-2' },
-      away: { name: 'ALC', score: '—' },
+      home: { name: 'DJOK', score: '1' },
+      away: { name: 'ALC', score: '0' },
+      sets: ['6-4', '3-2'],
+      setsLabel: '6-4, 3-2*',
+      games: { home: '3', away: '2' },
       detail: 'Set 2 · Alcaraz serve',
       clock: 'On serve',
-    },
-    {
-      id: 'swiatek-gauff',
-      title: 'SWIATEK vs GAUFF',
-      competition: 'WTA',
-      status: 'LIVE',
-      venue: 'Riyadh',
-      home: { name: 'SWI', score: '7-5' },
-      away: { name: 'GAU', score: '2-1' },
-      detail: 'Set 2',
-      clock: 'Live',
     },
   ],
   BASKETBALL: [
     {
       id: 'lal-bos',
+      format: 'points',
       title: 'LAL vs BOS',
       competition: 'NBA',
       status: 'LIVE',
@@ -139,21 +202,11 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: 'Q3 · 4:12',
       clock: '3rd quarter',
     },
-    {
-      id: 'gsw-phx',
-      title: 'GSW vs PHX',
-      competition: 'NBA',
-      status: 'LIVE',
-      venue: 'Chase Center',
-      home: { name: 'GSW', score: '102' },
-      away: { name: 'PHX', score: '97' },
-      detail: 'Q4 · 8:40',
-      clock: '4th quarter',
-    },
   ],
   BASEBALL: [
     {
       id: 'nyy-bos-mlb',
+      format: 'score',
       title: 'NYY vs BOS',
       competition: 'MLB',
       status: 'LIVE',
@@ -163,21 +216,11 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: 'Top 7th',
       clock: 'In play',
     },
-    {
-      id: 'lad-sd',
-      title: 'LAD vs SD',
-      competition: 'MLB',
-      status: 'LIVE',
-      venue: 'Dodger Stadium',
-      home: { name: 'LAD', score: '2' },
-      away: { name: 'SD', score: '2' },
-      detail: 'Bot 5th',
-      clock: 'Tied',
-    },
   ],
   RUGBY: [
     {
       id: 'nzl-rsa',
+      format: 'points',
       title: 'NZL vs RSA',
       competition: 'RUGBY CHAMPIONSHIP',
       status: 'LIVE',
@@ -187,45 +230,26 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: '58′ · Scrummage',
       clock: '2nd half',
     },
-    {
-      id: 'eng-irl',
-      title: 'ENG vs IRL',
-      competition: 'SIX NATIONS',
-      status: 'LIVE',
-      venue: 'Twickenham',
-      home: { name: 'ENG', score: '10' },
-      away: { name: 'IRL', score: '13' },
-      detail: '41′',
-      clock: '2nd half',
-    },
   ],
   MMA: [
     {
       id: 'ufc-main',
+      format: 'timer',
       title: 'VOLKANOVSKI vs TOPURIA',
       competition: 'UFC',
       status: 'LIVE',
       venue: 'T-Mobile Arena',
       home: { name: 'VOLK', score: 'R2' },
       away: { name: 'TOPU', score: 'R2' },
-      detail: 'Round 2 · 1:40',
-      clock: 'Main event',
-    },
-    {
-      id: 'ufc-co',
-      title: 'ADESANYA vs DU PLESSIS',
-      competition: 'UFC',
-      status: 'LIVE',
-      venue: 'T-Mobile Arena',
-      home: { name: 'IZZY', score: 'W' },
-      away: { name: 'DDP', score: 'L' },
-      detail: 'Decision · UD',
-      clock: 'Ended',
+      detail: 'Round 2',
+      clock: '1:40',
+      periodLabel: 'ROUND 2',
     },
   ],
   BJJ: [
     {
       id: 'bjj-finals',
+      format: 'points',
       title: 'ANDRADE vs MIYAUNO',
       competition: 'IBJJF',
       status: 'LIVE',
@@ -235,22 +259,389 @@ export const LIVE_MATCHES_BY_SPORT = {
       detail: 'Gi · Absolute',
       clock: 'Finals',
     },
+  ],
+
+  // —— Racket ——
+  BADMINTON: [
     {
-      id: 'bjj-semis',
-      title: 'RUOTOLO vs BROOKS',
-      competition: 'WNO',
+      id: 'bd-sen-axelsen',
+      format: 'sets',
+      title: 'SEN vs AXELSEN',
+      competition: 'BWF WORLD TOUR',
       status: 'LIVE',
-      venue: 'Austin',
-      home: { name: 'RUO', score: 'SUB' },
-      away: { name: 'BRO', score: '—' },
-      detail: 'Heel hook · 2:11',
-      clock: 'Finished',
+      venue: 'Jakarta',
+      home: { name: 'SEN', score: '1' },
+      away: { name: 'AXE', score: '0' },
+      sets: ['21-18', '11-9'],
+      setsLabel: '21-18, 11-9*',
+      games: { home: '11', away: '9' },
+      detail: 'Game 2 · Sen leading',
+      clock: 'In play',
+    },
+    {
+      id: 'bd-sindhu-yamaguchi',
+      format: 'sets',
+      title: 'SINDHU vs YAMAGUCHI',
+      competition: 'BWF',
+      status: 'LIVE',
+      venue: 'Tokyo',
+      home: { name: 'SIN', score: '0' },
+      away: { name: 'YAM', score: '1' },
+      sets: ['19-21', '7-5'],
+      setsLabel: '19-21, 7-5*',
+      games: { home: '7', away: '5' },
+      detail: 'Game 2',
+      clock: 'Live',
+    },
+  ],
+  'TABLE TENNIS': [
+    {
+      id: 'tt-fan-moregard',
+      format: 'sets',
+      title: 'FAN ZD vs MOREGARD',
+      competition: 'WTT',
+      status: 'LIVE',
+      venue: 'Singapore',
+      home: { name: 'FAN', score: '2' },
+      away: { name: 'MOR', score: '1' },
+      sets: ['11-8', '9-11', '11-6', '5-3'],
+      setsLabel: '11-8, 9-11, 11-6, 5-3*',
+      games: { home: '5', away: '3' },
+      detail: 'Game 4',
+      clock: 'Best of 7',
+    },
+  ],
+  SQUASH: [
+    {
+      id: 'sq-farag-coll',
+      format: 'sets',
+      title: 'FARAG vs COLL',
+      competition: 'PSA WORLD TOUR',
+      status: 'LIVE',
+      venue: 'Chicago',
+      home: { name: 'FAR', score: '1' },
+      away: { name: 'COL', score: '1' },
+      sets: ['11-9', '8-11', '6-4'],
+      setsLabel: '11-9, 8-11, 6-4*',
+      games: { home: '6', away: '4' },
+      detail: 'Game 3 · Tin rally',
+      clock: 'In play',
+    },
+  ],
+  PADEL: [
+    {
+      id: 'pad-tapia-coello',
+      format: 'sets',
+      title: 'TAPIA/COELLO vs LEBRON/GALAN',
+      competition: 'PREMIER PADEL',
+      status: 'LIVE',
+      venue: 'Madrid',
+      home: { name: 'T/C', score: '1' },
+      away: { name: 'L/G', score: '0' },
+      sets: ['6-4', '3-3'],
+      setsLabel: '6-4, 3-3*',
+      games: { home: '3', away: '3' },
+      detail: 'Set 2 · Break point',
+      clock: 'On serve',
+    },
+  ],
+
+  // —— Combat ——
+  WRESTLING: [
+    {
+      id: 'wr-dake-taylor',
+      format: 'points',
+      title: 'DAKE vs TAYLOR',
+      competition: 'UWW',
+      status: 'LIVE',
+      venue: 'Belgrade',
+      home: { name: 'DAKE', score: '4' },
+      away: { name: 'TAY', score: '2' },
+      detail: 'Freestyle 74kg',
+      clock: 'Period 2',
+    },
+  ],
+  JUDO: [
+    {
+      id: 'ju-otone-abe',
+      format: 'points',
+      title: 'Ono vs ABE',
+      competition: 'IJF GRAND SLAM',
+      status: 'LIVE',
+      venue: 'Paris',
+      home: { name: 'ONO', score: 'Waza-ari' },
+      away: { name: 'ABE', score: '—' },
+      detail: 'Men −73kg · Golden score',
+      clock: 'GS 0:42',
+    },
+  ],
+  KARATE: [
+    {
+      id: 'kar-shimizu-quintero',
+      format: 'points',
+      title: 'SHIMIZU vs QUINTERO',
+      competition: 'WKF PREMIER LEAGUE',
+      status: 'LIVE',
+      venue: 'Rabat',
+      home: { name: 'SHI', score: '5' },
+      away: { name: 'QUI', score: '3' },
+      detail: 'Kumite −67kg',
+      clock: '0:18 left',
+    },
+  ],
+  TAEKWONDO: [
+    {
+      id: 'tkd-jade-jones',
+      format: 'points',
+      title: 'JONES vs KIM',
+      competition: 'WT GP',
+      status: 'LIVE',
+      venue: 'Manchester',
+      home: { name: 'JON', score: '12' },
+      away: { name: 'KIM', score: '9' },
+      detail: 'Women −57kg · Round 2',
+      clock: '0:35',
+    },
+  ],
+
+  // —— Track & precision ——
+  ATHLETICS: [
+    {
+      id: 'ath-100m-final',
+      format: 'timer',
+      title: 'MEN 100M FINAL',
+      competition: 'DIAMOND LEAGUE',
+      status: 'LIVE',
+      venue: 'Zurich',
+      home: { name: 'Lyles', score: '9.83' },
+      away: { name: 'Field', score: '—' },
+      detail: 'Just finished · Wind +0.4',
+      clock: '9.83s',
+      periodLabel: 'FINAL',
+      results: [
+        { place: '1', name: 'Lyles', mark: '9.83' },
+        { place: '2', name: 'Seidl', mark: '9.91' },
+        { place: '3', name: 'Kerley', mark: '9.94' },
+      ],
+    },
+    {
+      id: 'ath-800m-heat',
+      format: 'timer',
+      title: 'WOMEN 800M HEAT 2',
+      competition: 'WORLD CHAMPS',
+      status: 'LIVE',
+      venue: 'Tokyo',
+      home: { name: 'Hassan', score: '1:58.2' },
+      away: { name: 'Pack', score: '—' },
+      detail: 'Lap 2 · Bell',
+      clock: '1:58.2',
+      periodLabel: 'HEAT',
+    },
+  ],
+  GOLF: [
+    {
+      id: 'golf-r3',
+      format: 'points',
+      title: 'SCHEFFLER vs RAHM',
+      competition: 'PGA TOUR',
+      status: 'LIVE',
+      venue: 'Augusta',
+      home: { name: 'SCH', score: '−12' },
+      away: { name: 'RAH', score: '−10' },
+      detail: 'R3 · Hole 14',
+      clock: 'Thru 14',
+    },
+  ],
+  ARCHERY: [
+    {
+      id: 'arch-recurve',
+      format: 'points',
+      title: 'ELLISON vs KIM',
+      competition: 'WORLD CUP',
+      status: 'LIVE',
+      venue: 'Shanghai',
+      home: { name: 'ELL', score: '56' },
+      away: { name: 'KIM', score: '54' },
+      detail: 'Recurve · Set 4',
+      clock: 'Set points 4–2',
+    },
+  ],
+  SNOOKER: [
+    {
+      id: 'snook-oneill',
+      format: 'points',
+      title: 'O’SULLIVAN vs TRUMP',
+      competition: 'WORLD CHAMPIONSHIP',
+      status: 'LIVE',
+      venue: 'Sheffield',
+      home: { name: 'ROS', score: '67' },
+      away: { name: 'TRU', score: '12' },
+      detail: 'Frame 11 · Break 67',
+      clock: 'Best of 35',
+      frameScore: { home: '6', away: '4' },
+    },
+  ],
+
+  // —— Water & outdoor ——
+  SURFING: [
+    {
+      id: 'surf-pipeline',
+      format: 'points',
+      title: 'FERREIRA vs FLORENCE',
+      competition: 'WSL CT',
+      status: 'LIVE',
+      venue: 'Pipeline',
+      home: { name: 'FER', score: '16.33' },
+      away: { name: 'FLO', score: '14.10' },
+      detail: 'Heat 3 · Priority FER',
+      clock: '6:40 left',
+    },
+  ],
+  SWIMMING: [
+    {
+      id: 'swim-100free',
+      format: 'timer',
+      title: 'MEN 100 FREE FINAL',
+      competition: 'WORLD AQUATICS',
+      status: 'LIVE',
+      venue: 'Doha',
+      home: { name: 'Popovici', score: '46.86' },
+      away: { name: 'Field', score: '—' },
+      detail: 'Touch · WR pace',
+      clock: '46.86s',
+      periodLabel: 'FINAL',
+      results: [
+        { place: '1', name: 'Popovici', mark: '46.86' },
+        { place: '2', name: 'Chalmers', mark: '47.12' },
+        { place: '3', name: 'Alexy', mark: '47.30' },
+      ],
+    },
+    {
+      id: 'swim-200im',
+      format: 'timer',
+      title: 'WOMEN 200 IM SEMI',
+      competition: 'WORLD AQUATICS',
+      status: 'LIVE',
+      venue: 'Doha',
+      home: { name: 'McIntosh', score: '2:07.1' },
+      away: { name: 'Heat', score: '—' },
+      detail: 'Breast leg',
+      clock: '2:07.1',
+      periodLabel: 'SEMI',
     },
   ],
 };
 
+function SetsScoreBody({ match }) {
+  return (
+    <View>
+      <View style={styles.scoreRow}>
+        <View style={styles.scoreCol}>
+          <Text style={styles.teamName}>{match.home.name}</Text>
+          <Text style={styles.teamScore}>{match.home.score}</Text>
+          <Text style={styles.formatHint}>SETS</Text>
+        </View>
+        <Text style={styles.vs}>VS</Text>
+        <View style={[styles.scoreCol, styles.scoreColRight]}>
+          <Text style={styles.teamName}>{match.away.name}</Text>
+          <Text style={styles.teamScore}>{match.away.score}</Text>
+          <Text style={styles.formatHint}>SETS</Text>
+        </View>
+      </View>
+      {!!match.sets?.length && (
+        <View style={styles.setsStrip}>
+          {match.sets.map((s, i) => (
+            <View
+              key={`${match.id}-set-${i}`}
+              style={[
+                styles.setChip,
+                i === match.sets.length - 1 && styles.setChipLive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.setChipText,
+                  i === match.sets.length - 1 && styles.setChipTextLive,
+                ]}
+              >
+                {s}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+      {!!match.games && (
+        <Text style={styles.gamesLine}>
+          Current game {match.games.home}–{match.games.away}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+function PointsScoreBody({ match }) {
+  return (
+    <View style={styles.scoreRow}>
+      <View style={styles.scoreCol}>
+        <Text style={styles.teamName}>{match.home.name}</Text>
+        <Text style={styles.teamScore}>{match.home.score}</Text>
+        <Text style={styles.formatHint}>PTS</Text>
+      </View>
+      <Text style={styles.vs}>VS</Text>
+      <View style={[styles.scoreCol, styles.scoreColRight]}>
+        <Text style={styles.teamName}>{match.away.name}</Text>
+        <Text style={styles.teamScore}>{match.away.score}</Text>
+        <Text style={styles.formatHint}>PTS</Text>
+      </View>
+    </View>
+  );
+}
+
+function TimerScoreBody({ match }) {
+  return (
+    <View>
+      {!!match.periodLabel && (
+        <Text style={styles.periodLabel}>{match.periodLabel}</Text>
+      )}
+      <View style={styles.timerBlock}>
+        <Text style={styles.timerClock}>{match.clock || match.home.score}</Text>
+        <Text style={styles.timerLeader}>{match.home.name}</Text>
+      </View>
+      {!!match.results?.length && (
+        <View style={styles.resultsList}>
+          {match.results.map((row) => (
+            <View key={`${match.id}-${row.place}`} style={styles.resultRow}>
+              <Text style={styles.resultPlace}>{row.place}</Text>
+              <Text style={styles.resultName}>{row.name}</Text>
+              <Text style={styles.resultMark}>{row.mark}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function BoardScoreBody({ match }) {
+  return (
+    <View style={styles.scoreRow}>
+      <View style={styles.scoreCol}>
+        <Text style={styles.teamName}>{match.home.name}</Text>
+        <Text style={styles.teamScore}>{match.home.score}</Text>
+      </View>
+      <Text style={styles.vs}>VS</Text>
+      <View style={[styles.scoreCol, styles.scoreColRight]}>
+        <Text style={styles.teamName}>{match.away.name}</Text>
+        <Text style={styles.teamScore}>{match.away.score}</Text>
+      </View>
+    </View>
+  );
+}
+
 function InlineScoreCard({ match, onClose }) {
   if (!match) return null;
+  const format = match.format || SPORT_FORMAT[match.sport] || 'score';
+
   return (
     <View style={styles.inlineCard}>
       <View style={styles.inlineHeader}>
@@ -258,8 +649,13 @@ function InlineScoreCard({ match, onClose }) {
           <View style={styles.liveDot} />
           <Text style={styles.inlineLive}>{match.status}</Text>
           <Text style={styles.inlineComp}>{match.competition}</Text>
+          <Text style={styles.formatTag}>{format.toUpperCase()}</Text>
         </View>
-        <TouchableOpacity onPress={onClose} hitSlop={10} accessibilityLabel="Close score card">
+        <TouchableOpacity
+          onPress={onClose}
+          hitSlop={10}
+          accessibilityLabel="Close score card"
+        >
           <Text style={styles.inlineClose}>✕</Text>
         </TouchableOpacity>
       </View>
@@ -267,17 +663,21 @@ function InlineScoreCard({ match, onClose }) {
       <Text style={styles.inlineTitle}>{match.title}</Text>
       <Text style={styles.inlineVenue}>{match.venue}</Text>
 
-      <View style={styles.scoreRow}>
-        <View style={styles.scoreCol}>
-          <Text style={styles.teamName}>{match.home.name}</Text>
-          <Text style={styles.teamScore}>{match.home.score}</Text>
-        </View>
-        <Text style={styles.vs}>VS</Text>
-        <View style={[styles.scoreCol, styles.scoreColRight]}>
-          <Text style={styles.teamName}>{match.away.name}</Text>
-          <Text style={styles.teamScore}>{match.away.score}</Text>
-        </View>
-      </View>
+      {format === 'sets' ? (
+        <SetsScoreBody match={match} />
+      ) : format === 'points' ? (
+        <PointsScoreBody match={match} />
+      ) : format === 'timer' ? (
+        <TimerScoreBody match={match} />
+      ) : (
+        <BoardScoreBody match={match} />
+      )}
+
+      {!!match.frameScore && (
+        <Text style={styles.gamesLine}>
+          Frames {match.frameScore.home}–{match.frameScore.away}
+        </Text>
+      )}
 
       <View style={styles.inlineMeta}>
         <Text style={styles.inlineDetail}>{match.detail}</Text>
@@ -291,10 +691,15 @@ function ScoresSportsPanel() {
   const [selectedSport, setSelectedSport] = useState(SCORE_SPORT_CATEGORIES[0]);
   const [selectedMatchId, setSelectedMatchId] = useState(null);
 
-  const matches = useMemo(
-    () => LIVE_MATCHES_BY_SPORT[selectedSport] || [],
-    [selectedSport]
-  );
+  const matches = useMemo(() => {
+    const list = LIVE_MATCHES_BY_SPORT[selectedSport] || [];
+    const fallbackFormat = SPORT_FORMAT[selectedSport] || 'score';
+    return list.map((m) => ({
+      ...m,
+      sport: selectedSport,
+      format: m.format || fallbackFormat,
+    }));
+  }, [selectedSport]);
 
   const selectedMatch = useMemo(
     () => matches.find((m) => m.id === selectedMatchId) || null,
@@ -325,19 +730,26 @@ function ScoresSportsPanel() {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.pillsRow}
       >
-        {SCORE_SPORT_CATEGORIES.map((sport) => {
-          const active = selectedSport === sport;
+        {TICKER_ITEMS.map((item) => {
+          if (item.type === 'label') {
+            return (
+              <View key={item.id} style={styles.groupLabel}>
+                <Text style={styles.groupLabelText}>{item.label}</Text>
+              </View>
+            );
+          }
+          const active = selectedSport === item.key;
           return (
             <TouchableOpacity
-              key={sport}
+              key={item.id}
               style={[styles.pill, active && styles.pillActive]}
-              onPress={() => onSelectSport(sport)}
+              onPress={() => onSelectSport(item.key)}
               activeOpacity={0.85}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
             >
               <Text style={[styles.pillText, active && styles.pillTextActive]}>
-                {sport}
+                {item.key}
               </Text>
             </TouchableOpacity>
           );
@@ -351,7 +763,9 @@ function ScoresSportsPanel() {
         nestedScrollEnabled
       >
         {matches.length === 0 ? (
-          <Text style={styles.emptyMatches}>No live matches for {selectedSport}</Text>
+          <Text style={styles.emptyMatches}>
+            No live matches for {selectedSport}
+          </Text>
         ) : (
           matches.map((match) => {
             const active = selectedMatchId === match.id;
@@ -369,9 +783,7 @@ function ScoresSportsPanel() {
                   </Text>
                 </View>
                 <View style={styles.matchRowRight}>
-                  <Text style={styles.matchScoreLine}>
-                    {match.home.score} – {match.away.score}
-                  </Text>
+                  <Text style={styles.matchScoreLine}>{matchLine(match)}</Text>
                   <View style={styles.miniLive}>
                     <View style={styles.liveDotSm} />
                     <Text style={styles.miniLiveText}>{match.status}</Text>
@@ -449,7 +861,23 @@ const styles = StyleSheet.create({
   pillsRow: {
     paddingHorizontal: 16,
     paddingBottom: 10,
-    gap: 8,
+    alignItems: 'center',
+  },
+  groupLabel: {
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    marginRight: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderStyle: 'dashed',
+    backgroundColor: 'transparent',
+  },
+  groupLabelText: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   pill: {
     paddingHorizontal: 12,
@@ -520,11 +948,13 @@ const styles = StyleSheet.create({
   },
   matchRowRight: {
     alignItems: 'flex-end',
+    maxWidth: '42%',
   },
   matchScoreLine: {
     color: WHITE,
     fontSize: 12,
     fontWeight: '800',
+    textAlign: 'right',
   },
   miniLive: {
     flexDirection: 'row',
@@ -562,19 +992,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexShrink: 1,
+    flexWrap: 'wrap',
+    gap: 6,
   },
   inlineLive: {
     color: LIVE,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 0.8,
-    marginRight: 8,
   },
   inlineComp: {
     color: MUTED,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.6,
+  },
+  formatTag: {
+    color: OFF_WHITE,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   inlineClose: {
     color: MUTED,
@@ -618,11 +1061,105 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
   },
+  formatHint: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginTop: 4,
+  },
   vs: {
     color: MUTED,
     fontSize: 11,
     fontWeight: '800',
     marginHorizontal: 10,
+  },
+  setsStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 8,
+  },
+  setChip: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#000000',
+  },
+  setChipLive: {
+    borderColor: WHITE,
+  },
+  setChipText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  setChipTextLive: {
+    color: WHITE,
+  },
+  gamesLine: {
+    color: OFF_WHITE,
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  periodLabel: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  timerBlock: {
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    backgroundColor: '#000000',
+  },
+  timerClock: {
+    color: WHITE,
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  timerLeader: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 0.6,
+  },
+  resultsList: {
+    marginBottom: 8,
+    gap: 4,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER,
+  },
+  resultPlace: {
+    color: MUTED,
+    width: 24,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  resultName: {
+    color: OFF_WHITE,
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  resultMark: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
   },
   inlineMeta: {
     flexDirection: 'row',
@@ -630,6 +1167,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: BORDER,
     paddingTop: 10,
+    marginTop: 4,
   },
   inlineDetail: {
     color: OFF_WHITE,
