@@ -1,6 +1,6 @@
 /**
- * UniversalCamera — uncluttered BAWAAL creation engine.
- * Hub drawer for modes · duration pill · red shutter · region slow-mo preview.
+ * UniversalCamera — minimal BAWAAL creation engine.
+ * Cancel · flip · shutter · native pinch-to-zoom (works while recording).
  */
 import React, {
   useCallback,
@@ -51,9 +51,8 @@ import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 export type { CreationMode, PostCreationPayload };
 
-/** Minimalist Black & White — electric blue for active FX only */
+/** Minimalist Black & White */
 const ACCENT = '#FFFFFF';
-const ELECTRIC_BLUE = '#00E5FF';
 const SHUTTER_RED = '#FF3B30';
 const SHEET_BG = 'rgba(10,10,10,0.95)';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
@@ -973,19 +972,24 @@ export default function UniversalCamera({
     setZoom(z);
   }, []);
 
+  /** Smooth continuous zoom — enabled before and during recording. */
   const onPinchGestureEvent = useCallback(
     (e: PinchGestureHandlerGestureEvent) => {
       if (mode === 'BATTLE_BAWAAL') return;
       const scale = e.nativeEvent.scale;
-      // scale=1 at gesture start; map delta onto CameraView 0–1 zoom
-      applyZoom(pinchBaseZoomRef.current + (scale - 1) * 0.55);
+      if (!Number.isFinite(scale) || scale <= 0) return;
+      // scale starts at 1 each gesture; map onto CameraView 0–1 with light acceleration
+      const base = pinchBaseZoomRef.current;
+      const next = base + (scale - 1) * (0.85 + base * 0.4);
+      applyZoom(next);
     },
     [applyZoom, mode]
   );
 
   const onPinchHandlerStateChange = useCallback(
     (e: PinchGestureHandlerStateChangeEvent) => {
-      if (e.nativeEvent.state === State.BEGAN) {
+      const { state, oldState } = e.nativeEvent;
+      if (state === State.BEGAN || oldState === State.BEGAN) {
         pinchBaseZoomRef.current = zoomRef.current;
       }
     },
@@ -1413,8 +1417,10 @@ export default function UniversalCamera({
         enabled={mode !== 'BATTLE_BAWAAL'}
         onGestureEvent={onPinchGestureEvent}
         onHandlerStateChange={onPinchHandlerStateChange}
+        minPointers={2}
+        avgTouches
       >
-        <View style={styles.cameraGestureHost}>
+        <View style={styles.cameraGestureHost} collapsable={false}>
           <CameraView
             key={`bawaal-cam-${cameraSessionKey}`}
             ref={cameraRef}
@@ -1437,10 +1443,14 @@ export default function UniversalCamera({
             }}
           />
 
+          {/* Single-tap only when idle — never blocks two-finger pinch while recording */}
           <Pressable
             style={styles.viewfinderTap}
             onPress={revealTimePill}
             disabled={isRecording || mode === 'BATTLE_BAWAAL'}
+            pointerEvents={
+              isRecording || mode === 'BATTLE_BAWAAL' ? 'none' : 'auto'
+            }
           />
         </View>
       </PinchGestureHandler>
@@ -1676,45 +1686,6 @@ const styles = StyleSheet.create({
     bottom: 210,
   },
   overlayRoot: { justifyContent: 'space-between' },
-  fxRailRow: {
-    position: 'absolute',
-    left: 14,
-    right: 14,
-    bottom: 210,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  fxRailLeft: {
-    gap: 8,
-  },
-  fxRailRight: {
-    gap: 8,
-    alignItems: 'flex-end',
-  },
-  fxChip: {
-    minWidth: 54,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  fxChipActive: {
-    backgroundColor: ELECTRIC_BLUE,
-    borderColor: ELECTRIC_BLUE,
-  },
-  fxChipText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-  },
-  fxChipTextActive: {
-    color: '#000000',
-  },
   permissionContainer: {
     flex: 1,
     backgroundColor: '#0A0A0A',
