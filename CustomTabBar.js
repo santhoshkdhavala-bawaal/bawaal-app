@@ -5,7 +5,7 @@ const OBSIDIAN = '#000000';
 const OFF_WHITE = '#E8ECE9';
 const WHITE = '#FFFFFF';
 const ACCENT = '#FFFFFF';
-const BORDER_TOP = '#1A1A1A';
+const BORDER_TOP = '#2A2A2A';
 const MUTED = '#A0A0A0';
 
 const TABS = [
@@ -18,13 +18,13 @@ const TABS = [
 
 /**
  * 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
- * Pulsing ⚡ sits centered above BATTLES — never overlaps the FAB.
+ * Bold labels lifted off the bottom edge for clear black/white contrast.
  */
 export default function CustomTabBar({
   activeTab,
   onTabPress,
   onCreatePress,
-  bottomPad = 8,
+  bottomPad = 16,
   challengeAlertActive = false,
 }) {
   const [pulse] = useState(() => new Animated.Value(1));
@@ -72,6 +72,7 @@ export default function CustomTabBar({
             style={[styles.tabItem, isBattles && styles.battlesTabItem]}
             onPress={() => onTabPress(item.key)}
             activeOpacity={0.8}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
           >
             <View style={[styles.tabLabelWrap, isBattles && styles.battlesLabelWrap]}>
               {showThunder ? (
@@ -83,7 +84,12 @@ export default function CustomTabBar({
               ) : isBattles ? (
                 <View style={styles.thunderSpacer} />
               ) : null}
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  active && styles.tabLabelActive,
+                ]}
+              >
                 {item.label}
               </Text>
             </View>
@@ -101,110 +107,120 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     backgroundColor: OBSIDIAN,
-    borderTopWidth: 1,
+    borderTopWidth: 1.5,
     borderTopColor: BORDER_TOP,
-    paddingTop: 10,
-    paddingHorizontal: 4,
+    paddingTop: 12,
+    paddingHorizontal: 2,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOpacity: 0.45,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: -3 },
       },
-      android: { elevation: 10 },
+      android: { elevation: 12 },
     }),
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingVertical: 8,
-    minHeight: 52,
+    paddingTop: 6,
+    paddingBottom: 6,
+    minHeight: 58,
   },
   battlesTabItem: {
     marginRight: 6,
     paddingRight: 4,
-    maxWidth: 78,
+    maxWidth: 84,
   },
   tabLabelWrap: {
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   battlesLabelWrap: {
-    minHeight: 34,
+    minHeight: 38,
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingTop: 2,
   },
   tabLabel: {
     color: MUTED,
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     textAlign: 'center',
-    lineHeight: 12,
+    lineHeight: 14,
+    textTransform: 'uppercase',
+    ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-black' } : null),
   },
   tabLabelActive: {
-    color: OFF_WHITE,
+    color: WHITE,
+    fontSize: 12,
+    letterSpacing: 1.1,
+    textShadowColor: 'rgba(255,255,255,0.35)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
   },
   tabDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: ACCENT,
-    marginTop: 4,
+    marginTop: 5,
   },
   tabDotSpacer: {
-    width: 4,
-    height: 4,
-    marginTop: 4,
+    width: 5,
+    height: 5,
+    marginTop: 5,
   },
   fabWrap: {
-    width: 74,
+    width: 78,
     alignItems: 'center',
-    marginTop: -18,
+    marginTop: -22,
     marginHorizontal: 4,
     zIndex: 2,
   },
   fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: WHITE,
+    borderWidth: 2.5,
+    borderColor: OFF_WHITE,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
       },
-      android: { elevation: 8 },
+      android: { elevation: 10 },
     }),
   },
   fabPlus: {
     color: '#000000',
-    fontSize: 34,
+    fontSize: 38,
     fontWeight: '900',
     marginTop: -2,
-    lineHeight: 36,
+    lineHeight: 40,
   },
   fabCaption: {
-    color: OFF_WHITE,
-    fontSize: 8,
+    color: WHITE,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 1,
-    marginTop: 4,
+    letterSpacing: 1.2,
+    marginTop: 5,
   },
   thunderBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: OBSIDIAN,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -212,12 +228,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   thunderSpacer: {
-    width: 18,
-    height: 18,
+    width: 20,
+    height: 20,
     marginBottom: 2,
   },
   thunderText: {
-    fontSize: 10,
+    fontSize: 11,
     marginTop: -1,
   },
 });

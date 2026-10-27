@@ -188,7 +188,8 @@ export default function MainTabs({ navigation, route }) {
     }),
     [tab, openCreate, openProfileGateway, challengeAlertActive]
   );
-  const bottomPad = Math.max(insets.bottom, 8);
+  // Lift tab labels off the home-indicator / screen edge for easier taps
+  const bottomPad = Math.max(insets.bottom, 10) + 10;
 
   let ActiveScreen = null;
   if (tab === 'Arena') {
