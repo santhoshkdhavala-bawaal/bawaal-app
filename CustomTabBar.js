@@ -18,7 +18,7 @@ const TABS = [
 
 /**
  * 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
- * Bold labels lifted off the bottom edge for clear black/white contrast.
+ * Full-width row with even spacing; FAB floats without squishing side tabs.
  */
 export default function CustomTabBar({
   activeTab,
@@ -49,37 +49,39 @@ export default function CustomTabBar({
       {TABS.map((item) => {
         if (item.isFab) {
           return (
-            <TouchableOpacity
-              key={item.key}
-              style={styles.fabWrap}
-              onPress={onCreatePress}
-              activeOpacity={0.85}
-              accessibilityLabel="Create battle"
-            >
-              <View style={styles.fab}>
-                <Text style={styles.fabPlus}>+</Text>
-              </View>
-              <Text style={styles.fabCaption}>BATTLE</Text>
-            </TouchableOpacity>
+            <View key={item.key} style={styles.fabSlot}>
+              <TouchableOpacity
+                style={styles.fabWrap}
+                onPress={onCreatePress}
+                activeOpacity={0.85}
+                accessibilityLabel="Create battle"
+              >
+                <View style={styles.fab}>
+                  <Text style={styles.fabPlus}>+</Text>
+                </View>
+                <Text style={styles.fabCaption} numberOfLines={1}>
+                  BATTLE
+                </Text>
+              </TouchableOpacity>
+            </View>
           );
         }
+
         const active = activeTab === item.key;
         const isBattles = item.key === 'Battles';
         const isPassport = item.key === 'Passport';
+        const isLocker = item.key === 'Locker';
         const showThunder = isBattles && challengeAlertActive;
+
         return (
           <TouchableOpacity
             key={item.key}
-            style={[
-              styles.tabItem,
-              isBattles && styles.battlesTabItem,
-              isPassport && styles.passportTabItem,
-            ]}
+            style={styles.tabItem}
             onPress={() => onTabPress(item.key)}
             activeOpacity={0.8}
-            hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
           >
-            <View style={[styles.tabLabelWrap, isBattles && styles.battlesLabelWrap]}>
+            <View style={styles.tabLabelWrap}>
               {showThunder ? (
                 <Animated.View
                   style={[styles.thunderBadge, { transform: [{ scale: pulse }] }]}
@@ -90,17 +92,12 @@ export default function CustomTabBar({
                 <View style={styles.thunderSpacer} />
               ) : null}
               <Text
-                numberOfLines={isPassport ? 1 : 2}
-                adjustsFontSizeToFit={isPassport}
-                minimumFontScale={0.85}
-                style={[
-                  styles.tabLabel,
-                  isPassport && styles.passportLabel,
-                  active && styles.tabLabelActive,
-                  active && isPassport && styles.passportLabelActive,
-                ]}
+                numberOfLines={isLocker ? 2 : 1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                style={[styles.tabLabel, active && styles.tabLabelActive]}
               >
-                {item.label}
+                {isPassport ? 'PASSPORT' : item.label}
               </Text>
             </View>
             {active ? <View style={styles.tabDot} /> : <View style={styles.tabDotSpacer} />}
@@ -113,14 +110,16 @@ export default function CustomTabBar({
 
 const styles = StyleSheet.create({
   tabBar: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
     backgroundColor: OBSIDIAN,
     borderTopWidth: 1.5,
     borderTopColor: BORDER_TOP,
-    paddingTop: 12,
-    paddingHorizontal: 2,
+    paddingTop: 10,
+    paddingHorizontal: 4,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -135,85 +134,67 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingTop: 6,
-    paddingBottom: 6,
-    minHeight: 58,
-  },
-  battlesTabItem: {
-    marginRight: 6,
-    paddingRight: 4,
-    maxWidth: 84,
-  },
-  passportTabItem: {
-    minWidth: 72,
-    paddingHorizontal: 0,
+    paddingTop: 4,
+    paddingBottom: 4,
+    paddingHorizontal: 2,
+    minHeight: 52,
+    minWidth: 0,
   },
   tabLabelWrap: {
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingHorizontal: 2,
     width: '100%',
-  },
-  battlesLabelWrap: {
-    minHeight: 38,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingTop: 2,
+    paddingHorizontal: 1,
   },
   tabLabel: {
     color: MUTED,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.35,
     textAlign: 'center',
-    lineHeight: 14,
+    lineHeight: 11,
     textTransform: 'uppercase',
-    ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-black' } : null),
-  },
-  /** Keep PASSPORT on one line — tighter tracking, no wrap of the final T */
-  passportLabel: {
-    fontSize: 10,
-    letterSpacing: 0.4,
-    lineHeight: 12,
-    flexShrink: 0,
+    width: '100%',
+    ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-medium' } : null),
   },
   tabLabelActive: {
     color: WHITE,
-    fontSize: 12,
-    letterSpacing: 1.1,
-    textShadowColor: 'rgba(255,255,255,0.35)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 4,
-  },
-  passportLabelActive: {
-    fontSize: 10.5,
-    letterSpacing: 0.5,
+    fontSize: 9.5,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   tabDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: ACCENT,
-    marginTop: 5,
+    marginTop: 4,
   },
   tabDotSpacer: {
-    width: 5,
-    height: 5,
-    marginTop: 5,
+    width: 4,
+    height: 4,
+    marginTop: 4,
+  },
+  /** Fixed center slot so FAB never steals flex from side tabs */
+  fabSlot: {
+    width: 68,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   fabWrap: {
-    width: 78,
+    width: 68,
     alignItems: 'center',
-    marginTop: -22,
-    marginHorizontal: 4,
+    marginTop: -20,
     zIndex: 2,
   },
   fab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: WHITE,
-    borderWidth: 2.5,
+    borderWidth: 2,
     borderColor: OFF_WHITE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -229,37 +210,37 @@ const styles = StyleSheet.create({
   },
   fabPlus: {
     color: '#000000',
-    fontSize: 38,
+    fontSize: 34,
     fontWeight: '900',
     marginTop: -2,
-    lineHeight: 40,
+    lineHeight: 36,
   },
   fabCaption: {
     color: WHITE,
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 1.2,
-    marginTop: 5,
+    letterSpacing: 0.8,
+    marginTop: 4,
   },
   thunderBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: OBSIDIAN,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
+    marginBottom: 1,
     alignSelf: 'center',
   },
   thunderSpacer: {
-    width: 20,
-    height: 20,
-    marginBottom: 2,
+    width: 16,
+    height: 16,
+    marginBottom: 1,
   },
   thunderText: {
-    fontSize: 11,
+    fontSize: 9,
     marginTop: -1,
   },
 });
