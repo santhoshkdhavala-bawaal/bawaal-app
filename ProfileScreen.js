@@ -1,7 +1,10 @@
 /**
  * PASSPORT tab hub — my profile + Following + Suggested.
  * Tap an athlete → inline preview; "VIEW FULL PROFILE" → AthletePassport stack screen.
- * Chrome is strict B&W; only stats / metrics / badges use accent color.
+ *
+ * LOCKED production surface — header card, stats, blue FOLLOWING rings,
+ * crimson SUGGESTED / + Follow as shipped. Do not modify without an explicit unlock.
+ * See `.cursor/rules/bawaal-passport-locked.mdc`.
  */
 import React, { memo, useCallback, useMemo, useState } from 'react';
 import {

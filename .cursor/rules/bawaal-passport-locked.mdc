@@ -1,0 +1,34 @@
+---
+description: Locked BAWAAL Passport/Profile screen — header, stats, Following blue, Suggested crimson — immutable
+alwaysApply: true
+---
+
+# BAWAAL Passport / Profile (LOCKED)
+
+The Passport tab hub (`ProfileScreen.js`) is **production-final**. Do **not** restyle, recolor, reorder, or rebuild it unless the user explicitly unlocks this rule.
+
+## Locked files (do not edit)
+
+- `ProfileScreen.js` — Passport hub (me card, Following rail, Suggested Athletes)
+- Related presentation used as-shipped on this screen: `BrandHeader` usage, `UserHandle`, `RoleBadge`, `VerifiedBadge`, `src/data/athleteSocial` seed wiring for CURRENT_USER / FOLLOWING / SUGGESTED (do not change solely to restyle Passport)
+
+## Locked visual contract
+
+- **Profile header card** + bio + role/status badges — keep as shipped (strict dark surface, B&W chrome)
+- **Stats row** — Followers / Following / Win Rate layout and existing metric accents — do not reshape
+- **FOLLOWING** — electric blue `#3B82F6` section title; blue avatar rings / chip edge highlights on the horizontal list
+- **SUGGESTED ATHLETES** — electric crimson `#FF3366` section title; `+ Follow` outline/text in crimson
+- Borderless-minimalist dark layout as shipped
+- Bottom content padding must continue to clear the tab bar / system safe area (do not regress vs `CustomTabBar` / `MainTabs` padding)
+
+## App wiring
+
+- Main tab **Passport** continues to mount `ProfileScreen`
+- Inline athlete preview → `AthletePassport` stack remains the navigation path
+- Do not replace with a parallel Passport/Profile UI
+
+## Allowed elsewhere
+
+- New features outside this screen
+- Critical crash/security fixes that must touch it: ask the user first and preserve this visual contract
+---
