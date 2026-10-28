@@ -4,11 +4,18 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 
-/** Drop-in <Video> that renders nothing (SafeFeedVideo uses SportsFeedPlaceholder instead). */
-function MockVideo() {
-  return null;
+/** Drop-in <Video> — solid black container (never touches ExponentAV). */
+function MockVideo({ style, ...rest }) {
+  return (
+    <View
+      {...rest}
+      style={[mockStyles.black, style]}
+      pointerEvents="none"
+      accessibilityLabel="Video unavailable in Expo Go"
+    />
+  );
 }
 
 MockVideo.displayName = 'MockExpoAvVideo';
@@ -20,6 +27,13 @@ export const MOCK_EXPO_AV = Object.freeze({
     COVER: 'cover',
     STRETCH: 'stretch',
   }),
+});
+
+const mockStyles = StyleSheet.create({
+  black: {
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
 });
 
 function MockRtcSurfaceView(props) {

@@ -9,9 +9,10 @@ config.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
 /**
  * Expo Go (`npm run start:go` → BAWAAL_EXPO_GO=1):
  *   - safeNative → mock-only file (no Agora / expo-av)
+ *   - expo-av → stub (blocks ExponentAV native lookup)
  *   - react-native-agora → stub
  * Dev-client (`npm start`):
- *   - safeNative → safeNative.real.js (static native imports)
+ *   - safeNative → safeNative.real.js (guarded expo-av require)
  */
 const lifecycle = process.env.npm_lifecycle_event || '';
 const stubNativeModules =
@@ -36,6 +37,10 @@ const REAL_BRIDGE = path.resolve(
 const AGORA_STUB = path.resolve(
   PROJECT_ROOT,
   'src/native/stubs/react-native-agora.js'
+);
+const EXPO_AV_STUB = path.resolve(
+  PROJECT_ROOT,
+  'src/native/stubs/expo-av.js'
 );
 
 function isSafeNativeModule(moduleName) {
@@ -91,6 +96,17 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
+  // Keep real expo-av (ExponentAV) out of the Expo Go graph entirely.
+  if (
+    stubNativeModules &&
+    (moduleName === 'expo-av' || String(moduleName).startsWith('expo-av/'))
+  ) {
+    return {
+      type: 'sourceFile',
+      filePath: EXPO_AV_STUB,
+    };
+  }
+
   if (typeof previousResolveRequest === 'function') {
     return previousResolveRequest(context, moduleName, platform);
   }
@@ -100,6 +116,9 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 if (stubNativeModules) {
   const agoraRoot = path
     .resolve(PROJECT_ROOT, 'node_modules/react-native-agora')
+    .replace(/\\/g, '/');
+  const expoAvRoot = path
+    .resolve(PROJECT_ROOT, 'node_modules/expo-av')
     .replace(/\\/g, '/');
   const realSafe = SAFE_NATIVE_REAL.replace(/\\/g, '/');
   const realBridge = REAL_BRIDGE.replace(/\\/g, '/');
@@ -111,6 +130,7 @@ if (stubNativeModules) {
 
   const patterns = [
     toRegex(agoraRoot),
+    toRegex(expoAvRoot),
     toRegex(realSafe),
     toRegex(realBridge),
   ];
@@ -125,7 +145,7 @@ if (stubNativeModules) {
   }
 
   console.log(
-    '[metro] BAWAAL Expo Go stubs active — safeNative mock, Agora blocked'
+    '[metro] BAWAAL Expo Go stubs active — safeNative mock, expo-av + Agora blocked'
   );
 }
 

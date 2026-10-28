@@ -50,6 +50,7 @@ import DeviceGalleryModal, {
 import { stabilizeLocalVideoUri } from './src/services/uploadService';
 import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
+import { isExpoGo } from './src/utils/runtimeEnv';
 export type { CreationMode, PostCreationPayload };
 
 /** Minimalist Black & White */
@@ -443,13 +444,7 @@ function stopAndUnloadPlayer(player: {
   }
 }
 
-function ClipPreviewModal({
-  visible,
-  uri,
-  fallbackDuration,
-  onRetake,
-  onNext,
-}: {
+type ClipPreviewModalProps = {
   visible: boolean;
   uri: string | null;
   fallbackDuration: number;
@@ -460,7 +455,66 @@ function ClipPreviewModal({
     slowMoStartSec: number;
     slowMoEndSec: number;
   }) => void;
-}) {
+};
+
+/** Expo Go: black shell — never mounts expo-video / native AV. */
+function ExpoGoClipPreviewModal({
+  visible,
+  uri,
+  fallbackDuration,
+  onRetake,
+  onNext,
+}: ClipPreviewModalProps) {
+  const bootDur = safeDurationSec(fallbackDuration, 15);
+  if (!visible || !uri) return null;
+  return (
+    <Modal visible animationType="slide" onRequestClose={onRetake}>
+      <View style={previewStyles.root}>
+        <StatusBar barStyle="light-content" />
+        <Text style={previewStyles.title}>Slow-Mo Preview</Text>
+        <View style={previewStyles.videoWrap}>
+          <View style={previewStyles.expoGoPlaceholder}>
+            <Text style={previewStyles.expoGoPlaceholderTitle}>PREVIEW</Text>
+            <Text style={previewStyles.expoGoPlaceholderBody}>
+              Video playback needs a development build
+            </Text>
+          </View>
+        </View>
+        <View style={previewStyles.actions}>
+          <TouchableOpacity
+            style={previewStyles.secondaryBtn}
+            onPress={onRetake}
+            activeOpacity={0.85}
+          >
+            <Text style={previewStyles.secondaryText}>RETAKE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={previewStyles.primaryBtn}
+            onPress={() =>
+              onNext({
+                slowMoEnabled: false,
+                slowMoRate: 1,
+                slowMoStartSec: 0,
+                slowMoEndSec: bootDur,
+              })
+            }
+            activeOpacity={0.9}
+          >
+            <Text style={previewStyles.primaryText}>NEXT TO POST</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function NativeClipPreviewModal({
+  visible,
+  uri,
+  fallbackDuration,
+  onRetake,
+  onNext,
+}: ClipPreviewModalProps) {
   const bootDur = safeDurationSec(fallbackDuration, 15);
   const [playing, setPlaying] = useState(true);
   const [slowMoRate, setSlowMoRate] = useState<SlowMoRate>(0.5);
@@ -719,6 +773,13 @@ function ClipPreviewModal({
   );
 }
 
+function ClipPreviewModal(props: ClipPreviewModalProps) {
+  if (isExpoGo) {
+    return <ExpoGoClipPreviewModal {...props} />;
+  }
+  return <NativeClipPreviewModal {...props} />;
+}
+
 const previewStyles = StyleSheet.create({
   root: {
     flex: 1,
@@ -740,6 +801,26 @@ const previewStyles = StyleSheet.create({
     backgroundColor: '#000',
     borderWidth: 1,
     borderColor: '#333333',
+  },
+  expoGoPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    backgroundColor: '#000000',
+  },
+  expoGoPlaceholderTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 8,
+  },
+  expoGoPlaceholderBody: {
+    color: '#A3A3A3',
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
   },
   video: { flex: 1 },
   playOverlay: {

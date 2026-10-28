@@ -17,6 +17,7 @@ import { setLatestBattleClip } from './battleClipStore';
 import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { persistLocalVideoUri } from './src/services/uploadService';
+import { isExpoGo } from './src/utils/runtimeEnv';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
 const DEFAULT_DURATION = 30;
@@ -191,12 +192,30 @@ function buildTargetMetricsLabel(rawTarget, durationSec, extras = {}) {
   return `TARGET: ${segments.join(' • ')}`;
 }
 
+/** Expo Go: solid black — never mounts expo-video / native AV. */
+function ExpoGoBlackVideo({ style }) {
+  return (
+    <View
+      style={[StyleSheet.absoluteFillObject, { backgroundColor: OBSIDIAN }, style]}
+      pointerEvents="none"
+      accessibilityLabel="Video unavailable in Expo Go"
+    />
+  );
+}
+
 /**
  * Review player — loads file:// URI immediately after a take.
  * Slow-mo ON: loops strictly inside [start, end] at 0.25x / 0.5x / 0.75x.
  * Slow-mo OFF: full-clip loop at 1x so athletes always see their take.
  */
-function ReviewSlowMoPlayer({
+function ReviewSlowMoPlayer(props) {
+  if (isExpoGo) {
+    return <ExpoGoBlackVideo />;
+  }
+  return <NativeReviewSlowMoPlayer {...props} />;
+}
+
+function NativeReviewSlowMoPlayer({
   uri,
   active = true,
   slowMoEnabled,
@@ -424,7 +443,14 @@ function ReviewSlowMoPlayer({
 }
 
 /** Permanently-mounted opponent clip — stable player, replaceAsync only. */
-function OpponentTargetPlayer({ uri, active = true }) {
+function OpponentTargetPlayer(props) {
+  if (isExpoGo) {
+    return <ExpoGoBlackVideo style={styles.targetVideo} />;
+  }
+  return <NativeOpponentTargetPlayer {...props} />;
+}
+
+function NativeOpponentTargetPlayer({ uri, active = true }) {
   const player = useVideoPlayer(OPPONENT_FALLBACK_ASSET, (p) => {
     p.loop = true;
     p.muted = true;

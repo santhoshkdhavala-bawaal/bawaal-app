@@ -2,7 +2,7 @@
  * Crash-safe Arena feed video surface.
  *
  * Expo Go (`Constants.appOwnership === 'expo'`) → SportsFeedPlaceholder
- * (no expo-av / Fabric player). Dev-client & release → expo-av `<Video>`.
+ * (never mounts expo-av / ExponentAV). Dev-client & release → expo-av `<Video>`.
  */
 import React, {
   Component,
@@ -24,14 +24,33 @@ import {
   toPublicFeedVideoUrl,
 } from '../services/uploadService';
 import { isExpoGo, canUseNativeVideo } from '../utils/runtimeEnv';
-import { loadExpoAv } from '../native/safeNative';
 import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 
 export { toPublicFeedVideoUrl };
 
-const ExpoAv = canUseNativeVideo ? loadExpoAv() : null;
-const Video = ExpoAv?.Video || null;
-const ResizeMode = ExpoAv?.ResizeMode || null;
+/**
+ * Never touch expo-av / ExponentAV inside Expo Go.
+ * Dev-client loads AV lazily so a missing native module cannot crash boot.
+ */
+function loadNativeAvBinding() {
+  if (isExpoGo || !canUseNativeVideo) {
+    return { Video: null, ResizeMode: null };
+  }
+  try {
+    // eslint-disable-next-line global-require
+    const { loadExpoAv } = require('../native/safeNative');
+    const ExpoAv = loadExpoAv();
+    return {
+      Video: ExpoAv?.Video || null,
+      ResizeMode: ExpoAv?.ResizeMode || null,
+    };
+  } catch (err) {
+    console.warn('[SafeFeedVideo] expo-av unavailable:', err?.message || err);
+    return { Video: null, ResizeMode: null };
+  }
+}
+
+const { Video, ResizeMode } = loadNativeAvBinding();
 
 export function resolveFeedVideoUri(source) {
   const fromHelper = resolvePlayableVideoUri(source);
