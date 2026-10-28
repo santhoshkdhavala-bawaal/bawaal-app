@@ -426,6 +426,13 @@ export default function LockerRoomScreen({ navigation }) {
         defaultValue={prompt?.defaultValue || ''}
         placeholder={prompt?.placeholder || ''}
         confirmLabel={prompt?.confirmLabel || 'CONFIRM'}
+        confirmColor={
+          prompt?.kind === 'brief'
+            ? '#A855F7'
+            : prompt?.kind === 'squad'
+              ? '#FACC15'
+              : undefined
+        }
         onConfirm={submitPrompt}
         onCancel={closePrompt}
         busy={busy}

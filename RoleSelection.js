@@ -13,14 +13,14 @@ import {
   ScrollView,
   Image,
   Modal,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { resolveLocationFlag } from './src/utils/locationFlag';
+import BawaalPromptModal from './src/components/BawaalPromptModal';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -112,8 +112,10 @@ function UnderlineField({
 }
 
 export default function RoleSelection({ onCompleteRegistration }) {
+  const insets = useSafeAreaInsets();
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   const [handle, setHandle] = useState('');
   const [realName, setRealName] = useState('');
@@ -126,6 +128,8 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  const showNotice = (title, message) => setNotice({ title, message });
 
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const otpInputs = useRef([]);
@@ -147,19 +151,22 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const handleSendOtpTrigger = () => {
     if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
-      Alert.alert('Missing Fields', 'Please complete all required fields before continuing.');
+      showNotice('Missing Fields', 'Please complete all required fields before continuing.');
       return;
     }
     if (!role) {
-      Alert.alert('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
+      showNotice('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
       return;
     }
     if (!sportInterest) {
-      Alert.alert('Sport Interest', 'Pick a sport interest for your feed.');
+      showNotice('Sport Interest', 'Pick a sport interest for your feed.');
       return;
     }
     if (!agreedToTerms) {
-      Alert.alert('Terms Required', 'Please review and accept the Terms of Service & Privacy Policy.');
+      showNotice(
+        'Terms Required',
+        'Please review and accept the Terms of Service & Privacy Policy.'
+      );
       return;
     }
     setOtpModalVisible(true);
@@ -183,7 +190,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const handleEnterArena = () => {
     const fullOtp = otpDigits.join('');
     if (fullOtp.length < 6) {
-      Alert.alert('Invalid OTP', 'Please enter the complete 6-digit verification code.');
+      showNotice('Invalid OTP', 'Please enter the complete 6-digit verification code.');
       return;
     }
 
@@ -436,16 +443,35 @@ export default function RoleSelection({ onCompleteRegistration }) {
         </View>
       </Modal>
 
-      {/* OTP Modal */}
+      {/* OTP Modal — stealth black + B solo watermark */}
       <Modal visible={otpModalVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.otpModalContent}>
+          <KeyboardAvoidingView
+            style={[
+              styles.modalOverlay,
+              { paddingBottom: Math.max(48, insets.bottom + 40) },
+            ]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View
+              style={[
+                styles.otpModalContent,
+                { paddingBottom: Math.max(48, insets.bottom + 36) },
+              ]}
+            >
               <Image
-                source={require('./assets/BAWAAL_white_icon.png')}
+                source={require('./assets/BAWAAL_B_solo.png')}
+                style={styles.otpWatermark}
+                resizeMode="contain"
+                pointerEvents="none"
+              />
+              <Image
+                source={require('./assets/BAWAAL_B_solo.png')}
                 style={styles.otpLogo}
                 resizeMode="contain"
+                tintColor={WHITE}
               />
+              <Text style={styles.otpBrand}>BAWAAL</Text>
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
                 Enter the 6-digit code sent to {phone || 'your phone'}
@@ -464,6 +490,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
                     value={digit}
                     onChangeText={(val) => handleOtpChange(val, idx)}
                     onKeyPress={(e) => handleOtpKeyPress(e, idx)}
+                    selectionColor={WHITE}
                   />
                 ))}
               </View>
@@ -476,9 +503,17 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 <Text style={styles.ctaBtnText}>ENTER ARENA</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </TouchableWithoutFeedback>
       </Modal>
+
+      <BawaalPromptModal
+        visible={Boolean(notice)}
+        mode="notice"
+        title={notice?.title || 'BAWAAL'}
+        message={notice?.message || ''}
+        onCancel={() => setNotice(null)}
+      />
     </SafeAreaView>
   );
 }
@@ -724,14 +759,31 @@ const styles = StyleSheet.create({
   otpModalContent: {
     backgroundColor: BG,
     borderRadius: 0,
+    borderWidth: 0,
     padding: 28,
-    width: '88%',
+    width: '90%',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  otpWatermark: {
+    position: 'absolute',
+    top: -10,
+    right: -8,
+    width: 160,
+    height: 160,
+    opacity: 0.07,
   },
   otpLogo: {
-    width: 72,
-    height: 72,
-    marginBottom: 16,
+    width: 28,
+    height: 28,
+    marginBottom: 10,
+  },
+  otpBrand: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 3.2,
+    marginBottom: 14,
   },
   otpTitle: {
     color: WHITE,
@@ -756,6 +808,7 @@ const styles = StyleSheet.create({
     height: 48,
     backgroundColor: 'transparent',
     borderRadius: 0,
+    borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: LINE_FOCUS,
     color: '#FFFFFF',

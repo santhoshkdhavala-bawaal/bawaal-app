@@ -2,8 +2,10 @@
 import React, { useState, useRef } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, 
-  KeyboardAvoidingView, Platform, ScrollView, Modal, Alert, Image 
+  KeyboardAvoidingView, Platform, ScrollView, Modal, Image 
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BawaalPromptModal from './src/components/BawaalPromptModal';
 
 const translations = {
   English: {
@@ -401,6 +403,8 @@ export default function AthleteRegistration({ navigation }) {
   const [showLangModal, setShowLangModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const insets = useSafeAreaInsets();
   
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const otpRefs = useRef([]);
@@ -409,11 +413,14 @@ export default function AthleteRegistration({ navigation }) {
 
   const handleSubmit = () => {
     if (!userIdentity || !fullName || !mobile || !sport) {
-      Alert.alert('Missing Fields', 'Please fill in all mandatory fields.');
+      setNotice({ title: 'Missing Fields', message: 'Please fill in all mandatory fields.' });
       return;
     }
     if (!agreed) {
-      Alert.alert('Terms & Conditions', 'Please agree to the Terms & Conditions to proceed.');
+      setNotice({
+        title: 'Terms & Conditions',
+        message: 'Please agree to the Terms & Conditions to proceed.',
+      });
       return;
     }
     setShowOtpModal(true);
@@ -430,11 +437,14 @@ export default function AthleteRegistration({ navigation }) {
 
   const handleVerifyOtp = () => {
     if (otp.join('').length < 6) {
-      Alert.alert('Invalid OTP', 'Please enter the complete 6-digit code.');
+      setNotice({
+        title: 'Invalid OTP',
+        message: 'Please enter the complete 6-digit code.',
+      });
       return;
     }
     setShowOtpModal(false);
-    Alert.alert('Success!', 'Welcome to Bawaal Arena!');
+    setNotice({ title: 'Success!', message: 'Welcome to Bawaal Arena!' });
   };
 
   return (
@@ -581,33 +591,65 @@ export default function AthleteRegistration({ navigation }) {
         </View>
       </Modal>
 
-      {/* OTP Verification Modal */}
+      {/* OTP Verification Modal — stealth black + B solo */}
       <Modal visible={showOtpModal} transparent={true} animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Image 
-              source={require('./assets/bawaal_bolder_larger.png')} 
-              style={styles.otpModalLogo} 
-              resizeMode="contain" 
+        <View
+          style={[
+            styles.otpOverlay,
+            { paddingBottom: Math.max(48, insets.bottom + 40) },
+          ]}
+        >
+          <View
+            style={[
+              styles.otpCard,
+              { paddingBottom: Math.max(48, insets.bottom + 36) },
+            ]}
+          >
+            <Image
+              source={require('./assets/BAWAAL_B_solo.png')}
+              style={styles.otpWatermark}
+              resizeMode="contain"
+              pointerEvents="none"
             />
-            <Text style={styles.modalTitle}>{t.verifyOtp}</Text>
-            <Text style={styles.modalDesc}>{t.otpDesc}</Text>
+            <Image
+              source={require('./assets/BAWAAL_B_solo.png')}
+              style={styles.otpModalLogo}
+              resizeMode="contain"
+              tintColor="#FFFFFF"
+            />
+            <Text style={styles.otpBrand}>BAWAAL</Text>
+            <Text style={styles.otpModalTitle}>{t.verifyOtp}</Text>
+            <Text style={styles.otpModalDesc}>{t.otpDesc}</Text>
             <View style={styles.otpRow}>
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <TextInput
-                  key={index} ref={(el) => (otpRefs.current[index] = el)} maxLength={1} keyboardType="numeric"
-                  style={[styles.otpBox, focusedInput === `otp_${index}` && styles.inputFocused]}
-                  value={otp[index]} onChangeText={(val) => handleOtpChange(val, index)}
-                  onFocus={() => setFocusedInput(`otp_${index}`)} onBlur={() => setFocusedInput(null)}
+                  key={index}
+                  ref={(el) => (otpRefs.current[index] = el)}
+                  maxLength={1}
+                  keyboardType="numeric"
+                  style={styles.otpStealthBox}
+                  value={otp[index]}
+                  onChangeText={(val) => handleOtpChange(val, index)}
+                  onFocus={() => setFocusedInput(`otp_${index}`)}
+                  onBlur={() => setFocusedInput(null)}
+                  selectionColor="#FFFFFF"
                 />
               ))}
             </View>
-            <TouchableOpacity style={styles.btnPrimary} onPress={handleVerifyOtp}>
-              <Text style={styles.btnText}>{t.enterBawaal}</Text>
+            <TouchableOpacity style={styles.otpCta} onPress={handleVerifyOtp} activeOpacity={0.85}>
+              <Text style={styles.otpCtaText}>{t.enterBawaal}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      <BawaalPromptModal
+        visible={Boolean(notice)}
+        mode="notice"
+        title={notice?.title || 'BAWAAL'}
+        message={notice?.message || ''}
+        onCancel={() => setNotice(null)}
+      />
 
     </KeyboardAvoidingView>
   );
@@ -621,7 +663,79 @@ const styles = StyleSheet.create({
   brandGroup: { flexDirection: 'row', alignItems: 'center' },
   logoEmblem: { width: 32, height: 32, marginRight: 6 },
   logoLineText: { width: 85, height: 26 },
-  otpModalLogo: { width: 90, height: 90, marginBottom: 14 },
+  otpModalLogo: { width: 28, height: 28, marginBottom: 10 },
+  otpOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  otpCard: {
+    width: '90%',
+    backgroundColor: '#000000',
+    borderRadius: 0,
+    borderWidth: 0,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  otpWatermark: {
+    position: 'absolute',
+    top: -10,
+    right: -8,
+    width: 160,
+    height: 160,
+    opacity: 0.07,
+  },
+  otpBrand: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 3.2,
+    marginBottom: 14,
+  },
+  otpModalTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 1.4,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  otpModalDesc: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.55)',
+    marginBottom: 22,
+    textAlign: 'center',
+  },
+  otpStealthBox: {
+    width: 40,
+    height: 48,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.72)',
+    borderRadius: 0,
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  otpCta: {
+    width: '100%',
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  otpCtaText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
   metaGroup: { flexDirection: 'row', alignItems: 'center' },
   metaBadge: { backgroundColor: '#111D33', borderWidth: 1, borderColor: '#1E2A4A', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4, marginLeft: 6 },
   metaText: { fontSize: 11, color: '#8A96B5', fontWeight: '600' },

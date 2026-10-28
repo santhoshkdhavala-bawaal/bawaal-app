@@ -25,7 +25,17 @@ const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
 const HAIRLINE = 'rgba(255,255,255,0.22)';
 const ACCENT = '#4ADE80';
+const CREATE_YELLOW = '#FACC15';
+const BRIEF_PURPLE = '#A855F7';
 const LOGO = require('../../assets/BAWAAL_B_solo.png');
+
+function resolveConfirmColor(confirmLabel, confirmColor) {
+  if (confirmColor) return confirmColor;
+  const label = String(confirmLabel || '').toUpperCase();
+  if (label.includes('POST')) return BRIEF_PURPLE;
+  if (label.includes('CREATE')) return CREATE_YELLOW;
+  return ACCENT;
+}
 
 export const SQUAD_BRIEF_SPORTS = [
   'Combat',
@@ -50,6 +60,7 @@ export const SQUAD_BRIEF_SPORTS = [
  * @param {(value: any) => void} [props.onConfirm]
  * @param {() => void} props.onCancel
  * @param {boolean} [props.busy]
+ * @param {string} [props.confirmColor] Primary action tint (POST purple / CREATE yellow)
  */
 export default function BawaalPromptModal({
   visible,
@@ -64,6 +75,7 @@ export default function BawaalPromptModal({
   onConfirm,
   onCancel,
   busy = false,
+  confirmColor,
 }) {
   const [value, setValue] = useState(defaultValue);
   const [briefTitle, setBriefTitle] = useState('');
@@ -73,9 +85,10 @@ export default function BawaalPromptModal({
   const scrollRef = useRef(null);
   const fieldYRef = useRef({});
   const insets = useSafeAreaInsets();
-  // Clear floating CustomTabBar (~56–72) + system home indicator
-  const tabBarClearance = 72;
-  const bottomPad = Math.max(40, insets.bottom) + tabBarClearance;
+  // Clear floating CustomTabBar + system home indicator with generous air
+  const tabBarClearance = 96;
+  const bottomPad = Math.max(48, insets.bottom + 16) + tabBarClearance;
+  const actionColor = resolveConfirmColor(confirmLabel, confirmColor);
 
   useEffect(() => {
     if (!visible) {
@@ -165,7 +178,7 @@ export default function BawaalPromptModal({
           }}
         />
         <View
-          style={[styles.card, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
+          style={[styles.card, { paddingBottom: Math.max(40, insets.bottom + 28) }]}
           accessibilityViewIsModal
         >
           <Image
@@ -182,7 +195,7 @@ export default function BawaalPromptModal({
             style={styles.scroll}
             contentContainerStyle={[
               styles.scrollContent,
-              { paddingBottom: Math.max(40, insets.bottom + 24) },
+              { paddingBottom: Math.max(56, insets.bottom + 40) },
             ]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -298,7 +311,7 @@ export default function BawaalPromptModal({
               </View>
             ) : null}
 
-            <View style={[styles.actions, { marginBottom: 8 }]}>
+            <View style={[styles.actions, { marginBottom: 12, paddingBottom: 20 }]}>
               {mode !== 'notice' ? (
                 <Pressable
                   style={styles.btnGhost}
@@ -318,7 +331,7 @@ export default function BawaalPromptModal({
                 disabled={busy}
                 hitSlop={12}
               >
-                <Text style={styles.btnSolidText}>
+                <Text style={[styles.btnSolidText, { color: actionColor }]}>
                   {mode === 'notice' ? 'OK' : confirmLabel}
                 </Text>
               </Pressable>
@@ -347,15 +360,15 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     paddingHorizontal: 22,
     paddingTop: 26,
-    paddingBottom: 40,
+    paddingBottom: 48,
     overflow: 'hidden',
-    maxHeight: '82%',
+    maxHeight: '78%',
   },
   scroll: {
     flexGrow: 0,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 56,
     flexGrow: 1,
   },
   watermark: {
