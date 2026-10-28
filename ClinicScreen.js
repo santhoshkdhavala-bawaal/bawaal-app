@@ -5,8 +5,10 @@
  * LOCKED production surface — do not modify without an explicit unlock.
  * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -15,6 +17,15 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  askClinicQuestion,
+  CLINIC_SETUP_HINT,
+  fetchClinicFeed,
+  postClinicReply,
+} from './src/services/clinicService';
+import { isSupabaseConfigured } from './src/services/supabase';
+import { ACTIVE_USER } from './src/services/activeUserProfile';
+import { textPrompt } from './src/utils/textPrompt';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -22,7 +33,8 @@ const MUTED = '#8A8A8A';
 const OFF_WHITE = '#E8ECE9';
 const LINE = 'rgba(255,255,255,0.14)';
 
-const FEED = [
+/** Seed feed when cloud is empty / offline — same locked demo content. */
+const SEED_FEED = [
   {
     id: 'q1',
     athlete: '@ROHIT_CRICKET',
@@ -111,6 +123,129 @@ function QuestionCard({ item }) {
 
 export default function ClinicScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const [feed, setFeed] = useState(SEED_FEED);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadFeed = useCallback(async () => {
+    const { feed: live, error } = await fetchClinicFeed();
+    if (error && !isSupabaseConfigured()) {
+      setFeed(SEED_FEED);
+      return;
+    }
+    if (error) {
+      console.warn('[Clinic] load:', error?.message || error);
+      setFeed((prev) => (prev?.length ? prev : SEED_FEED));
+      return;
+    }
+    setFeed(live.length ? live : SEED_FEED);
+  }, []);
+
+  useEffect(() => {
+    loadFeed();
+  }, [loadFeed]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadFeed();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadFeed]);
+
+  const guardCloud = () => {
+    if (isSupabaseConfigured()) return true;
+    Alert.alert('Supabase', CLINIC_SETUP_HINT);
+    return false;
+  };
+
+  const onAskClinic = () => {
+    if (!guardCloud()) return;
+    textPrompt({
+      title: 'Ask The Clinic',
+      message: 'Your question for verified experts',
+      defaultValue: 'Advice on training load this week?',
+      confirmLabel: 'Post',
+      onSubmit: async (question) => {
+        if (!question) {
+          Alert.alert('Clinic', 'Enter a question to post.');
+          return;
+        }
+        if (busy) return;
+        setBusy(true);
+        try {
+          const { item, error } = await askClinicQuestion({
+            question,
+            sport: ACTIVE_USER?.sportInterest || 'GYM',
+            athleteHandle: ACTIVE_USER?.handle,
+          });
+          if (error) {
+            Alert.alert('Clinic', error.message || 'Could not post question');
+            return;
+          }
+          if (item) setFeed((prev) => [item, ...prev.filter((q) => q.id !== item.id)]);
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
+  const onPostExpert = () => {
+    if (!guardCloud()) return;
+    const awaiting = feed.find((q) => !q.expert);
+    if (!awaiting) {
+      Alert.alert('Clinic', 'No open questions awaiting a reply.');
+      return;
+    }
+    textPrompt({
+      title: 'Expert Reply',
+      message: `Reply to ${awaiting.athlete}`,
+      defaultValue: 'Rest, progressive load, and reassess if pain persists.',
+      confirmLabel: 'Post',
+      onSubmit: async (response) => {
+        if (!response) {
+          Alert.alert('Clinic', 'Enter a response to post.');
+          return;
+        }
+        if (busy) return;
+        setBusy(true);
+        try {
+          const { reply, error } = await postClinicReply({
+            questionId: awaiting.id,
+            expertName: ACTIVE_USER?.displayName || 'Verified Expert',
+            expertRole: 'VERIFIED EXPERT',
+            response,
+          });
+          if (error) {
+            Alert.alert('Clinic', error.message || 'Could not post reply');
+            return;
+          }
+          if (reply) {
+            setFeed((prev) =>
+              prev.map((q) =>
+                q.id === awaiting.id
+                  ? {
+                      ...q,
+                      expert: {
+                        name: String(reply.expert_name),
+                        role: String(reply.expert_role),
+                        response: String(reply.response),
+                        hasVideo: Boolean(reply.has_video),
+                        videoLabel: reply.video_label || 'VIDEO ADVISORY',
+                      },
+                    }
+                  : q
+              )
+            );
+          }
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
 
   return (
     <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
@@ -134,6 +269,14 @@ export default function ClinicScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: 48 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={WHITE}
+            colors={[WHITE]}
+          />
+        }
       >
         <View style={styles.banner}>
           <Text style={styles.bannerTitle}>PUBLIC CLINIC FEED</Text>
@@ -142,17 +285,27 @@ export default function ClinicScreen({ navigation }) {
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.textAction} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={styles.textAction}
+          activeOpacity={0.75}
+          onPress={onAskClinic}
+          disabled={busy}
+        >
           <Text style={styles.textActionLabel}>+ ASK THE CLINIC</Text>
         </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>LATEST QUESTIONS</Text>
 
-        {FEED.map((item) => (
+        {feed.map((item) => (
           <QuestionCard key={item.id} item={item} />
         ))}
 
-        <TouchableOpacity style={styles.textAction} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={styles.textAction}
+          activeOpacity={0.75}
+          onPress={onPostExpert}
+          disabled={busy}
+        >
           <Text style={styles.textActionLabel}>POST AS VERIFIED EXPERT</Text>
         </TouchableOpacity>
 

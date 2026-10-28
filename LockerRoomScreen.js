@@ -6,8 +6,10 @@
  * Do not modify without an explicit unlock.
  * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
+  RefreshControl,
   StyleSheet,
   Text,
   View,
@@ -17,6 +19,15 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMainTabs } from './mainTabContext';
+import {
+  createSparringLog,
+  createTrainingSquad,
+  fetchActiveHubs,
+  LOCKER_SETUP_HINT,
+} from './src/services/lockerService';
+import { isSupabaseConfigured } from './src/services/supabase';
+import { ACTIVE_USER } from './src/services/activeUserProfile';
+import { textPrompt } from './src/utils/textPrompt';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -29,7 +40,8 @@ const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
 const HUB_ACCENT = '#F97316';
 const LINE = 'rgba(255,255,255,0.14)';
 
-const HUBS = [
+/** Seed hubs shown when cloud is empty / offline — same locked demo content. */
+const SEED_HUBS = [
   {
     id: 'squad-iron',
     kind: 'TRAINING SQUAD',
@@ -87,9 +99,99 @@ function HubCard({ item, onPress }) {
 export default function LockerRoomScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { openProfileGateway } = useMainTabs() || {};
+  const [hubs, setHubs] = useState(SEED_HUBS);
+  const [refreshing, setRefreshing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const loadHubs = useCallback(async () => {
+    const { hubs: live, error } = await fetchActiveHubs();
+    if (error && !isSupabaseConfigured()) {
+      setHubs(SEED_HUBS);
+      return;
+    }
+    if (error) {
+      console.warn('[LockerRoom] load:', error?.message || error);
+      setHubs((prev) => (prev?.length ? prev : SEED_HUBS));
+      return;
+    }
+    setHubs(live.length ? live : SEED_HUBS);
+  }, []);
+
+  useEffect(() => {
+    loadHubs();
+  }, [loadHubs]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadHubs();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadHubs]);
 
   const openClinic = () => {
     navigation?.navigate?.('Clinic');
+  };
+
+  const guardCloud = () => {
+    if (isSupabaseConfigured()) return true;
+    Alert.alert('Supabase', LOCKER_SETUP_HINT);
+    return false;
+  };
+
+  const onCreateSquad = () => {
+    if (!guardCloud()) return;
+    textPrompt({
+      title: 'Create Training Squad',
+      message: 'Name your squad',
+      defaultValue: 'New Training Squad',
+      confirmLabel: 'Create',
+      onSubmit: async (name) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          const { hub, error } = await createTrainingSquad({
+            name,
+            createdBy: ACTIVE_USER?.handle || 'athlete',
+          });
+          if (error) {
+            Alert.alert('Squad', error.message || 'Could not create squad');
+            return;
+          }
+          if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
+  const onStartSparring = () => {
+    if (!guardCloud()) return;
+    textPrompt({
+      title: 'Start Sparring Log',
+      message: 'Title for this log',
+      defaultValue: 'New Sparring Log',
+      confirmLabel: 'Start',
+      onSubmit: async (title) => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          const { hub, error } = await createSparringLog({
+            title,
+            createdBy: ACTIVE_USER?.handle || 'athlete',
+          });
+          if (error) {
+            Alert.alert('Sparring', error.message || 'Could not start log');
+            return;
+          }
+          if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
   };
 
   return (
@@ -124,6 +226,14 @@ export default function LockerRoomScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: 120 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={HUB_ACCENT}
+            colors={[HUB_ACCENT]}
+          />
+        }
       >
         <TouchableOpacity
           style={styles.navCard}
@@ -140,14 +250,24 @@ export default function LockerRoomScreen({ navigation }) {
 
         <Text style={styles.sectionLabel}>ACTIVE HUBS</Text>
 
-        {HUBS.map((hub) => (
+        {hubs.map((hub) => (
           <HubCard key={hub.id} item={hub} onPress={() => {}} />
         ))}
 
-        <TouchableOpacity style={styles.textAction} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={styles.textAction}
+          activeOpacity={0.75}
+          onPress={onCreateSquad}
+          disabled={busy}
+        >
           <Text style={styles.textActionLabel}>+ CREATE TRAINING SQUAD</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.textAction} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={styles.textAction}
+          activeOpacity={0.75}
+          onPress={onStartSparring}
+          disabled={busy}
+        >
           <Text style={styles.textActionLabel}>+ START SPARRING LOG</Text>
         </TouchableOpacity>
       </ScrollView>

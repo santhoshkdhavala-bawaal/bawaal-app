@@ -6,7 +6,7 @@
  * crimson SUGGESTED / + Follow as shipped. Do not modify without an explicit unlock.
  * See `.cursor/rules/bawaal-passport-locked.mdc`.
  */
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   Image,
   RefreshControl,
@@ -28,6 +28,7 @@ import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import VerifiedBadge from './src/components/VerifiedBadge';
 import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
+import { fetchPassportGraph } from './src/services/profilesService';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -283,12 +284,24 @@ export default function ProfileScreen({ navigation }) {
   const { openProfileGateway } = useMainTabs();
   const [selected, setSelected] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [me, setMe] = useState(CURRENT_USER);
+  const [followingList, setFollowingList] = useState(FOLLOWING);
+  const [suggestedList, setSuggestedList] = useState(SUGGESTED);
   const [followedIds, setFollowedIds] = useState(
     () => new Set(FOLLOWING.map((a) => a.id))
   );
 
-  const followingList = useMemo(() => FOLLOWING, []);
-  const suggestedList = useMemo(() => SUGGESTED, []);
+  const loadProfiles = useCallback(async () => {
+    const graph = await fetchPassportGraph();
+    setMe(graph.me || CURRENT_USER);
+    setFollowingList(graph.following?.length ? graph.following : FOLLOWING);
+    setSuggestedList(graph.suggested?.length ? graph.suggested : SUGGESTED);
+    setFollowedIds(new Set((graph.following || FOLLOWING).map((a) => a.id)));
+  }, []);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
 
   const toggleFollow = useCallback((id) => {
     setFollowedIds((prev) => {
@@ -314,15 +327,13 @@ export default function ProfileScreen({ navigation }) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refreshArenaPostsFromSupabase();
-      // Re-sync follow set from demo graph (swap for Supabase follows later)
-      setFollowedIds(new Set(FOLLOWING.map((a) => a.id)));
+      await Promise.all([refreshArenaPostsFromSupabase(), loadProfiles()]);
     } catch (err) {
       console.warn('[Passport] refresh failed:', err?.message || err);
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [loadProfiles]);
 
   return (
     <View style={styles.container}>
@@ -365,7 +376,7 @@ export default function ProfileScreen({ navigation }) {
           />
         ) : (
           <>
-            <MeCard user={CURRENT_USER} />
+            <MeCard user={me} />
 
             <Text style={[styles.sectionTitle, styles.followingSectionTitle]}>
               FOLLOWING
