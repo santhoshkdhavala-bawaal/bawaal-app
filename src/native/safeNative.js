@@ -6,7 +6,9 @@
 import Constants from 'expo-constants';
 import { MOCK_EXPO_AV, MOCK_AGORA_SDK } from './nativeMocks';
 
-export const isExpoGo = Constants.appOwnership === 'expo';
+export const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  Constants.executionEnvironment === 'storeClient';
 
 export const ExpoAvModule = MOCK_EXPO_AV;
 export const AgoraSdkModule = MOCK_AGORA_SDK;

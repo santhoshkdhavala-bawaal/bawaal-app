@@ -1,17 +1,19 @@
 /**
  * Runtime environment flags for BAWAAL.
  *
- * Expo Go cannot load custom native binaries (react-native-agora, custom
- * Fabric video views). Use these flags to swap in JS-only placeholders so
- * screens like AthleteDashboard / BattleScreen keep navigating in Expo Go.
+ * Expo Go cannot load custom native binaries (react-native-agora, expo-av /
+ * ExponentAV). Use these flags to swap in JS-only placeholders so screens
+ * keep navigating without native-module crashes.
  */
 import Constants from 'expo-constants';
 
 /**
  * True when the JS bundle is running inside the Expo Go client.
- * Preferred over executionEnvironment — StoreClient also covers dev-client.
+ * Covers both appOwnership === 'expo' and StoreClient executionEnvironment.
  */
-export const isExpoGo = Constants.appOwnership === 'expo';
+export const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  Constants.executionEnvironment === 'storeClient';
 
 /** Dev / production builds that ship with custom native modules. */
 export const isNativeBuild = !isExpoGo;

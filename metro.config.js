@@ -7,18 +7,31 @@ const config = getDefaultConfig(__dirname);
 config.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
 
 /**
- * Expo Go (`npm run start:go` → BAWAAL_EXPO_GO=1):
- *   - safeNative → mock-only file (no Agora / expo-av)
- *   - expo-av → stub (blocks ExponentAV native lookup)
- *   - react-native-agora → stub
- * Dev-client (`npm start`):
- *   - safeNative → safeNative.real.js (guarded expo-av require)
+ * Expo Go / plain packager → stub expo-av (no ExponentAV).
+ * Dev-client / EAS / run:android|ios → real native modules.
+ *
+ *   npm run start:go  → stubs
+ *   npm start         → real (BAWAAL_DEV_CLIENT=1)
+ *   npx expo start    → stubs (safe Expo Go default)
+ *   eas build         → real (EAS_BUILD=true)
  */
 const lifecycle = process.env.npm_lifecycle_event || '';
-const stubNativeModules =
+
+const forceStub =
   process.env.BAWAAL_EXPO_GO === '1' ||
   lifecycle === 'start:go' ||
   lifecycle === 'web';
+
+const allowRealNative =
+  process.env.BAWAAL_DEV_CLIENT === '1' ||
+  process.env.BAWAAL_USE_NATIVE_AV === '1' ||
+  process.env.EAS_BUILD === 'true' ||
+  lifecycle === 'android' ||
+  lifecycle === 'ios' ||
+  lifecycle === 'prebuild' ||
+  lifecycle === 'build:android:dev';
+
+const stubNativeModules = forceStub || !allowRealNative;
 
 const PROJECT_ROOT = __dirname;
 const SAFE_NATIVE_MOCK = path.resolve(PROJECT_ROOT, 'src/native/safeNative.js');
@@ -71,13 +84,17 @@ function isBridgeModule(moduleName) {
   );
 }
 
+function isExpoAvModule(moduleName) {
+  const name = String(moduleName || '');
+  return name === 'expo-av' || name.startsWith('expo-av/');
+}
+
 const previousResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (isSafeNativeModule(moduleName)) {
     return {
       type: 'sourceFile',
-      // Expo Go keeps the mock file; remapping to itself is intentional + cache-bust friendly
       filePath: stubNativeModules ? SAFE_NATIVE_MOCK : SAFE_NATIVE_REAL,
     };
   }
@@ -96,11 +113,8 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  // Keep real expo-av (ExponentAV) out of the Expo Go graph entirely.
-  if (
-    stubNativeModules &&
-    (moduleName === 'expo-av' || String(moduleName).startsWith('expo-av/'))
-  ) {
+  // Always keep real expo-av out of Expo Go / default bundles.
+  if (stubNativeModules && isExpoAvModule(moduleName)) {
     return {
       type: 'sourceFile',
       filePath: EXPO_AV_STUB,
@@ -145,7 +159,11 @@ if (stubNativeModules) {
   }
 
   console.log(
-    '[metro] BAWAAL Expo Go stubs active — safeNative mock, expo-av + Agora blocked'
+    '[metro] BAWAAL stubs ON — expo-av → placeholder, Agora blocked (Expo Go safe)'
+  );
+} else {
+  console.log(
+    '[metro] BAWAAL native modules ON — real expo-av + Agora (dev-client)'
   );
 }
 

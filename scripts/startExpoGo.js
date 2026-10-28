@@ -7,7 +7,9 @@
  */
 const { spawn } = require('child_process');
 
-process.env.BAWAAL_EXPO_GO = '1';
+const env = { ...process.env, BAWAAL_EXPO_GO: '1' };
+delete env.BAWAAL_DEV_CLIENT;
+delete env.BAWAAL_USE_NATIVE_AV;
 
 const extraArgs = process.argv.slice(2);
 const args = ['expo', 'start', '--clear', ...extraArgs];
@@ -15,10 +17,7 @@ const args = ['expo', 'start', '--clear', ...extraArgs];
 const child = spawn('npx', args, {
   stdio: 'inherit',
   shell: true,
-  env: {
-    ...process.env,
-    BAWAAL_EXPO_GO: '1',
-  },
+  env,
 });
 
 child.on('exit', (code, signal) => {

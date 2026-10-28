@@ -1,44 +1,53 @@
 /**
  * Dev-client / release gate.
- * Metro loads this instead of safeNative.js when BAWAAL_EXPO_GO is unset.
+ * Metro loads this ONLY when BAWAAL_DEV_CLIENT=1 (see metro.config.js).
  *
- * expo-av is loaded via guarded require (never a static import) so opening
- * this bundle inside Expo Go cannot throw `Cannot find native module ExponentAV`.
+ * CRITICAL: never require('expo-av') at module top-level — ExponentAV is
+ * missing in Expo Go and will crash boot if this file is evaluated there.
  */
 import Constants from 'expo-constants';
 import * as Agora from 'react-native-agora';
 import { MOCK_EXPO_AV, MOCK_AGORA_SDK } from './nativeMocks';
 
-export const isExpoGo = Constants.appOwnership === 'expo';
+const ownership = Constants.appOwnership;
+const executionEnvironment = Constants.executionEnvironment;
 
-function resolveExpoAv() {
-  if (isExpoGo) return MOCK_EXPO_AV;
+export const isExpoGo =
+  ownership === 'expo' || executionEnvironment === 'storeClient';
+
+let cachedExpoAv = undefined;
+
+function tryRequireExpoAv() {
+  if (cachedExpoAv !== undefined) return cachedExpoAv;
+  if (isExpoGo) {
+    cachedExpoAv = null;
+    return null;
+  }
   try {
     // eslint-disable-next-line global-require, import/no-extraneous-dependencies
     const mod = require('expo-av');
     if (mod?.Video) {
-      return { Video: mod.Video, ResizeMode: mod.ResizeMode };
+      cachedExpoAv = { Video: mod.Video, ResizeMode: mod.ResizeMode };
+      return cachedExpoAv;
     }
   } catch (err) {
     console.warn('[safeNative] expo-av unavailable:', err?.message || err);
   }
-  return MOCK_EXPO_AV;
+  cachedExpoAv = null;
+  return null;
 }
 
-const realExpoAv = resolveExpoAv();
-const realAgora = Agora;
-
-export const ExpoAvModule = isExpoGo ? MOCK_EXPO_AV : realExpoAv;
-export const AgoraSdkModule = isExpoGo ? MOCK_AGORA_SDK : realAgora;
+export const ExpoAvModule = MOCK_EXPO_AV;
+export const AgoraSdkModule = isExpoGo ? MOCK_AGORA_SDK : Agora;
 
 export function loadExpoAv() {
   if (isExpoGo) return null;
-  return realExpoAv?.Video && realExpoAv !== MOCK_EXPO_AV ? realExpoAv : null;
+  return tryRequireExpoAv();
 }
 
 export function loadAgoraSdk() {
   if (isExpoGo) return null;
-  return realAgora?.createAgoraRtcEngine ? realAgora : null;
+  return Agora?.createAgoraRtcEngine ? Agora : null;
 }
 
 export function safeRequire() {
@@ -46,11 +55,12 @@ export function safeRequire() {
 }
 
 export function getNativeBridgeInfo() {
+  const av = tryRequireExpoAv();
   return {
     isExpoGo,
     isRealNativeModules: !isExpoGo,
-    hasExpoAv: Boolean(realExpoAv?.Video) && realExpoAv !== MOCK_EXPO_AV && !isExpoGo,
-    hasAgora: Boolean(realAgora?.createAgoraRtcEngine) && !isExpoGo,
+    hasExpoAv: Boolean(av?.Video),
+    hasAgora: Boolean(Agora?.createAgoraRtcEngine) && !isExpoGo,
   };
 }
 
