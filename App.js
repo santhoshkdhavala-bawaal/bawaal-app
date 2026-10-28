@@ -15,6 +15,7 @@ import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
+import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 
 enableScreens(true);
@@ -96,6 +97,7 @@ function EntryScreen({ navigation }) {
       <RoleSelection
         onCompleteRegistration={async (userData) => {
           try {
+            applyRegisteredProfile(userData || {});
             await setRegisteredSession(userData || {});
           } catch (err) {
             console.warn('Failed to persist registration:', err?.message || err);

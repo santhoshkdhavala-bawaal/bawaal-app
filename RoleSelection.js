@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,7 +8,6 @@ import {
   ScrollView,
   Image,
   Modal,
-  FlatList,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -16,33 +15,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-const COUNTRIES = [
-  { name: 'India', flag: '🇮🇳' },
-  { name: 'UK', flag: '🇬🇧' },
-  { name: 'USA', flag: '🇺🇸' },
-  { name: 'Germany', flag: '🇩🇪' },
-  { name: 'France', flag: '🇫🇷' },
-  { name: 'Italy', flag: '🇮🇹' },
-  { name: 'Spain', flag: '🇪🇸' },
-  { name: 'Australia', flag: '🇦🇺' },
-  { name: 'New Zealand', flag: '🇳🇿' },
-  { name: 'Thailand', flag: '🇹🇭' },
-  { name: 'Japan', flag: '🇯🇵' },
-  { name: 'Philippines', flag: '🇵🇭' },
-];
-
-const LANGUAGES = [
-  { name: 'English', code: 'en' },
-  { name: 'हिंदी', code: 'hi' },
-  { name: 'Español', code: 'es' },
-  { name: 'Français', code: 'fr' },
-  { name: 'Deutsch', code: 'de' },
-  { name: 'Italiano', code: 'it' },
-  { name: '日本語', code: 'ja' },
-  { name: 'Tagalog', code: 'tl' },
-  { name: 'ไทย', code: 'th' },
-];
+import { resolveLocationFlag } from './src/utils/locationFlag';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -50,36 +23,33 @@ const ROLES = [
   { key: 'scout', label: 'Scout' },
 ];
 
+/** Exact platform sport categories. */
 const SPORT_INTERESTS = [
-  'All Sports',
   'Cricket',
   'Football',
-  'MMA',
-  'Boxing',
-  'Basketball',
+  'Gym',
   'Kabaddi',
-  'Motorsport',
-  'Tennis',
-  'Athletics',
+  'Combat',
+  'THROTTLE',
+  'WAVE & BLADE',
+  'COURT KINGS',
+  'SKY & SUMMIT',
 ];
 
 const BG = '#000000';
-const SURFACE = '#0A0A0A';
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
-const MUTED = '#A0A0A0';
-const BORDER = '#FFFFFF';
-const BORDER_DIM = 'rgba(232, 236, 233, 0.35)';
+const MUTED = '#8A8A8A';
+const LINE = 'rgba(255, 255, 255, 0.18)';
+const LINE_FOCUS = 'rgba(255, 255, 255, 0.72)';
 
-function PillRow({ options, selected, onSelect, multi = false }) {
+function PillRow({ options, selected, onSelect }) {
   return (
     <View style={styles.pillWrap}>
       {options.map((opt) => {
         const key = typeof opt === 'string' ? opt : opt.key;
         const label = typeof opt === 'string' ? opt : opt.label;
-        const active = multi
-          ? Array.isArray(selected) && selected.includes(key)
-          : selected === key;
+        const active = selected === key;
         return (
           <TouchableOpacity
             key={key}
@@ -99,12 +69,44 @@ function PillRow({ options, selected, onSelect, multi = false }) {
   );
 }
 
-export default function RoleSelection({ onCompleteRegistration }) {
-  const [country, setCountry] = useState(COUNTRIES[0]);
-  const [language, setLanguage] = useState(LANGUAGES[0]);
+function UnderlineField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  focused,
+  onFocus,
+  onBlur,
+  keyboardType,
+  autoCapitalize,
+  autoCorrect,
+  leading,
+  trailing,
+}) {
+  return (
+    <View style={styles.formGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={[styles.fieldRow, focused && styles.fieldRowFocused]}>
+        {leading ? <View style={styles.fieldLeading}>{leading}</View> : null}
+        <TextInput
+          style={styles.input}
+          placeholder={placeholder}
+          placeholderTextColor={MUTED}
+          value={value}
+          onChangeText={onChangeText}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          onFocus={onFocus}
+          onBlur={onBlur}
+        />
+        {trailing ? <View style={styles.fieldTrailing}>{trailing}</View> : null}
+      </View>
+    </View>
+  );
+}
 
-  const [countryModalVisible, setCountryModalVisible] = useState(false);
-  const [langModalVisible, setLangModalVisible] = useState(false);
+export default function RoleSelection({ onCompleteRegistration }) {
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
 
@@ -112,9 +114,9 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const [realName, setRealName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('fan');
-  const [sportInterest, setSportInterest] = useState('All Sports');
   const [location, setLocation] = useState('');
+  const [role, setRole] = useState('fan');
+  const [sportInterest, setSportInterest] = useState(SPORT_INTERESTS[0]);
   const [focusedField, setFocusedField] = useState(null);
 
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
@@ -122,6 +124,12 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const otpInputs = useRef([]);
+
+  const locationMeta = useMemo(
+    () => resolveLocationFlag(location),
+    [location]
+  );
+  const locationFlag = locationMeta.flag || '';
 
   const handleTermsScroll = ({ nativeEvent }) => {
     const isCloseToBottom =
@@ -174,6 +182,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
       return;
     }
 
+    const resolved = resolveLocationFlag(location);
     const userData = {
       handle: handle.trim(),
       displayName: handle.trim(),
@@ -185,8 +194,10 @@ export default function RoleSelection({ onCompleteRegistration }) {
       sport: sportInterest,
       sportInterest,
       location: location.trim(),
-      country: country.name,
-      language: language.name,
+      flag: resolved.flag || '🌐',
+      country: resolved.country || null,
+      countryFlag: resolved.flag || '🌐',
+      label: resolved.country || location.trim(),
     };
 
     setOtpModalVisible(false);
@@ -196,10 +207,12 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
-  const inputStyle = (key) => [
-    styles.input,
-    focusedField === key && styles.inputFocused,
-  ];
+  const flagBadge =
+    locationFlag && locationFlag !== '🌐' ? (
+      <Text style={styles.flagEmoji} accessibilityLabel="Location country flag">
+        {locationFlag}
+      </Text>
+    ) : null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -216,7 +229,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
         >
           <View style={styles.brandHeader}>
             <Image
-              source={require('./assets/explosive_golden_bawaal_logo.png')}
+              source={require('./assets/BAWAAL_white_full.png')}
               style={styles.logoImage}
               resizeMode="contain"
             />
@@ -225,106 +238,82 @@ export default function RoleSelection({ onCompleteRegistration }) {
             </Text>
           </View>
 
-          <View style={styles.dropdownRow}>
-            <View style={styles.dropdownBox}>
-              <Text style={styles.fieldLabel}>COUNTRY</Text>
-              <TouchableOpacity
-                style={styles.dropdownButton}
-                onPress={() => setCountryModalVisible(true)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.dropdownText}>
-                  {country.flag}  {country.name}  ▾
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.dropdownBox}>
-              <Text style={styles.fieldLabel}>LANGUAGE</Text>
-              <TouchableOpacity
-                style={styles.dropdownButton}
-                onPress={() => setLangModalVisible(true)}
-                activeOpacity={0.75}
-              >
-                <Text style={styles.dropdownText}>{language.name}  ▾</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={styles.card}>
+          <View style={styles.form}>
             <Text style={styles.cardTitle}>ENTER THE ARENA</Text>
             <Text style={styles.cardHint}>Claim your identity. Join the digital arena.</Text>
 
-            {/* 1. Display Name / Handle */}
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>DISPLAY NAME / HANDLE</Text>
-              <TextInput
-                style={inputStyle('handle')}
-                placeholder="e.g. King of the Ring"
-                placeholderTextColor={MUTED}
-                value={handle}
-                onChangeText={setHandle}
-                autoCapitalize="words"
-                onFocus={() => setFocusedField('handle')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
+            <UnderlineField
+              label="DISPLAY NAME / HANDLE"
+              value={handle}
+              onChangeText={setHandle}
+              placeholder="e.g. King of the Ring"
+              autoCapitalize="words"
+              focused={focusedField === 'handle'}
+              onFocus={() => setFocusedField('handle')}
+              onBlur={() => setFocusedField(null)}
+              trailing={flagBadge}
+            />
 
-            {/* 2. Real Name & Email */}
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>REAL NAME</Text>
-              <TextInput
-                style={inputStyle('realName')}
-                placeholder="Legal name"
-                placeholderTextColor={MUTED}
-                value={realName}
-                onChangeText={setRealName}
-                autoCapitalize="words"
-                onFocus={() => setFocusedField('realName')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
+            <UnderlineField
+              label="REAL NAME"
+              value={realName}
+              onChangeText={setRealName}
+              placeholder="Legal name"
+              autoCapitalize="words"
+              focused={focusedField === 'realName'}
+              onFocus={() => setFocusedField('realName')}
+              onBlur={() => setFocusedField(null)}
+            />
 
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
-              <TextInput
-                style={inputStyle('email')}
-                placeholder="name@example.com"
-                placeholderTextColor={MUTED}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={email}
-                onChangeText={setEmail}
-                onFocus={() => setFocusedField('email')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
+            <UnderlineField
+              label="EMAIL ADDRESS"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="name@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              focused={focusedField === 'email'}
+              onFocus={() => setFocusedField('email')}
+              onBlur={() => setFocusedField(null)}
+            />
 
-            {/* 3. Mobile Number */}
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
-              <TextInput
-                style={inputStyle('phone')}
-                placeholder="+91 · OTP verification"
-                placeholderTextColor={MUTED}
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
-                onFocus={() => setFocusedField('phone')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
+            <UnderlineField
+              label="MOBILE NUMBER"
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="+91 · OTP verification"
+              keyboardType="phone-pad"
+              focused={focusedField === 'phone'}
+              onFocus={() => setFocusedField('phone')}
+              onBlur={() => setFocusedField(null)}
+            />
 
-            {/* 4. Role Selector */}
+            <UnderlineField
+              label="LOCATION"
+              value={location}
+              onChangeText={setLocation}
+              placeholder="e.g. Mumbai, India / New York, USA"
+              autoCapitalize="words"
+              focused={focusedField === 'location'}
+              onFocus={() => setFocusedField('location')}
+              onBlur={() => setFocusedField(null)}
+              trailing={
+                locationFlag ? (
+                  <Text style={styles.flagEmoji}>{locationFlag}</Text>
+                ) : null
+              }
+            />
+            <Text style={styles.helperText}>
+              Used for regional matchmaking and scouting.
+              {locationMeta.country ? ` · ${locationMeta.country}` : ''}
+            </Text>
+
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>ROLE</Text>
-              <View style={styles.roleBox}>
-                <PillRow options={ROLES} selected={role} onSelect={setRole} />
-              </View>
+              <PillRow options={ROLES} selected={role} onSelect={setRole} />
             </View>
 
-            {/* 5. Sport Interest */}
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>SPORT INTEREST</Text>
               <PillRow
@@ -332,23 +321,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 selected={sportInterest}
                 onSelect={setSportInterest}
               />
-            </View>
-
-            {/* 6. Location */}
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>LOCATION</Text>
-              <TextInput
-                style={inputStyle('location')}
-                placeholder="e.g. Mumbai, India / New York, USA"
-                placeholderTextColor={MUTED}
-                value={location}
-                onChangeText={setLocation}
-                onFocus={() => setFocusedField('location')}
-                onBlur={() => setFocusedField(null)}
-              />
-              <Text style={styles.helperText}>
-                Used for regional matchmaking and scouting.
-              </Text>
             </View>
 
             <TouchableOpacity
@@ -377,64 +349,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Country Modal */}
-      <Modal visible={countryModalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setCountryModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Country</Text>
-            <FlatList
-              data={COUNTRIES}
-              keyExtractor={(item) => item.name}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    setCountry(item);
-                    setCountryModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>
-                    {item.flag}  {item.name}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Language Modal */}
-      <Modal visible={langModalVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setLangModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Language</Text>
-            <FlatList
-              data={LANGUAGES}
-              keyExtractor={(item) => item.code}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.modalItem}
-                  onPress={() => {
-                    setLanguage(item);
-                    setLangModalVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalItemText}>{item.name}</Text>
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
 
       {/* Terms Modal */}
       <Modal visible={termsModalVisible} transparent animationType="slide">
@@ -513,7 +427,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
           <View style={styles.modalOverlay}>
             <View style={styles.otpModalContent}>
               <Image
-                source={require('./assets/explosive_golden_bawaal_logo.png')}
+                source={require('./assets/BAWAAL_white_icon.png')}
                 style={styles.otpLogo}
                 resizeMode="contain"
               />
@@ -561,157 +475,140 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
   scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 8,
-    paddingBottom: 48,
+    paddingHorizontal: 22,
+    paddingTop: 12,
+    paddingBottom: 56,
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 28,
   },
   logoImage: {
-    width: 240,
-    height: 150,
-    marginBottom: 8,
+    width: 260,
+    height: 88,
+    marginBottom: 14,
   },
   brandSubheader: {
     fontSize: 13,
     color: OFF_WHITE,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '400',
     lineHeight: 19,
-    paddingHorizontal: 8,
-    letterSpacing: 0.2,
-  },
-  dropdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    gap: 10,
-  },
-  dropdownBox: {
-    flex: 1,
-  },
-  dropdownButton: {
-    backgroundColor: SURFACE,
-    borderRadius: 0,
-    paddingVertical: 12,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: BORDER_DIM,
+    opacity: 0.85,
   },
-  dropdownText: {
-    color: WHITE,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  card: {
-    borderRadius: 0,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: BG,
+  form: {
+    width: '100%',
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '900',
+    fontSize: 17,
+    fontWeight: '800',
     color: WHITE,
-    letterSpacing: 2,
+    letterSpacing: 2.4,
     textAlign: 'center',
   },
   cardHint: {
     fontSize: 12,
     color: MUTED,
     textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 20,
+    marginTop: 8,
+    marginBottom: 28,
   },
   formGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
   fieldLabel: {
     color: MUTED,
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 8,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    marginBottom: 10,
+  },
+  fieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LINE,
+    paddingBottom: 10,
+  },
+  fieldRowFocused: {
+    borderBottomColor: LINE_FOCUS,
+  },
+  fieldLeading: {
+    marginRight: 8,
+  },
+  fieldTrailing: {
+    marginLeft: 8,
   },
   input: {
-    backgroundColor: SURFACE,
-    borderRadius: 0,
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: BORDER_DIM,
+    flex: 1,
+    backgroundColor: 'transparent',
+    paddingVertical: 4,
+    paddingHorizontal: 0,
     color: WHITE,
-    fontSize: 15,
+    fontSize: 16,
   },
-  inputFocused: {
-    borderColor: WHITE,
+  flagEmoji: {
+    fontSize: 20,
+    lineHeight: 24,
   },
   helperText: {
-    marginTop: 6,
+    marginTop: -10,
+    marginBottom: 18,
     fontSize: 11,
     color: MUTED,
     lineHeight: 15,
   },
-  roleBox: {
-    borderWidth: 1,
-    borderColor: BORDER_DIM,
-    padding: 10,
-    backgroundColor: SURFACE,
-  },
   pillWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 10,
   },
   pill: {
-    borderWidth: 1,
-    borderColor: BORDER_DIM,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: BG,
-    minWidth: 72,
-    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    marginRight: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'transparent',
   },
   pillActive: {
-    backgroundColor: WHITE,
-    borderColor: WHITE,
+    borderBottomColor: WHITE,
   },
   pillText: {
-    color: OFF_WHITE,
+    color: MUTED,
     fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: '600',
+    letterSpacing: 0.4,
   },
   pillTextActive: {
-    color: BG,
+    color: WHITE,
+    fontWeight: '800',
   },
   termsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 18,
-    gap: 10,
+    marginTop: 8,
+    marginBottom: 22,
+    gap: 12,
   },
   checkbox: {
-    width: 20,
-    height: 20,
+    width: 18,
+    height: 18,
     borderRadius: 0,
-    borderWidth: 1,
-    borderColor: WHITE,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: LINE_FOCUS,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: BG,
+    backgroundColor: 'transparent',
   },
   checkboxChecked: {
     backgroundColor: WHITE,
+    borderColor: WHITE,
   },
   checkmark: {
     color: BG,
     fontWeight: '900',
-    fontSize: 12,
+    fontSize: 11,
   },
   termsText: {
     color: OFF_WHITE,
@@ -722,25 +619,22 @@ const styles = StyleSheet.create({
   termsLink: {
     color: WHITE,
     textDecorationLine: 'underline',
-    fontWeight: '700',
+    fontWeight: '600',
   },
   ctaBtn: {
     backgroundColor: WHITE,
     borderRadius: 0,
-    paddingVertical: 15,
+    paddingVertical: 16,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: WHITE,
   },
   ctaBtnDisabled: {
-    backgroundColor: BG,
-    borderColor: BORDER_DIM,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   ctaBtnText: {
     color: BG,
     fontWeight: '900',
-    fontSize: 14,
-    letterSpacing: 1.5,
+    fontSize: 13,
+    letterSpacing: 1.8,
   },
   ctaBtnTextDisabled: {
     color: MUTED,
@@ -754,31 +648,20 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: BG,
     borderRadius: 0,
-    padding: 20,
+    padding: 22,
     width: '88%',
     maxHeight: '80%',
-    borderWidth: 1,
-    borderColor: WHITE,
   },
   termsModal: {
     height: '80%',
   },
   modalTitle: {
     color: WHITE,
-    fontSize: 16,
-    fontWeight: '900',
-    letterSpacing: 1,
-    marginBottom: 14,
-    textAlign: 'center',
-  },
-  modalItem: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER_DIM,
-  },
-  modalItemText: {
-    color: WHITE,
     fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 16,
+    textAlign: 'center',
   },
   termsScrollView: {
     marginBottom: 12,
@@ -786,7 +669,7 @@ const styles = StyleSheet.create({
   legalHeading: {
     color: WHITE,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     marginTop: 12,
     marginBottom: 4,
   },
@@ -801,14 +684,11 @@ const styles = StyleSheet.create({
   acceptTermsBtn: {
     backgroundColor: WHITE,
     borderRadius: 0,
-    paddingVertical: 13,
+    paddingVertical: 14,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: WHITE,
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: BG,
-    borderColor: BORDER_DIM,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   acceptTermsBtnText: {
     color: BG,
@@ -822,44 +702,42 @@ const styles = StyleSheet.create({
   otpModalContent: {
     backgroundColor: BG,
     borderRadius: 0,
-    padding: 24,
+    padding: 28,
     width: '88%',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: WHITE,
   },
   otpLogo: {
-    width: 140,
-    height: 70,
-    marginBottom: 10,
+    width: 72,
+    height: 72,
+    marginBottom: 16,
   },
   otpTitle: {
     color: WHITE,
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-    marginBottom: 4,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    marginBottom: 6,
   },
   otpSubtitle: {
     color: MUTED,
     fontSize: 12,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   otpInputContainer: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 28,
   },
   otpBox: {
-    width: 42,
+    width: 40,
     height: 48,
-    backgroundColor: SURFACE,
+    backgroundColor: 'transparent',
     borderRadius: 0,
-    borderWidth: 1,
-    borderColor: BORDER,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LINE_FOCUS,
     color: WHITE,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     textAlign: 'center',
   },
