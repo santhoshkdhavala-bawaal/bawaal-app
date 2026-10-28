@@ -44,34 +44,85 @@ const LANGUAGES = [
   { name: 'ไทย', code: 'th' },
 ];
 
+const ROLES = [
+  { key: 'fan', label: 'Fan' },
+  { key: 'athlete', label: 'Athlete' },
+  { key: 'scout', label: 'Scout' },
+];
+
+const SPORT_INTERESTS = [
+  'All Sports',
+  'Cricket',
+  'Football',
+  'MMA',
+  'Boxing',
+  'Basketball',
+  'Kabaddi',
+  'Motorsport',
+  'Tennis',
+  'Athletics',
+];
+
+const BG = '#000000';
+const SURFACE = '#0A0A0A';
+const WHITE = '#FFFFFF';
+const OFF_WHITE = '#E8ECE9';
+const MUTED = '#A0A0A0';
+const BORDER = '#FFFFFF';
+const BORDER_DIM = 'rgba(232, 236, 233, 0.35)';
+
+function PillRow({ options, selected, onSelect, multi = false }) {
+  return (
+    <View style={styles.pillWrap}>
+      {options.map((opt) => {
+        const key = typeof opt === 'string' ? opt : opt.key;
+        const label = typeof opt === 'string' ? opt : opt.label;
+        const active = multi
+          ? Array.isArray(selected) && selected.includes(key)
+          : selected === key;
+        return (
+          <TouchableOpacity
+            key={key}
+            style={[styles.pill, active && styles.pillActive]}
+            onPress={() => onSelect(key)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+          >
+            <Text style={[styles.pillText, active && styles.pillTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function RoleSelection({ onCompleteRegistration }) {
   const [country, setCountry] = useState(COUNTRIES[0]);
   const [language, setLanguage] = useState(LANGUAGES[0]);
 
-  // Modal Controls
   const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [langModalVisible, setLangModalVisible] = useState(false);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
 
-  // Form State
-  const [name, setName] = useState('');
-  const [age, setAge] = useState('');
-  const [gender, setGender] = useState('Male');
-  const [phone, setPhone] = useState('');
+  const [handle, setHandle] = useState('');
+  const [realName, setRealName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [role, setRole] = useState('fan');
+  const [sportInterest, setSportInterest] = useState('All Sports');
   const [location, setLocation] = useState('');
-  const [sport, setSport] = useState('');
+  const [focusedField, setFocusedField] = useState(null);
 
-  // Legal Terms State
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // OTP State & Input References
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const otpInputs = useRef([]);
 
-  // Handle Terms Scroll
   const handleTermsScroll = ({ nativeEvent }) => {
     const isCloseToBottom =
       nativeEvent.layoutMeasurement.height + nativeEvent.contentOffset.y >=
@@ -81,19 +132,19 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
-  // Trigger Send OTP Modal
   const handleSendOtpTrigger = () => {
-    if (!name || !age || !phone || !email || !location || !sport) {
-      Alert.alert('Missing Fields', 'Please fill in all registration details before proceeding.');
+    if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
+      Alert.alert('Missing Fields', 'Please complete all required fields before continuing.');
       return;
     }
-
-    const parsedAge = parseInt(age, 10);
-    if (isNaN(parsedAge) || parsedAge < 13) {
-      Alert.alert('Age Restriction', 'BAWAAL is strictly for users aged 13 and above.');
+    if (!role) {
+      Alert.alert('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
       return;
     }
-
+    if (!sportInterest) {
+      Alert.alert('Sport Interest', 'Pick a sport interest for your feed.');
+      return;
+    }
     if (!agreedToTerms) {
       Alert.alert('Terms Required', 'Please review and accept the Terms of Service & Privacy Policy.');
       return;
@@ -101,12 +152,10 @@ export default function RoleSelection({ onCompleteRegistration }) {
     setOtpModalVisible(true);
   };
 
-  // Handle OTP Input with Auto-Advancing Focus
   const handleOtpChange = (value, index) => {
     const newOtp = [...otpDigits];
     newOtp[index] = value;
     setOtpDigits(newOtp);
-
     if (value && index < 5) {
       otpInputs.current[index + 1]?.focus();
     }
@@ -118,7 +167,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
-  // Final Arena Verification
   const handleEnterArena = () => {
     const fullOtp = otpDigits.join('');
     if (fullOtp.length < 6) {
@@ -127,13 +175,16 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
 
     const userData = {
-      name,
-      age,
-      gender,
-      phone,
-      email,
-      location,
-      sport,
+      handle: handle.trim(),
+      displayName: handle.trim(),
+      name: realName.trim(),
+      realName: realName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      role,
+      sport: sportInterest,
+      sportInterest,
+      location: location.trim(),
       country: country.name,
       language: language.name,
     };
@@ -145,19 +196,24 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
+  const inputStyle = (key) => [
+    styles.input,
+    focusedField === key && styles.inputFocused,
+  ];
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={true}
+          showsVerticalScrollIndicator={false}
+          bounces
         >
-          {/* Brand Header */}
           <View style={styles.brandHeader}>
             <Image
               source={require('./assets/explosive_golden_bawaal_logo.png')}
@@ -169,159 +225,154 @@ export default function RoleSelection({ onCompleteRegistration }) {
             </Text>
           </View>
 
-          {/* Country & Language Selection */}
           <View style={styles.dropdownRow}>
             <View style={styles.dropdownBox}>
-              <Text style={styles.dropdownLabel}>COUNTRY 🌐</Text>
+              <Text style={styles.fieldLabel}>COUNTRY</Text>
               <TouchableOpacity
                 style={styles.dropdownButton}
                 onPress={() => setCountryModalVisible(true)}
+                activeOpacity={0.75}
               >
                 <Text style={styles.dropdownText}>
-                  {country.flag}  {country.name} ▼
+                  {country.flag}  {country.name}  ▾
                 </Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.dropdownBox}>
-              <Text style={styles.dropdownLabel}>LANGUAGE 💬</Text>
+              <Text style={styles.fieldLabel}>LANGUAGE</Text>
               <TouchableOpacity
                 style={styles.dropdownButton}
                 onPress={() => setLangModalVisible(true)}
+                activeOpacity={0.75}
               >
-                <Text style={styles.dropdownText}>{language.name} ▼</Text>
+                <Text style={styles.dropdownText}>{language.name}  ▾</Text>
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Landing Page Registration Card */}
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>ENTER THE ARENA</Text>
-            </View>
+            <Text style={styles.cardTitle}>ENTER THE ARENA</Text>
+            <Text style={styles.cardHint}>Claim your identity. Join the digital arena.</Text>
 
+            {/* 1. Display Name / Handle */}
             <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>FULL NAME</Text>
+              <Text style={styles.fieldLabel}>DISPLAY NAME / HANDLE</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. Alex Rider"
-                placeholderTextColor="#6E7480"
-                value={name}
-                onChangeText={setName}
+                style={inputStyle('handle')}
+                placeholder="e.g. King of the Ring"
+                placeholderTextColor={MUTED}
+                value={handle}
+                onChangeText={setHandle}
+                autoCapitalize="words"
+                onFocus={() => setFocusedField('handle')}
+                onBlur={() => setFocusedField(null)}
               />
             </View>
 
-            <View style={styles.rowGroup}>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.fieldLabel}>AGE</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Age (13+)"
-                  placeholderTextColor="#6E7480"
-                  keyboardType="numeric"
-                  value={age}
-                  onChangeText={setAge}
-                />
-              </View>
-
-              <View style={[styles.formGroup, { flex: 2 }]}>
-                <Text style={styles.fieldLabel}>GENDER</Text>
-                <View style={styles.genderRow}>
-                  {['Male', 'Female', 'Other'].map((g) => (
-                    <TouchableOpacity
-                      key={g}
-                      style={[
-                        styles.genderBtn,
-                        gender === g && styles.genderBtnActive,
-                      ]}
-                      onPress={() => setGender(g)}
-                    >
-                      <Text
-                        style={[
-                          styles.genderText,
-                          gender === g && styles.genderTextActive,
-                        ]}
-                      >
-                        {g}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-
+            {/* 2. Real Name & Email */}
             <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
+              <Text style={styles.fieldLabel}>REAL NAME</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Enter mobile number"
-                placeholderTextColor="#6E7480"
-                keyboardType="phone-pad"
-                value={phone}
-                onChangeText={setPhone}
+                style={inputStyle('realName')}
+                placeholder="Legal name"
+                placeholderTextColor={MUTED}
+                value={realName}
+                onChangeText={setRealName}
+                autoCapitalize="words"
+                onFocus={() => setFocusedField('realName')}
+                onBlur={() => setFocusedField(null)}
               />
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>EMAIL ADDRESS</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. alex@bawaal.com"
-                placeholderTextColor="#6E7480"
+                style={inputStyle('email')}
+                placeholder="name@example.com"
+                placeholderTextColor={MUTED}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
                 value={email}
                 onChangeText={setEmail}
+                onFocus={() => setFocusedField('email')}
+                onBlur={() => setFocusedField(null)}
               />
             </View>
 
+            {/* 3. Mobile Number */}
             <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>LOCATION (CITY / STATE)</Text>
+              <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
               <TextInput
-                style={styles.input}
-                placeholder="e.g. Mumbai, India"
-                placeholderTextColor="#6E7480"
+                style={inputStyle('phone')}
+                placeholder="+91 · OTP verification"
+                placeholderTextColor={MUTED}
+                keyboardType="phone-pad"
+                value={phone}
+                onChangeText={setPhone}
+                onFocus={() => setFocusedField('phone')}
+                onBlur={() => setFocusedField(null)}
+              />
+            </View>
+
+            {/* 4. Role Selector */}
+            <View style={styles.formGroup}>
+              <Text style={styles.fieldLabel}>ROLE</Text>
+              <View style={styles.roleBox}>
+                <PillRow options={ROLES} selected={role} onSelect={setRole} />
+              </View>
+            </View>
+
+            {/* 5. Sport Interest */}
+            <View style={styles.formGroup}>
+              <Text style={styles.fieldLabel}>SPORT INTEREST</Text>
+              <PillRow
+                options={SPORT_INTERESTS}
+                selected={sportInterest}
+                onSelect={setSportInterest}
+              />
+            </View>
+
+            {/* 6. Location */}
+            <View style={styles.formGroup}>
+              <Text style={styles.fieldLabel}>LOCATION</Text>
+              <TextInput
+                style={inputStyle('location')}
+                placeholder="e.g. Mumbai, India / New York, USA"
+                placeholderTextColor={MUTED}
                 value={location}
                 onChangeText={setLocation}
+                onFocus={() => setFocusedField('location')}
+                onBlur={() => setFocusedField(null)}
               />
+              <Text style={styles.helperText}>
+                Used for regional matchmaking and scouting.
+              </Text>
             </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>SPORT / ROLE / ACTIVITY</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Athlete, Esports, Commentator, Manager, Climbing"
-                placeholderTextColor="#6E7480"
-                value={sport}
-                onChangeText={setSport}
-              />
-            </View>
-
-            {/* Legal Agreement Checkbox */}
             <TouchableOpacity
               style={styles.termsContainer}
               onPress={() => setTermsModalVisible(true)}
+              activeOpacity={0.8}
             >
               <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-                {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
+                {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
               </View>
               <Text style={styles.termsText}>
                 I agree to the{' '}
-                <Text style={styles.termsLink}>
-                  Terms of Service & Privacy Policy
-                </Text>
+                <Text style={styles.termsLink}>Terms of Service & Privacy Policy</Text>
               </Text>
             </TouchableOpacity>
 
-            {/* Bottom Action Button */}
             <TouchableOpacity
-              style={[
-                styles.sendOtpBtn,
-                !agreedToTerms && styles.sendOtpBtnDisabled,
-              ]}
+              style={[styles.ctaBtn, !agreedToTerms && styles.ctaBtnDisabled]}
               onPress={handleSendOtpTrigger}
+              activeOpacity={0.85}
             >
-              <Text style={styles.sendOtpBtnText}>SEND OTP →</Text>
+              <Text style={[styles.ctaBtnText, !agreedToTerms && styles.ctaBtnTextDisabled]}>
+                SEND OTP
+              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -385,15 +436,16 @@ export default function RoleSelection({ onCompleteRegistration }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* Terms & Conditions Scroll Modal */}
+      {/* Terms Modal */}
       <Modal visible={termsModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { height: '80%' }]}>
+          <View style={[styles.modalContent, styles.termsModal]}>
             <Text style={styles.modalTitle}>Terms of Service & Legal Rules</Text>
             <ScrollView
               style={styles.termsScrollView}
               onScroll={handleTermsScroll}
               scrollEventThrottle={16}
+              showsVerticalScrollIndicator
             >
               <Text style={styles.legalHeading}>1. Age Eligibility & Parental Consent (13+)</Text>
               <Text style={styles.legalBody}>
@@ -437,8 +489,14 @@ export default function RoleSelection({ onCompleteRegistration }) {
                   setAgreedToTerms(true);
                   setTermsModalVisible(false);
                 }}
+                activeOpacity={0.85}
               >
-                <Text style={styles.acceptTermsBtnText}>
+                <Text
+                  style={[
+                    styles.acceptTermsBtnText,
+                    !hasScrolledToBottom && styles.acceptTermsBtnTextDisabled,
+                  ]}
+                >
                   {hasScrolledToBottom
                     ? 'I HAVE READ & AGREE'
                     : 'SCROLL TO BOTTOM TO ACCEPT'}
@@ -449,7 +507,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
         </View>
       </Modal>
 
-      {/* 6-Digit OTP Verification Modal */}
+      {/* OTP Modal */}
       <Modal visible={otpModalVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={styles.modalOverlay}>
@@ -468,7 +526,9 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 {otpDigits.map((digit, idx) => (
                   <TextInput
                     key={idx}
-                    ref={(ref) => (otpInputs.current[idx] = ref)}
+                    ref={(ref) => {
+                      otpInputs.current[idx] = ref;
+                    }}
                     style={styles.otpBox}
                     keyboardType="numeric"
                     maxLength={1}
@@ -480,10 +540,11 @@ export default function RoleSelection({ onCompleteRegistration }) {
               </View>
 
               <TouchableOpacity
-                style={styles.enterArenaModalBtn}
+                style={styles.ctaBtn}
                 onPress={handleEnterArena}
+                activeOpacity={0.85}
               >
-                <Text style={styles.enterArenaModalBtnText}>ENTER ARENA →</Text>
+                <Text style={styles.ctaBtnText}>ENTER ARENA</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -493,186 +554,196 @@ export default function RoleSelection({ onCompleteRegistration }) {
   );
 }
 
-const LANDING_BG = '#000000';
-const GOLD = '#FFD700';
-const CRIMSON = '#FF2A5F';
-const PLATINUM = '#E5E4E2';
-const CARD_BG = '#000000';
-const INPUT_BG = '#0A0C10';
-const MUTED = '#9EA3B0';
-const BORDER = 'rgba(229, 228, 226, 0.14)';
-
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   container: {
     flex: 1,
-    backgroundColor: LANDING_BG,
+    backgroundColor: BG,
   },
   scrollContent: {
-    padding: 18,
-    paddingBottom: 80,
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 48,
   },
   brandHeader: {
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   logoImage: {
-    width: 260,
-    height: 165,
-    marginBottom: 10,
+    width: 240,
+    height: 150,
+    marginBottom: 8,
   },
   brandSubheader: {
-    fontSize: 14,
-    color: '#FFFFFF',
+    fontSize: 13,
+    color: OFF_WHITE,
     textAlign: 'center',
-    fontWeight: '600',
-    lineHeight: 20,
-    paddingHorizontal: 10,
+    fontWeight: '500',
+    lineHeight: 19,
+    paddingHorizontal: 8,
+    letterSpacing: 0.2,
   },
   dropdownRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
-    gap: 12,
+    marginBottom: 16,
+    gap: 10,
   },
   dropdownBox: {
     flex: 1,
   },
-  dropdownLabel: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
   dropdownButton: {
-    backgroundColor: INPUT_BG,
-    borderRadius: 8,
+    backgroundColor: SURFACE,
+    borderRadius: 0,
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: BORDER_DIM,
   },
   dropdownText: {
-    color: '#FFFFFF',
+    color: WHITE,
     fontSize: 13,
     fontWeight: '600',
   },
   card: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: GOLD,
-    backgroundColor: CARD_BG,
-  },
-  cardHeader: {
-    marginBottom: 16,
+    borderRadius: 0,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: BG,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
-    color: GOLD,
-    letterSpacing: 1,
+    color: WHITE,
+    letterSpacing: 2,
     textAlign: 'center',
   },
-  formGroup: {
-    marginBottom: 14,
+  cardHint: {
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 20,
   },
-  rowGroup: {
-    flexDirection: 'row',
-    gap: 10,
+  formGroup: {
+    marginBottom: 16,
   },
   fieldLabel: {
     color: MUTED,
-    fontSize: 11,
-    fontWeight: '700',
-    marginBottom: 6,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 8,
   },
   input: {
-    backgroundColor: INPUT_BG,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: SURFACE,
+    borderRadius: 0,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    borderColor: BORDER,
-    color: '#FFFFFF',
-    fontSize: 14,
+    borderColor: BORDER_DIM,
+    color: WHITE,
+    fontSize: 15,
   },
-  genderRow: {
+  inputFocused: {
+    borderColor: WHITE,
+  },
+  helperText: {
+    marginTop: 6,
+    fontSize: 11,
+    color: MUTED,
+    lineHeight: 15,
+  },
+  roleBox: {
+    borderWidth: 1,
+    borderColor: BORDER_DIM,
+    padding: 10,
+    backgroundColor: SURFACE,
+  },
+  pillWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  genderBtn: {
-    flex: 1,
-    backgroundColor: INPUT_BG,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
+  pill: {
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: BORDER_DIM,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: BG,
+    minWidth: 72,
+    alignItems: 'center',
   },
-  genderBtnActive: {
-    backgroundColor: PLATINUM,
-    borderColor: GOLD,
+  pillActive: {
+    backgroundColor: WHITE,
+    borderColor: WHITE,
   },
-  genderText: {
-    color: MUTED,
-    fontSize: 12,
+  pillText: {
+    color: OFF_WHITE,
+    fontSize: 13,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
-  genderTextActive: {
-    color: LANDING_BG,
+  pillTextActive: {
+    color: BG,
   },
   termsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
+    marginTop: 4,
+    marginBottom: 18,
     gap: 10,
   },
   checkbox: {
     width: 20,
     height: 20,
-    borderRadius: 4,
+    borderRadius: 0,
     borderWidth: 1,
-    borderColor: GOLD,
+    borderColor: WHITE,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: INPUT_BG,
+    backgroundColor: BG,
   },
   checkboxChecked: {
-    backgroundColor: GOLD,
+    backgroundColor: WHITE,
   },
   checkmark: {
-    color: LANDING_BG,
-    fontWeight: 'bold',
+    color: BG,
+    fontWeight: '900',
     fontSize: 12,
   },
   termsText: {
-    color: PLATINUM,
+    color: OFF_WHITE,
     fontSize: 12,
     flex: 1,
+    lineHeight: 17,
   },
   termsLink: {
-    color: GOLD,
+    color: WHITE,
     textDecorationLine: 'underline',
+    fontWeight: '700',
   },
-  sendOtpBtn: {
-    backgroundColor: CRIMSON,
-    borderRadius: 14,
-    paddingVertical: 14,
+  ctaBtn: {
+    backgroundColor: WHITE,
+    borderRadius: 0,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 6,
     borderWidth: 1,
-    borderColor: GOLD,
+    borderColor: WHITE,
   },
-  sendOtpBtnDisabled: {
-    backgroundColor: INPUT_BG,
-    opacity: 0.6,
-    borderColor: BORDER,
+  ctaBtnDisabled: {
+    backgroundColor: BG,
+    borderColor: BORDER_DIM,
   },
-  sendOtpBtnText: {
-    color: '#FFFFFF',
+  ctaBtnText: {
+    color: BG,
     fontWeight: '900',
-    fontSize: 15,
+    fontSize: 14,
+    letterSpacing: 1.5,
+  },
+  ctaBtnTextDisabled: {
+    color: MUTED,
   },
   modalOverlay: {
     flex: 1,
@@ -681,42 +752,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
+    backgroundColor: BG,
+    borderRadius: 0,
     padding: 20,
     width: '88%',
     maxHeight: '80%',
     borderWidth: 1,
-    borderColor: GOLD,
+    borderColor: WHITE,
+  },
+  termsModal: {
+    height: '80%',
   },
   modalTitle: {
-    color: GOLD,
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 1,
     marginBottom: 14,
     textAlign: 'center',
   },
   modalItem: {
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER,
+    borderBottomColor: BORDER_DIM,
   },
   modalItemText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: WHITE,
+    fontSize: 15,
   },
   termsScrollView: {
     marginBottom: 12,
   },
   legalHeading: {
-    color: GOLD,
+    color: WHITE,
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '800',
     marginTop: 12,
     marginBottom: 4,
   },
   legalBody: {
-    color: PLATINUM,
+    color: MUTED,
     fontSize: 12,
     lineHeight: 18,
   },
@@ -724,30 +799,34 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   acceptTermsBtn: {
-    backgroundColor: CRIMSON,
-    borderRadius: 8,
-    paddingVertical: 12,
+    backgroundColor: WHITE,
+    borderRadius: 0,
+    paddingVertical: 13,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: GOLD,
+    borderColor: WHITE,
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: INPUT_BG,
-    borderColor: BORDER,
+    backgroundColor: BG,
+    borderColor: BORDER_DIM,
   },
   acceptTermsBtnText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+    color: BG,
+    fontWeight: '900',
     fontSize: 12,
+    letterSpacing: 1,
+  },
+  acceptTermsBtnTextDisabled: {
+    color: MUTED,
   },
   otpModalContent: {
-    backgroundColor: LANDING_BG,
-    borderRadius: 20,
+    backgroundColor: BG,
+    borderRadius: 0,
     padding: 24,
     width: '88%',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: GOLD,
+    borderWidth: 1,
+    borderColor: WHITE,
   },
   otpLogo: {
     width: 140,
@@ -755,9 +834,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   otpTitle: {
-    color: GOLD,
-    fontSize: 16,
+    color: WHITE,
+    fontSize: 15,
     fontWeight: '900',
+    letterSpacing: 1.2,
     marginBottom: 4,
   },
   otpSubtitle: {
@@ -774,27 +854,13 @@ const styles = StyleSheet.create({
   otpBox: {
     width: 42,
     height: 48,
-    backgroundColor: INPUT_BG,
-    borderRadius: 8,
+    backgroundColor: SURFACE,
+    borderRadius: 0,
     borderWidth: 1,
-    borderColor: GOLD,
-    color: GOLD,
+    borderColor: BORDER,
+    color: WHITE,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     textAlign: 'center',
-  },
-  enterArenaModalBtn: {
-    backgroundColor: CRIMSON,
-    borderRadius: 10,
-    paddingVertical: 14,
-    width: '100%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: GOLD,
-  },
-  enterArenaModalBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 15,
   },
 });
