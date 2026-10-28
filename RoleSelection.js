@@ -390,6 +390,16 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <Text style={styles.legalBody}>
                 You agree to fully indemnify and hold harmless BAWAAL, its parent company, directors, and officers from any legal claims, liabilities, or expenses arising from your use of the platform.
               </Text>
+
+              <Text style={styles.legalHeading}>7. Medical & Psychiatric Disclaimer</Text>
+              <Text style={styles.legalBody}>
+                Any medical advice, recovery tips, rehabilitation guidance, nutritional recommendations, mental-health support, or clinical insights shared by doctors, physiotherapists, sports psychiatrists, trainers, or other practitioners on BAWAAL are provided solely in those individuals' independent professional capacity. Such content does not constitute a doctor–patient relationship with BAWAAL. BAWAAL assumes no medical, clinical, psychiatric, pharmaceutical, or therapeutic liability whatsoever for outcomes arising from reliance on any practitioner content or advice on the platform. Always seek qualified in-person medical care for injuries, illness, or mental-health concerns.
+              </Text>
+
+              <Text style={styles.legalHeading}>8. General Platform Disclaimer</Text>
+              <Text style={styles.legalBody}>
+                BAWAAL is strictly a digital sports arena and community platform. BAWAAL is not responsible in any way for personal training injuries, physical outcomes, competition results, equipment failure, venue conditions, or individual user actions—online or offline. Participation in any sport, workout, challenge, battle, adventure, or physical activity inspired by or coordinated through BAWAAL is entirely at the user's own risk.
+              </Text>
             </ScrollView>
 
             <View style={styles.termsFooter}>
@@ -521,8 +531,9 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1.4,
+    letterSpacing: 1.6,
     marginBottom: 10,
+    textTransform: 'uppercase',
   },
   fieldRow: {
     flexDirection: 'row',
@@ -532,7 +543,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   fieldRowFocused: {
-    borderBottomColor: LINE_FOCUS,
+    borderBottomColor: WHITE,
   },
   fieldLeading: {
     marginRight: 8,
@@ -545,8 +556,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingVertical: 4,
     paddingHorizontal: 0,
-    color: WHITE,
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   flagEmoji: {
     fontSize: 20,
@@ -578,10 +591,10 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 13,
     fontWeight: '600',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   pillTextActive: {
-    color: WHITE,
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   termsContainer: {
@@ -622,19 +635,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   ctaBtn: {
-    backgroundColor: WHITE,
+    backgroundColor: 'transparent',
     borderRadius: 0,
     paddingVertical: 16,
     alignItems: 'center',
   },
   ctaBtnDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
+    opacity: 0.45,
   },
   ctaBtnText: {
-    color: BG,
+    color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 1.8,
+    fontSize: 14,
+    letterSpacing: 2.2,
   },
   ctaBtnTextDisabled: {
     color: MUTED,
@@ -667,34 +681,37 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   legalHeading: {
-    color: WHITE,
+    color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 4,
+    fontWeight: '800',
+    marginTop: 14,
+    marginBottom: 6,
+    letterSpacing: 0.3,
   },
   legalBody: {
-    color: MUTED,
+    color: OFF_WHITE,
     fontSize: 12,
-    lineHeight: 18,
+    lineHeight: 19,
+    fontWeight: '500',
   },
   termsFooter: {
     marginTop: 8,
   },
   acceptTermsBtn: {
-    backgroundColor: WHITE,
+    backgroundColor: 'transparent',
     borderRadius: 0,
     paddingVertical: 14,
     alignItems: 'center',
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent',
+    opacity: 0.45,
   },
   acceptTermsBtnText: {
-    color: BG,
+    color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 12,
-    letterSpacing: 1,
+    fontSize: 13,
+    letterSpacing: 1.4,
   },
   acceptTermsBtnTextDisabled: {
     color: MUTED,
@@ -736,9 +753,9 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: LINE_FOCUS,
-    color: WHITE,
-    fontSize: 20,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
     textAlign: 'center',
   },
 });
