@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'expo-camera';
 import CustomTabBar from './CustomTabBar';
@@ -188,8 +188,9 @@ export default function MainTabs({ navigation, route }) {
     }),
     [tab, openCreate, openProfileGateway, challengeAlertActive]
   );
-  // Lift tab labels off the home-indicator / screen edge for easier taps
-  const bottomPad = Math.max(insets.bottom, 10) + 10;
+  // Clear Android 3-button / iOS home-indicator — never let tabs collide with system nav
+  const systemFloor = Platform.OS === 'android' ? 24 : 12;
+  const bottomPad = Math.max(insets.bottom, systemFloor) + (Platform.OS === 'android' ? 12 : 8);
 
   let ActiveScreen = null;
   if (tab === 'Arena') {

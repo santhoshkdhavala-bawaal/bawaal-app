@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const OBSIDIAN = '#000000';
 const OFF_WHITE = '#E8ECE9';
@@ -24,10 +25,19 @@ export default function CustomTabBar({
   activeTab,
   onTabPress,
   onCreatePress,
-  bottomPad = 16,
+  bottomPad,
   challengeAlertActive = false,
 }) {
+  const insets = useSafeAreaInsets();
   const [pulse] = useState(() => new Animated.Value(1));
+
+  // Live safe-area + platform floor so the bar sits above system gesture / nav keys
+  const systemFloor = Platform.OS === 'android' ? 24 : 12;
+  const comfort = Platform.OS === 'android' ? 12 : 8;
+  const resolvedBottomPad = Math.max(
+    typeof bottomPad === 'number' ? bottomPad : 0,
+    Math.max(insets.bottom, systemFloor) + comfort
+  );
 
   useEffect(() => {
     if (!challengeAlertActive) {
@@ -45,7 +55,10 @@ export default function CustomTabBar({
   }, [challengeAlertActive, pulse]);
 
   return (
-    <View style={[styles.tabBar, { paddingBottom: bottomPad }]}>
+    <View
+      style={[styles.tabBar, { paddingBottom: resolvedBottomPad }]}
+      accessibilityRole="tablist"
+    >
       {TABS.map((item) => {
         if (item.isFab) {
           return (

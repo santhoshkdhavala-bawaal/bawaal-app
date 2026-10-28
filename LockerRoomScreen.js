@@ -16,8 +16,11 @@ import { useMainTabs } from './mainTabContext';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
-const MUTED = '#8A8A8A';
-const OFF_WHITE = '#E8ECE9';
+/** Soft metallic slate for secondary hierarchy under pure-white headers */
+const SLATE = '#94A3B8';
+/** Light mint — health / clinic advisory accent (stealth B&W + recovery cue) */
+const CLINIC_MINT = '#4ADE80';
+const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
 const LINE = 'rgba(255,255,255,0.14)';
 
 const HUBS = [
@@ -96,7 +99,13 @@ export default function LockerRoomScreen({ navigation }) {
         >
           <Text style={styles.brand}>BAWAAL</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={openClinic} activeOpacity={0.75}>
+        <TouchableOpacity
+          style={styles.clinicBadge}
+          onPress={openClinic}
+          activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="Open The Clinic"
+        >
           <Text style={styles.clinicLink}>THE CLINIC</Text>
         </TouchableOpacity>
       </View>
@@ -158,10 +167,15 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 2.4,
   },
+  clinicBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: CLINIC_MINT_SOFT,
+  },
   clinicLink: {
-    color: OFF_WHITE,
+    color: CLINIC_MINT,
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1.2,
   },
   header: {
@@ -176,7 +190,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 8,
-    color: MUTED,
+    color: SLATE,
     fontSize: 13,
     fontWeight: '500',
     letterSpacing: 0.2,
@@ -193,9 +207,9 @@ const styles = StyleSheet.create({
     borderBottomColor: LINE,
   },
   navCardLabel: {
-    color: MUTED,
+    color: CLINIC_MINT,
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: 1.6,
     marginBottom: 8,
   },
@@ -207,20 +221,19 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   navCardBody: {
-    color: OFF_WHITE,
+    color: SLATE,
     fontSize: 13,
     lineHeight: 19,
     marginBottom: 14,
-    opacity: 0.9,
   },
   navCardAction: {
-    color: WHITE,
+    color: CLINIC_MINT,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.6,
   },
   sectionLabel: {
-    color: MUTED,
+    color: SLATE,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.8,
@@ -234,7 +247,7 @@ const styles = StyleSheet.create({
     borderBottomColor: LINE,
   },
   hubKind: {
-    color: MUTED,
+    color: SLATE,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.4,
@@ -248,12 +261,12 @@ const styles = StyleSheet.create({
   },
   hubMeta: {
     marginTop: 6,
-    color: MUTED,
+    color: SLATE,
     fontSize: 12,
   },
   hubDetail: {
     marginTop: 8,
-    color: OFF_WHITE,
+    color: SLATE,
     fontSize: 13,
     lineHeight: 18,
   },
