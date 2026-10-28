@@ -28,6 +28,13 @@ if (isExpoGo) {
 
 const ROOT_BG = '#000000';
 
+/**
+ * TEMP: force splash → Entry (landing / OTP onboarding) on every reload.
+ * Ignores persisted sessionStore so we can test RoleSelection without clearing storage.
+ * Set back to `false` before shipping.
+ */
+const FORCE_ONBOARDING_ENTRY = true;
+
 const Stack = createNativeStackNavigator();
 const navTheme = {
   ...DarkTheme,
@@ -125,15 +132,20 @@ export default function App() {
 
     (async () => {
       try {
-        // File-system session read can hang in Expo Go — race a short timeout
-        const bootTimeoutMs = isExpoGo ? 600 : 3500;
-        const session = await Promise.race([
-          getRegisteredSession(),
-          new Promise((resolve) => setTimeout(() => resolve(null), bootTimeoutMs)),
-        ]);
-        // Returning registered users skip onboarding → BAWAAL Arena (Main tabs)
-        if (!cancelled && session?.registered) {
-          setInitialRoute('Main');
+        if (FORCE_ONBOARDING_ENTRY) {
+          // Always land on Entry so splash → RoleSelection / OTP is testable
+          if (!cancelled) setInitialRoute('Entry');
+        } else {
+          // File-system session read can hang in Expo Go — race a short timeout
+          const bootTimeoutMs = isExpoGo ? 600 : 3500;
+          const session = await Promise.race([
+            getRegisteredSession(),
+            new Promise((resolve) => setTimeout(() => resolve(null), bootTimeoutMs)),
+          ]);
+          // Returning registered users skip onboarding → BAWAAL Arena (Main tabs)
+          if (!cancelled && session?.registered) {
+            setInitialRoute('Main');
+          }
         }
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
