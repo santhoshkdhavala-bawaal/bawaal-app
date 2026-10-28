@@ -32,8 +32,13 @@ const WHITE = '#FFFFFF';
 const OFF = '#E8ECE9';
 const MUTED = '#A0A0A0';
 const BORDER = 'rgba(255,255,255,0.22)';
+/** FOLLOWING section — electric blue avatar rings / header */
+const FOLLOW_BLUE = '#3B82F6';
+/** SUGGESTED ATHLETES — electric crimson header / + Follow */
+const SUGGEST_RED = '#FF3366';
 
-function Avatar({ uri, name, size = 56 }) {
+function Avatar({ uri, name, size = 56, ringColor }) {
+  const ring = ringColor || BORDER;
   const initials = String(name || '?')
     .split(/\s+/)
     .map((p) => p[0])
@@ -49,8 +54,8 @@ function Avatar({ uri, name, size = 56 }) {
           height: size,
           borderRadius: size / 2,
           backgroundColor: SURFACE,
-          borderWidth: 1,
-          borderColor: BORDER,
+          borderWidth: ringColor ? 2 : 1,
+          borderColor: ring,
         }}
       />
     );
@@ -62,8 +67,8 @@ function Avatar({ uri, name, size = 56 }) {
         height: size,
         borderRadius: size / 2,
         backgroundColor: SURFACE,
-        borderWidth: 1,
-        borderColor: WHITE,
+        borderWidth: ringColor ? 2 : 1,
+        borderColor: ringColor || WHITE,
         alignItems: 'center',
         justifyContent: 'center',
       }}
@@ -136,7 +141,12 @@ const FollowChip = memo(function FollowChip({ athlete, onPress }) {
       onPress={() => onPress(athlete)}
       activeOpacity={0.85}
     >
-      <Avatar uri={athlete.avatarUri} name={athlete.displayName} size={48} />
+      <Avatar
+        uri={athlete.avatarUri}
+        name={athlete.displayName}
+        size={48}
+        ringColor={FOLLOW_BLUE}
+      />
       {athlete.online ? <View style={styles.onlineDot} /> : null}
       <View style={styles.followChipNameRow}>
         <Text style={styles.followChipName} numberOfLines={1}>
@@ -354,7 +364,9 @@ export default function ProfileScreen({ navigation }) {
           <>
             <MeCard user={CURRENT_USER} />
 
-            <Text style={styles.sectionTitle}>Following</Text>
+            <Text style={[styles.sectionTitle, styles.followingSectionTitle]}>
+              FOLLOWING
+            </Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -369,7 +381,9 @@ export default function ProfileScreen({ navigation }) {
               ))}
             </ScrollView>
 
-            <Text style={styles.sectionTitle}>Suggested Athletes</Text>
+            <Text style={[styles.sectionTitle, styles.suggestedSectionTitle]}>
+              SUGGESTED ATHLETES
+            </Text>
             {suggestedList.map((athlete) => (
               <SuggestedRow
                 key={athlete.id}
@@ -487,6 +501,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 4,
   },
+  followingSectionTitle: {
+    color: FOLLOW_BLUE,
+    letterSpacing: 1.6,
+  },
+  suggestedSectionTitle: {
+    color: SUGGEST_RED,
+    letterSpacing: 1.6,
+  },
   followingRow: {
     gap: 12,
     paddingBottom: 8,
@@ -499,7 +521,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: BORDER,
+    borderColor: 'rgba(59, 130, 246, 0.45)',
     backgroundColor: SURFACE,
   },
   followChipNameRow: {
@@ -569,22 +591,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   followBtn: {
-    borderWidth: 1,
-    borderColor: WHITE,
+    borderWidth: 1.5,
+    borderColor: SUGGEST_RED,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    backgroundColor: 'transparent',
   },
   followBtnOn: {
-    backgroundColor: WHITE,
+    backgroundColor: 'rgba(255, 51, 102, 0.16)',
+    borderColor: SUGGEST_RED,
   },
   followBtnText: {
-    color: WHITE,
+    color: SUGGEST_RED,
     fontSize: 11,
     fontWeight: '800',
   },
   followBtnTextOn: {
-    color: BG,
+    color: SUGGEST_RED,
   },
   followBtnWide: {
     marginTop: 14,
