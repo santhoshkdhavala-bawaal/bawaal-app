@@ -1,7 +1,7 @@
 /**
  * BAWAAL stealth-black branded prompt / notice / squad-brief modal.
- * Pure black surface, no white framing, BAWAAL_B_solo watermark.
- * KeyboardAvoidingView + ScrollView keep fields and POST/CANCEL visible.
+ * Fully opaque #000 scrim (no transparency bleed), B solo watermark,
+ * centered card, actions cleared above the floating tab bar.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -23,7 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const HAIRLINE = 'rgba(255,255,255,0.22)';
+const HAIRLINE = 'rgba(255,255,255,0.18)';
 const ACCENT = '#4ADE80';
 const CREATE_YELLOW = '#FACC15';
 const BRIEF_PURPLE = '#A855F7';
@@ -60,7 +60,7 @@ export const SQUAD_BRIEF_SPORTS = [
  * @param {(value: any) => void} [props.onConfirm]
  * @param {() => void} props.onCancel
  * @param {boolean} [props.busy]
- * @param {string} [props.confirmColor] Primary action tint (POST purple / CREATE yellow)
+ * @param {string} [props.confirmColor]
  */
 export default function BawaalPromptModal({
   visible,
@@ -85,9 +85,8 @@ export default function BawaalPromptModal({
   const scrollRef = useRef(null);
   const fieldYRef = useRef({});
   const insets = useSafeAreaInsets();
-  // Clear floating CustomTabBar + system home indicator with generous air
-  const tabBarClearance = 96;
-  const bottomPad = Math.max(48, insets.bottom + 16) + tabBarClearance;
+  // Floating tab bar (~70) + FAB + system inset — keep actions clear
+  const bottomClearance = Math.max(insets.bottom, 12) + 108;
   const actionColor = resolveConfirmColor(confirmLabel, confirmColor);
 
   useEffect(() => {
@@ -117,6 +116,11 @@ export default function BawaalPromptModal({
     });
   };
 
+  const dismissOutside = () => {
+    Keyboard.dismiss();
+    if (!busy) onCancel?.();
+  };
+
   const runConfirm = (payload) => {
     if (busy || submittingRef.current) return;
     submittingRef.current = true;
@@ -132,17 +136,14 @@ export default function BawaalPromptModal({
     });
   };
 
-  const submitPrompt = () => {
-    runConfirm(String(value || '').trim());
-  };
+  const submitPrompt = () => runConfirm(String(value || '').trim());
 
-  const submitBrief = () => {
+  const submitBrief = () =>
     runConfirm({
       title: String(briefTitle || '').trim(),
       sportTag: String(sportTag || 'Other').trim(),
       intel: String(intel || '').trim(),
     });
-  };
 
   const onPrimaryPress = () => {
     if (mode === 'notice') {
@@ -165,153 +166,160 @@ export default function BawaalPromptModal({
       onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <KeyboardAvoidingView
-        style={[styles.overlay, { paddingBottom: bottomPad }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
-      >
-        <Pressable
-          style={styles.backdrop}
-          onPress={() => {
-            Keyboard.dismiss();
-            if (!busy) onCancel?.();
-          }}
-        />
-        <View
-          style={[styles.card, { paddingBottom: Math.max(40, insets.bottom + 28) }]}
-          accessibilityViewIsModal
+      {/* Solid opaque scrim — blocks tab-bar dots / lines from bleeding through */}
+      <View style={styles.scrim}>
+        <KeyboardAvoidingView
+          style={[
+            styles.shell,
+            {
+              paddingTop: Math.max(insets.top, 20) + 12,
+              paddingBottom: bottomClearance,
+            },
+          ]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <Image
-            source={LOGO}
-            style={styles.watermark}
-            resizeMode="contain"
-            pointerEvents="none"
-            accessibilityElementsHidden
-            importantForAccessibility="no"
-          />
+          <Pressable style={styles.dismissZone} onPress={dismissOutside} />
 
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: Math.max(56, insets.bottom + 40) },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            bounces={false}
-            showsVerticalScrollIndicator={false}
-            nestedScrollEnabled
-          >
-            <View style={styles.headerRow}>
-              <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
-              <Text style={styles.brandMark}>BAWAAL</Text>
+          <View style={styles.card} accessibilityViewIsModal>
+            <View style={styles.watermarkClip} pointerEvents="none">
+              <Image
+                source={LOGO}
+                style={styles.watermark}
+                resizeMode="contain"
+                accessibilityElementsHidden
+                importantForAccessibility="no"
+              />
             </View>
 
-            <Text style={styles.title}>{title}</Text>
-            {message ? <Text style={styles.message}>{message}</Text> : null}
-
-            {mode === 'prompt' ? (
-              <View
-                onLayout={(e) => {
-                  fieldYRef.current.prompt = e.nativeEvent.layout.y;
-                }}
-              >
-                <TextInput
-                  style={[styles.input, multiline && styles.inputMulti]}
-                  value={value}
-                  onChangeText={setValue}
-                  placeholder={placeholder}
-                  placeholderTextColor={MUTED}
-                  selectionColor={WHITE}
-                  autoFocus
-                  multiline={multiline}
-                  blurOnSubmit
-                  textAlignVertical={multiline ? 'top' : 'center'}
-                  editable={!busy}
-                  returnKeyType={multiline ? 'default' : 'done'}
-                  onFocus={() => scrollFieldIntoView('prompt')}
-                  onSubmitEditing={multiline ? undefined : submitPrompt}
-                />
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              bounces={false}
+              overScrollMode="never"
+              showsVerticalScrollIndicator={false}
+              showsHorizontalScrollIndicator={false}
+              nestedScrollEnabled
+            >
+              <View style={styles.headerRow}>
+                <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
+                <Text style={styles.brandMark}>BAWAAL</Text>
               </View>
-            ) : null}
 
-            {mode === 'squadBrief' ? (
-              <View>
+              <Text style={styles.title}>{title}</Text>
+              {message ? <Text style={styles.message}>{message}</Text> : null}
+
+              {mode === 'prompt' ? (
                 <View
                   onLayout={(e) => {
-                    fieldYRef.current.title = e.nativeEvent.layout.y;
+                    fieldYRef.current.prompt = e.nativeEvent.layout.y;
                   }}
                 >
-                  <Text style={styles.fieldLabel}>BRIEF TITLE</Text>
                   <TextInput
-                    style={styles.input}
-                    value={briefTitle}
-                    onChangeText={setBriefTitle}
-                    placeholder='e.g. "Friday Sparring Block"'
+                    style={[styles.input, multiline && styles.inputMulti]}
+                    value={value}
+                    onChangeText={setValue}
+                    placeholder={placeholder}
                     placeholderTextColor={MUTED}
                     selectionColor={WHITE}
                     autoFocus
+                    multiline={multiline}
                     blurOnSubmit
+                    underlineColorAndroid="transparent"
+                    textAlignVertical={multiline ? 'top' : 'center'}
                     editable={!busy}
-                    returnKeyType="next"
-                    onFocus={() => scrollFieldIntoView('title')}
+                    returnKeyType={multiline ? 'default' : 'done'}
+                    onFocus={() => scrollFieldIntoView('prompt')}
+                    onSubmitEditing={multiline ? undefined : submitPrompt}
                   />
                 </View>
+              ) : null}
 
-                <Text style={styles.fieldLabel}>SPORT TAG</Text>
-                <View style={styles.sportRow}>
-                  {SQUAD_BRIEF_SPORTS.map((sport) => {
-                    const on = sport === sportTag;
-                    return (
-                      <TouchableOpacity
-                        key={sport}
-                        style={[styles.sportPill, on && styles.sportPillOn]}
-                        onPress={() => {
-                          Keyboard.dismiss();
-                          setSportTag(sport);
-                        }}
-                        activeOpacity={0.75}
-                        disabled={busy}
-                      >
-                        <Text style={[styles.sportPillText, on && styles.sportPillTextOn]}>
-                          {sport.toUpperCase()}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <View
-                  onLayout={(e) => {
-                    fieldYRef.current.intel = e.nativeEvent.layout.y;
-                  }}
-                >
-                  <Text style={styles.fieldLabel}>BRIEF INTEL</Text>
-                  <TextInput
-                    style={[styles.input, styles.inputMulti]}
-                    value={intel}
-                    onChangeText={setIntel}
-                    placeholder="Venue, timing, rules, and tactics"
-                    placeholderTextColor={MUTED}
-                    selectionColor={WHITE}
-                    multiline
-                    blurOnSubmit={false}
-                    textAlignVertical="top"
-                    editable={!busy}
-                    onFocus={() => {
-                      scrollFieldIntoView('intel');
-                      setTimeout(() => scrollFieldIntoView('intel'), 120);
-                      setTimeout(() => {
-                        scrollRef.current?.scrollToEnd?.({ animated: true });
-                      }, 220);
+              {mode === 'squadBrief' ? (
+                <View>
+                  <View
+                    onLayout={(e) => {
+                      fieldYRef.current.title = e.nativeEvent.layout.y;
                     }}
-                  />
-                </View>
-              </View>
-            ) : null}
+                  >
+                    <Text style={styles.fieldLabel}>BRIEF TITLE</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={briefTitle}
+                      onChangeText={setBriefTitle}
+                      placeholder='e.g. "Friday Sparring Block"'
+                      placeholderTextColor={MUTED}
+                      selectionColor={WHITE}
+                      autoFocus
+                      blurOnSubmit
+                      underlineColorAndroid="transparent"
+                      editable={!busy}
+                      returnKeyType="next"
+                      onFocus={() => scrollFieldIntoView('title')}
+                    />
+                  </View>
 
-            <View style={[styles.actions, { marginBottom: 12, paddingBottom: 20 }]}>
+                  <Text style={styles.fieldLabel}>SPORT TAG</Text>
+                  <View style={styles.sportRow}>
+                    {SQUAD_BRIEF_SPORTS.map((sport) => {
+                      const on = sport === sportTag;
+                      return (
+                        <TouchableOpacity
+                          key={sport}
+                          style={[styles.sportPill, on && styles.sportPillOn]}
+                          onPress={() => {
+                            Keyboard.dismiss();
+                            setSportTag(sport);
+                          }}
+                          activeOpacity={0.75}
+                          disabled={busy}
+                        >
+                          <Text
+                            style={[styles.sportPillText, on && styles.sportPillTextOn]}
+                          >
+                            {sport.toUpperCase()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <View
+                    onLayout={(e) => {
+                      fieldYRef.current.intel = e.nativeEvent.layout.y;
+                    }}
+                  >
+                    <Text style={styles.fieldLabel}>BRIEF INTEL</Text>
+                    <TextInput
+                      style={[styles.input, styles.inputMulti]}
+                      value={intel}
+                      onChangeText={setIntel}
+                      placeholder="Venue, timing, rules, and tactics"
+                      placeholderTextColor={MUTED}
+                      selectionColor={WHITE}
+                      multiline
+                      blurOnSubmit={false}
+                      underlineColorAndroid="transparent"
+                      textAlignVertical="top"
+                      editable={!busy}
+                      onFocus={() => {
+                        scrollFieldIntoView('intel');
+                        setTimeout(() => scrollFieldIntoView('intel'), 120);
+                        setTimeout(() => {
+                          scrollRef.current?.scrollToEnd?.({ animated: true });
+                        }, 220);
+                      }}
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            {/* Footer pinned below scroll — always above tab bar via shell padding */}
+            <View style={styles.footer}>
               {mode !== 'notice' ? (
                 <Pressable
                   style={styles.btnGhost}
@@ -336,48 +344,66 @@ export default function BawaalPromptModal({
                 </Text>
               </Pressable>
             </View>
-          </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  scrim: {
+    flex: 1,
+    backgroundColor: BG,
+    // Kill any edge bleed / hairlines from underlying screens
+    borderWidth: 0,
+    margin: 0,
+    padding: 0,
+  },
+  shell: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 22,
-    paddingTop: 24,
+    paddingHorizontal: 20,
   },
-  backdrop: {
+  dismissZone: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.88)',
+    backgroundColor: 'transparent',
   },
   card: {
     backgroundColor: BG,
     borderWidth: 0,
     borderColor: 'transparent',
+    borderRadius: 0,
     paddingHorizontal: 22,
     paddingTop: 26,
-    paddingBottom: 48,
+    paddingBottom: 8,
     overflow: 'hidden',
-    maxHeight: '78%',
+    maxHeight: '100%',
+    // Ensure no elevation shadows casting edge artifacts
+    elevation: 0,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
   },
-  scroll: {
-    flexGrow: 0,
-  },
-  scrollContent: {
-    paddingBottom: 56,
-    flexGrow: 1,
+  watermarkClip: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: 'hidden',
   },
   watermark: {
     position: 'absolute',
-    top: -8,
-    right: -6,
-    width: 168,
-    height: 168,
-    opacity: 0.07,
+    top: 8,
+    right: 12,
+    width: 140,
+    height: 140,
+    opacity: 0.06,
+  },
+  scroll: {
+    flexGrow: 0,
+    maxHeight: '100%',
+  },
+  scrollContent: {
+    paddingBottom: 12,
+    flexGrow: 0,
   },
   headerRow: {
     flexDirection: 'row',
@@ -419,13 +445,18 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 0,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: HAIRLINE,
     color: WHITE,
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 12,
+    paddingHorizontal: 0,
     marginBottom: 18,
+    backgroundColor: 'transparent',
   },
   inputMulti: {
     minHeight: 96,
@@ -446,9 +477,10 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 8,
     backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 0,
   },
   sportPillOn: {
-    backgroundColor: 'rgba(74,222,128,0.18)',
+    backgroundColor: 'rgba(168,85,247,0.18)',
   },
   sportPillText: {
     color: MUTED,
@@ -457,19 +489,20 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
   },
   sportPillTextOn: {
-    color: ACCENT,
+    color: BRIEF_PURPLE,
   },
-  actions: {
+  footer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 14,
+    paddingBottom: 18,
+    borderWidth: 0,
+    backgroundColor: BG,
   },
   btnGhost: {
     paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     marginRight: 18,
   },
   btnGhostText: {
@@ -480,7 +513,7 @@ const styles = StyleSheet.create({
   },
   btnSolid: {
     paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
   },
   btnSolidText: {
     color: ACCENT,

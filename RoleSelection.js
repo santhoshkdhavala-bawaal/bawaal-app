@@ -695,9 +695,12 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    backgroundColor: BG,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 0,
+    margin: 0,
+    paddingHorizontal: 16,
   },
   modalContent: {
     backgroundColor: BG,
@@ -767,11 +770,11 @@ const styles = StyleSheet.create({
   },
   otpWatermark: {
     position: 'absolute',
-    top: -10,
-    right: -8,
-    width: 160,
-    height: 160,
-    opacity: 0.07,
+    top: 8,
+    right: 12,
+    width: 140,
+    height: 140,
+    opacity: 0.06,
   },
   otpLogo: {
     width: 28,

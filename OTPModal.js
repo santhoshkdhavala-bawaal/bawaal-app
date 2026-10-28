@@ -115,11 +115,13 @@ export default function OTPModal({ visible, onVerify }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    backgroundColor: BG,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 24,
+    borderWidth: 0,
+    margin: 0,
   },
   card: {
     width: '90%',
@@ -130,14 +132,16 @@ const styles = StyleSheet.create({
     paddingTop: 28,
     alignItems: 'center',
     overflow: 'hidden',
+    elevation: 0,
+    shadowOpacity: 0,
   },
   watermark: {
     position: 'absolute',
-    top: -10,
-    right: -8,
-    width: 160,
-    height: 160,
-    opacity: 0.07,
+    top: 8,
+    right: 12,
+    width: 140,
+    height: 140,
+    opacity: 0.06,
   },
   logo: {
     width: 28,
