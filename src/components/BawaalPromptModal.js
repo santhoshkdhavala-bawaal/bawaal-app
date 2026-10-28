@@ -1,19 +1,22 @@
 /**
- * BAWAAL stealth-black branded prompt / notice modal.
+ * BAWAAL stealth-black branded prompt / notice / squad-brief modal.
  * Pure black surface, no white framing, BAWAAL_B_solo watermark.
+ * Submit dismisses keyboard first so POST/CREATE fire on a single tap.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 
 const BG = '#000000';
@@ -23,18 +26,27 @@ const HAIRLINE = 'rgba(255,255,255,0.22)';
 const ACCENT = '#4ADE80';
 const LOGO = require('../../assets/BAWAAL_B_solo.png');
 
+export const SQUAD_BRIEF_SPORTS = [
+  'Combat',
+  'Football',
+  'Cricket',
+  'Gym',
+  'Running',
+  'Other',
+];
+
 /**
  * @param {object} props
  * @param {boolean} props.visible
  * @param {string} props.title
  * @param {string} [props.message]
- * @param {'prompt'|'notice'} [props.mode]
+ * @param {'prompt'|'notice'|'squadBrief'} [props.mode]
  * @param {string} [props.defaultValue]
  * @param {string} [props.placeholder]
  * @param {string} [props.confirmLabel]
  * @param {string} [props.cancelLabel]
  * @param {boolean} [props.multiline]
- * @param {(value: string) => void} [props.onConfirm]
+ * @param {(value: any) => void} [props.onConfirm]
  * @param {() => void} props.onCancel
  * @param {boolean} [props.busy]
  */
@@ -53,14 +65,62 @@ export default function BawaalPromptModal({
   busy = false,
 }) {
   const [value, setValue] = useState(defaultValue);
+  const [briefTitle, setBriefTitle] = useState('');
+  const [sportTag, setSportTag] = useState(SQUAD_BRIEF_SPORTS[0]);
+  const [intel, setIntel] = useState('');
+  const submittingRef = useRef(false);
 
   useEffect(() => {
-    if (visible) setValue(defaultValue || '');
+    if (!visible) {
+      submittingRef.current = false;
+      return;
+    }
+    setValue(defaultValue || '');
+    setBriefTitle(defaultValue || 'Matchday Lineup & Strategy');
+    setSportTag(SQUAD_BRIEF_SPORTS[0]);
+    setIntel('');
   }, [visible, defaultValue]);
 
-  const submit = () => {
-    if (busy) return;
-    onConfirm?.(String(value || '').trim());
+  const runConfirm = (payload) => {
+    if (busy || submittingRef.current) return;
+    submittingRef.current = true;
+    Keyboard.dismiss();
+    // Defer so the first tap is not eaten by keyboard blur
+    requestAnimationFrame(() => {
+      try {
+        onConfirm?.(payload);
+      } finally {
+        // Allow retry if parent leaves modal open on validation failure
+        setTimeout(() => {
+          submittingRef.current = false;
+        }, 400);
+      }
+    });
+  };
+
+  const submitPrompt = () => {
+    runConfirm(String(value || '').trim());
+  };
+
+  const submitBrief = () => {
+    runConfirm({
+      title: String(briefTitle || '').trim(),
+      sportTag: String(sportTag || 'Other').trim(),
+      intel: String(intel || '').trim(),
+    });
+  };
+
+  const onPrimaryPress = () => {
+    if (mode === 'notice') {
+      Keyboard.dismiss();
+      onCancel?.();
+      return;
+    }
+    if (mode === 'squadBrief') {
+      submitBrief();
+      return;
+    }
+    submitPrompt();
   };
 
   return (
@@ -75,7 +135,13 @@ export default function BawaalPromptModal({
         style={styles.overlay}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Pressable style={styles.backdrop} onPress={busy ? undefined : onCancel} />
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => {
+            Keyboard.dismiss();
+            if (!busy) onCancel?.();
+          }}
+        />
         <View style={styles.card} accessibilityViewIsModal>
           <Image
             source={LOGO}
@@ -86,53 +152,119 @@ export default function BawaalPromptModal({
             importantForAccessibility="no"
           />
 
-          <View style={styles.headerRow}>
-            <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
-            <Text style={styles.brandMark}>BAWAAL</Text>
-          </View>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.headerRow}>
+              <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
+              <Text style={styles.brandMark}>BAWAAL</Text>
+            </View>
 
-          <Text style={styles.title}>{title}</Text>
-          {message ? <Text style={styles.message}>{message}</Text> : null}
+            <Text style={styles.title}>{title}</Text>
+            {message ? <Text style={styles.message}>{message}</Text> : null}
 
-          {mode === 'prompt' ? (
-            <TextInput
-              style={[styles.input, multiline && styles.inputMulti]}
-              value={value}
-              onChangeText={setValue}
-              placeholder={placeholder}
-              placeholderTextColor={MUTED}
-              selectionColor={WHITE}
-              autoFocus
-              multiline={multiline}
-              textAlignVertical={multiline ? 'top' : 'center'}
-              editable={!busy}
-              returnKeyType={multiline ? 'default' : 'done'}
-              onSubmitEditing={multiline ? undefined : submit}
-            />
-          ) : null}
-
-          <View style={styles.actions}>
             {mode === 'prompt' ? (
-              <TouchableOpacity
-                style={styles.btnGhost}
-                onPress={onCancel}
-                activeOpacity={0.75}
-                disabled={busy}
-              >
-                <Text style={styles.btnGhostText}>{cancelLabel}</Text>
-              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, multiline && styles.inputMulti]}
+                value={value}
+                onChangeText={setValue}
+                placeholder={placeholder}
+                placeholderTextColor={MUTED}
+                selectionColor={WHITE}
+                autoFocus
+                multiline={multiline}
+                blurOnSubmit
+                textAlignVertical={multiline ? 'top' : 'center'}
+                editable={!busy}
+                returnKeyType={multiline ? 'default' : 'done'}
+                onSubmitEditing={multiline ? undefined : submitPrompt}
+              />
             ) : null}
-            <TouchableOpacity
-              style={styles.btnSolid}
-              onPress={mode === 'notice' ? onCancel : submit}
-              activeOpacity={0.75}
-              disabled={busy}
-            >
-              <Text style={styles.btnSolidText}>
-                {mode === 'notice' ? 'OK' : confirmLabel}
-              </Text>
-            </TouchableOpacity>
-          </View>
+
+            {mode === 'squadBrief' ? (
+              <View>
+                <Text style={styles.fieldLabel}>BRIEF TITLE</Text>
+                <TextInput
+                  style={styles.input}
+                  value={briefTitle}
+                  onChangeText={setBriefTitle}
+                  placeholder='e.g. "Friday Sparring Block"'
+                  placeholderTextColor={MUTED}
+                  selectionColor={WHITE}
+                  autoFocus
+                  blurOnSubmit
+                  editable={!busy}
+                  returnKeyType="next"
+                />
+
+                <Text style={styles.fieldLabel}>SPORT TAG</Text>
+                <View style={styles.sportRow}>
+                  {SQUAD_BRIEF_SPORTS.map((sport) => {
+                    const on = sport === sportTag;
+                    return (
+                      <TouchableOpacity
+                        key={sport}
+                        style={[styles.sportPill, on && styles.sportPillOn]}
+                        onPress={() => {
+                          Keyboard.dismiss();
+                          setSportTag(sport);
+                        }}
+                        activeOpacity={0.75}
+                        disabled={busy}
+                      >
+                        <Text style={[styles.sportPillText, on && styles.sportPillTextOn]}>
+                          {sport.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.fieldLabel}>BRIEF INTEL</Text>
+                <TextInput
+                  style={[styles.input, styles.inputMulti]}
+                  value={intel}
+                  onChangeText={setIntel}
+                  placeholder="Venue, timing, rules, and tactics"
+                  placeholderTextColor={MUTED}
+                  selectionColor={WHITE}
+                  multiline
+                  blurOnSubmit
+                  textAlignVertical="top"
+                  editable={!busy}
+                />
+              </View>
+            ) : null}
+
+            <View style={styles.actions}>
+              {mode !== 'notice' ? (
+                <Pressable
+                  style={styles.btnGhost}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    if (!busy) onCancel?.();
+                  }}
+                  disabled={busy}
+                  hitSlop={10}
+                >
+                  <Text style={styles.btnGhostText}>{cancelLabel}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                style={styles.btnSolid}
+                onPress={onPrimaryPress}
+                disabled={busy}
+                hitSlop={12}
+              >
+                <Text style={styles.btnSolidText}>
+                  {mode === 'notice' ? 'OK' : confirmLabel}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -157,6 +289,7 @@ const styles = StyleSheet.create({
     paddingTop: 26,
     paddingBottom: 20,
     overflow: 'hidden',
+    maxHeight: '88%',
   },
   watermark: {
     position: 'absolute',
@@ -197,6 +330,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginBottom: 16,
   },
+  fieldLabel: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
   input: {
     borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -205,24 +345,49 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 12,
-    marginBottom: 22,
+    marginBottom: 18,
   },
   inputMulti: {
-    minHeight: 88,
+    minHeight: 96,
     borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: HAIRLINE,
     paddingHorizontal: 0,
     paddingTop: 12,
   },
+  sportRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 16,
+  },
+  sportPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginRight: 8,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  sportPillOn: {
+    backgroundColor: 'rgba(74,222,128,0.18)',
+  },
+  sportPillText: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+  },
+  sportPillTextOn: {
+    color: ACCENT,
+  },
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
+    marginTop: 4,
   },
   btnGhost: {
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
     marginRight: 18,
   },
   btnGhostText: {
@@ -232,8 +397,8 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
   },
   btnSolid: {
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
   },
   btnSolidText: {
     color: ACCENT,

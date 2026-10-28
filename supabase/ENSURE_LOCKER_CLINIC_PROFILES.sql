@@ -16,12 +16,38 @@ create table if not exists public.squads (
 
 alter table public.squads add column if not exists kind text;
 alter table public.squads add column if not exists created_by text;
+alter table public.squads add column if not exists brief_title text;
+alter table public.squads add column if not exists brief_sport text;
+alter table public.squads add column if not exists brief_intel text;
 alter table public.squads alter column kind set default 'TRAINING SQUAD';
 
 create index if not exists squads_created_at_idx
   on public.squads (created_at desc);
 
--- ── Sparring logs ────────────────────────────────────────────────────
+-- ── Squad briefs (universal tactical briefs pinned to squads) ────────
+create table if not exists public.squad_briefs (
+  id uuid primary key default gen_random_uuid(),
+  squad_id uuid references public.squads (id) on delete set null,
+  title text not null,
+  sport_tag text not null default 'Other',
+  intel text,
+  created_by text,
+  athlete_handle text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.squad_briefs add column if not exists squad_id uuid;
+alter table public.squad_briefs add column if not exists sport_tag text;
+alter table public.squad_briefs add column if not exists intel text;
+alter table public.squad_briefs add column if not exists created_by text;
+alter table public.squad_briefs add column if not exists athlete_handle text;
+
+create index if not exists squad_briefs_created_at_idx
+  on public.squad_briefs (created_at desc);
+create index if not exists squad_briefs_squad_id_idx
+  on public.squad_briefs (squad_id);
+
+-- Legacy table retained for soft migration / fallbacks
 create table if not exists public.sparring_logs (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -113,6 +139,7 @@ create index if not exists profiles_list_bucket_idx
 
 -- ── RLS (open for Expo Go demo; tighten with auth later) ─────────────
 alter table public.squads enable row level security;
+alter table public.squad_briefs enable row level security;
 alter table public.sparring_logs enable row level security;
 alter table public.clinic_questions enable row level security;
 alter table public.clinic_replies enable row level security;
@@ -124,6 +151,7 @@ declare
 begin
   foreach t in array array[
     'squads',
+    'squad_briefs',
     'sparring_logs',
     'clinic_questions',
     'clinic_replies',

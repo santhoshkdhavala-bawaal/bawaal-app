@@ -1,7 +1,6 @@
 /**
- * Locker Room ↔ Supabase `squads` + `sparring_logs`.
- * Inserts retry with progressive optional-field payloads; schema-cache misses
- * fall back to a local hub so the UI never surfaces PGRST204 popups.
+ * Locker Room ↔ Supabase `squads` + `squad_briefs`.
+ * Squad Briefs pin onto squad cards as live tactical headers.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { ACTIVE_USER } from './activeUserProfile';
@@ -26,47 +25,82 @@ function isSchemaCacheError(error) {
   );
 }
 
-function mapSquadRow(row) {
+function mapBrief(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    squadId: row.squad_id ? String(row.squad_id) : null,
+    title: String(row.title || 'Squad Brief'),
+    sportTag: String(row.sport_tag || 'Other').toUpperCase(),
+    intel: String(row.intel || row.brief_intel || ''),
+    createdBy: row.created_by || null,
+    createdAt: row.created_at || null,
+    localOnly: Boolean(row.localOnly),
+  };
+}
+
+function mapSquadRow(row, brief = null) {
   if (!row) return null;
   const members = Number(row.member_count) || 1;
   const privacy = String(row.privacy || 'Invite only');
   const kind = String(row.kind || 'TRAINING SQUAD').toUpperCase();
-  const action =
-    kind.includes('GYM')
-      ? 'JOIN CIRCLE'
-      : kind.includes('SPAR')
-        ? 'OPEN LOG'
-        : 'VIEW SQUAD';
+  const pinned =
+    brief ||
+    (row.brief_title
+      ? {
+          id: `pinned-${row.id}`,
+          title: String(row.brief_title),
+          sportTag: String(row.brief_sport || 'Other').toUpperCase(),
+          intel: String(row.brief_intel || ''),
+        }
+      : null);
+
+  const action = kind.includes('GYM') ? 'JOIN CIRCLE' : 'VIEW SQUAD';
   return {
     id: String(row.id),
     kind,
     title: String(row.name || 'Untitled Squad'),
     meta: `${members} athlete${members === 1 ? '' : 's'} · ${privacy}`,
-    detail: String(row.last_message || 'New hub · tap to open'),
+    detail: pinned?.intel
+      ? pinned.intel
+      : String(row.last_message || 'New hub · tap to open'),
     action,
     source: 'squad',
     createdAt: row.created_at || null,
     localOnly: Boolean(row.localOnly),
+    brief: pinned
+      ? {
+          id: pinned.id,
+          title: pinned.title,
+          sportTag: pinned.sportTag,
+          intel: pinned.intel || '',
+        }
+      : null,
   };
 }
 
-function mapSparringRow(row) {
-  if (!row) return null;
-  const sessions = Number(row.sessions_logged) || 1;
+/** Standalone brief card when no squad exists to pin onto. */
+function mapBriefAsHub(brief) {
+  if (!brief) return null;
   return {
-    id: String(row.id),
-    kind: 'SPARRING LOG',
-    title: String(row.title || 'Sparring Log'),
-    meta: `${sessions} session${sessions === 1 ? '' : 's'} logged`,
-    detail: String(row.last_note || 'Log started · notes open'),
-    action: 'OPEN LOG',
-    source: 'sparring',
-    createdAt: row.created_at || null,
-    localOnly: Boolean(row.localOnly),
+    id: String(brief.id),
+    kind: 'SQUAD BRIEF',
+    title: String(brief.title || 'Squad Brief'),
+    meta: `Sport · ${brief.sportTag || 'OTHER'}`,
+    detail: String(brief.intel || 'Tactical brief pinned'),
+    action: 'OPEN BRIEF',
+    source: 'brief',
+    createdAt: brief.createdAt || null,
+    localOnly: Boolean(brief.localOnly),
+    brief: {
+      id: brief.id,
+      title: brief.title,
+      sportTag: brief.sportTag,
+      intel: brief.intel || '',
+    },
   };
 }
 
-/** Try insert payloads in order; ignore schema-cache column mismatches. */
 async function insertWithFallbacks(table, variants) {
   let lastError = null;
   for (const payload of variants) {
@@ -75,7 +109,6 @@ async function insertWithFallbacks(table, variants) {
       if (!error && data) return { data, error: null };
       lastError = error || lastError;
       if (error && !isSchemaCacheError(error)) {
-        // Non-schema failure (RLS, network) — stop early
         if (!/column|schema cache|PGRST/i.test(String(error.message || ''))) {
           break;
         }
@@ -88,32 +121,109 @@ async function insertWithFallbacks(table, variants) {
   return { data: null, error: lastError };
 }
 
-/** Active hubs = squads + sparring logs, newest first. */
+async function updateSquadBriefFields(squadId, { title, sportTag, intel }) {
+  if (!squadId || !isSupabaseConfigured()) return;
+  const variants = [
+    {
+      brief_title: title,
+      brief_sport: sportTag,
+      brief_intel: intel,
+      last_message: title,
+    },
+    { brief_title: title, brief_sport: sportTag, last_message: title },
+    { last_message: `${sportTag}: ${title}` },
+  ];
+  for (const patch of variants) {
+    try {
+      const { error } = await supabase.from('squads').update(patch).eq('id', squadId);
+      if (!error) return;
+      if (!isSchemaCacheError(error)) break;
+    } catch {
+      break;
+    }
+  }
+}
+
+/** Active hubs = squads (with pinned briefs) + orphan briefs. */
 export async function fetchActiveHubs() {
   if (!isSupabaseConfigured()) {
     return { hubs: [], error: new Error('Supabase not configured') };
   }
 
   try {
-    const [squadsRes, logsRes] = await Promise.all([
+    const [squadsRes, briefsRes, legacySparRes] = await Promise.all([
       supabase
         .from('squads')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(40),
       supabase
+        .from('squad_briefs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(60),
+      supabase
         .from('sparring_logs')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(40),
+        .limit(20),
     ]);
 
     if (squadsRes.error && !isSchemaCacheError(squadsRes.error)) throw squadsRes.error;
-    if (logsRes.error && !isSchemaCacheError(logsRes.error)) throw logsRes.error;
+
+    const briefs = (briefsRes.data || []).map(mapBrief).filter(Boolean);
+    const briefsBySquad = {};
+    const orphanBriefs = [];
+    for (const b of briefs) {
+      if (b.squadId) {
+        if (!briefsBySquad[b.squadId]) briefsBySquad[b.squadId] = b;
+      } else {
+        orphanBriefs.push(b);
+      }
+    }
+
+    const squadHubs = (squadsRes.data || [])
+      .map((row) => mapSquadRow(row, briefsBySquad[String(row.id)] || null))
+      .filter(Boolean);
+
+    // Prefer pinning orphan briefs onto the newest squad without a brief
+    const needsBrief = squadHubs.filter((h) => !h.brief);
+    const stillOrphan = [];
+    for (const b of orphanBriefs) {
+      const target = needsBrief.shift();
+      if (target) {
+        target.brief = {
+          id: b.id,
+          title: b.title,
+          sportTag: b.sportTag,
+          intel: b.intel || '',
+        };
+        if (b.intel) target.detail = b.intel;
+      } else {
+        stillOrphan.push(b);
+      }
+    }
+
+    // Legacy sparring_logs → treat as squad briefs if table still has rows
+    const legacyHubs = [];
+    if (!legacySparRes.error && legacySparRes.data?.length) {
+      for (const row of legacySparRes.data) {
+        legacyHubs.push(
+          mapBriefAsHub({
+            id: String(row.id),
+            title: String(row.title || 'Squad Brief'),
+            sportTag: 'OTHER',
+            intel: String(row.last_note || ''),
+            createdAt: row.created_at,
+          })
+        );
+      }
+    }
 
     const hubs = [
-      ...((squadsRes.data || []).map(mapSquadRow).filter(Boolean)),
-      ...((logsRes.data || []).map(mapSparringRow).filter(Boolean)),
+      ...squadHubs,
+      ...stillOrphan.map(mapBriefAsHub).filter(Boolean),
+      ...legacyHubs,
     ];
 
     hubs.sort((a, b) => {
@@ -172,7 +282,6 @@ export async function createTrainingSquad({
 
   if (data) return { hub: mapSquadRow(data), error: null, localOnly: false };
 
-  // Schema cache / transient column mismatch — keep UI flowing with local hub
   if (!error || isSchemaCacheError(error)) {
     console.warn(
       '[lockerService] createTrainingSquad soft-fallback:',
@@ -185,61 +294,178 @@ export async function createTrainingSquad({
   return { hub: localHub, error: null, localOnly: true };
 }
 
-export async function createSparringLog({
+/**
+ * Post a universal Squad Brief and pin it onto a squad (newest by default).
+ */
+export async function createSquadBrief({
   title,
-  lastNote = 'First session logged',
+  sportTag = 'Other',
+  intel = '',
+  squadId = null,
   createdBy,
   athleteHandle,
 } = {}) {
-  const name = String(title || '').trim() || 'New Sparring Log';
+  const briefTitle = String(title || '').trim() || 'Squad Brief';
+  const sport = String(sportTag || 'Other').trim() || 'Other';
+  const briefIntel = String(intel || '').trim();
   const created_by = String(createdBy || ACTIVE_USER?.handle || 'athlete').trim();
   const athlete_handle = normalizeHandle(athleteHandle || created_by);
 
-  const localHub = mapSparringRow({
-    id: localId('spar'),
-    title: name,
-    sessions_logged: 1,
-    last_note: lastNote,
+  let targetSquadId = squadId ? String(squadId) : null;
+
+  if (!targetSquadId && isSupabaseConfigured()) {
+    try {
+      const { data } = await supabase
+        .from('squads')
+        .select('id')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data?.id) targetSquadId = String(data.id);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const localBrief = mapBrief({
+    id: localId('brief'),
+    squad_id: targetSquadId,
+    title: briefTitle,
+    sport_tag: sport,
+    intel: briefIntel,
     created_by,
-    athlete_handle,
     created_at: new Date().toISOString(),
     localOnly: true,
   });
 
+  const buildHub = (brief, squadRow = null) => {
+    if (squadRow || targetSquadId) {
+      return mapSquadRow(
+        squadRow || {
+          id: targetSquadId || localId('squad'),
+          name: 'Active Squad',
+          kind: 'TRAINING SQUAD',
+          privacy: 'Invite only',
+          member_count: 1,
+          last_message: briefTitle,
+          created_at: new Date().toISOString(),
+          localOnly: true,
+        },
+        brief
+      );
+    }
+    return mapBriefAsHub(brief);
+  };
+
   if (!isSupabaseConfigured()) {
-    return { hub: localHub, error: null, localOnly: true };
+    return { hub: buildHub(localBrief), brief: localBrief, error: null, localOnly: true };
   }
 
-  const { data, error } = await insertWithFallbacks('sparring_logs', [
+  const { data, error } = await insertWithFallbacks('squad_briefs', [
     {
-      title: name,
-      sessions_logged: 1,
-      last_note: lastNote,
+      title: briefTitle,
+      sport_tag: sport,
+      intel: briefIntel,
+      squad_id: targetSquadId,
       created_by,
       athlete_handle,
     },
     {
-      title: name,
-      sessions_logged: 1,
-      last_note: lastNote,
+      title: briefTitle,
+      sport_tag: sport,
+      intel: briefIntel,
+      squad_id: targetSquadId,
       created_by,
     },
-    { title: name, created_by, athlete_handle },
-    { title: name, created_by },
-    { title: name, athlete_handle },
-    { title: name },
+    {
+      title: briefTitle,
+      sport_tag: sport,
+      intel: briefIntel,
+      created_by,
+    },
+    { title: briefTitle, sport_tag: sport, intel: briefIntel },
+    { title: briefTitle, sport_tag: sport },
+    { title: briefTitle },
+    // Legacy sparring_logs fallback if squad_briefs not provisioned yet
   ]);
 
-  if (data) return { hub: mapSparringRow(data), error: null, localOnly: false };
+  let brief = data ? mapBrief(data) : null;
 
-  if (!error || isSchemaCacheError(error)) {
-    console.warn(
-      '[lockerService] createSparringLog soft-fallback:',
-      error?.message || 'schema cache'
-    );
-    return { hub: localHub, error: null, localOnly: true };
+  if (!brief) {
+    // Fall back to sparring_logs table for transitional schemas
+    const legacy = await insertWithFallbacks('sparring_logs', [
+      {
+        title: briefTitle,
+        sessions_logged: 1,
+        last_note: `[${sport}] ${briefIntel || briefTitle}`,
+        created_by,
+        athlete_handle,
+      },
+      {
+        title: briefTitle,
+        last_note: briefIntel || briefTitle,
+        created_by,
+      },
+      { title: briefTitle },
+    ]);
+    if (legacy.data) {
+      brief = mapBrief({
+        id: legacy.data.id,
+        squad_id: targetSquadId,
+        title: legacy.data.title,
+        sport_tag: sport,
+        intel: legacy.data.last_note || briefIntel,
+        created_by,
+        created_at: legacy.data.created_at,
+      });
+    }
   }
 
-  console.warn('[lockerService] createSparringLog:', error?.message || error);
-  return { hub: localHub, error: null, localOnly: true };
+  if (!brief) {
+    console.warn(
+      '[lockerService] createSquadBrief soft-fallback:',
+      error?.message || 'schema cache'
+    );
+    brief = localBrief;
+  }
+
+  if (targetSquadId) {
+    await updateSquadBriefFields(targetSquadId, {
+      title: briefTitle,
+      sportTag: sport,
+      intel: briefIntel,
+    });
+  }
+
+  let squadRow = null;
+  if (targetSquadId) {
+    try {
+      const { data: s } = await supabase
+        .from('squads')
+        .select('*')
+        .eq('id', targetSquadId)
+        .maybeSingle();
+      squadRow = s || null;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return {
+    hub: buildHub(brief, squadRow),
+    brief,
+    error: null,
+    localOnly: Boolean(brief.localOnly),
+  };
+}
+
+/** @deprecated Use createSquadBrief */
+export async function createSparringLog(args = {}) {
+  return createSquadBrief({
+    title: args.title,
+    sportTag: 'Combat',
+    intel: args.lastNote || '',
+    createdBy: args.createdBy,
+    athleteHandle: args.athleteHandle,
+  });
 }

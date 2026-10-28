@@ -1,5 +1,5 @@
 /**
- * THE LOCKER ROOM — training squads, gym circles, sparring logs.
+ * THE LOCKER ROOM — training squads, gym circles, squad briefs.
  * Minimalist borderless black-and-white surface.
  *
  * LOCKED production surface — mint clinic + orange Active Hubs as shipped.
@@ -19,7 +19,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMainTabs } from './mainTabContext';
 import {
-  createSparringLog,
+  createSquadBrief,
   createTrainingSquad,
   fetchActiveHubs,
   LOCKER_SETUP_HINT,
@@ -39,31 +39,49 @@ const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
 const HUB_ACCENT = '#F97316';
 const LINE = 'rgba(255,255,255,0.14)';
 
-/** Seed hubs shown when cloud is empty / offline — same locked demo content. */
+/** Seed hubs — squads with pinned Squad Brief headers. */
 const SEED_HUBS = [
   {
     id: 'squad-iron',
     kind: 'TRAINING SQUAD',
     title: 'Iron Circle',
     meta: '6 athletes · Invite only',
-    detail: 'Coach brief · Film tomorrow 6AM',
+    detail: 'Coach brief · Film tomorrow 6AM · pads + headgear',
     action: 'VIEW SQUAD',
+    brief: {
+      id: 'brief-iron',
+      title: 'Matchday Lineup & Strategy',
+      sportTag: 'COMBAT',
+      intel: 'Coach brief · Film tomorrow 6AM · pads + headgear',
+    },
   },
   {
     id: 'gym-south',
     kind: 'GYM CIRCLE',
     title: 'South Turf Unit',
     meta: '12 members · Open join',
-    detail: 'PR night · Chalk + straps',
+    detail: 'PR night · Chalk + straps · open floor 7PM',
     action: 'JOIN CIRCLE',
+    brief: {
+      id: 'brief-south',
+      title: 'Friday Sparring Block',
+      sportTag: 'GYM',
+      intel: 'PR night · Chalk + straps · open floor 7PM',
+    },
   },
   {
-    id: 'spar-night',
-    kind: 'SPARRING LOG',
+    id: 'squad-night',
+    kind: 'TRAINING SQUAD',
     title: 'Night Shift Athletics',
-    meta: '8 sessions logged this week',
-    detail: 'Last: 3-round shadow · notes pinned',
-    action: 'OPEN LOG',
+    meta: '8 athletes · Invite only',
+    detail: '3-round shadow · notes pinned · south bay',
+    action: 'VIEW SQUAD',
+    brief: {
+      id: 'brief-night',
+      title: 'Night Shift Block',
+      sportTag: 'RUNNING',
+      intel: '3-round shadow · notes pinned · south bay',
+    },
   },
   {
     id: 'squad-lift',
@@ -72,10 +90,12 @@ const SEED_HUBS = [
     meta: '4 athletes · Strategy board',
     detail: 'Next block: heavy triples',
     action: 'VIEW SQUAD',
+    brief: null,
   },
 ];
 
 function HubCard({ item, onPress }) {
+  const brief = item?.brief;
   return (
     <TouchableOpacity
       style={styles.hubCard}
@@ -84,6 +104,22 @@ function HubCard({ item, onPress }) {
       accessibilityRole="button"
       accessibilityLabel={`${item.action} ${item.title}`}
     >
+      {brief ? (
+        <View style={styles.briefPin}>
+          <Text style={styles.briefPinLabel}>SQUAD BRIEF</Text>
+          <View style={styles.briefPinRow}>
+            <Text style={styles.briefPinTitle} numberOfLines={1}>
+              {brief.title}
+            </Text>
+            {brief.sportTag ? (
+              <View style={styles.sportBadge}>
+                <Text style={styles.sportBadgeText}>{brief.sportTag}</Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       <Text style={styles.hubKind}>{item.kind}</Text>
       <Text style={styles.hubTitle}>{item.title}</Text>
       <Text style={styles.hubMeta}>{item.meta}</Text>
@@ -108,18 +144,22 @@ export default function LockerRoomScreen({ navigation }) {
     setNotice({ title, message });
   }, []);
 
-  const openHub = useCallback((hub) => {
-    if (!hub) return;
-    const lines = [
-      hub.kind,
-      hub.meta,
-      '',
-      hub.detail,
-      '',
-      hub.action ? `${hub.action} ready` : null,
-    ].filter((line) => line != null);
-    showNotice(hub.title, lines.join('\n'));
-  }, [showNotice]);
+  const openHub = useCallback(
+    (hub) => {
+      if (!hub) return;
+      const lines = [
+        hub.kind,
+        hub.meta,
+        hub.brief ? `BRIEF · ${hub.brief.title} · ${hub.brief.sportTag}` : null,
+        '',
+        hub.detail,
+        '',
+        hub.action ? `${hub.action} ready` : null,
+      ].filter((line) => line != null);
+      showNotice(hub.title, lines.join('\n'));
+    },
+    [showNotice]
+  );
 
   const loadHubs = useCallback(async () => {
     const { hubs: live, error } = await fetchActiveHubs();
@@ -162,6 +202,7 @@ export default function LockerRoomScreen({ navigation }) {
     if (!guardCloud()) return;
     setPrompt({
       kind: 'squad',
+      mode: 'prompt',
       title: 'Create Training Squad',
       message: 'Name your squad. Posts with kind TRAINING SQUAD.',
       defaultValue: 'New Training Squad',
@@ -170,15 +211,15 @@ export default function LockerRoomScreen({ navigation }) {
     });
   };
 
-  const onStartSparring = () => {
+  const onPostSquadBrief = () => {
     if (!guardCloud()) return;
     setPrompt({
-      kind: 'spar',
-      title: 'Start Sparring Log',
-      message: 'Title for this log. Posts with your athlete handle.',
-      defaultValue: 'New Sparring Log',
-      confirmLabel: 'START',
-      placeholder: 'Log title',
+      kind: 'brief',
+      mode: 'squadBrief',
+      title: 'Post Squad Brief',
+      message: 'Pin tactical intel to your active squad.',
+      defaultValue: 'Matchday Lineup & Strategy',
+      confirmLabel: 'POST',
     });
   };
 
@@ -186,34 +227,98 @@ export default function LockerRoomScreen({ navigation }) {
     if (!busy) setPrompt(null);
   };
 
-  const submitPrompt = async (value) => {
+  const mergeHub = useCallback((hub) => {
+    if (!hub) return;
+    setHubs((prev) => {
+      const without = prev.filter((h) => h.id !== hub.id);
+      // If brief pinned onto existing squad, replace that card
+      if (hub.source === 'squad') {
+        return [hub, ...without];
+      }
+      return [hub, ...without];
+    });
+  }, []);
+
+  const submitPrompt = async (payload) => {
     if (!prompt || busy) return;
-    const text = String(value || '').trim();
-    if (!text) {
-      showNotice('BAWAAL', 'Enter a name to continue.');
-      return;
-    }
-    setBusy(true);
-    try {
-      if (prompt.kind === 'squad') {
+
+    if (prompt.kind === 'squad') {
+      const text = String(payload || '').trim();
+      if (!text) {
+        showNotice('BAWAAL', 'Enter a squad name to continue.');
+        return;
+      }
+      setBusy(true);
+      try {
         const { hub } = await createTrainingSquad({
           name: text,
           kind: 'TRAINING SQUAD',
           createdBy: ACTIVE_USER?.handle || 'athlete',
         });
-        if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
-      } else if (prompt.kind === 'spar') {
+        mergeHub(hub);
+        setPrompt(null);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (prompt.kind === 'brief') {
+      const title = String(payload?.title || '').trim();
+      const sportTag = String(payload?.sportTag || 'Other').trim();
+      const intel = String(payload?.intel || '').trim();
+      if (!title) {
+        showNotice('BAWAAL', 'Enter a brief title to continue.');
+        return;
+      }
+      setBusy(true);
+      try {
         const handle = ACTIVE_USER?.handle || 'athlete';
-        const { hub } = await createSparringLog({
-          title: text,
+        const newestSquad = hubs.find(
+          (h) =>
+            h.source === 'squad' ||
+            String(h.kind || '').includes('SQUAD') ||
+            String(h.kind || '').includes('GYM')
+        );
+        const isUuid =
+          newestSquad?.id &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            String(newestSquad.id)
+          );
+        const { hub } = await createSquadBrief({
+          title,
+          sportTag,
+          intel,
+          squadId: isUuid ? newestSquad.id : null,
           createdBy: handle,
           athleteHandle: handle,
         });
-        if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
+        if (hub) {
+          setHubs((prev) => {
+            if (newestSquad) {
+              const idx = prev.findIndex((h) => h.id === newestSquad.id);
+              if (idx >= 0) {
+                const next = [...prev];
+                next[idx] = {
+                  ...next[idx],
+                  brief: hub.brief || {
+                    id: hub.brief?.id || hub.id,
+                    title,
+                    sportTag: sportTag.toUpperCase(),
+                    intel,
+                  },
+                  detail: intel || hub.detail || next[idx].detail,
+                };
+                return next;
+              }
+            }
+            return [hub, ...prev.filter((h) => h.id !== hub.id)];
+          });
+        }
+        setPrompt(null);
+      } finally {
+        setBusy(false);
       }
-      setPrompt(null);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -249,6 +354,7 @@ export default function LockerRoomScreen({ navigation }) {
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: 120 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -288,16 +394,16 @@ export default function LockerRoomScreen({ navigation }) {
         <TouchableOpacity
           style={styles.textAction}
           activeOpacity={0.75}
-          onPress={onStartSparring}
+          onPress={onPostSquadBrief}
           disabled={busy}
         >
-          <Text style={styles.textActionLabel}>+ START SPARRING LOG</Text>
+          <Text style={styles.textActionLabel}>+ POST SQUAD BRIEF</Text>
         </TouchableOpacity>
       </ScrollView>
 
       <BawaalPromptModal
         visible={Boolean(prompt)}
-        mode="prompt"
+        mode={prompt?.mode || 'prompt'}
         title={prompt?.title || ''}
         message={prompt?.message || ''}
         defaultValue={prompt?.defaultValue || ''}
@@ -414,6 +520,43 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: LINE,
+  },
+  briefPin: {
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LINE,
+  },
+  briefPinLabel: {
+    color: SLATE,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+    marginBottom: 6,
+  },
+  briefPinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  briefPinTitle: {
+    flex: 1,
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    marginRight: 10,
+  },
+  sportBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(249,115,22,0.16)',
+  },
+  sportBadgeText: {
+    color: HUB_ACCENT,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.1,
   },
   hubKind: {
     color: SLATE,
