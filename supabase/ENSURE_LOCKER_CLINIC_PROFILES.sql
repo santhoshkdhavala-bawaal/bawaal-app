@@ -1,5 +1,6 @@
 -- BAWAAL · Locker Room / Clinic / Passport tables
 -- Run in Supabase SQL Editor (or supabase db push).
+-- Re-run safely to align columns + clear PostgREST schema cache.
 
 -- ── Squads (training hubs / gym circles) ─────────────────────────────
 create table if not exists public.squads (
@@ -13,6 +14,10 @@ create table if not exists public.squads (
   created_at timestamptz not null default now()
 );
 
+alter table public.squads add column if not exists kind text;
+alter table public.squads add column if not exists created_by text;
+alter table public.squads alter column kind set default 'TRAINING SQUAD';
+
 create index if not exists squads_created_at_idx
   on public.squads (created_at desc);
 
@@ -23,20 +28,45 @@ create table if not exists public.sparring_logs (
   sessions_logged integer not null default 1,
   last_note text,
   created_by text,
+  athlete_handle text,
   created_at timestamptz not null default now()
 );
+
+alter table public.sparring_logs add column if not exists created_by text;
+alter table public.sparring_logs add column if not exists athlete_handle text;
 
 create index if not exists sparring_logs_created_at_idx
   on public.sparring_logs (created_at desc);
 
--- ── Clinic Q&A ───────────────────────────────────────────────────────
+-- ── Clinic Q&A (question_text is the live column name) ───────────────
 create table if not exists public.clinic_questions (
   id uuid primary key default gen_random_uuid(),
   athlete_handle text not null,
   sport text not null default 'GYM',
-  question text not null,
+  question_text text not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.clinic_questions add column if not exists athlete_handle text;
+alter table public.clinic_questions add column if not exists question_text text;
+alter table public.clinic_questions add column if not exists sport text;
+
+-- Backfill from legacy `question` column when present
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'clinic_questions'
+      and column_name = 'question'
+  ) then
+    execute $q$
+      update public.clinic_questions
+      set question_text = coalesce(question_text, question)
+      where question_text is null and question is not null
+    $q$;
+  end if;
+end $$;
 
 create index if not exists clinic_questions_created_at_idx
   on public.clinic_questions (created_at desc);
@@ -75,7 +105,6 @@ create table if not exists public.profiles (
   bawaal_pts integer not null default 0,
   rank integer,
   list_bucket text not null default 'suggested',
-  -- self | following | suggested
   created_at timestamptz not null default now()
 );
 
@@ -122,12 +151,5 @@ begin
   end loop;
 end $$;
 
+-- Force PostgREST to drop stale column cache (clears PGRST204 / schema cache errors)
 notify pgrst, 'reload schema';
-
--- Optional seed (idempotent-ish): uncomment to populate Passport demo rows.
--- insert into public.profiles (id, display_name, handle, bio, sport, list_bucket, followers, following_count, win_rate, battles_won, bawaal_pts, rank, verified, online, status_badge)
--- values
---   ('me', 'Rohit Kumar', '@rohit_vk7', 'Combat Sports Athlete', 'COMBAT', 'self', 1240, 86, 78, 18, 3850, 1, true, true, 'SCOUT VERIFIED'),
---   ('f1', 'Mia Torque', '@Mia_Torque', 'Floor PR hunter', 'GYM', 'following', 890, 40, 81, 22, 4120, 2, true, true, 'PRO'),
---   ('s1', 'Yuki Lift', '@Yuki_Lift', 'Olympic lift focus', 'GYM', 'suggested', 420, 33, 74, 9, 2100, 8, false, false, 'RISING')
--- on conflict (id) do nothing;

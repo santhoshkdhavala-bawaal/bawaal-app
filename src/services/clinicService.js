@@ -1,5 +1,6 @@
 /**
  * Clinic ↔ Supabase `clinic_questions` + `clinic_replies`.
+ * Inserts use live columns: athlete_handle + question_text.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { ACTIVE_USER } from './activeUserProfile';
@@ -21,14 +22,29 @@ function relativeTime(iso) {
   return `${days}d ago`;
 }
 
+function normalizeHandle(raw) {
+  const h = String(raw || '').trim();
+  if (!h) return '@athlete';
+  return h.startsWith('@') ? h : `@${h}`;
+}
+
+function questionBody(row) {
+  return String(row?.question_text || row?.question || '').trim();
+}
+
+function isSchemaCacheError(error) {
+  const msg = String(error?.message || error?.details || error || '');
+  return /schema cache|PGRST204|Could not find .* column/i.test(msg);
+}
+
 function mapFeedItem(question, reply) {
   if (!question) return null;
-  const handle = String(question.athlete_handle || '@athlete');
+  const handle = normalizeHandle(question.athlete_handle || '@athlete');
   return {
     id: String(question.id),
-    athlete: handle.startsWith('@') ? handle : `@${handle}`,
+    athlete: handle,
     sport: String(question.sport || 'GYM').toUpperCase(),
-    question: String(question.question || ''),
+    question: questionBody(question),
     time: relativeTime(question.created_at),
     expert: reply
       ? {
@@ -89,27 +105,35 @@ export async function askClinicQuestion({
   if (!isSupabaseConfigured()) {
     return { item: null, error: new Error('Supabase not configured') };
   }
-  const text = String(question || '').trim();
-  if (!text) {
+  const question_text = String(question || '').trim();
+  if (!question_text) {
     return { item: null, error: new Error('Question required') };
   }
-  const handle =
-    athleteHandle ||
-    ACTIVE_USER?.handle ||
-    ACTIVE_USER?.displayName ||
-    '@athlete';
+  const athlete_handle = normalizeHandle(
+    athleteHandle || ACTIVE_USER?.handle || ACTIVE_USER?.displayName || '@athlete'
+  );
 
   try {
     const { data, error } = await supabase
       .from('clinic_questions')
       .insert({
-        athlete_handle: handle.startsWith('@') ? handle : `@${handle}`,
+        athlete_handle,
         sport: String(sport || 'GYM').toUpperCase(),
-        question: text,
+        question_text,
       })
       .select('*')
       .single();
-    if (error) throw error;
+    if (error) {
+      if (isSchemaCacheError(error)) {
+        return {
+          item: null,
+          error: new Error(
+            `${error.message}\n\n${CLINIC_SETUP_HINT} (re-run to reload schema cache)`
+          ),
+        };
+      }
+      throw error;
+    }
     return { item: mapFeedItem(data, null), error: null };
   } catch (error) {
     console.warn('[clinicService] askClinicQuestion:', error?.message || error);

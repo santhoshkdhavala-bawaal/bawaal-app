@@ -8,7 +8,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   RefreshControl,
   StyleSheet,
   Text,
@@ -27,7 +26,7 @@ import {
 } from './src/services/lockerService';
 import { isSupabaseConfigured } from './src/services/supabase';
 import { ACTIVE_USER } from './src/services/activeUserProfile';
-import { textPrompt } from './src/utils/textPrompt';
+import BawaalPromptModal from './src/components/BawaalPromptModal';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -102,6 +101,12 @@ export default function LockerRoomScreen({ navigation }) {
   const [hubs, setHubs] = useState(SEED_HUBS);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [prompt, setPrompt] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const showNotice = useCallback((title, message) => {
+    setNotice({ title, message });
+  }, []);
 
   const loadHubs = useCallback(async () => {
     const { hubs: live, error } = await fetchActiveHubs();
@@ -136,62 +141,75 @@ export default function LockerRoomScreen({ navigation }) {
 
   const guardCloud = () => {
     if (isSupabaseConfigured()) return true;
-    Alert.alert('Supabase', LOCKER_SETUP_HINT);
+    showNotice('Supabase', LOCKER_SETUP_HINT);
     return false;
   };
 
   const onCreateSquad = () => {
     if (!guardCloud()) return;
-    textPrompt({
+    setPrompt({
+      kind: 'squad',
       title: 'Create Training Squad',
-      message: 'Name your squad',
+      message: 'Name your squad. Posts with kind TRAINING SQUAD.',
       defaultValue: 'New Training Squad',
-      confirmLabel: 'Create',
-      onSubmit: async (name) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-          const { hub, error } = await createTrainingSquad({
-            name,
-            createdBy: ACTIVE_USER?.handle || 'athlete',
-          });
-          if (error) {
-            Alert.alert('Squad', error.message || 'Could not create squad');
-            return;
-          }
-          if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
-        } finally {
-          setBusy(false);
-        }
-      },
+      confirmLabel: 'CREATE',
+      placeholder: 'Squad name',
     });
   };
 
   const onStartSparring = () => {
     if (!guardCloud()) return;
-    textPrompt({
+    setPrompt({
+      kind: 'spar',
       title: 'Start Sparring Log',
-      message: 'Title for this log',
+      message: 'Title for this log. Posts with your athlete handle.',
       defaultValue: 'New Sparring Log',
-      confirmLabel: 'Start',
-      onSubmit: async (title) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-          const { hub, error } = await createSparringLog({
-            title,
-            createdBy: ACTIVE_USER?.handle || 'athlete',
-          });
-          if (error) {
-            Alert.alert('Sparring', error.message || 'Could not start log');
-            return;
-          }
-          if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
-        } finally {
-          setBusy(false);
-        }
-      },
+      confirmLabel: 'START',
+      placeholder: 'Log title',
     });
+  };
+
+  const closePrompt = () => {
+    if (!busy) setPrompt(null);
+  };
+
+  const submitPrompt = async (value) => {
+    if (!prompt || busy) return;
+    const text = String(value || '').trim();
+    if (!text) {
+      showNotice('BAWAAL', 'Enter a name to continue.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (prompt.kind === 'squad') {
+        const { hub, error } = await createTrainingSquad({
+          name: text,
+          kind: 'TRAINING SQUAD',
+          createdBy: ACTIVE_USER?.handle || 'athlete',
+        });
+        if (error) {
+          showNotice('Squad', error.message || 'Could not create squad');
+          return;
+        }
+        if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
+      } else if (prompt.kind === 'spar') {
+        const handle = ACTIVE_USER?.handle || 'athlete';
+        const { hub, error } = await createSparringLog({
+          title: text,
+          createdBy: handle,
+          athleteHandle: handle,
+        });
+        if (error) {
+          showNotice('Sparring', error.message || 'Could not start log');
+          return;
+        }
+        if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
+      }
+      setPrompt(null);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -271,6 +289,26 @@ export default function LockerRoomScreen({ navigation }) {
           <Text style={styles.textActionLabel}>+ START SPARRING LOG</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <BawaalPromptModal
+        visible={Boolean(prompt)}
+        mode="prompt"
+        title={prompt?.title || ''}
+        message={prompt?.message || ''}
+        defaultValue={prompt?.defaultValue || ''}
+        placeholder={prompt?.placeholder || ''}
+        confirmLabel={prompt?.confirmLabel || 'CONFIRM'}
+        onConfirm={submitPrompt}
+        onCancel={closePrompt}
+        busy={busy}
+      />
+      <BawaalPromptModal
+        visible={Boolean(notice)}
+        mode="notice"
+        title={notice?.title || 'BAWAAL'}
+        message={notice?.message || ''}
+        onCancel={() => setNotice(null)}
+      />
     </View>
   );
 }

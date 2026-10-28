@@ -7,7 +7,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
   RefreshControl,
   StyleSheet,
   Text,
@@ -25,13 +24,15 @@ import {
 } from './src/services/clinicService';
 import { isSupabaseConfigured } from './src/services/supabase';
 import { ACTIVE_USER } from './src/services/activeUserProfile';
-import { textPrompt } from './src/utils/textPrompt';
+import BawaalPromptModal from './src/components/BawaalPromptModal';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = '#8A8A8A';
 const OFF_WHITE = '#E8ECE9';
 const LINE = 'rgba(255,255,255,0.14)';
+/** Electric mint — Ask The Clinic CTA accent */
+const CLINIC_MINT = '#4ADE80';
 
 /** Seed feed when cloud is empty / offline — same locked demo content. */
 const SEED_FEED = [
@@ -126,6 +127,12 @@ export default function ClinicScreen({ navigation }) {
   const [feed, setFeed] = useState(SEED_FEED);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [prompt, setPrompt] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  const showNotice = useCallback((title, message) => {
+    setNotice({ title, message });
+  }, []);
 
   const loadFeed = useCallback(async () => {
     const { feed: live, error } = await fetchClinicFeed();
@@ -156,39 +163,20 @@ export default function ClinicScreen({ navigation }) {
 
   const guardCloud = () => {
     if (isSupabaseConfigured()) return true;
-    Alert.alert('Supabase', CLINIC_SETUP_HINT);
+    showNotice('Supabase', CLINIC_SETUP_HINT);
     return false;
   };
 
   const onAskClinic = () => {
     if (!guardCloud()) return;
-    textPrompt({
+    setPrompt({
+      kind: 'ask',
       title: 'Ask The Clinic',
-      message: 'Your question for verified experts',
+      message: 'Your question for verified experts. Posts with your athlete handle.',
       defaultValue: 'Advice on training load this week?',
-      confirmLabel: 'Post',
-      onSubmit: async (question) => {
-        if (!question) {
-          Alert.alert('Clinic', 'Enter a question to post.');
-          return;
-        }
-        if (busy) return;
-        setBusy(true);
-        try {
-          const { item, error } = await askClinicQuestion({
-            question,
-            sport: ACTIVE_USER?.sportInterest || 'GYM',
-            athleteHandle: ACTIVE_USER?.handle,
-          });
-          if (error) {
-            Alert.alert('Clinic', error.message || 'Could not post question');
-            return;
-          }
-          if (item) setFeed((prev) => [item, ...prev.filter((q) => q.id !== item.id)]);
-        } finally {
-          setBusy(false);
-        }
-      },
+      confirmLabel: 'POST',
+      placeholder: 'Write your question',
+      multiline: true,
     });
   };
 
@@ -196,55 +184,79 @@ export default function ClinicScreen({ navigation }) {
     if (!guardCloud()) return;
     const awaiting = feed.find((q) => !q.expert);
     if (!awaiting) {
-      Alert.alert('Clinic', 'No open questions awaiting a reply.');
+      showNotice('Clinic', 'No open questions awaiting a reply.');
       return;
     }
-    textPrompt({
+    setPrompt({
+      kind: 'expert',
+      questionId: awaiting.id,
       title: 'Expert Reply',
       message: `Reply to ${awaiting.athlete}`,
       defaultValue: 'Rest, progressive load, and reassess if pain persists.',
-      confirmLabel: 'Post',
-      onSubmit: async (response) => {
-        if (!response) {
-          Alert.alert('Clinic', 'Enter a response to post.');
+      confirmLabel: 'POST',
+      placeholder: 'Verified advisory',
+      multiline: true,
+    });
+  };
+
+  const closePrompt = () => {
+    if (!busy) setPrompt(null);
+  };
+
+  const submitPrompt = async (value) => {
+    if (!prompt || busy) return;
+    const text = String(value || '').trim();
+    if (!text) {
+      showNotice('Clinic', 'Enter text to continue.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (prompt.kind === 'ask') {
+        const { item, error } = await askClinicQuestion({
+          question: text,
+          sport: ACTIVE_USER?.sportInterest || 'GYM',
+          athleteHandle: ACTIVE_USER?.handle,
+        });
+        if (error) {
+          showNotice('Clinic', error.message || 'Could not post question');
           return;
         }
-        if (busy) return;
-        setBusy(true);
-        try {
-          const { reply, error } = await postClinicReply({
-            questionId: awaiting.id,
-            expertName: ACTIVE_USER?.displayName || 'Verified Expert',
-            expertRole: 'VERIFIED EXPERT',
-            response,
-          });
-          if (error) {
-            Alert.alert('Clinic', error.message || 'Could not post reply');
-            return;
-          }
-          if (reply) {
-            setFeed((prev) =>
-              prev.map((q) =>
-                q.id === awaiting.id
-                  ? {
-                      ...q,
-                      expert: {
-                        name: String(reply.expert_name),
-                        role: String(reply.expert_role),
-                        response: String(reply.response),
-                        hasVideo: Boolean(reply.has_video),
-                        videoLabel: reply.video_label || 'VIDEO ADVISORY',
-                      },
-                    }
-                  : q
-              )
-            );
-          }
-        } finally {
-          setBusy(false);
+        if (item) setFeed((prev) => [item, ...prev.filter((q) => q.id !== item.id)]);
+      } else if (prompt.kind === 'expert') {
+        const { reply, error } = await postClinicReply({
+          questionId: prompt.questionId,
+          expertName: ACTIVE_USER?.displayName || 'Verified Expert',
+          expertRole: 'VERIFIED EXPERT',
+          response: text,
+        });
+        if (error) {
+          showNotice('Clinic', error.message || 'Could not post reply');
+          return;
         }
-      },
-    });
+        if (reply) {
+          setFeed((prev) =>
+            prev.map((q) =>
+              q.id === prompt.questionId
+                ? {
+                    ...q,
+                    expert: {
+                      name: String(reply.expert_name),
+                      role: String(reply.expert_role),
+                      response: String(reply.response),
+                      hasVideo: Boolean(reply.has_video),
+                      videoLabel: reply.video_label || 'VIDEO ADVISORY',
+                    },
+                  }
+                : q
+            )
+          );
+        }
+      }
+      setPrompt(null);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -291,7 +303,7 @@ export default function ClinicScreen({ navigation }) {
           onPress={onAskClinic}
           disabled={busy}
         >
-          <Text style={styles.textActionLabel}>+ ASK THE CLINIC</Text>
+          <Text style={styles.askClinicLabel}>+ ASK THE CLINIC</Text>
         </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>LATEST QUESTIONS</Text>
@@ -311,6 +323,27 @@ export default function ClinicScreen({ navigation }) {
 
         <Text style={styles.footerDisclaimer}>{LIABILITY}</Text>
       </ScrollView>
+
+      <BawaalPromptModal
+        visible={Boolean(prompt)}
+        mode="prompt"
+        title={prompt?.title || ''}
+        message={prompt?.message || ''}
+        defaultValue={prompt?.defaultValue || ''}
+        placeholder={prompt?.placeholder || ''}
+        confirmLabel={prompt?.confirmLabel || 'CONFIRM'}
+        multiline={Boolean(prompt?.multiline)}
+        onConfirm={submitPrompt}
+        onCancel={closePrompt}
+        busy={busy}
+      />
+      <BawaalPromptModal
+        visible={Boolean(notice)}
+        mode="notice"
+        title={notice?.title || 'BAWAAL'}
+        message={notice?.message || ''}
+        onCancel={() => setNotice(null)}
+      />
     </View>
   );
 }
@@ -466,6 +499,12 @@ const styles = StyleSheet.create({
   },
   textActionLabel: {
     color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+  askClinicLabel: {
+    color: CLINIC_MINT,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,
