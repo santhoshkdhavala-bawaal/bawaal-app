@@ -35,10 +35,17 @@ const SLATE = '#94A3B8';
 /** Light mint — health / clinic advisory accent (stealth B&W + recovery cue) */
 const CLINIC_MINT = '#4ADE80';
 const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
-/** Signature electric orange — hub titles + Create Training Squad */
+/** Signature electric orange — hub card titles / actions */
 const HUB_ACCENT = '#FF5500';
-/** Mint — Post Squad Brief CTA */
-const BRIEF_MINT = '#4ADE80';
+/** Electric blue — ACTIVE HUBS primary section header */
+const HUBS_BLUE = '#3B82F6';
+/** Neon yellow — Create Training Squad CTA */
+const CREATE_YELLOW = '#FACC15';
+/** Electric purple — Post Squad Brief CTA */
+const BRIEF_PURPLE = '#A855F7';
+/** Crimson — pinned squad brief label + sport tags (mint reserved for Clinic) */
+const BRIEF_CRIMSON = '#EF4444';
+const BRIEF_CRIMSON_SOFT = 'rgba(239,68,68,0.16)';
 const LINE = 'rgba(255,255,255,0.14)';
 
 /** Seed hubs — squads with pinned Squad Brief headers. */
@@ -518,7 +525,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
   },
   sectionLabel: {
-    color: WHITE,
+    color: HUBS_BLUE,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1.8,
@@ -539,7 +546,7 @@ const styles = StyleSheet.create({
     borderBottomColor: LINE,
   },
   briefPinLabel: {
-    color: BRIEF_MINT,
+    color: BRIEF_CRIMSON,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.6,
@@ -568,10 +575,10 @@ const styles = StyleSheet.create({
   sportBadge: {
     paddingVertical: 4,
     paddingHorizontal: 8,
-    backgroundColor: 'rgba(255,85,0,0.16)',
+    backgroundColor: BRIEF_CRIMSON_SOFT,
   },
   sportBadgeText: {
-    color: HUB_ACCENT,
+    color: BRIEF_CRIMSON,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 1.1,
@@ -613,13 +620,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   createSquadLabel: {
-    color: HUB_ACCENT,
+    color: CREATE_YELLOW,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,
   },
   postBriefLabel: {
-    color: BRIEF_MINT,
+    color: BRIEF_PURPLE,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,
