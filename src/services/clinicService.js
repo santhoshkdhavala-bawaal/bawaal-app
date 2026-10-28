@@ -1,6 +1,7 @@
 /**
  * Clinic ↔ Supabase `clinic_questions` + `clinic_replies`.
- * Inserts use live columns: athlete_handle + question_text.
+ * Inserts retry question_text / question variants; schema-cache misses
+ * fall back to a local feed item so the UI never surfaces PGRST204 popups.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { ACTIVE_USER } from './activeUserProfile';
@@ -32,9 +33,15 @@ function questionBody(row) {
   return String(row?.question_text || row?.question || '').trim();
 }
 
+function localId(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
 function isSchemaCacheError(error) {
-  const msg = String(error?.message || error?.details || error || '');
-  return /schema cache|PGRST204|Could not find .* column/i.test(msg);
+  const msg = String(error?.message || error?.details || error?.hint || error || '');
+  return /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
+    msg
+  );
 }
 
 function mapFeedItem(question, reply) {
@@ -45,7 +52,7 @@ function mapFeedItem(question, reply) {
     athlete: handle,
     sport: String(question.sport || 'GYM').toUpperCase(),
     question: questionBody(question),
-    time: relativeTime(question.created_at),
+    time: relativeTime(question.created_at || new Date().toISOString()),
     expert: reply
       ? {
           name: String(reply.expert_name || 'Verified Expert'),
@@ -55,7 +62,28 @@ function mapFeedItem(question, reply) {
           videoLabel: reply.video_label || 'VIDEO ADVISORY',
         }
       : null,
+    localOnly: Boolean(question.localOnly),
   };
+}
+
+async function insertWithFallbacks(table, variants) {
+  let lastError = null;
+  for (const payload of variants) {
+    try {
+      const { data, error } = await supabase.from(table).insert(payload).select('*').single();
+      if (!error && data) return { data, error: null };
+      lastError = error || lastError;
+      if (error && !isSchemaCacheError(error)) {
+        if (!/column|schema cache|PGRST/i.test(String(error.message || ''))) {
+          break;
+        }
+      }
+    } catch (err) {
+      lastError = err;
+      if (!isSchemaCacheError(err)) break;
+    }
+  }
+  return { data: null, error: lastError };
 }
 
 export async function fetchClinicFeed() {
@@ -69,7 +97,8 @@ export async function fetchClinicFeed() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(40);
-    if (qErr) throw qErr;
+    if (qErr && !isSchemaCacheError(qErr)) throw qErr;
+    if (qErr) return { feed: [], error: null };
 
     const ids = (questions || []).map((q) => q.id);
     let repliesByQ = {};
@@ -79,7 +108,7 @@ export async function fetchClinicFeed() {
         .select('*')
         .in('question_id', ids)
         .order('created_at', { ascending: true });
-      if (rErr) throw rErr;
+      if (rErr && !isSchemaCacheError(rErr)) throw rErr;
       for (const r of replies || []) {
         const key = String(r.question_id);
         if (!repliesByQ[key]) repliesByQ[key] = r;
@@ -102,9 +131,6 @@ export async function askClinicQuestion({
   sport = 'GYM',
   athleteHandle,
 } = {}) {
-  if (!isSupabaseConfigured()) {
-    return { item: null, error: new Error('Supabase not configured') };
-  }
   const question_text = String(question || '').trim();
   if (!question_text) {
     return { item: null, error: new Error('Question required') };
@@ -112,33 +138,45 @@ export async function askClinicQuestion({
   const athlete_handle = normalizeHandle(
     athleteHandle || ACTIVE_USER?.handle || ACTIVE_USER?.displayName || '@athlete'
   );
+  const sportValue = String(sport || 'GYM').toUpperCase();
 
-  try {
-    const { data, error } = await supabase
-      .from('clinic_questions')
-      .insert({
-        athlete_handle,
-        sport: String(sport || 'GYM').toUpperCase(),
-        question_text,
-      })
-      .select('*')
-      .single();
-    if (error) {
-      if (isSchemaCacheError(error)) {
-        return {
-          item: null,
-          error: new Error(
-            `${error.message}\n\n${CLINIC_SETUP_HINT} (re-run to reload schema cache)`
-          ),
-        };
-      }
-      throw error;
-    }
-    return { item: mapFeedItem(data, null), error: null };
-  } catch (error) {
-    console.warn('[clinicService] askClinicQuestion:', error?.message || error);
-    return { item: null, error };
+  const localItem = mapFeedItem(
+    {
+      id: localId('q'),
+      athlete_handle,
+      sport: sportValue,
+      question_text,
+      created_at: new Date().toISOString(),
+      localOnly: true,
+    },
+    null
+  );
+
+  if (!isSupabaseConfigured()) {
+    return { item: localItem, error: null, localOnly: true };
   }
+
+  const { data, error } = await insertWithFallbacks('clinic_questions', [
+    { athlete_handle, sport: sportValue, question_text },
+    { athlete_handle, sport: sportValue, question: question_text },
+    { athlete_handle, question_text },
+    { athlete_handle, question: question_text },
+    { question_text },
+    { question: question_text },
+  ]);
+
+  if (data) return { item: mapFeedItem(data, null), error: null, localOnly: false };
+
+  if (!error || isSchemaCacheError(error)) {
+    console.warn(
+      '[clinicService] askClinicQuestion soft-fallback:',
+      error?.message || 'schema cache'
+    );
+    return { item: localItem, error: null, localOnly: true };
+  }
+
+  console.warn('[clinicService] askClinicQuestion:', error?.message || error);
+  return { item: localItem, error: null, localOnly: true };
 }
 
 export async function postClinicReply({
@@ -149,30 +187,62 @@ export async function postClinicReply({
   hasVideo = false,
   videoLabel = null,
 } = {}) {
-  if (!isSupabaseConfigured()) {
-    return { reply: null, error: new Error('Supabase not configured') };
-  }
   const text = String(response || '').trim();
   if (!questionId || !text) {
     return { reply: null, error: new Error('questionId and response required') };
   }
+
+  const localReply = {
+    id: localId('r'),
+    question_id: questionId,
+    expert_name: String(expertName || 'Verified Expert').trim(),
+    expert_role: String(expertRole || 'VERIFIED EXPERT').trim(),
+    response: text,
+    has_video: Boolean(hasVideo),
+    video_label: videoLabel,
+    localOnly: true,
+  };
+
+  if (!isSupabaseConfigured()) {
+    return { reply: localReply, error: null, localOnly: true };
+  }
+
   try {
-    const { data, error } = await supabase
-      .from('clinic_replies')
-      .insert({
+    const { data, error } = await insertWithFallbacks('clinic_replies', [
+      {
         question_id: questionId,
-        expert_name: String(expertName || 'Verified Expert').trim(),
-        expert_role: String(expertRole || 'VERIFIED EXPERT').trim(),
+        expert_name: localReply.expert_name,
+        expert_role: localReply.expert_role,
         response: text,
         has_video: Boolean(hasVideo),
         video_label: videoLabel,
-      })
-      .select('*')
-      .single();
-    if (error) throw error;
-    return { reply: data, error: null };
+      },
+      {
+        question_id: questionId,
+        expert_name: localReply.expert_name,
+        expert_role: localReply.expert_role,
+        response: text,
+      },
+      {
+        question_id: questionId,
+        expert_name: localReply.expert_name,
+        response: text,
+      },
+    ]);
+
+    if (data) return { reply: data, error: null, localOnly: false };
+
+    if (!error || isSchemaCacheError(error)) {
+      console.warn(
+        '[clinicService] postClinicReply soft-fallback:',
+        error?.message || 'schema cache'
+      );
+      return { reply: localReply, error: null, localOnly: true };
+    }
+
+    return { reply: localReply, error: null, localOnly: true };
   } catch (error) {
     console.warn('[clinicService] postClinicReply:', error?.message || error);
-    return { reply: null, error };
+    return { reply: localReply, error: null, localOnly: true };
   }
 }

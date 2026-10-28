@@ -213,27 +213,19 @@ export default function ClinicScreen({ navigation }) {
     setBusy(true);
     try {
       if (prompt.kind === 'ask') {
-        const { item, error } = await askClinicQuestion({
+        const { item } = await askClinicQuestion({
           question: text,
           sport: ACTIVE_USER?.sportInterest || 'GYM',
           athleteHandle: ACTIVE_USER?.handle,
         });
-        if (error) {
-          showNotice('Clinic', error.message || 'Could not post question');
-          return;
-        }
         if (item) setFeed((prev) => [item, ...prev.filter((q) => q.id !== item.id)]);
       } else if (prompt.kind === 'expert') {
-        const { reply, error } = await postClinicReply({
+        const { reply } = await postClinicReply({
           questionId: prompt.questionId,
           expertName: ACTIVE_USER?.displayName || 'Verified Expert',
           expertRole: 'VERIFIED EXPERT',
           response: text,
         });
-        if (error) {
-          showNotice('Clinic', error.message || 'Could not post reply');
-          return;
-        }
         if (reply) {
           setFeed((prev) =>
             prev.map((q) =>

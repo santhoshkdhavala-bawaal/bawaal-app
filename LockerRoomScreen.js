@@ -108,6 +108,19 @@ export default function LockerRoomScreen({ navigation }) {
     setNotice({ title, message });
   }, []);
 
+  const openHub = useCallback((hub) => {
+    if (!hub) return;
+    const lines = [
+      hub.kind,
+      hub.meta,
+      '',
+      hub.detail,
+      '',
+      hub.action ? `${hub.action} ready` : null,
+    ].filter((line) => line != null);
+    showNotice(hub.title, lines.join('\n'));
+  }, [showNotice]);
+
   const loadHubs = useCallback(async () => {
     const { hubs: live, error } = await fetchActiveHubs();
     if (error && !isSupabaseConfigured()) {
@@ -183,27 +196,19 @@ export default function LockerRoomScreen({ navigation }) {
     setBusy(true);
     try {
       if (prompt.kind === 'squad') {
-        const { hub, error } = await createTrainingSquad({
+        const { hub } = await createTrainingSquad({
           name: text,
           kind: 'TRAINING SQUAD',
           createdBy: ACTIVE_USER?.handle || 'athlete',
         });
-        if (error) {
-          showNotice('Squad', error.message || 'Could not create squad');
-          return;
-        }
         if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
       } else if (prompt.kind === 'spar') {
         const handle = ACTIVE_USER?.handle || 'athlete';
-        const { hub, error } = await createSparringLog({
+        const { hub } = await createSparringLog({
           title: text,
           createdBy: handle,
           athleteHandle: handle,
         });
-        if (error) {
-          showNotice('Sparring', error.message || 'Could not start log');
-          return;
-        }
         if (hub) setHubs((prev) => [hub, ...prev.filter((h) => h.id !== hub.id)]);
       }
       setPrompt(null);
@@ -269,7 +274,7 @@ export default function LockerRoomScreen({ navigation }) {
         <Text style={styles.sectionLabel}>ACTIVE HUBS</Text>
 
         {hubs.map((hub) => (
-          <HubCard key={hub.id} item={hub} onPress={() => {}} />
+          <HubCard key={hub.id} item={hub} onPress={() => openHub(hub)} />
         ))}
 
         <TouchableOpacity

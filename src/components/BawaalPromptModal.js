@@ -1,9 +1,10 @@
 /**
  * BAWAAL stealth-black branded prompt / notice modal.
- * Pure black surface, crisp white border, bold "B" watermark header.
+ * Pure black surface, no white framing, BAWAAL_B_solo watermark.
  */
 import React, { useEffect, useState } from 'react';
 import {
+  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -18,8 +19,9 @@ import {
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const LINE = 'rgba(255,255,255,0.85)';
+const HAIRLINE = 'rgba(255,255,255,0.22)';
 const ACCENT = '#4ADE80';
+const LOGO = require('../../assets/BAWAAL_B_solo.png');
 
 /**
  * @param {object} props
@@ -75,11 +77,20 @@ export default function BawaalPromptModal({
       >
         <Pressable style={styles.backdrop} onPress={busy ? undefined : onCancel} />
         <View style={styles.card} accessibilityViewIsModal>
-          <Text style={styles.watermark} pointerEvents="none">
-            B
-          </Text>
+          <Image
+            source={LOGO}
+            style={styles.watermark}
+            resizeMode="contain"
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
 
-          <Text style={styles.brandMark}>BAWAAL</Text>
+          <View style={styles.headerRow}>
+            <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
+            <Text style={styles.brandMark}>BAWAAL</Text>
+          </View>
+
           <Text style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}
 
@@ -136,32 +147,41 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.82)',
+    backgroundColor: 'rgba(0,0,0,0.88)',
   },
   card: {
     backgroundColor: BG,
-    borderWidth: 1.5,
-    borderColor: LINE,
+    borderWidth: 0,
+    borderColor: 'transparent',
     paddingHorizontal: 22,
-    paddingTop: 28,
+    paddingTop: 26,
     paddingBottom: 20,
     overflow: 'hidden',
   },
   watermark: {
     position: 'absolute',
-    top: -18,
-    right: 8,
-    fontSize: 140,
-    fontWeight: '900',
-    color: 'rgba(255,255,255,0.06)',
-    letterSpacing: -4,
+    top: -8,
+    right: -6,
+    width: 168,
+    height: 168,
+    opacity: 0.07,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  headerLogo: {
+    width: 22,
+    height: 22,
+    marginRight: 10,
+    tintColor: WHITE,
   },
   brandMark: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 3.2,
-    marginBottom: 14,
   },
   title: {
     color: WHITE,
@@ -178,8 +198,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   input: {
+    borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: LINE,
+    borderBottomColor: HAIRLINE,
     color: WHITE,
     fontSize: 15,
     fontWeight: '600',
@@ -188,10 +209,10 @@ const styles = StyleSheet.create({
   },
   inputMulti: {
     minHeight: 88,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: LINE,
+    borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
+    borderBottomColor: HAIRLINE,
+    paddingHorizontal: 0,
     paddingTop: 12,
   },
   actions: {
