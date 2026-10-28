@@ -1,0 +1,48 @@
+---
+description: Locked BAWAAL Locker Room + Clinic screens — mint clinic, orange hubs, borderless B&W — immutable
+alwaysApply: true
+---
+
+# BAWAAL Locker Room & Clinic (LOCKED)
+
+`LockerRoomScreen` and `ClinicScreen` are **production-final**. Do **not** restyle, recolor, reorder, or rebuild them unless the user explicitly unlocks this rule.
+
+## Locked files (do not edit)
+
+- `LockerRoomScreen.js`
+- `ClinicScreen.js`
+- `LockerRoom.js` (re-export shim only — keep as `export { default } from './LockerRoomScreen'`)
+
+## Locked visual contract
+
+### Locker Room (`LockerRoomScreen.js`)
+
+- Header: **THE LOCKER ROOM** / *Team Hubs, Training & Strategy*
+- Borderless black background; hairline separators; pure white primary headers
+- **Clinic accents (mint `#4ADE80`):** THE CLINIC badge, ADVISORY label, ENTER CLINIC — soft mint wash on badge
+- **Active Hubs accents (electric orange `#F97316`):** ACTIVE HUBS label, hub titles (e.g. Iron Circle), hub actions (VIEW SQUAD / JOIN CIRCLE), create-squad actions
+- Secondary meta/detail: slate `#94A3B8`
+- Nav into Clinic via badge / ENTER CLINIC card → stack route `Clinic`
+
+### Clinic (`ClinicScreen.js`)
+
+- Header: **THE CLINIC & CORNER** / *Expert Medical, Physio & Mental Advisory*
+- Public Q feed + verified expert response blocks + video advisory labels
+- Liability disclaimer on expert cards and footer
+- Borderless minimalist typography; back affordance only
+
+### Bottom navigation (related, already shipped)
+
+- Tab bar safe-area padding in `CustomTabBar.js` / `MainTabs.js` must keep clearing system nav — do not regress when touching other chrome (see also `bawaal-ui-baseline.mdc`).
+
+## App wiring
+
+- Main tab **Locker** continues to mount `LockerRoom` → `LockerRoomScreen`
+- Stack screen **Clinic** remains registered in `App.js`
+- Do not replace with parallel locker/clinic UIs
+
+## Allowed elsewhere
+
+- New features outside these two screens
+- Critical crash/security fixes that must touch them: ask the user first and preserve this visual contract
+---

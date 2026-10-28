@@ -42,6 +42,10 @@ Camera (minimal shutter/cancel/flip + pinch zoom), Arena B&W sports ticker, clea
 
 Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaimers, and worldwide location→flag resolution (`src/utils/locationFlag.js`, `src/data/worldCountries.js`) are **production-final and untouchable**. Do not restyle, reorder fields, change sport pills, or rebuild a parallel LandingScreen. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
 
+## Locker Room & Clinic (locked)
+
+`LockerRoomScreen.js` and `ClinicScreen.js` are **production-final and untouchable** — mint clinic accents (`#4ADE80`), electric orange Active Hubs (`#F97316`), borderless B&W layout, and tab safe-area padding as shipped. Do not restyle or rebuild parallel locker/clinic UIs. See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.

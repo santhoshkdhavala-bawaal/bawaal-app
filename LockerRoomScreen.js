@@ -1,6 +1,10 @@
 /**
  * THE LOCKER ROOM — training squads, gym circles, sparring logs.
  * Minimalist borderless black-and-white surface.
+ *
+ * LOCKED production surface — mint clinic + orange Active Hubs as shipped.
+ * Do not modify without an explicit unlock.
+ * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */
 import React from 'react';
 import {

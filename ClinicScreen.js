@@ -1,6 +1,9 @@
 /**
  * THE CLINIC & CORNER — public athlete Q&A with verified expert guidance.
  * Minimalist borderless black-and-white surface.
+ *
+ * LOCKED production surface — do not modify without an explicit unlock.
+ * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */
 import React from 'react';
 import {
