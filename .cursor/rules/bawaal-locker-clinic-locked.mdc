@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL Locker Room + Clinic screens — mint clinic, orange hubs, borderless B&W — immutable
+description: Locked BAWAAL Locker Room + Clinic — final color hierarchy, borderless B&W, B-logo modals
 alwaysApply: true
 ---
 
@@ -12,17 +12,39 @@ alwaysApply: true
 - `LockerRoomScreen.js`
 - `ClinicScreen.js`
 - `LockerRoom.js` (re-export shim only — keep as `export { default } from './LockerRoomScreen'`)
+- `src/components/BawaalPromptModal.js` — shared B-logo stealth modals (opaque `#000000` scrim)
 
-## Locked visual contract
+## Locked color hierarchy (`LockerRoomScreen.js`)
 
-### Locker Room (`LockerRoomScreen.js`)
+| Surface | Color |
+|---|---|
+| **ACTIVE HUBS** section header | Electric Blue `#3B82F6` |
+| **+ CREATE TRAINING SQUAD** | Electric Neon Yellow `#FACC15` |
+| **+ POST SQUAD BRIEF** | Electric Purple `#A855F7` |
+| **THE CLINIC** badge / ADVISORY / ENTER CLINIC | Electric Mint `#4ADE80` (mint reserved for Clinic only) |
+| **PINNED SQUAD BRIEF** label + sport tags | Crimson `#EF4444` |
+| Hub card titles / VIEW SQUAD actions | Signature orange `#FF5500` |
+| Secondary meta | Slate `#94A3B8` |
+| Screen background | Stealth black `#000000` |
+
+## Locked modal contract (`BawaalPromptModal`)
+
+- Solid opaque `#000000` scrim — **no** translucent overlays (prevents tab-bar dots/lines bleeding through)
+- BAWAAL_B_solo watermark clipped inside the card; zero white borders / edge artifacts
+- CREATE action tint `#FACC15`; POST action tint `#A855F7`
+- Footer actions (CANCEL / CREATE / POST / OK) cleared above floating tab bar via safe-area + tab clearance
+- Single-tap submit: `Keyboard.dismiss` + `keyboardShouldPersistTaps="handled"` + deferred confirm
+- KeyboardAvoidingView: iOS `padding`, Android `height`
+
+## Locked product surface
+
+### Locker Room
 
 - Header: **THE LOCKER ROOM** / *Team Hubs, Training & Strategy*
-- Borderless black background; hairline separators; pure white primary headers
-- **Clinic accents (mint `#4ADE80`):** THE CLINIC badge, ADVISORY label, ENTER CLINIC — soft mint wash on badge
-- **Active Hubs accents (electric orange `#F97316`):** ACTIVE HUBS label, hub titles (e.g. Iron Circle), hub actions (VIEW SQUAD / JOIN CIRCLE), create-squad actions
-- Secondary meta/detail: slate `#94A3B8`
+- Borderless black background; hairline separators
+- Active hubs list with pinned Squad Briefs (title + sport badge + intel)
 - Nav into Clinic via badge / ENTER CLINIC card → stack route `Clinic`
+- Supabase: `squads` + `squad_briefs` via `src/services/lockerService.js` (soft-fallback inserts)
 
 ### Clinic (`ClinicScreen.js`)
 
@@ -30,6 +52,7 @@ alwaysApply: true
 - Public Q feed + verified expert response blocks + video advisory labels
 - Liability disclaimer on expert cards and footer
 - Borderless minimalist typography; back affordance only
+- Mint reserved for Clinic entry points from Locker — do not reintroduce mint on Locker CTAs/briefs
 
 ### Bottom navigation (related, already shipped)
 
@@ -43,6 +66,6 @@ alwaysApply: true
 
 ## Allowed elsewhere
 
-- New features outside these two screens
+- New features outside these two screens / modal shell
 - Critical crash/security fixes that must touch them: ask the user first and preserve this visual contract
 ---

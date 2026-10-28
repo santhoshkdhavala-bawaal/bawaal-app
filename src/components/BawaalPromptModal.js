@@ -1,7 +1,9 @@
 /**
  * BAWAAL stealth-black branded prompt / notice / squad-brief modal.
- * Fully opaque #000 scrim (no transparency bleed), B solo watermark,
- * centered card, actions cleared above the floating tab bar.
+ * LOCKED shell — fully opaque #000 scrim (no transparency bleed),
+ * B solo watermark, centered card, actions cleared above the tab bar.
+ * CREATE → #FACC15 · POST → #A855F7 · single-tap + keyboard avoid intact.
+ * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -85,8 +87,8 @@ export default function BawaalPromptModal({
   const scrollRef = useRef(null);
   const fieldYRef = useRef({});
   const insets = useSafeAreaInsets();
-  // Floating tab bar (~70) + FAB + system inset — keep actions clear
-  const bottomClearance = Math.max(insets.bottom, 12) + 108;
+  // Floating tab bar + center FAB + system inset — generous action clearance
+  const bottomClearance = Math.max(insets.bottom, 16) + 120;
   const actionColor = resolveConfirmColor(confirmLabel, confirmColor);
 
   useEffect(() => {

@@ -2,7 +2,9 @@
  * THE LOCKER ROOM — training squads, gym circles, squad briefs.
  * Minimalist borderless black-and-white surface.
  *
- * LOCKED production surface — mint clinic + orange Active Hubs as shipped.
+ * LOCKED production surface — final color hierarchy as shipped:
+ * ACTIVE HUBS #3B82F6 · CREATE #FACC15 · POST BRIEF #A855F7 ·
+ * Clinic mint #4ADE80 · pinned briefs #EF4444 · hub titles #FF5500.
  * Do not modify without an explicit unlock.
  * See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
  */

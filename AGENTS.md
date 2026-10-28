@@ -44,7 +44,7 @@ Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaime
 
 ## Locker Room & Clinic (locked)
 
-`LockerRoomScreen.js` and `ClinicScreen.js` are **production-final and untouchable** — mint clinic accents (`#4ADE80`), electric orange Active Hubs (`#F97316`), borderless B&W layout, and tab safe-area padding as shipped. Do not restyle or rebuild parallel locker/clinic UIs. See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
+`LockerRoomScreen.js` and `ClinicScreen.js` are **production-final and untouchable** — Clinic mint (`#4ADE80`), ACTIVE HUBS blue (`#3B82F6`), Create yellow (`#FACC15`), Post Brief purple (`#A855F7`), pinned-brief crimson (`#EF4444`), opaque B-logo modals, and tab safe-area padding as shipped. Do not restyle or rebuild parallel locker/clinic UIs. See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
 
 ## Passport / Profile (locked)
 
