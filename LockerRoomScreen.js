@@ -21,6 +21,8 @@ const SLATE = '#94A3B8';
 /** Light mint — health / clinic advisory accent (stealth B&W + recovery cue) */
 const CLINIC_MINT = '#4ADE80';
 const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
+/** Electric orange — active training hubs (distinct from clinic mint) */
+const HUB_ACCENT = '#F97316';
 const LINE = 'rgba(255,255,255,0.14)';
 
 const HUBS = [
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
   },
   sectionLabel: {
-    color: SLATE,
+    color: HUB_ACCENT,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.8,
@@ -254,9 +256,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   hubTitle: {
-    color: WHITE,
+    color: HUB_ACCENT,
     fontSize: 17,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: 0.3,
   },
   hubMeta: {
@@ -272,7 +274,7 @@ const styles = StyleSheet.create({
   },
   hubAction: {
     marginTop: 14,
-    color: WHITE,
+    color: HUB_ACCENT,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.5,
@@ -283,7 +285,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   textActionLabel: {
-    color: WHITE,
+    color: HUB_ACCENT,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,
