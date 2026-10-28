@@ -18,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -71,6 +72,10 @@ export default function BawaalPromptModal({
   const submittingRef = useRef(false);
   const scrollRef = useRef(null);
   const fieldYRef = useRef({});
+  const insets = useSafeAreaInsets();
+  // Clear floating CustomTabBar (~56–72) + system home indicator
+  const tabBarClearance = 72;
+  const bottomPad = Math.max(40, insets.bottom) + tabBarClearance;
 
   useEffect(() => {
     if (!visible) {
@@ -148,7 +153,7 @@ export default function BawaalPromptModal({
       statusBarTranslucent
     >
       <KeyboardAvoidingView
-        style={styles.overlay}
+        style={[styles.overlay, { paddingBottom: bottomPad }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
@@ -159,7 +164,10 @@ export default function BawaalPromptModal({
             if (!busy) onCancel?.();
           }}
         />
-        <View style={styles.card} accessibilityViewIsModal>
+        <View
+          style={[styles.card, { paddingBottom: Math.max(24, insets.bottom + 16) }]}
+          accessibilityViewIsModal
+        >
           <Image
             source={LOGO}
             style={styles.watermark}
@@ -172,7 +180,10 @@ export default function BawaalPromptModal({
           <ScrollView
             ref={scrollRef}
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: Math.max(40, insets.bottom + 24) },
+            ]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             bounces={false}
@@ -287,7 +298,7 @@ export default function BawaalPromptModal({
               </View>
             ) : null}
 
-            <View style={styles.actions}>
+            <View style={[styles.actions, { marginBottom: 8 }]}>
               {mode !== 'notice' ? (
                 <Pressable
                   style={styles.btnGhost}
@@ -324,6 +335,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 22,
+    paddingTop: 24,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -335,15 +347,15 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     paddingHorizontal: 22,
     paddingTop: 26,
-    paddingBottom: 12,
+    paddingBottom: 40,
     overflow: 'hidden',
-    maxHeight: '88%',
+    maxHeight: '82%',
   },
   scroll: {
     flexGrow: 0,
   },
   scrollContent: {
-    paddingBottom: 28,
+    paddingBottom: 40,
     flexGrow: 1,
   },
   watermark: {
@@ -438,9 +450,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 4,
-    paddingBottom: 8,
+    marginTop: 12,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   btnGhost: {
     paddingVertical: 12,
