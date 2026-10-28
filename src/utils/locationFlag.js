@@ -2,6 +2,8 @@
  * Resolve a country flag emoji from free-text location
  * (e.g. "Mumbai, India", "Timbuktu, Mali", "Khartoum, Sudan", "Kabul, Afghanistan").
  * Uses the full worldwide ISO registry — case-insensitive.
+ *
+ * LOCKED with onboarding — see `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import { WORLD_COUNTRIES } from '../data/worldCountries';
 

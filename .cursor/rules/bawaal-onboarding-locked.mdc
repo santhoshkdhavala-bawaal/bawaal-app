@@ -1,0 +1,36 @@
+---
+description: Locked BAWAAL landing/onboarding stack — RoleSelection, OTP, location flags, legal terms are finalized and untouchable
+alwaysApply: true
+---
+
+# BAWAAL onboarding stack (LOCKED)
+
+The **landing / onboarding / OTP / legal / location-flag** flow is **production-final**. Do **not** modify, restyle, reorder, or “improve” it unless the user explicitly unlocks this rule.
+
+## Locked files (do not edit)
+
+- `RoleSelection.js` — LandingScreen / Enter the Arena form, role + sport pills, SEND OTP, OTP modal, Terms modal
+- `src/utils/locationFlag.js` — location → country flag resolution
+- `src/data/worldCountries.js` — worldwide country/territory flag registry
+- `scripts/generateWorldCountries.js` — registry generator (keep in sync only if user explicitly requests a data regen)
+
+## Locked product surface
+
+- Borderless black-and-white form; hairline underlines only (no heavy input boxes / white CTA blocks)
+- Logos: `assets/BAWAAL_white_full.png` (header), `assets/BAWAAL_white_icon.png` (OTP)
+- Field order: Handle → Real Name → Email → Mobile → Location → Role → Sport Interest
+- Sport pills (exact): Cricket, Football, Gym, Kabaddi, Combat, THROTTLE, WAVE & BLADE, COURT KINGS, SKY & SUMMIT
+- Location flag auto-resolves and persists via registration payload + `applyRegisteredProfile`
+- Legal modal includes Medical/Psychiatric + General Platform disclaimers
+- No Country/Language header on the landing form
+
+## App wiring
+
+- Entry continues to mount `RoleSelection` from `App.js`. Do not replace with a new LandingScreen or parallel onboarding UI.
+- Do not strip `flag` / `country` / `location` from the registration session payload.
+
+## Allowed work elsewhere
+
+- Build new screens, feeds, battles, camera, passport, etc. **outside** this stack.
+- Critical crash/security fixes that must touch these files: ask the user first and keep the locked visual/UX contract intact.
+---

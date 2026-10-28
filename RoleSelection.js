@@ -1,3 +1,8 @@
+/**
+ * BAWAAL Landing / Onboarding — LOCKED production surface.
+ * Do not modify layout, fields, OTP, terms, or sport pills without an explicit unlock.
+ * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+ */
 import React, { useMemo, useState, useRef } from 'react';
 import {
   StyleSheet,

@@ -1,6 +1,9 @@
 /**
  * ISO worldwide country / territory registry for location → flag resolution.
  * Covers UN member states + common territories. Generated for BAWAAL onboarding.
+ *
+ * LOCKED with onboarding — see `.cursor/rules/bawaal-onboarding-locked.mdc`.
+ * Regenerate only via `scripts/generateWorldCountries.js` when explicitly requested.
  */
 
 export function flagFromIso(iso) {
