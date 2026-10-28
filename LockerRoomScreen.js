@@ -35,8 +35,10 @@ const SLATE = '#94A3B8';
 /** Light mint — health / clinic advisory accent (stealth B&W + recovery cue) */
 const CLINIC_MINT = '#4ADE80';
 const CLINIC_MINT_SOFT = 'rgba(74, 222, 128, 0.14)';
-/** Electric orange — active training hubs (distinct from clinic mint) */
-const HUB_ACCENT = '#F97316';
+/** Signature electric orange — hub titles + Create Training Squad */
+const HUB_ACCENT = '#FF5500';
+/** Mint — Post Squad Brief CTA */
+const BRIEF_MINT = '#4ADE80';
 const LINE = 'rgba(255,255,255,0.14)';
 
 /** Seed hubs — squads with pinned Squad Brief headers. */
@@ -96,6 +98,7 @@ const SEED_HUBS = [
 
 function HubCard({ item, onPress }) {
   const brief = item?.brief;
+  const intelLine = brief?.intel || item.detail;
   return (
     <TouchableOpacity
       style={styles.hubCard}
@@ -106,9 +109,9 @@ function HubCard({ item, onPress }) {
     >
       {brief ? (
         <View style={styles.briefPin}>
-          <Text style={styles.briefPinLabel}>SQUAD BRIEF</Text>
+          <Text style={styles.briefPinLabel}>PINNED SQUAD BRIEF</Text>
           <View style={styles.briefPinRow}>
-            <Text style={styles.briefPinTitle} numberOfLines={1}>
+            <Text style={styles.briefPinTitle} numberOfLines={2}>
               {brief.title}
             </Text>
             {brief.sportTag ? (
@@ -117,15 +120,22 @@ function HubCard({ item, onPress }) {
               </View>
             ) : null}
           </View>
+          {intelLine ? (
+            <Text style={styles.briefIntel} numberOfLines={3}>
+              {intelLine}
+            </Text>
+          ) : null}
         </View>
       ) : null}
 
       <Text style={styles.hubKind}>{item.kind}</Text>
       <Text style={styles.hubTitle}>{item.title}</Text>
       <Text style={styles.hubMeta}>{item.meta}</Text>
-      <Text style={styles.hubDetail} numberOfLines={2}>
-        {item.detail}
-      </Text>
+      {!brief ? (
+        <Text style={styles.hubDetail} numberOfLines={2}>
+          {item.detail}
+        </Text>
+      ) : null}
       <Text style={styles.hubAction}>{item.action}</Text>
     </TouchableOpacity>
   );
@@ -389,7 +399,7 @@ export default function LockerRoomScreen({ navigation }) {
           onPress={onCreateSquad}
           disabled={busy}
         >
-          <Text style={styles.textActionLabel}>+ CREATE TRAINING SQUAD</Text>
+          <Text style={styles.createSquadLabel}>+ CREATE TRAINING SQUAD</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.textAction}
@@ -397,7 +407,7 @@ export default function LockerRoomScreen({ navigation }) {
           onPress={onPostSquadBrief}
           disabled={busy}
         >
-          <Text style={styles.textActionLabel}>+ POST SQUAD BRIEF</Text>
+          <Text style={styles.postBriefLabel}>+ POST SQUAD BRIEF</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -508,11 +518,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
   },
   sectionLabel: {
-    color: HUB_ACCENT,
-    fontSize: 10,
-    fontWeight: '800',
+    color: WHITE,
+    fontSize: 18,
+    fontWeight: '900',
     letterSpacing: 1.8,
-    marginBottom: 14,
+    textTransform: 'uppercase',
+    marginBottom: 16,
   },
   hubCard: {
     backgroundColor: 'transparent',
@@ -528,7 +539,7 @@ const styles = StyleSheet.create({
     borderBottomColor: LINE,
   },
   briefPinLabel: {
-    color: SLATE,
+    color: BRIEF_MINT,
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1.6,
@@ -536,21 +547,28 @@ const styles = StyleSheet.create({
   },
   briefPinRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   briefPinTitle: {
     flex: 1,
     color: WHITE,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.2,
     marginRight: 10,
   },
+  briefIntel: {
+    marginTop: 8,
+    color: SLATE,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
   sportBadge: {
     paddingVertical: 4,
     paddingHorizontal: 8,
-    backgroundColor: 'rgba(249,115,22,0.16)',
+    backgroundColor: 'rgba(255,85,0,0.16)',
   },
   sportBadgeText: {
     color: HUB_ACCENT,
@@ -594,8 +612,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'flex-start',
   },
-  textActionLabel: {
+  createSquadLabel: {
     color: HUB_ACCENT,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+  postBriefLabel: {
+    color: BRIEF_MINT,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,

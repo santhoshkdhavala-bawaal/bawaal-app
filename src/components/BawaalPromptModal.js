@@ -1,7 +1,7 @@
 /**
  * BAWAAL stealth-black branded prompt / notice / squad-brief modal.
  * Pure black surface, no white framing, BAWAAL_B_solo watermark.
- * Submit dismisses keyboard first so POST/CREATE fire on a single tap.
+ * KeyboardAvoidingView + ScrollView keep fields and POST/CANCEL visible.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -69,6 +69,8 @@ export default function BawaalPromptModal({
   const [sportTag, setSportTag] = useState(SQUAD_BRIEF_SPORTS[0]);
   const [intel, setIntel] = useState('');
   const submittingRef = useRef(false);
+  const scrollRef = useRef(null);
+  const fieldYRef = useRef({});
 
   useEffect(() => {
     if (!visible) {
@@ -81,16 +83,30 @@ export default function BawaalPromptModal({
     setIntel('');
   }, [visible, defaultValue]);
 
+  const scrollFieldIntoView = (key) => {
+    requestAnimationFrame(() => {
+      if (key === 'intel') {
+        scrollRef.current?.scrollToEnd?.({ animated: true });
+        return;
+      }
+      const y = fieldYRef.current[key];
+      if (typeof y === 'number') {
+        scrollRef.current?.scrollTo?.({
+          y: Math.max(0, y - 24),
+          animated: true,
+        });
+      }
+    });
+  };
+
   const runConfirm = (payload) => {
     if (busy || submittingRef.current) return;
     submittingRef.current = true;
     Keyboard.dismiss();
-    // Defer so the first tap is not eaten by keyboard blur
     requestAnimationFrame(() => {
       try {
         onConfirm?.(payload);
       } finally {
-        // Allow retry if parent leaves modal open on validation failure
         setTimeout(() => {
           submittingRef.current = false;
         }, 400);
@@ -133,7 +149,8 @@ export default function BawaalPromptModal({
     >
       <KeyboardAvoidingView
         style={styles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
         <Pressable
           style={styles.backdrop}
@@ -153,10 +170,14 @@ export default function BawaalPromptModal({
           />
 
           <ScrollView
+            ref={scrollRef}
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             bounces={false}
             showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
           >
             <View style={styles.headerRow}>
               <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
@@ -167,38 +188,52 @@ export default function BawaalPromptModal({
             {message ? <Text style={styles.message}>{message}</Text> : null}
 
             {mode === 'prompt' ? (
-              <TextInput
-                style={[styles.input, multiline && styles.inputMulti]}
-                value={value}
-                onChangeText={setValue}
-                placeholder={placeholder}
-                placeholderTextColor={MUTED}
-                selectionColor={WHITE}
-                autoFocus
-                multiline={multiline}
-                blurOnSubmit
-                textAlignVertical={multiline ? 'top' : 'center'}
-                editable={!busy}
-                returnKeyType={multiline ? 'default' : 'done'}
-                onSubmitEditing={multiline ? undefined : submitPrompt}
-              />
+              <View
+                onLayout={(e) => {
+                  fieldYRef.current.prompt = e.nativeEvent.layout.y;
+                }}
+              >
+                <TextInput
+                  style={[styles.input, multiline && styles.inputMulti]}
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder={placeholder}
+                  placeholderTextColor={MUTED}
+                  selectionColor={WHITE}
+                  autoFocus
+                  multiline={multiline}
+                  blurOnSubmit
+                  textAlignVertical={multiline ? 'top' : 'center'}
+                  editable={!busy}
+                  returnKeyType={multiline ? 'default' : 'done'}
+                  onFocus={() => scrollFieldIntoView('prompt')}
+                  onSubmitEditing={multiline ? undefined : submitPrompt}
+                />
+              </View>
             ) : null}
 
             {mode === 'squadBrief' ? (
               <View>
-                <Text style={styles.fieldLabel}>BRIEF TITLE</Text>
-                <TextInput
-                  style={styles.input}
-                  value={briefTitle}
-                  onChangeText={setBriefTitle}
-                  placeholder='e.g. "Friday Sparring Block"'
-                  placeholderTextColor={MUTED}
-                  selectionColor={WHITE}
-                  autoFocus
-                  blurOnSubmit
-                  editable={!busy}
-                  returnKeyType="next"
-                />
+                <View
+                  onLayout={(e) => {
+                    fieldYRef.current.title = e.nativeEvent.layout.y;
+                  }}
+                >
+                  <Text style={styles.fieldLabel}>BRIEF TITLE</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={briefTitle}
+                    onChangeText={setBriefTitle}
+                    placeholder='e.g. "Friday Sparring Block"'
+                    placeholderTextColor={MUTED}
+                    selectionColor={WHITE}
+                    autoFocus
+                    blurOnSubmit
+                    editable={!busy}
+                    returnKeyType="next"
+                    onFocus={() => scrollFieldIntoView('title')}
+                  />
+                </View>
 
                 <Text style={styles.fieldLabel}>SPORT TAG</Text>
                 <View style={styles.sportRow}>
@@ -223,19 +258,32 @@ export default function BawaalPromptModal({
                   })}
                 </View>
 
-                <Text style={styles.fieldLabel}>BRIEF INTEL</Text>
-                <TextInput
-                  style={[styles.input, styles.inputMulti]}
-                  value={intel}
-                  onChangeText={setIntel}
-                  placeholder="Venue, timing, rules, and tactics"
-                  placeholderTextColor={MUTED}
-                  selectionColor={WHITE}
-                  multiline
-                  blurOnSubmit
-                  textAlignVertical="top"
-                  editable={!busy}
-                />
+                <View
+                  onLayout={(e) => {
+                    fieldYRef.current.intel = e.nativeEvent.layout.y;
+                  }}
+                >
+                  <Text style={styles.fieldLabel}>BRIEF INTEL</Text>
+                  <TextInput
+                    style={[styles.input, styles.inputMulti]}
+                    value={intel}
+                    onChangeText={setIntel}
+                    placeholder="Venue, timing, rules, and tactics"
+                    placeholderTextColor={MUTED}
+                    selectionColor={WHITE}
+                    multiline
+                    blurOnSubmit={false}
+                    textAlignVertical="top"
+                    editable={!busy}
+                    onFocus={() => {
+                      scrollFieldIntoView('intel');
+                      setTimeout(() => scrollFieldIntoView('intel'), 120);
+                      setTimeout(() => {
+                        scrollRef.current?.scrollToEnd?.({ animated: true });
+                      }, 220);
+                    }}
+                  />
+                </View>
               </View>
             ) : null}
 
@@ -287,9 +335,16 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     paddingHorizontal: 22,
     paddingTop: 26,
-    paddingBottom: 20,
+    paddingBottom: 12,
     overflow: 'hidden',
     maxHeight: '88%',
+  },
+  scroll: {
+    flexGrow: 0,
+  },
+  scrollContent: {
+    paddingBottom: 28,
+    flexGrow: 1,
   },
   watermark: {
     position: 'absolute',
@@ -383,7 +438,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 8,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
   btnGhost: {
     paddingVertical: 12,
