@@ -58,6 +58,10 @@ Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaime
 
 Canonical list in `src/utils/sportCategory.js`: ALL, CRICKET, FOOTBALL, GYM, KABADDI, COMBAT, THROTTLE, WAVE & BLADE, COURT KINGS, SKY & SUMMIT, OTHERS. Forms/briefs must import shared constants — no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
 
+## Arena challenge architecture (locked)
+
+Dual-segment Arena toggle defaults to **ALL FEEDS** (`OPEN CHALLENGES` isolates callouts). Horizontal taxonomy scroller under the toggle. **1-tap** `+ BATTLE` / Battles LAUNCH → `UniversalCamera` challenge mode; keep **200ms** post-stop teardown before preview/unmount. Publish open challenges into `arena_challenges` + Arena prepend with RESPOND. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc`.
+
 ## Back controls (locked)
 
 Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.

@@ -1,0 +1,70 @@
+---
+description: BAWAAL Arena dual-feed + open-challenge camera architecture (locked baseline)
+alwaysApply: true
+---
+
+# BAWAAL Arena Challenge Architecture (LOCKED baseline)
+
+High-performance stealth-black sports network centered on **asynchronous 1v1 video battles**.
+Further work builds on this contract — do not regress the dual feed, taxonomy scroller, 1-tap challenge camera, or post-record teardown.
+
+## Core mechanics
+
+- Side-by-side battle cards: **YOU / opener on the left** vs **challenger on the right** (`ArenaFeed.js` `BattleCard`).
+- Open challenges: left = host benchmark (`@YOU`), right = empty RESPOND slot until athletes reply.
+- Primary surface: `ArenaFeed.js` (Arena tab). Camera: `UniversalCamera.tsx`.
+
+## Dual-segment Arena feed (`ArenaFeed.js`)
+
+- Top toggle: **`ALL FEEDS` | `OPEN CHALLENGES`**.
+- **Cold-start default: `ALL_FEEDS`** (Sparks, reels, high-engagement + battles).
+- **`OPEN CHALLENGES`**: isolate active open callouts (`battle_thread` / open-challenge cards with target + RESPOND) — no Sparks/reel clutter.
+
+## Sports category scroller (locked taxonomy)
+
+Canonical order in `src/utils/sportCategory.js` → `BAWAAL_SPORT_TAXONOMY` (do not rename/reorder; see `bawaal-sport-taxonomy-locked.mdc`):
+
+1. ALL  
+2. CRICKET  
+3. FOOTBALL  
+4. GYM  
+5. KABADDI  
+6. COMBAT  
+7. THROTTLE  
+8. WAVE & BLADE  
+9. COURT KINGS  
+10. SKY & SUMMIT  
+11. OTHERS  
+
+- Render as a **horizontal ScrollView** with overflow / scrollbar under the feed toggle.
+- Pills filter `activeTab` (ALL FEEDS) or `challengeSport` (OPEN CHALLENGES).
+- Blueprint shorthand “THROTTLE | WAVE & BLADE” / “SKY & SUMMIT / OTHERS” maps to **separate** pills above — never collapse labels.
+
+## Challenge creation & camera (1-tap)
+
+- **`+ BATTLE` FAB** and Battles **LAUNCH ARENA CHALLENGE** → **single tap** into `UniversalCamera` challenge / opener mode (`captureOpenerOnly` / `isArenaOpenChallenge` via `MainTabs.openArenaChallenge`).
+- Do **not** insert a blocking confirmation sheet before the camera.
+- After opener capture, publish path may reopen Create Arena Challenge only for Publish — never block the initial camera open.
+- Publish: upload opener to Supabase Storage + insert `arena_challenges` (`src/services/arenaChallengeService.js`), then **prepend** to Arena (`pushOpenChallenge`) with active **RESPOND**.
+
+## Post-recording stability (`UniversalCamera.tsx`)
+
+- Await native `stopRecording` / in-flight `recordAsync` **before** React state flips or navigation.
+- Keep **`RECORDING_TEARDOWN_MS = 200`** (+ preview handshake) so expo-camera / expo-av release the hardware lock.
+- Use `isProcessing` / `isFinalizingClip` gates; clear preview players and recording refs on unmount / `safeNavigateHome`.
+- Do not remount/unmount `CameraView` mid-flush.
+
+## Scalability vision (do not regress when adding)
+
+- Main card remains the primary 1v1 comparison.
+- Future: expandable horizontal **Responses Tray** of mini split-screen thumbnails to swap active challengers into full clarity — add alongside this chrome, do not replace the dual-pane card or RESPOND CTA.
+
+## Re-hydration prompt (maintain)
+
+Load project context for BAWAAL: Maintain the dual-segment Arena feed toggle (`ALL FEEDS` / `OPEN CHALLENGES`) with default state `ALL_FEEDS`. Ensure the full locked sports category pills horizontally scroll. Keep the 1-tap challenge creation route to `UniversalCamera.tsx` active, preserving the asynchronous video teardown delay (200ms) to prevent native camera memory unmount crashes.
+
+## Related locks
+
+- Camera chrome: `bawaal-challengecam-locked.mdc` / `bawaal-ui-baseline.mdc`
+- Sport labels: `bawaal-sport-taxonomy-locked.mdc`
+---
