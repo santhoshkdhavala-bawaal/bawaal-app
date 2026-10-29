@@ -66,6 +66,27 @@ const ARENA_VIEWABILITY_CONFIG = {
 
 const PERMANENT_SPORTS_TABS = ARENA_SPORT_TABS;
 
+/** Arena feed mode — ALL FEEDS (reels + battles) vs OPEN CHALLENGES only. */
+const FEED_MODE_ALL = 'ALL_FEEDS';
+const FEED_MODE_CHALLENGES = 'OPEN_CHALLENGES';
+
+/** Category pills under OPEN CHALLENGES (targeted discovery). */
+const OPEN_CHALLENGE_SPORT_PILLS = ['ALL', 'COMBAT', 'CRICKET', 'FOOTBALL'];
+
+function isOpenChallengeFeedItem(item) {
+  if (!item || item.type !== 'battle_thread') return false;
+  // Active challenge shells with target + RESPOND (exclude pure reel drops)
+  if (item.isOpenChallenge === true) return true;
+  const status = String(item.status || '').toUpperCase();
+  return (
+    status === 'OPEN' ||
+    status === 'HOT' ||
+    status === 'LIVE BATTLE' ||
+    status === 'BATTLE' ||
+    Boolean(item.target || item.targetDetails)
+  );
+}
+
 const DEMO_ATHLETE_HANDLES = [
   'Aarav_Iron',
   'Neha_Lift',
@@ -1021,6 +1042,8 @@ const BattleCard = memo(function BattleCard({
 
 export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway } = useMainTabs();
+  const [feedMode, setFeedMode] = useState(FEED_MODE_ALL);
+  const [challengeSport, setChallengeSport] = useState('ALL');
   const [activeTab, setActiveTab] = useState('ALL');
   const [filtersOpen, setFiltersOpen] = useState(false);
   // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
@@ -1267,14 +1290,19 @@ export default function ArenaFeed({ navigation, route }) {
   }, []);
 
   const visibleFeed = useMemo(() => {
-    const tab = canonicalizeSport(activeTab) || 'ALL';
+    const challengesOnly = feedMode === FEED_MODE_CHALLENGES;
+    const tab = challengesOnly
+      ? canonicalizeSport(challengeSport) || 'ALL'
+      : canonicalizeSport(activeTab) || 'ALL';
     // Case-insensitive sport/category match (football ≡ FOOTBALL, mma ≡ COMBAT)
-    // Never drop default battles from the source list when filtering
+    // Never drop default battles from the source list when filtering ALL FEEDS
     const source = ensureDefaultBattles(feedItems);
-    const filtered =
-      tab === 'ALL'
-        ? source
-        : source.filter((item) => matchesSportFilter(item, tab));
+    let filtered = challengesOnly
+      ? source.filter(isOpenChallengeFeedItem)
+      : source;
+    if (tab !== 'ALL') {
+      filtered = filtered.filter((item) => matchesSportFilter(item, tab));
+    }
     // Final safety: unique ids + unique video files in the FlatList
     const seenIds = new Set();
     const seenVideos = new Set();
@@ -1284,31 +1312,43 @@ export default function ArenaFeed({ navigation, route }) {
       // Skip shell reels with no playable URI (avoids LOADING CLIP black cards)
       // Official battle_thread cards always stay (Respond / ChallengeCam)
       if (item.type === 'reel' && !item.videoUri) continue;
-      const vKey = videoIdentityKey(item.videoUri);
+      // OPEN CHALLENGES mode never shows Sparks / general reels
+      if (challengesOnly && item.type !== 'battle_thread') continue;
+      const vKey = videoIdentityKey(item.videoUri || item.challengeVideoUri);
       if (item.type === 'reel' && vKey && seenVideos.has(vKey)) continue;
       seenIds.add(item.id);
       if (vKey) seenVideos.add(vKey);
       out.push(item);
     }
-    // If a sport tab has no battle card, surface the matching default (or cricket)
-    const hasBattle = out.some((i) => i.type === 'battle_thread');
-    if (!hasBattle) {
-      const defaults = seedDefaultOfficialBattles();
-      const fallback =
-        defaults.find((b) => matchesSportFilter(b, tab)) ||
-        defaults.find((b) => b.id === DEFAULT_BATTLE_CRICKET_ID) ||
-        defaults[0];
-      if (fallback && !seenIds.has(fallback.id)) {
-        out.unshift(fallback);
+    // ALL FEEDS: if a sport tab has no battle card, surface a matching default
+    if (!challengesOnly) {
+      const hasBattle = out.some((i) => i.type === 'battle_thread');
+      if (!hasBattle) {
+        const defaults = seedDefaultOfficialBattles();
+        const fallback =
+          defaults.find((b) => matchesSportFilter(b, tab)) ||
+          defaults.find((b) => b.id === DEFAULT_BATTLE_CRICKET_ID) ||
+          defaults[0];
+        if (fallback && !seenIds.has(fallback.id)) {
+          out.unshift(fallback);
+        }
+      }
+    } else if (out.length === 0 && tab === 'ALL') {
+      // OPEN CHALLENGES empty seed — show default open shells so RESPOND stays testable
+      for (const battle of seedDefaultOfficialBattles()) {
+        if (!isOpenChallengeFeedItem(battle) || seenIds.has(battle.id)) continue;
+        out.push(battle);
+        seenIds.add(battle.id);
       }
     }
     return out;
-  }, [activeTab, feedItems]);
+  }, [activeTab, challengeSport, feedMode, feedItems]);
 
-  // Reset warm window when filter changes so the first filtered clip plays ASAP
+  // Reset warm window when filter / mode changes so the first filtered clip plays ASAP
   useEffect(() => {
     setWarmIndices(new Set([0, 1]));
-  }, [activeTab]);
+    listRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+  }, [activeTab, challengeSport, feedMode]);
 
   const openReel = useCallback((item, opts) => {
     setImmersiveMuted(!!opts?.muted);
@@ -1398,6 +1438,30 @@ export default function ArenaFeed({ navigation, route }) {
   );
 
   const emptyFilter = useMemo(() => {
+    if (feedMode === FEED_MODE_CHALLENGES) {
+      const sport = canonicalizeSport(challengeSport) || 'ALL';
+      return (
+        <View style={styles.emptyFeed}>
+          <Text style={styles.emptyFeedTitle}>
+            {sport === 'ALL' ? 'NO OPEN CHALLENGES' : `NO ${sport} CHALLENGES`}
+          </Text>
+          <Text style={styles.emptyFeedSub}>
+            Launch an Arena Challenge from Battles or + BATTLE — set a target,
+            record your opener, and publish.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyFeedBtn}
+            onPress={() => {
+              setChallengeSport('ALL');
+              setFeedMode(FEED_MODE_ALL);
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.emptyFeedBtnText}>SHOW ALL FEEDS</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     const tab = canonicalizeSport(activeTab) || 'ALL';
     if (tab === 'ALL') {
       return (
@@ -1424,7 +1488,7 @@ export default function ArenaFeed({ navigation, route }) {
         </TouchableOpacity>
       </View>
     );
-  }, [activeTab]);
+  }, [activeTab, challengeSport, feedMode]);
 
   const feedKeyExtractor = useCallback((item, index) => {
     // Guarantee uniqueness even if a bad hydrate slips duplicate ids
@@ -1498,6 +1562,86 @@ export default function ArenaFeed({ navigation, route }) {
         }
       />
 
+      <View style={styles.feedModeBar}>
+        <TouchableOpacity
+          style={[
+            styles.feedModeSeg,
+            feedMode === FEED_MODE_ALL && styles.feedModeSegOn,
+          ]}
+          onPress={() => setFeedMode(FEED_MODE_ALL)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityState={{ selected: feedMode === FEED_MODE_ALL }}
+          accessibilityLabel="All feeds"
+        >
+          <Text
+            style={[
+              styles.feedModeSegText,
+              feedMode === FEED_MODE_ALL && styles.feedModeSegTextOn,
+            ]}
+          >
+            ALL FEEDS
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.feedModeSeg,
+            feedMode === FEED_MODE_CHALLENGES && styles.feedModeSegOn,
+          ]}
+          onPress={() => {
+            setFeedMode(FEED_MODE_CHALLENGES);
+            setChallengeSport('ALL');
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityState={{ selected: feedMode === FEED_MODE_CHALLENGES }}
+          accessibilityLabel="Open challenges"
+        >
+          <Text
+            style={[
+              styles.feedModeSegText,
+              feedMode === FEED_MODE_CHALLENGES && styles.feedModeSegTextOn,
+            ]}
+          >
+            OPEN CHALLENGES
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {feedMode === FEED_MODE_CHALLENGES ? (
+        <View style={styles.challengePillsWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.challengePillsRow}
+          >
+            {OPEN_CHALLENGE_SPORT_PILLS.map((pill) => {
+              const active = challengeSport === pill;
+              return (
+                <TouchableOpacity
+                  key={pill}
+                  style={[
+                    styles.challengePill,
+                    active && styles.challengePillOn,
+                  ]}
+                  onPress={() => setChallengeSport(pill)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.challengePillText,
+                      active && styles.challengePillTextOn,
+                    ]}
+                  >
+                    {pill === 'ALL' ? 'All' : pill.charAt(0) + pill.slice(1).toLowerCase()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
+
       <FlatList
         ref={listRef}
         data={visibleFeed}
@@ -1520,7 +1664,7 @@ export default function ArenaFeed({ navigation, route }) {
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
         // Remount list window when filter changes so indices/warm state stay correct
-        extraData={`${activeTab}:${warmIndices.size}:${visibleFeed.length}`}
+        extraData={`${feedMode}:${challengeSport}:${activeTab}:${warmIndices.size}:${visibleFeed.length}`}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1611,6 +1755,66 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  feedModeBar: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: WHITE,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
+  },
+  feedModeSeg: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  feedModeSegOn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  feedModeSegText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+  },
+  feedModeSegTextOn: {
+    color: WHITE,
+    fontWeight: '900',
+  },
+  challengePillsWrap: {
+    marginBottom: 6,
+  },
+  challengePillsRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+    paddingBottom: 4,
+  },
+  challengePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: WHITE,
+    backgroundColor: 'transparent',
+  },
+  challengePillOn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderColor: WHITE,
+  },
+  challengePillText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  challengePillTextOn: {
+    color: WHITE,
+    fontWeight: '900',
   },
   filtersPanel: {
     marginTop: 8,
