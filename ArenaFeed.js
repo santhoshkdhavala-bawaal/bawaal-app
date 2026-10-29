@@ -472,12 +472,75 @@ function ingestArenaPost(prev, post) {
   const sport = resolvePostSport(post, 'GYM');
   const opponent =
     post.opponent ||
+    post.host ||
     (post.challengeOf ? `@${String(post.challengeOf).replace(/^@/, '')}` : '@Challenger');
   const challengeId =
     post.challengeId ||
     post.battleId ||
     post.reel?.id ||
     `thread-${sport}-${String(opponent).replace(/\W/g, '')}`;
+
+  // + BATTLE FAB open challenges — seed a RESPOND-ready card (no fake host response)
+  const isOpenSeed =
+    post.isOpenChallenge === true ||
+    (post.type === 'battle_thread' &&
+      String(post.status || '').toUpperCase() === 'OPEN' &&
+      !post.isBattleResponse);
+
+  if (isOpenSeed) {
+    const opener =
+      post.challengeVideoUri ||
+      post.openerVideoUri ||
+      post.videoUri ||
+      post.uri ||
+      null;
+    const idx = prev.findIndex(
+      (t) =>
+        t.type === 'battle_thread' &&
+        (t.challengeId === challengeId || t.id === challengeId)
+    );
+    const existing = idx >= 0 ? prev[idx] : null;
+    const thread = {
+      ...(existing || {}),
+      id: challengeId,
+      challengeId,
+      battleId: challengeId,
+      type: 'battle_thread',
+      isOpenChallenge: true,
+      sport,
+      category: sport,
+      author: 'CHALLENGE',
+      opponent,
+      host: opponent,
+      challengerLabel: 'YOU',
+      leaderLabel: opponent,
+      target: post.target || post.title || existing?.target || 'OPEN CHALLENGE',
+      status: 'OPEN',
+      challengeVideoUri: opener || existing?.challengeVideoUri || null,
+      videoUri: opener || existing?.videoUri || null,
+      uri: opener || existing?.uri || null,
+      localVideoUri: post.localVideoUri || existing?.localVideoUri || null,
+      publicCloudUrl: post.publicCloudUrl || existing?.publicCloudUrl || null,
+      responses: Array.isArray(existing?.responses)
+        ? existing.responses
+        : Array.isArray(post.responses)
+          ? post.responses
+          : [],
+      _freshPublish: !!post._freshPublish,
+      createdAt: post._freshPublish
+        ? Date.now()
+        : Number(post.createdAt || post.timestamp) ||
+          existing?.createdAt ||
+          Date.now(),
+    };
+    if (idx >= 0) {
+      const next = [...prev];
+      next.splice(idx, 1);
+      return [thread, ...next];
+    }
+    return [thread, ...prev];
+  }
+
   const response = mapPostToResponse(post);
   const idx = prev.findIndex(
     (t) =>

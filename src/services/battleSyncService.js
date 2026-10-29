@@ -84,6 +84,89 @@ export async function createLiveBattle({
 }
 
 /**
+ * Insert an OPEN Arena challenge from the + BATTLE FAB.
+ * Soft-falls back when Supabase is offline or the status check hasn't been migrated yet.
+ */
+export async function createOpenChallenge({
+  id,
+  hostId,
+  hostUsername,
+  hostFlag,
+  title,
+  category,
+  openerVideoUrl = null,
+  matchLength = null,
+} = {}) {
+  const battleId = id || newBattleId();
+  const localRow = {
+    id: battleId,
+    host_id: hostId || 'host-local',
+    host_username: hostUsername || null,
+    host_flag: hostFlag || null,
+    title: title || 'OPEN CHALLENGE',
+    category: category || null,
+    match_length: matchLength || null,
+    status: 'open',
+    host_reps: 0,
+    total_spectators: 1,
+    opener_video_url: openerVideoUrl || null,
+    created_at: new Date().toISOString(),
+  };
+
+  if (!isSupabaseConfigured()) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'not-configured',
+      battleId,
+      battle: localRow,
+      localOnly: true,
+    };
+  }
+
+  try {
+    let { data: battle, error } = await supabase
+      .from('battles')
+      .upsert(localRow, { onConflict: 'id' })
+      .select()
+      .single();
+
+    // Retry without opener column if schema hasn't been migrated yet
+    if (
+      error &&
+      /opener_video_url|schema cache|PGRST204|column/i.test(
+        String(error?.message || error?.details || '')
+      )
+    ) {
+      const { opener_video_url: _omit, ...withoutOpener } = localRow;
+      const retry = await supabase
+        .from('battles')
+        .upsert(withoutOpener, { onConflict: 'id' })
+        .select()
+        .single();
+      battle = retry.data;
+      error = retry.error;
+    }
+
+    if (error) throw error;
+    return { ok: true, battleId, battle };
+  } catch (error) {
+    const msg = String(error?.message || error);
+    // Older DBs may reject 'open' until ENSURE_BATTLES_OPEN.sql is run —
+    // still return a usable local card so Arena hydrates instantly.
+    console.warn('[battleSync] createOpenChallenge soft-fallback:', msg);
+    return {
+      ok: true,
+      softFallback: true,
+      error: msg,
+      battleId,
+      battle: localRow,
+      localOnly: true,
+    };
+  }
+}
+
+/**
  * Subscribe to postgres_changes for a live battle.
  * @param {string} battleId
  * @param {(payload: { table: string, eventType: string, new: object, old: object }) => void} onUpdate
@@ -269,6 +352,7 @@ export async function fetchBattleSnapshot(battleId) {
 export const battleSync = {
   newBattleId,
   createLiveBattle,
+  createOpenChallenge,
   subscribeToBattle,
   sendReaction,
   sendHype,

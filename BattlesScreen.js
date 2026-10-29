@@ -371,6 +371,7 @@ export default function BattlesScreen({ navigation }) {
 
       <CreateBattleSheet
         visible={createOpen}
+        intent="liveBattle"
         onClose={() => setCreateOpen(false)}
         onLaunch={onLaunchBattle}
       />

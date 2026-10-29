@@ -9,6 +9,9 @@ import LockerRoom from './LockerRoom';
 import ProfileScreen from './ProfileScreen';
 import ProfileGatewayModal from './ProfileGatewayModal';
 import ChallengeAlertModal from './ChallengeAlertModal';
+import CreateBattleSheet from './CreateBattleSheet';
+import { pushOpenChallenge } from './arenaFeedStore';
+import { pushBattleChallenge } from './battlesFeedStore';
 import { MainTabContext } from './mainTabContext';
 
 export { useMainTabs } from './mainTabContext';
@@ -46,6 +49,7 @@ export default function MainTabs({ navigation, route }) {
   const [focusHubId, setFocusHubId] = useState(null);
   const [challengeAlert, setChallengeAlert] = useState(DEMO_CHALLENGE);
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
+  const [createChallengeOpen, setCreateChallengeOpen] = useState(false);
 
   useEffect(() => {
     const nextTab = route?.params?.tab;
@@ -101,11 +105,10 @@ export default function MainTabs({ navigation, route }) {
     void import('./UniversalCamera').catch(() => {});
   }, []);
 
+  /** Center + BATTLE FAB → open-challenge sheet (title / sport / optional opener). */
   const openCreate = useCallback(() => {
-    navigation?.navigate?.('UniversalCamera', {
-      initialMode: 'SPARKS',
-    });
-  }, [navigation]);
+    setCreateChallengeOpen(true);
+  }, []);
 
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
 
@@ -123,7 +126,33 @@ export default function MainTabs({ navigation, route }) {
     setTab('Locker');
   }, []);
 
-  /** Center FAB is create-only; thunder alerts live on the BATTLES tab. */
+  /** Publish OPEN challenge → Arena feed top + Battles OPEN list. */
+  const onPublishOpenChallenge = useCallback((card) => {
+    if (!card) return;
+    const arenaCard = pushOpenChallenge(card) || card;
+    pushBattleChallenge({
+      ...card,
+      status: 'OPEN',
+      responses: 0,
+      source: 'CREATE_OPEN_CHALLENGE',
+    });
+    setTab('Arena');
+    setArenaRoute((prev) => ({
+      key: prev?.key || 'arena',
+      name: 'Arena',
+      params: {
+        newArenaPost: {
+          ...arenaCard,
+          type: 'battle_thread',
+          isOpenChallenge: true,
+          status: 'OPEN',
+          _freshPublish: true,
+        },
+      },
+    }));
+  }, []);
+
+  /** Center FAB opens challenge sheet; thunder alerts live on the BATTLES tab. */
   const onCreatePress = useCallback(() => {
     openCreate();
   }, [openCreate]);
@@ -265,6 +294,12 @@ export default function MainTabs({ navigation, route }) {
           onAccept={acceptChallenge}
           onDecline={declineChallenge}
           onClose={() => setChallengeModalOpen(false)}
+        />
+        <CreateBattleSheet
+          visible={createChallengeOpen}
+          intent="openChallenge"
+          onClose={() => setCreateChallengeOpen(false)}
+          onPublishOpen={onPublishOpenChallenge}
         />
       </View>
     </MainTabContext.Provider>

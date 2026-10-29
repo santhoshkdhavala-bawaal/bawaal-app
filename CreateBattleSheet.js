@@ -10,9 +10,16 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { createLiveBattle, newBattleId } from './src/services/battleSyncService';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  createLiveBattle,
+  createOpenChallenge,
+  newBattleId,
+} from './src/services/battleSyncService';
+import { getActiveUser } from './src/services/activeUserProfile';
 import { BAWAAL_FORM_SPORTS } from './src/utils/sportCategory';
 
 const BG = '#0A0A0A';
@@ -28,8 +35,6 @@ const DURATIONS = [
   { id: '5m', label: '5 Min', seconds: 300 },
   { id: 'reps', label: 'Custom Rep Goal', seconds: 180 },
 ];
-
-const HOST_HANDLE = '@MUMBAI_STRIKER';
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -58,13 +63,32 @@ function formatLocalSchedule(isoUTC) {
   }
 }
 
+function resolveHost() {
+  const user = getActiveUser?.() || {};
+  const handle = String(user.handle || '@MUMBAI_STRIKER');
+  return {
+    handle: handle.startsWith('@') ? handle : `@${handle.replace(/^@/, '')}`,
+    userId: String(user.userId || user.id || 'host-local'),
+    flag: user.flag || '🇮🇳',
+    label: user.label || user.country || 'INDIA',
+  };
+}
+
 /**
- * Create Battle bottom sheet — UTC scheduling + notification payload schema.
+ * Create Battle bottom sheet.
  *
- * Minimalist B&W: transparent pills, white borders, selected rgba(255,255,255,0.2).
+ * intent="openChallenge" — + BATTLE FAB: title, category, optional opener → OPEN Arena card
+ * intent="liveBattle"    — Battles / BattleChallengeForm: full LIVE schedule launch
  */
-export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
+export default function CreateBattleSheet({
+  visible,
+  onClose,
+  onLaunch,
+  onPublishOpen,
+  intent = 'liveBattle',
+}) {
   const insets = useSafeAreaInsets();
+  const isOpenChallenge = intent === 'openChallenge';
   const [sport, setSport] = useState('CRICKET');
   const [title, setTitle] = useState('');
   const [battleType, setBattleType] = useState('open'); // open | direct
@@ -72,6 +96,8 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
   const [durationId, setDurationId] = useState('3m');
   const [scheduleMode, setScheduleMode] = useState('now'); // now | later
   const [laterOffsetMin, setLaterOffsetMin] = useState(135); // 2h 15m demo
+  const [openerUri, setOpenerUri] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [tick, setTick] = useState(Date.now());
 
   useEffect(() => {
@@ -89,6 +115,8 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
     setDurationId('3m');
     setScheduleMode('now');
     setLaterOffsetMin(135);
+    setOpenerUri(null);
+    setSubmitting(false);
   }, [visible]);
 
   const duration = DURATIONS.find((d) => d.id === durationId) || DURATIONS[1];
@@ -111,7 +139,26 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
     [scheduledAtUTC]
   );
 
-  const buildPayload = () => {
+  const pickOpenerClip = async () => {
+    try {
+      const mediaTypesSetting = ImagePicker.MediaTypeOptions
+        ? ImagePicker.MediaTypeOptions.Videos
+        : ['videos'];
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: mediaTypesSetting,
+        allowsEditing: false,
+        quality: 1,
+        videoMaxDuration: 60,
+      });
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        setOpenerUri(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.warn('[CreateBattleSheet] opener pick failed:', err?.message || err);
+    }
+  };
+
+  const buildLivePayload = (host) => {
     const battleId = newBattleId();
     const rival =
       battleType === 'direct'
@@ -131,7 +178,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
       sport,
       target: challengeTitle,
       description: null,
-      host: HOST_HANDLE,
+      host: host.handle,
       rival,
       responses: 0,
       status: scheduleMode === 'now' ? 'LIVE' : 'SCHEDULED',
@@ -146,7 +193,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
                 priority: 'high',
                 to: rival,
                 title: 'BAWAAL Direct Callout',
-                body: `${HOST_HANDLE} challenged you: ${challengeTitle}! Tap to Accept.`,
+                body: `${host.handle} challenged you: ${challengeTitle}! Tap to Accept.`,
                 data: { battleId, sport, scheduledAtUTC },
               }
             : null,
@@ -154,7 +201,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
           type: 'hype_broadcast',
           channel: 'followers',
           title: 'BAWAAL Going Live',
-          body: `${HOST_HANDLE} is live — ${challengeTitle} [${sport}]`,
+          body: `${host.handle} is live — ${challengeTitle} [${sport}]`,
           data: { battleId, sport, scheduledAtUTC, goLiveAt: scheduledAtUTC },
         },
       },
@@ -165,10 +212,10 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
         timerLabel: `${pad2(mins)}:00`,
         spectatorsLabel: '0 LIVE',
         host: {
-          id: 'host-mumbai',
-          handle: HOST_HANDLE,
-          flag: '🇮🇳',
-          label: 'INDIA',
+          id: host.userId,
+          handle: host.handle,
+          flag: host.flag,
+          label: host.label,
           reps: 0,
         },
         challenger: {
@@ -187,30 +234,106 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
     };
   };
 
-  const launch = async () => {
-    const battle = buildPayload();
-    await createLiveBattle({
-      id: battle.id,
-      hostId: 'host-mumbai',
-      hostUsername: HOST_HANDLE,
-      hostFlag: '🇮🇳',
-      title: battle.target,
-      category: battle.sport,
-      matchLength: `${battle.durationSec}s`,
-      status: scheduleMode === 'now' ? 'live' : 'scheduled',
-      challenger:
-        battleType === 'direct'
-          ? {
-              userId: battle.liveMatch.challenger.userId,
-              username: battle.liveMatch.challenger.handle,
-              flag: battle.liveMatch.challenger.flag,
-              reps: 0,
-              votes: 0,
-            }
-          : null,
-    });
-    onClose?.();
-    onLaunch?.(battle);
+  const publishOpenChallenge = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    const host = resolveHost();
+    const battleId = newBattleId();
+    const challengeTitle = title.trim() || 'OPEN CHALLENGE';
+    const ts = Date.now();
+
+    try {
+      await createOpenChallenge({
+        id: battleId,
+        hostId: host.userId,
+        hostUsername: host.handle,
+        hostFlag: host.flag,
+        title: challengeTitle,
+        category: sport,
+        openerVideoUrl: openerUri || null,
+        matchLength: `${duration.seconds}s`,
+      });
+
+      const card = {
+        id: battleId,
+        challengeId: battleId,
+        battleId,
+        type: 'battle_thread',
+        isOpenChallenge: true,
+        isBattle: true,
+        sport,
+        category: sport,
+        target: challengeTitle,
+        title: challengeTitle,
+        host: host.handle,
+        opponent: host.handle,
+        author: 'CHALLENGE',
+        challengerLabel: 'YOU',
+        leaderLabel: host.handle,
+        status: 'OPEN',
+        challengeVideoUri: openerUri || null,
+        openerVideoUri: openerUri || null,
+        videoUri: openerUri || null,
+        uri: openerUri || null,
+        localVideoUri: openerUri || null,
+        responses: [],
+        timestamp: ts,
+        createdAt: ts,
+        _freshPublish: true,
+        feedTarget: 'ARENA',
+        source: 'CREATE_OPEN_CHALLENGE',
+      };
+
+      onClose?.();
+      onPublishOpen?.(card);
+    } catch (err) {
+      console.warn('[CreateBattleSheet] open publish failed:', err?.message || err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const launchLive = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    const host = resolveHost();
+    try {
+      const battle = buildLivePayload(host);
+      await createLiveBattle({
+        id: battle.id,
+        hostId: host.userId,
+        hostUsername: host.handle,
+        hostFlag: host.flag,
+        title: battle.target,
+        category: battle.sport,
+        matchLength: `${battle.durationSec}s`,
+        status: scheduleMode === 'now' ? 'live' : 'scheduled',
+        challenger:
+          battleType === 'direct'
+            ? {
+                userId: battle.liveMatch.challenger.userId,
+                username: battle.liveMatch.challenger.handle,
+                flag: battle.liveMatch.challenger.flag,
+                reps: 0,
+                votes: 0,
+              }
+            : null,
+      });
+      onClose?.();
+      onLaunch?.(battle);
+    } catch (err) {
+      console.warn('[CreateBattleSheet] live launch failed:', err?.message || err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submit = () => {
+    if (isOpenChallenge) {
+      void publishOpenChallenge();
+      return;
+    }
+    void launchLive();
   };
 
   return (
@@ -225,7 +348,9 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
           <View style={styles.pullBar} />
 
           <View style={styles.header}>
-            <Text style={styles.headerTitle}>CREATE A BAWAAL BATTLE</Text>
+            <Text style={styles.headerTitle}>
+              {isOpenChallenge ? 'PUBLISH OPEN CHALLENGE' : 'CREATE A BAWAAL BATTLE'}
+            </Text>
             <TouchableOpacity onPress={onClose} hitSlop={12}>
               <Text style={styles.close}>✕</Text>
             </TouchableOpacity>
@@ -258,123 +383,163 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
               style={styles.input}
               value={title}
               onChangeText={setTitle}
-              placeholder="Name your battle"
+              placeholder="Name your battle / target"
               placeholderTextColor="#666"
             />
 
-            <Text style={styles.label}>BATTLE TYPE</Text>
-            <View style={styles.segment}>
-              <TouchableOpacity
-                style={[styles.segmentBtn, battleType === 'open' && styles.segmentBtnOn]}
-                onPress={() => setBattleType('open')}
-              >
-                <Text
-                  style={[styles.segmentText, battleType === 'open' && styles.segmentTextOn]}
-                >
-                  🌐 Open Challenge
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.segmentBtn, battleType === 'direct' && styles.segmentBtnOn]}
-                onPress={() => setBattleType('direct')}
-              >
-                <Text
-                  style={[styles.segmentText, battleType === 'direct' && styles.segmentTextOn]}
-                >
-                  🎯 Direct Callout
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {battleType === 'direct' ? (
+            {isOpenChallenge ? (
               <>
-                <Text style={styles.label}>RIVAL HANDLE</Text>
-                <TextInput
-                  style={styles.input}
-                  value={rivalHandle}
-                  onChangeText={setRivalHandle}
-                  placeholder="Tag rival e.g. @NYC_LIFT"
-                  placeholderTextColor="#666"
-                  autoCapitalize="none"
-                />
+                <Text style={styles.label}>OPENER CLIP (OPTIONAL)</Text>
+                <TouchableOpacity
+                  style={styles.openerBtn}
+                  onPress={pickOpenerClip}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.openerBtnText}>
+                    {openerUri ? '✓ OPENER ATTACHED · TAP TO REPLACE' : '+ ADD OPENER CLIP'}
+                  </Text>
+                </TouchableOpacity>
+                {openerUri ? (
+                  <TouchableOpacity onPress={() => setOpenerUri(null)} hitSlop={8}>
+                    <Text style={styles.clearOpener}>Remove opener</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.hint}>
+                    Skip to publish a text challenge — athletes can still RESPOND.
+                  </Text>
+                )}
               </>
-            ) : null}
-
-            <Text style={styles.label}>MATCH LENGTH</Text>
-            <View style={styles.wrapPills}>
-              {DURATIONS.map((d) => {
-                const active = durationId === d.id;
-                return (
+            ) : (
+              <>
+                <Text style={styles.label}>BATTLE TYPE</Text>
+                <View style={styles.segment}>
                   <TouchableOpacity
-                    key={d.id}
-                    style={[styles.pill, active && styles.pillActive]}
-                    onPress={() => setDurationId(d.id)}
+                    style={[styles.segmentBtn, battleType === 'open' && styles.segmentBtnOn]}
+                    onPress={() => setBattleType('open')}
                   >
-                    <Text style={[styles.pillText, active && styles.pillTextActive]}>
-                      {d.label}
+                    <Text
+                      style={[styles.segmentText, battleType === 'open' && styles.segmentTextOn]}
+                    >
+                      🌐 Open Challenge
                     </Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={styles.label}>SCHEDULED TIME</Text>
-            <View style={styles.segment}>
-              <TouchableOpacity
-                style={[styles.segmentBtn, scheduleMode === 'now' && styles.segmentBtnOn]}
-                onPress={() => setScheduleMode('now')}
-              >
-                <Text
-                  style={[styles.segmentText, scheduleMode === 'now' && styles.segmentTextOn]}
-                >
-                  Go Live Now
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.segmentBtn, scheduleMode === 'later' && styles.segmentBtnOn]}
-                onPress={() => setScheduleMode('later')}
-              >
-                <Text
-                  style={[styles.segmentText, scheduleMode === 'later' && styles.segmentTextOn]}
-                >
-                  Schedule for Later
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {scheduleMode === 'later' ? (
-              <View style={styles.scheduleMeta}>
-                <View style={styles.offsetRow}>
-                  {[60, 135, 240].map((mins) => (
-                    <TouchableOpacity
-                      key={mins}
-                      style={[
-                        styles.offsetChip,
-                        laterOffsetMin === mins && styles.offsetChipOn,
-                      ]}
-                      onPress={() => setLaterOffsetMin(mins)}
+                  <TouchableOpacity
+                    style={[styles.segmentBtn, battleType === 'direct' && styles.segmentBtnOn]}
+                    onPress={() => setBattleType('direct')}
+                  >
+                    <Text
+                      style={[styles.segmentText, battleType === 'direct' && styles.segmentTextOn]}
                     >
-                      <Text
-                        style={[
-                          styles.offsetChipText,
-                          laterOffsetMin === mins && styles.offsetChipTextOn,
-                        ]}
-                      >
-                        +{Math.floor(mins / 60)}h {mins % 60 ? `${mins % 60}m` : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                      🎯 Direct Callout
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.localTime}>Local: {localScheduleLabel}</Text>
-                <Text style={styles.countdown}>{countdownLabel}</Text>
-                <Text style={styles.utcHint}>UTC: {scheduledAtUTC}</Text>
-              </View>
-            ) : (
-              <Text style={styles.countdown}>{countdownLabel}</Text>
+
+                {battleType === 'direct' ? (
+                  <>
+                    <Text style={styles.label}>RIVAL HANDLE</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={rivalHandle}
+                      onChangeText={setRivalHandle}
+                      placeholder="Tag rival e.g. @NYC_LIFT"
+                      placeholderTextColor="#666"
+                      autoCapitalize="none"
+                    />
+                  </>
+                ) : null}
+
+                <Text style={styles.label}>MATCH LENGTH</Text>
+                <View style={styles.wrapPills}>
+                  {DURATIONS.map((d) => {
+                    const active = durationId === d.id;
+                    return (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={[styles.pill, active && styles.pillActive]}
+                        onPress={() => setDurationId(d.id)}
+                      >
+                        <Text style={[styles.pillText, active && styles.pillTextActive]}>
+                          {d.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.label}>SCHEDULED TIME</Text>
+                <View style={styles.segment}>
+                  <TouchableOpacity
+                    style={[styles.segmentBtn, scheduleMode === 'now' && styles.segmentBtnOn]}
+                    onPress={() => setScheduleMode('now')}
+                  >
+                    <Text
+                      style={[styles.segmentText, scheduleMode === 'now' && styles.segmentTextOn]}
+                    >
+                      Go Live Now
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.segmentBtn, scheduleMode === 'later' && styles.segmentBtnOn]}
+                    onPress={() => setScheduleMode('later')}
+                  >
+                    <Text
+                      style={[
+                        styles.segmentText,
+                        scheduleMode === 'later' && styles.segmentTextOn,
+                      ]}
+                    >
+                      Schedule for Later
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {scheduleMode === 'later' ? (
+                  <View style={styles.scheduleMeta}>
+                    <View style={styles.offsetRow}>
+                      {[60, 135, 240].map((mins) => (
+                        <TouchableOpacity
+                          key={mins}
+                          style={[
+                            styles.offsetChip,
+                            laterOffsetMin === mins && styles.offsetChipOn,
+                          ]}
+                          onPress={() => setLaterOffsetMin(mins)}
+                        >
+                          <Text
+                            style={[
+                              styles.offsetChipText,
+                              laterOffsetMin === mins && styles.offsetChipTextOn,
+                            ]}
+                          >
+                            +{Math.floor(mins / 60)}h {mins % 60 ? `${mins % 60}m` : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={styles.localTime}>Local: {localScheduleLabel}</Text>
+                    <Text style={styles.countdown}>{countdownLabel}</Text>
+                    <Text style={styles.utcHint}>UTC: {scheduledAtUTC}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.countdown}>{countdownLabel}</Text>
+                )}
+              </>
             )}
 
-            <TouchableOpacity style={styles.launchBtn} onPress={launch} activeOpacity={0.9}>
-              <Text style={styles.launchBtnText}>LAUNCH BATTLE ⚡</Text>
+            <TouchableOpacity
+              style={[styles.launchBtn, submitting && styles.launchBtnDisabled]}
+              onPress={submit}
+              activeOpacity={0.9}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={WHITE} />
+              ) : (
+                <Text style={styles.launchBtnText}>
+                  {isOpenChallenge ? 'PUBLISH TO ARENA' : 'LAUNCH BATTLE ⚡'}
+                </Text>
+              )}
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -440,10 +605,6 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 8,
   },
-  pillRow: {
-    gap: 8,
-    paddingBottom: 4,
-  },
   wrapPills: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -482,6 +643,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  openerBtn: {
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 12,
+    borderStyle: 'dashed',
+    paddingVertical: 16,
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  openerBtnText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  clearOpener: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 8,
+    textDecorationLine: 'underline',
+  },
+  hint: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 8,
+    lineHeight: 16,
   },
   segment: {
     flexDirection: 'row',
@@ -569,6 +759,11 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
     paddingVertical: 16,
     alignItems: 'center',
+    minHeight: 54,
+    justifyContent: 'center',
+  },
+  launchBtnDisabled: {
+    opacity: 0.55,
   },
   launchBtnText: {
     color: WHITE,

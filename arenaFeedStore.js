@@ -69,6 +69,35 @@ function videoIdentityKey(uri) {
 function normalizeArenaPost(post) {
   if (!post || typeof post !== 'object') return null;
   const ts = Number(post.timestamp || post.createdAt) || Date.now();
+  // OPEN challenge cards may ship without a clip — keep battle_thread shape
+  if (
+    post.type === 'battle_thread' ||
+    post.isOpenChallenge === true ||
+    (post.status === 'OPEN' && (post.challengeId || post.battleId || post.isBattle))
+  ) {
+    const sport = resolvePostSport(post, 'GYM');
+    const opener = pickPublicVideoUri(post) || post.challengeVideoUri || null;
+    const id = String(post.id || post.challengeId || post.battleId || `open-${ts}`);
+    return {
+      ...post,
+      id,
+      challengeId: String(post.challengeId || post.battleId || id),
+      battleId: String(post.battleId || post.challengeId || id),
+      type: 'battle_thread',
+      isOpenChallenge: true,
+      isBattle: true,
+      status: post.status || 'OPEN',
+      sport,
+      category: sport,
+      timestamp: ts,
+      createdAt: ts,
+      challengeVideoUri: opener || post.challengeVideoUri || null,
+      videoUri: opener || post.videoUri || null,
+      uri: opener || post.uri || null,
+      responses: Array.isArray(post.responses) ? post.responses : [],
+      feedTarget: 'ARENA',
+    };
+  }
   const videoUri = pickPublicVideoUri(post);
   const videoKey = videoIdentityKey(videoUri);
   const id = String(
@@ -135,6 +164,78 @@ function mergeIntoStore(normalized, { emitEvent = true } = {}) {
   );
   if (emitEvent) emit(normalized);
   return normalized;
+}
+
+/**
+ * Prepend an OPEN challenge card to the Arena feed (no video required).
+ * Used by the + BATTLE FAB → CreateBattleSheet publish path.
+ */
+export function pushOpenChallenge(challenge) {
+  try {
+    if (!challenge || typeof challenge !== 'object') return null;
+    const ts = Number(challenge.timestamp || challenge.createdAt) || Date.now();
+    const sport = resolvePostSport(challenge, 'GYM');
+    const hostRaw = String(
+      challenge.host || challenge.author || challenge.opponent || '@you'
+    );
+    const host = hostRaw.startsWith('@')
+      ? hostRaw
+      : `@${hostRaw.replace(/^@/, '')}`;
+    const target = String(
+      challenge.target || challenge.title || 'OPEN CHALLENGE'
+    );
+    const opener =
+      (typeof challenge.challengeVideoUri === 'string' &&
+        challenge.challengeVideoUri.trim()) ||
+      (typeof challenge.openerVideoUri === 'string' &&
+        challenge.openerVideoUri.trim()) ||
+      (typeof challenge.videoUri === 'string' && challenge.videoUri.trim()) ||
+      null;
+    const id = String(
+      challenge.id ||
+        challenge.challengeId ||
+        challenge.battleId ||
+        `open-${ts}`
+    );
+
+    const card = {
+      ...challenge,
+      id,
+      challengeId: String(challenge.challengeId || challenge.battleId || id),
+      battleId: String(challenge.battleId || challenge.challengeId || id),
+      type: 'battle_thread',
+      isOpenChallenge: true,
+      isBattle: true,
+      status: 'OPEN',
+      sport,
+      category: sport,
+      author: 'CHALLENGE',
+      opponent: host,
+      host,
+      challengerLabel: 'YOU',
+      leaderLabel: host,
+      target,
+      title: target,
+      challengeVideoUri: opener,
+      videoUri: opener,
+      uri: opener,
+      localVideoUri:
+        opener && !isRemoteHttpsUri(opener) ? opener : challenge.localVideoUri || null,
+      publicCloudUrl:
+        opener && isRemoteHttpsUri(opener) ? opener : challenge.publicCloudUrl || null,
+      responses: Array.isArray(challenge.responses) ? challenge.responses : [],
+      timestamp: ts,
+      createdAt: ts,
+      _freshPublish: challenge._freshPublish !== false,
+      feedTarget: 'ARENA',
+    };
+
+    mergeIntoStore(card, { emitEvent: true });
+    return card;
+  } catch (err) {
+    console.warn('[arenaFeedStore] pushOpenChallenge failed:', err?.message || err);
+    return null;
+  }
 }
 
 /**
@@ -377,6 +478,7 @@ export async function refreshArenaPostsFromSupabase() {
 const arenaFeedStore = {
   pushArenaPost,
   pushArenaPostAndPersist,
+  pushOpenChallenge,
   addPost,
   getArenaPosts,
   subscribeArenaPosts,
