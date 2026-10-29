@@ -3,9 +3,9 @@ import { createContext, useContext } from 'react';
 export const MainTabContext = createContext({
   tab: 'Arena',
   setTab: (_t) => {},
-  /** Open Create Arena Challenge sheet (optional draft: sport / title / targetDetails). */
+  /** 1-tap → UniversalCamera Arena Open Challenge (optional draft). */
   openCreate: (_draft) => {},
-  /** Alias — Battles "LAUNCH ARENA CHALLENGE" entry point. */
+  /** Battles "LAUNCH ARENA CHALLENGE" — same 1-tap camera path. */
   openArenaChallenge: (_draft) => {},
   openProfileGateway: () => {},
   /** Open Locker Room and surface a specific training hub (from Passport). */

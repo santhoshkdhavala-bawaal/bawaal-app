@@ -148,22 +148,35 @@ export default function MainTabs({ navigation, route }) {
   }, []);
 
   /**
-   * Center + BATTLE FAB / Battles LAUNCH ARENA CHALLENGE → Create Arena Challenge sheet.
-   * Optional draft seeds sport, target title, details (Record Opener → UniversalCamera).
+   * 1-tap Arena Open Challenge → UniversalCamera challenge mode (no pre-camera sheet).
+   * Optional draft seeds sport / target; after opener, sheet reopens for Publish.
    */
-  const openCreate = useCallback((draft) => {
-    setChallengeDraft({
-      ...EMPTY_CHALLENGE_DRAFT,
-      ...(draft && typeof draft === 'object' ? draft : null),
-      openerUri:
-        draft && typeof draft === 'object' && draft.openerUri
-          ? draft.openerUri
-          : null,
-    });
-    setCreateChallengeOpen(true);
-  }, []);
+  const openArenaChallenge = useCallback(
+    (draft) => {
+      const next = {
+        ...EMPTY_CHALLENGE_DRAFT,
+        ...(draft && typeof draft === 'object' ? draft : null),
+        openerUri:
+          draft && typeof draft === 'object' && draft.openerUri
+            ? draft.openerUri
+            : null,
+      };
+      setChallengeDraft(next);
+      setCreateChallengeOpen(false);
+      navigation?.navigate?.('UniversalCamera', {
+        initialMode: 'BATTLE_REWIND',
+        captureOpenerOnly: true,
+        isArenaOpenChallenge: true,
+        challengeMaxDuration: 30,
+        target: next.title || 'Arena Open Challenge',
+        createChallengeDraft: next,
+      });
+    },
+    [navigation]
+  );
 
-  const openArenaChallenge = openCreate;
+  /** Center + BATTLE FAB — same 1-tap camera path. */
+  const openCreate = openArenaChallenge;
 
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
 
@@ -181,27 +194,12 @@ export default function MainTabs({ navigation, route }) {
     setTab('Locker');
   }, []);
 
-  /** Record Opener → UniversalCamera / ChallengeCam, then return clip to sheet. */
+  /** Sheet "Record Opener" re-entry — same camera route (already 1-tap from FAB). */
   const onRecordOpener = useCallback(
     (draft) => {
-      const next = {
-        sport: draft?.sport || 'COMBAT',
-        title: draft?.title || draft?.target || EMPTY_CHALLENGE_DRAFT.title,
-        targetDetails:
-          draft?.targetDetails || EMPTY_CHALLENGE_DRAFT.targetDetails,
-        openerUri: draft?.openerUri || null,
-      };
-      setChallengeDraft(next);
-      setCreateChallengeOpen(false);
-      navigation?.navigate?.('UniversalCamera', {
-        initialMode: 'SPARKS',
-        captureOpenerOnly: true,
-        challengeMaxDuration: 30,
-        target: next.title || 'Arena Opener',
-        createChallengeDraft: next,
-      });
+      openArenaChallenge(draft);
     },
-    [navigation]
+    [openArenaChallenge]
   );
 
   /** Publish OPEN challenge → Arena feed top + Battles OPEN list. */
@@ -234,10 +232,10 @@ export default function MainTabs({ navigation, route }) {
     }));
   }, []);
 
-  /** Center FAB opens challenge sheet; thunder alerts live on the BATTLES tab. */
+  /** Center FAB → immediate UniversalCamera challenge mode (1-tap). */
   const onCreatePress = useCallback(() => {
-    openCreate();
-  }, [openCreate]);
+    openArenaChallenge(EMPTY_CHALLENGE_DRAFT);
+  }, [openArenaChallenge]);
 
   const onTabPress = useCallback(
     (nextTab) => {

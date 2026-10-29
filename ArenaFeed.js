@@ -40,6 +40,7 @@ import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import {
   ARENA_SPORT_TABS,
+  BAWAAL_SPORT_TAXONOMY,
   canonicalizeSport,
   matchesSportFilter,
   resolvePostSport,
@@ -70,8 +71,13 @@ const PERMANENT_SPORTS_TABS = ARENA_SPORT_TABS;
 const FEED_MODE_ALL = 'ALL_FEEDS';
 const FEED_MODE_CHALLENGES = 'OPEN_CHALLENGES';
 
-/** Category pills under OPEN CHALLENGES (targeted discovery). */
-const OPEN_CHALLENGE_SPORT_PILLS = ['ALL', 'COMBAT', 'CRICKET', 'FOOTBALL'];
+/**
+ * Complete locked sport taxonomy for Arena category ScrollView
+ * (ALL → … → OTHERS). Horizontal overflow / scrollbar enabled.
+ */
+const ARENA_CATEGORY_PILLS = BAWAAL_SPORT_TAXONOMY.length
+  ? BAWAAL_SPORT_TAXONOMY
+  : ARENA_SPORT_TABS;
 
 function isOpenChallengeFeedItem(item) {
   if (!item || item.type !== 'battle_thread') return false;
@@ -1608,39 +1614,48 @@ export default function ArenaFeed({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {feedMode === FEED_MODE_CHALLENGES ? (
-        <View style={styles.challengePillsWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.challengePillsRow}
-          >
-            {OPEN_CHALLENGE_SPORT_PILLS.map((pill) => {
-              const active = challengeSport === pill;
-              return (
-                <TouchableOpacity
-                  key={pill}
+      <View style={styles.challengePillsWrap}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator
+          persistentScrollbar
+          contentContainerStyle={styles.challengePillsRow}
+        >
+          {ARENA_CATEGORY_PILLS.map((pill) => {
+            const active =
+              feedMode === FEED_MODE_CHALLENGES
+                ? challengeSport === pill
+                : activeTab === pill;
+            return (
+              <TouchableOpacity
+                key={pill}
+                style={[styles.challengePill, active && styles.challengePillOn]}
+                onPress={() => {
+                  const next = canonicalizeSport(pill) || pill;
+                  if (feedMode === FEED_MODE_CHALLENGES) {
+                    setChallengeSport(next);
+                  } else {
+                    setActiveTab(next);
+                  }
+                }}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`Filter ${pill}`}
+              >
+                <Text
                   style={[
-                    styles.challengePill,
-                    active && styles.challengePillOn,
+                    styles.challengePillText,
+                    active && styles.challengePillTextOn,
                   ]}
-                  onPress={() => setChallengeSport(pill)}
-                  activeOpacity={0.85}
                 >
-                  <Text
-                    style={[
-                      styles.challengePillText,
-                      active && styles.challengePillTextOn,
-                    ]}
-                  >
-                    {pill === 'ALL' ? 'All' : pill.charAt(0) + pill.slice(1).toLowerCase()}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
+                  {pill}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <FlatList
         ref={listRef}
@@ -1788,12 +1803,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   challengePillsWrap: {
-    marginBottom: 6,
+    marginBottom: 8,
+    maxHeight: 44,
   },
   challengePillsRow: {
     paddingHorizontal: 16,
     gap: 8,
-    paddingBottom: 4,
+    paddingBottom: 6,
+    alignItems: 'center',
   },
   challengePill: {
     paddingHorizontal: 14,
@@ -1809,8 +1826,9 @@ const styles = StyleSheet.create({
   },
   challengePillText: {
     color: WHITE,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   challengePillTextOn: {
     color: WHITE,

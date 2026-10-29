@@ -75,8 +75,8 @@ function waitMs(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** Hardware lock release window after stopRecording resolves (150–300ms). */
-const RECORDING_TEARDOWN_MS = 220;
+/** Hardware lock release window after stopRecording resolves (~200ms). */
+const RECORDING_TEARDOWN_MS = 200;
 /** Extra beat after setting videoUri so React commits before ClipPreview mounts. */
 const PREVIEW_HANDSHAKE_MS = 100;
 
@@ -914,8 +914,10 @@ export default function UniversalCamera({
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   const respondParams = route?.params || {};
-  /** + BATTLE → Record Opener: capture benchmark clip and return to Create Arena Challenge */
-  const isOpenerCapture = Boolean(respondParams.captureOpenerOnly);
+  /** + BATTLE / Battles LAUNCH → 1-tap Arena Open Challenge camera */
+  const isOpenerCapture = Boolean(
+    respondParams.captureOpenerOnly || respondParams.isArenaOpenChallenge
+  );
   const isChallengeResponse =
     !isOpenerCapture &&
     Boolean(
@@ -967,6 +969,8 @@ export default function UniversalCamera({
   const [showPostSheet, setShowPostSheet] = useState(false);
   /** True while awaiting recordAsync settle + HW release before preview. */
   const [isFinalizingClip, setIsFinalizingClip] = useState(false);
+  /** True during stop → compress/save — blocks UI / unmount races. */
+  const [isProcessing, setIsProcessing] = useState(false);
   const [slowMoEnabled, setSlowMoEnabled] = useState(false);
   const [slowMoRate, setSlowMoRate] = useState<SlowMoRate>(0.5);
   const [slowMoStartSec, setSlowMoStartSec] = useState(0);
@@ -1137,6 +1141,7 @@ export default function UniversalCamera({
     }
     setIsRecording(false);
     setIsFinalizingClip(false);
+    setIsProcessing(false);
     clearElapsedTimer();
   }, [clearElapsedTimer]);
 
@@ -1148,6 +1153,7 @@ export default function UniversalCamera({
     async (uri: string, opts?: { openPreview?: boolean }) => {
       const openPreview = opts?.openPreview !== false;
       pendingPreviewUriRef.current = uri;
+      setIsProcessing(true);
       setIsFinalizingClip(true);
       setIsRecording(false);
       recordingLockRef.current = false;
@@ -1170,6 +1176,7 @@ export default function UniversalCamera({
       if (pendingPreviewUriRef.current !== uri) {
         // A newer take / retake superseded this handoff
         setIsFinalizingClip(false);
+        setIsProcessing(false);
         return;
       }
 
@@ -1181,14 +1188,18 @@ export default function UniversalCamera({
         setShowPostSheet(true);
       }
       setIsFinalizingClip(false);
+      setIsProcessing(false);
     },
     [clearElapsedTimer]
   );
 
-  // Camera / recorder lifecycle — stop recording + clear timers on unmount
+  // Camera / recorder lifecycle — stop recording + clear timers / player refs on unmount
   useEffect(() => {
     return () => {
       recordingLockRef.current = false;
+      stoppingRef.current = false;
+      pendingPreviewUriRef.current = null;
+      recordAsyncWaitRef.current = null;
       try {
         cameraRef.current?.stopRecording?.();
       } catch {
@@ -1236,6 +1247,7 @@ export default function UniversalCamera({
       setElapsedSec(0);
       setCameraError('');
       setIsFinalizingClip(false);
+      setIsProcessing(false);
       clearHidePillTimer();
       recordingLockRef.current = false;
       stoppingRef.current = false;
@@ -1274,6 +1286,7 @@ export default function UniversalCamera({
     stoppingRef.current = false;
     setIsRecording(false);
     setIsFinalizingClip(false);
+    setIsProcessing(false);
     // Keep cameraSessionKey + isCameraReady untouched so the live feed stays attached
     revealTimePill();
   }, [selectedDuration, recordLimit, revealTimePill]);
@@ -1282,6 +1295,10 @@ export default function UniversalCamera({
     (params: Record<string, unknown>) => {
       if (navigatingRef.current) return;
       navigatingRef.current = true;
+      // Drop preview / player first so unmount does not race native AV
+      setShowPreview(false);
+      setShowPostSheet(false);
+      pendingPreviewUriRef.current = null;
       // Screen is unmounting — skip remount (that was paying double camera init cost)
       resetCreationSession({ remountCamera: false });
       setHubOpen(false);
@@ -1352,6 +1369,7 @@ export default function UniversalCamera({
       !isCameraReady ||
       isRecording ||
       isFinalizingClip ||
+      isProcessing ||
       recordingLockRef.current ||
       stoppingRef.current
     ) {
@@ -1380,6 +1398,7 @@ export default function UniversalCamera({
     recordingLockRef.current = true;
     stoppingRef.current = false;
     setIsFinalizingClip(false);
+    setIsProcessing(false);
     setIsRecording(true);
     fadeTimePill(true);
     startElapsedTimer();
@@ -1404,10 +1423,13 @@ export default function UniversalCamera({
         recordingLockRef.current = false;
         stoppingRef.current = false;
         setIsFinalizingClip(false);
+        setIsProcessing(false);
         setCameraError('Recording finished without a clip. Try again.');
         return;
       }
 
+      // Gate UI before compress/save — still no preview mount yet
+      setIsProcessing(true);
       setIsFinalizingClip(true);
       setIsRecording(false);
       clearElapsedTimer();
@@ -1439,13 +1461,15 @@ export default function UniversalCamera({
       setSlowMoEndSec(clipDur);
 
       // Staged handoff — URI → delay → preview (never sync-unmount camera mid-flush)
-      const openPreview = mode === 'SPARKS' || mode === 'JOSH';
+      const openPreview =
+        mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
       await handoffRecordedClip(stableUri, { openPreview });
     } catch (e) {
       console.error('[UniversalCamera] Recording error:', e);
       recordAsyncWaitRef.current = null;
       stoppingRef.current = false;
       setIsFinalizingClip(false);
+      setIsProcessing(false);
       releaseCameraRecorder();
       resetCreationSession({ remountCamera: true });
       setCameraError('Could not save this clip. Try again.');
@@ -1457,6 +1481,8 @@ export default function UniversalCamera({
     isCameraReady,
     isRecording,
     isFinalizingClip,
+    isProcessing,
+    isOpenerCapture,
     recordLimit,
     fadeTimePill,
     startElapsedTimer,
@@ -1468,17 +1494,22 @@ export default function UniversalCamera({
   ]);
 
   /**
-   * Stop capture and await the in-flight recordAsync video object before any
-   * navigation / preview mount. CameraView stays mounted through the HW release window.
+   * Stop capture and await native stop + recordAsync video object BEFORE any
+   * React state / navigation. CameraView stays mounted through the 200ms HW window.
    */
   const stopRecording = useCallback(async () => {
     if ((!isRecording && !recordingLockRef.current) || stoppingRef.current) {
       return;
     }
     stoppingRef.current = true;
-    setIsFinalizingClip(true);
     try {
-      cameraRef.current?.stopRecording?.();
+      const stopResult = cameraRef.current?.stopRecording?.() as
+        | void
+        | Promise<unknown>
+        | undefined;
+      if (stopResult && typeof (stopResult as Promise<unknown>).then === 'function') {
+        await stopResult;
+      }
     } catch (e) {
       console.warn('[UniversalCamera] stopRecording:', e);
     }
@@ -1499,8 +1530,10 @@ export default function UniversalCamera({
         );
       }
     }
-    // Brief async delay so expo-camera releases the hardware lock
+    // Safety timeout — expo-camera / muxer release before any state flip
     await waitMs(RECORDING_TEARDOWN_MS);
+    setIsProcessing(true);
+    setIsFinalizingClip(true);
   }, [isRecording]);
 
   const handleShutter = useCallback(() => {
@@ -1508,13 +1541,14 @@ export default function UniversalCamera({
       openBattleChallengeForm();
       return;
     }
-    if (isFinalizingClip) return;
+    if (isFinalizingClip || isProcessing) return;
     if (isRecording) void stopRecording();
     else void startRecording();
   }, [
     mode,
     isRecording,
     isFinalizingClip,
+    isProcessing,
     openBattleChallengeForm,
     stopRecording,
     startRecording,
@@ -1543,22 +1577,29 @@ export default function UniversalCamera({
   }, [isRecording, navigation, resetCreationSession, stopRecording]);
 
   const flipCamera = useCallback(() => {
-    if (isRecording || isFinalizingClip) return;
+    if (isRecording || isFinalizingClip || isProcessing) return;
     setFacing((prev) => (prev === 'back' ? 'front' : 'back'));
-  }, [isRecording, isFinalizingClip]);
+  }, [isRecording, isFinalizingClip, isProcessing]);
 
   /** Open in-app gallery (checkbox select + targeted delete / import). */
   const openDeviceGallery = useCallback(() => {
-    if (isRecording || isFinalizingClip || mode === 'BATTLE_BAWAAL') return;
+    if (
+      isRecording ||
+      isFinalizingClip ||
+      isProcessing ||
+      mode === 'BATTLE_BAWAAL'
+    ) {
+      return;
+    }
     setShowDeviceGallery(true);
-  }, [isRecording, isFinalizingClip, mode]);
+  }, [isRecording, isFinalizingClip, isProcessing, mode]);
 
   /**
    * Import one device gallery asset into the same preview / post path as a recording.
    */
   const importGalleryAsset = useCallback(
     async (picked: DeviceGalleryAsset) => {
-      if (!picked?.uri || isFinalizingClip) return;
+      if (!picked?.uri || isFinalizingClip || isProcessing) return;
       let uri = picked.uri;
       try {
         uri =
@@ -1597,7 +1638,14 @@ export default function UniversalCamera({
       const openPreview = mode === 'SPARKS' || mode === 'JOSH';
       await handoffRecordedClip(uri, { openPreview });
     },
-    [mode, recordLimit, fadeTimePill, isFinalizingClip, handoffRecordedClip]
+    [
+      mode,
+      recordLimit,
+      fadeTimePill,
+      isFinalizingClip,
+      isProcessing,
+      handoffRecordedClip,
+    ]
   );
 
   const progress =
@@ -1725,7 +1773,7 @@ export default function UniversalCamera({
             <Text style={styles.timerText}>
               {mode === 'BATTLE_BAWAAL'
                 ? '🔴 BATTLE BAWAAL'
-                : isFinalizingClip
+                : isFinalizingClip || isProcessing
                   ? '⏳ SAVING…'
                   : isRecording
                     ? `🔴 ${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
@@ -1833,7 +1881,7 @@ export default function UniversalCamera({
       />
 
       {/* Saving / HW-release gate — keeps CameraView mounted, blocks double shutter */}
-      {isFinalizingClip ? (
+      {isFinalizingClip || isProcessing ? (
         <View style={styles.finalizingOverlay} pointerEvents="auto">
           <ActivityIndicator color={ACCENT} size="large" />
           <Text style={styles.finalizingText}>Saving clip…</Text>
@@ -1841,7 +1889,7 @@ export default function UniversalCamera({
       ) : null}
 
       {/* Mount preview only after handoff commits URI + teardown delay (no mid-flush decode) */}
-      {showPreview && recordedVideoUri && !isFinalizingClip ? (
+      {showPreview && recordedVideoUri && !isFinalizingClip && !isProcessing ? (
         <ClipPreviewModal
           key={recordedVideoUri}
           visible

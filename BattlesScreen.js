@@ -94,7 +94,7 @@ export default function BattlesScreen({ navigation }) {
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
-  /** Top card → Create Arena Challenge modal → UniversalCamera opener → Arena feed. */
+  /** Top card → 1-tap UniversalCamera challenge mode (no pre-camera sheet). */
   const launchArenaChallenge = useCallback(() => {
     openArenaChallenge?.(ARENA_CHALLENGE_DRAFT);
   }, [openArenaChallenge]);
