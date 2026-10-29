@@ -1,3 +1,6 @@
+/**
+ * ChallengeCam pipeline host — Step 1 recorder → confirm → Arena / upload.
+ */
 import React, { useCallback, useState } from 'react';
 import {
   Modal,
@@ -9,21 +12,17 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import ChallengeCam from './ChallengeCam';
+import ChallengeCamRecorder from './ChallengeCamRecorder';
 import { setLatestBattleClip } from './battleClipStore';
 import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
-import { COLORS, RADIUS } from './theme';
+import { RADIUS } from './theme';
 
-/**
- * Arena challenge route — hosts CameraView via ChallengeCam.
- * On POST TO ARENA, forwards a local post payload to ArenaFeed.
- */
 export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
   const [resultModal, setResultModal] = useState(null);
-  const [camResetToken, setCamResetToken] = useState(0);
   const [isPosting, setIsPosting] = useState(false);
+  const [recorderKey, setRecorderKey] = useState(0);
 
   const handleClose = useCallback(() => {
     try {
@@ -45,23 +44,26 @@ export default function ChallengeScreen({ route, navigation }) {
         uri,
         videoUri: meta.videoUri || uri,
         recordedVideoUri: meta.recordedVideoUri || uri,
+        localVideoUri: meta.localVideoUri || uri,
         speedRate: meta.speedRate ?? 1,
-        target: meta.target || reel?.statSticker || '140 KG x 3 Reps',
+        target: meta.target || reel?.statSticker || route?.params?.target || 'Battle response',
         timestamp,
         isMock: !!meta.isMock,
-        opponent: meta.opponent || `@${reel?.creator || 'Yuki_Lift'}`,
-        durationSec: meta.durationSec || 60,
-        durationMs: meta.durationMs || (meta.durationSec || 60) * 1000,
+        opponent: meta.opponent || `@${reel?.creator || route?.params?.handle || 'Challenger'}`,
+        durationSec: meta.durationSec || 30,
+        durationMs: meta.durationMs || (meta.durationSec || 30) * 1000,
         facing: meta.facing || 'back',
-        videoQuality: meta.videoQuality || '1080p',
+        flash: meta.flash || 'off',
+        videoQuality: meta.videoQuality || '720p',
         fps: meta.fps || 30,
         mimeType: meta.mimeType || 'video/mp4',
         creator: 'You',
-        category: reel?.category || 'GYM',
-        challengeOf: reel?.creator || 'Yuki_Lift',
+        author: '@you',
+        category: reel?.category || route?.params?.sport || 'GYM',
+        challengeOf: reel?.creator || route?.params?.handle || 'Challenger',
       };
     },
-    [reel]
+    [reel, route?.params?.handle, route?.params?.sport, route?.params?.target]
   );
 
   const postToArena = useCallback(
@@ -69,12 +71,9 @@ export default function ChallengeScreen({ route, navigation }) {
       if (isPosting) return;
       setIsPosting(true);
 
-      const isFullScreenCreate =
-        route?.params?.mode === 'FULL_SCREEN' || route?.params?.cameraMode === 'FULL_SCREEN';
-      const challengeId = isFullScreenCreate
-        ? undefined
-        : route?.params?.battleId || reel?.battleId || reel?.id;
-      // Instant local feed — never wait on Supabase Storage (Expo Go / demo safe)
+      const challengeId =
+        route?.params?.battleId || reel?.battleId || reel?.id || undefined;
+
       const localUri = meta.localVideoUri || meta.recordedVideoUri || meta.videoUri || uri;
       const optimisticPost = buildArenaPost(localUri, {
         ...meta,
@@ -82,22 +81,18 @@ export default function ChallengeScreen({ route, navigation }) {
         recordedVideoUri: localUri,
         localVideoUri: localUri,
         cloudUploaded: false,
-        type: isFullScreenCreate ? 'reel' : 'battle_thread',
+        type: 'battle_thread',
         caption: meta.caption || reel?.statSticker || route?.params?.target || 'Arena drop',
-        author: '@you',
-        ...(challengeId
-          ? { challengeId, battleId: challengeId }
-          : { isBattle: false }),
+        ...(challengeId ? { challengeId, battleId: challengeId } : { isBattle: true }),
         sport: reel?.category || meta.category || 'GYM',
       });
 
-      // Instant feed insert (store + navigation) — no toast / no cloud wait
       pushArenaPost(optimisticPost);
       setLatestBattleClip(optimisticPost);
-      setCamResetToken((t) => t + 1);
       setResultModal(null);
+      setRecorderKey((k) => k + 1);
+
       if (navigation?.navigate) {
-        // Tab 1 ARENA — post already prepended via pushArenaPost
         navigation.navigate('Main', {
           tab: 'Arena',
           newArenaPost: optimisticPost,
@@ -107,54 +102,58 @@ export default function ChallengeScreen({ route, navigation }) {
       }
       setIsPosting(false);
 
-      // Silent background cloud — never surface skipped/not-configured banners
       if (!meta.cloudUploaded && uri && !String(uri).startsWith('emulator-mock://')) {
         postBattleResponseToSupabase(uri, {
           battleId: challengeId,
-          slowMoStartSec: meta.slowMoStartSec,
-          slowMoEndSec: meta.slowMoEndSec,
-          slowMoRate: meta.slowMoEnabled ? meta.slowMoRate : 1,
         }).catch(() => {});
       }
     },
-    [navigation, buildArenaPost, handleClose, isPosting, route?.params?.battleId, reel]
+    [
+      buildArenaPost,
+      handleClose,
+      isPosting,
+      navigation,
+      reel,
+      route?.params?.battleId,
+      route?.params?.target,
+    ]
   );
 
-  const handleVideoCaptured = useCallback((uri, meta = {}) => {
-    const isMock =
-      meta?.isMock || (typeof uri === 'string' && uri.startsWith('emulator-mock://'));
+  const handleContinue = useCallback((uri, meta = {}) => {
     setResultModal({
       uri,
       meta: {
         ...meta,
-        isMock,
         timestamp: meta.timestamp || Date.now(),
+        videoUri: uri,
+        recordedVideoUri: uri,
+        localVideoUri: uri,
       },
-      title: isMock ? 'FALLBACK CLIP READY' : 'CHALLENGE RECORDED',
-      body: isMock
-        ? 'Emulator camera was unavailable, so a safe placeholder clip was created. Post it to continue the flow.'
-        : 'Your battle response is ready for the arena.',
+      title: 'CHALLENGE RECORDED',
+      body: 'Your battle response is ready. Continue to upload to the Arena.',
     });
   }, []);
 
   const dismissModal = () => setResultModal(null);
 
+  const challengeLabel =
+    reel?.statSticker ||
+    route?.params?.target ||
+    'BATTLE RESPONSE';
+
   return (
     <View style={styles.root}>
-      <ChallengeCam
-        route={route}
-        navigation={navigation}
-        targetUser={reel?.creator || route?.params?.handle || 'Yuki_Lift'}
-        challengeTarget={reel?.statSticker || route?.params?.target || '140 KG x 3 Reps'}
-        challengeMaxDuration={
+      <ChallengeCamRecorder
+        key={recorderKey}
+        onClose={handleClose}
+        onContinue={handleContinue}
+        maxDurationSec={
           route?.params?.challengeMaxDuration ||
           reel?.challengeMaxDuration ||
           reel?.durationSec ||
           30
         }
-        onClose={handleClose}
-        onVideoCaptured={handleVideoCaptured}
-        resetToken={camResetToken}
+        challengeLabel={challengeLabel}
       />
 
       <Modal
@@ -175,33 +174,36 @@ export default function ChallengeScreen({ route, navigation }) {
             </View>
             <Text style={styles.title}>{resultModal?.title}</Text>
             <Text style={styles.body}>{resultModal?.body}</Text>
-            {!!resultModal?.meta?.speedRate && (
+            {!!resultModal?.meta?.durationSec && (
               <Text style={styles.metaLine}>
-                SPEED {resultModal.meta.speedRate}x · {resultModal.meta.target}
+                {resultModal.meta.durationSec}s · {resultModal.meta.facing || 'back'} cam
               </Text>
             )}
 
             <TouchableOpacity
-              style={[styles.primaryBtn, isPosting && styles.primaryBtnDisabled]}
+              style={styles.postBtn}
               activeOpacity={0.85}
               disabled={isPosting}
-              onPress={() => {
-                const payload = resultModal;
-                if (!payload?.uri || isPosting) return;
-                postToArena(payload.uri, payload.meta || {}).then(() => {
-                  dismissModal();
-                });
-              }}
+              onPress={() =>
+                postToArena(resultModal.uri, resultModal.meta || {})
+              }
             >
               {isPosting ? (
                 <ActivityIndicator color="#000000" />
               ) : (
-                <Text style={styles.primaryBtnText}>POST TO ARENA ⚡</Text>
+                <Text style={styles.postBtnText}>UPLOAD TO ARENA</Text>
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.stayBtn} activeOpacity={0.7} onPress={dismissModal}>
-              <Text style={styles.stayBtnText}>STAY</Text>
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() => {
+                dismissModal();
+                setRecorderKey((k) => k + 1);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.secondaryBtnText}>RE-TAKE</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -217,85 +219,73 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(5, 7, 10, 0.88)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'center',
-    paddingHorizontal: 24,
+    padding: 24,
   },
   card: {
-    backgroundColor: COLORS.CARD_CHARCOAL,
-    borderRadius: RADIUS.card,
+    backgroundColor: '#0A0A0A',
+    borderRadius: RADIUS?.card || 14,
     borderWidth: 1,
-    borderColor: COLORS.GLASS_BORDER,
-    paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 18,
-    alignItems: 'center',
+    borderColor: 'rgba(255,255,255,0.2)',
+    padding: 22,
   },
   logoWrap: {
-    width: '100%',
-    height: 50,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   logo: {
-    height: 50,
-    width: '100%',
+    width: 48,
+    height: 48,
   },
   title: {
-    color: COLORS.OFF_WHITE,
-    fontSize: 18,
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '900',
-    letterSpacing: 1.2,
-    marginBottom: 10,
     textAlign: 'center',
+    letterSpacing: 1,
   },
   body: {
-    color: COLORS.TEXT_MUTED,
+    color: '#A0A0A0',
     fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 12,
+    fontWeight: '600',
     textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
   },
   metaLine: {
-    color: COLORS.PLATINUM_BASE,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    marginBottom: 18,
+    color: '#E8ECE9',
+    fontSize: 12,
+    fontWeight: '700',
     textAlign: 'center',
+    marginTop: 12,
   },
-  primaryBtn: {
-    width: '100%',
-    backgroundColor: COLORS.PLATINUM_BASE,
-    borderRadius: RADIUS.cta,
-    minHeight: 48,
-    paddingVertical: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  primaryBtnDisabled: {
-    opacity: 0.7,
-  },
-  primaryBtnText: {
-    color: COLORS.INK,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  stayBtn: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: COLORS.GLASS_BORDER,
-    borderRadius: RADIUS.cta,
+  postBtn: {
+    marginTop: 20,
+    backgroundColor: '#FACC15',
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  stayBtnText: {
-    color: COLORS.TEXT_MUTED,
+  postBtnText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  secondaryBtn: {
+    marginTop: 12,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(59,130,246,0.14)',
+  },
+  secondaryBtnText: {
+    color: '#3B82F6',
     fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.4,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
 });

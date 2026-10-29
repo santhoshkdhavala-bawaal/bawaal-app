@@ -15,6 +15,7 @@ import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
 import SportHubMapScreen from './SportHubMapScreen';
+import ChallengeScreen from './ChallengeScreen';
 import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
@@ -224,6 +225,12 @@ export default function App() {
               <Stack.Screen
                 name="Challenge"
                 component={UniversalCamera}
+                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
+              />
+              {/* Arena / Battles RESPOND → ChallengeCam Step 1 recorder pipeline */}
+              <Stack.Screen
+                name="ChallengeCam"
+                component={ChallengeScreen}
                 options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />

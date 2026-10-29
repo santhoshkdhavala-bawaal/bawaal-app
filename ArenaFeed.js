@@ -677,6 +677,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 const BattleCard = memo(function BattleCard({
   item,
   onOpenResponses,
+  onRespond,
   active = true,
 }) {
   const responses = sortResponses(item.responses, 'top');
@@ -735,6 +736,16 @@ const BattleCard = memo(function BattleCard({
         <Text style={styles.responseBadgeText}>
           {responseCount} ATHLETE{responseCount === 1 ? '' : 'S'} RESPONDED
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.respondCta}
+        onPress={() => onRespond?.(item)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Respond to battle"
+      >
+        <Text style={styles.respondCtaText}>RESPOND</Text>
       </TouchableOpacity>
 
       <View style={styles.feedFooter}>
@@ -1018,6 +1029,34 @@ export default function ArenaFeed({ navigation, route }) {
     setHubThread(item);
   }, []);
 
+  const openChallengeRespond = useCallback(
+    (item) => {
+      if (!item) return;
+      const handle = String(item.opponent || item.challengeOf || 'Challenger').replace(
+        /^@/,
+        ''
+      );
+      navigation?.navigate?.('ChallengeCam', {
+        challengeMaxDuration: item.challengeMaxDuration || item.durationSec || 30,
+        battleId: item.battleId || item.challengeId || item.id,
+        target: item.target || item.statSticker || 'Battle response',
+        handle,
+        sport: item.sport || item.category || 'GYM',
+        reel: {
+          id: item.id,
+          battleId: item.battleId || item.challengeId || item.id,
+          creator: handle,
+          statSticker: item.target || item.statSticker || 'Battle response',
+          category: item.sport || item.category || 'GYM',
+          challengeMaxDuration: item.challengeMaxDuration || item.durationSec || 30,
+          durationSec: item.durationSec || 30,
+          videoUri: item.challengeVideoUri || item.videoUri || null,
+        },
+      });
+    },
+    [navigation]
+  );
+
   const renderFeedItem = useCallback(
     ({ item, index }) => {
       // Warm viewport + ±1 neighbor for instant playback while scrolling
@@ -1040,13 +1079,21 @@ export default function ArenaFeed({ navigation, route }) {
           <BattleCard
             item={item}
             onOpenResponses={openResponses}
+            onRespond={openChallengeRespond}
             active={active && !activeReel}
           />
         );
       }
       return null;
     },
-    [openReel, openResponses, hypeReel, warmIndices, activeReel]
+    [
+      openReel,
+      openResponses,
+      openChallengeRespond,
+      hypeReel,
+      warmIndices,
+      activeReel,
+    ]
   );
 
   const emptyFilter = useMemo(() => {
@@ -1586,6 +1633,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.4,
+  },
+  respondCta: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.16)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  respondCtaText: {
+    color: '#3B82F6',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.2,
   },
   feedFooter: {
     padding: 12,

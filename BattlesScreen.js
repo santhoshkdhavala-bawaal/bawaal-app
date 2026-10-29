@@ -184,11 +184,12 @@ export default function BattlesScreen({ navigation }) {
       return;
     }
     const label = battle.target || battle.description || 'OPEN CHALLENGE';
-    navigation?.navigate?.('Challenge', {
+    navigation?.navigate?.('ChallengeCam', {
       challengeMaxDuration: 30,
       battleId: battle.id,
       target: label,
       handle: battle.host.replace(/^@/, ''),
+      sport: battle.sport,
       reel: {
         id: battle.id,
         battleId: battle.id,
