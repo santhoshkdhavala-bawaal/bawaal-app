@@ -147,11 +147,23 @@ export default function MainTabs({ navigation, route }) {
     void import('./UniversalCamera').catch(() => {});
   }, []);
 
-  /** Center + BATTLE FAB → Create Arena Challenge sheet. */
-  const openCreate = useCallback(() => {
-    setChallengeDraft(EMPTY_CHALLENGE_DRAFT);
+  /**
+   * Center + BATTLE FAB / Battles LAUNCH ARENA CHALLENGE → Create Arena Challenge sheet.
+   * Optional draft seeds sport, target title, details (Record Opener → UniversalCamera).
+   */
+  const openCreate = useCallback((draft) => {
+    setChallengeDraft({
+      ...EMPTY_CHALLENGE_DRAFT,
+      ...(draft && typeof draft === 'object' ? draft : null),
+      openerUri:
+        draft && typeof draft === 'object' && draft.openerUri
+          ? draft.openerUri
+          : null,
+    });
     setCreateChallengeOpen(true);
   }, []);
+
+  const openArenaChallenge = openCreate;
 
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
 
@@ -307,6 +319,7 @@ export default function MainTabs({ navigation, route }) {
       tab,
       setTab,
       openCreate,
+      openArenaChallenge,
       openProfileGateway,
       openLockerHub,
       focusHubId,
@@ -316,6 +329,7 @@ export default function MainTabs({ navigation, route }) {
     [
       tab,
       openCreate,
+      openArenaChallenge,
       openProfileGateway,
       openLockerHub,
       focusHubId,

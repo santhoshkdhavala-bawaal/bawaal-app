@@ -76,8 +76,15 @@ function featuredSubtitle(featured) {
   return `${title} · ${hostSide} vs ${rivalSide}`;
 }
 
+const ARENA_CHALLENGE_DRAFT = {
+  sport: 'COMBAT',
+  title: '3-Round Heavy Bag Drill',
+  targetDetails: 'Jab-Cross-Hook-Upper · High Tempo',
+  openerUri: null,
+};
+
 export default function BattlesScreen({ navigation }) {
-  const { openProfileGateway } = useMainTabs();
+  const { openProfileGateway, openArenaChallenge } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [hotFeatureOverride, setHotFeatureOverride] = useState(() =>
@@ -86,6 +93,11 @@ export default function BattlesScreen({ navigation }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+
+  /** Top card → Create Arena Challenge modal → UniversalCamera opener → Arena feed. */
+  const launchArenaChallenge = useCallback(() => {
+    openArenaChallenge?.(ARENA_CHALLENGE_DRAFT);
+  }, [openArenaChallenge]);
 
   const mergeBattle = useCallback((battle) => {
     if (!battle?.id) return;
@@ -293,6 +305,24 @@ export default function BattlesScreen({ navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <TouchableOpacity
+          style={styles.arenaLaunchCard}
+          activeOpacity={0.88}
+          onPress={launchArenaChallenge}
+          accessibilityRole="button"
+          accessibilityLabel="Launch Arena Challenge"
+        >
+          <Text style={styles.arenaLaunchEyebrow}>ARENA FEED</Text>
+          <Text style={styles.arenaLaunchTitle}>LAUNCH ARENA CHALLENGE</Text>
+          <Text style={styles.arenaLaunchSub}>
+            Set a target, record your benchmark, and publish directly to the main
+            Arena feed.
+          </Text>
+          <View style={styles.arenaLaunchCta}>
+            <Text style={styles.arenaLaunchCtaText}>CREATE · RECORD · PUBLISH</Text>
+          </View>
+        </TouchableOpacity>
+
         <View
           style={[
             styles.featuredCard,
@@ -403,6 +433,52 @@ const styles = StyleSheet.create({
   filterTextOn: { color: WHITE },
   filterTextDark: { color: OBSIDIAN },
   list: { paddingHorizontal: 16, paddingBottom: 120 },
+  arenaLaunchCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: WHITE,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 14,
+    marginBottom: 14,
+  },
+  arenaLaunchEyebrow: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 6,
+  },
+  arenaLaunchTitle: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  arenaLaunchSub: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginTop: 8,
+    marginBottom: 14,
+  },
+  arenaLaunchCta: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  arenaLaunchCtaText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
