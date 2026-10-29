@@ -33,6 +33,11 @@ const MAX_DURATION_SEC = 60;
 const VIDEO_QUALITY = '720p';
 
 const FLASH_CYCLE = ['off', 'on', 'auto'];
+const SPEED_OPTIONS = [
+  { rate: 0.5, label: '0.5× SLOW' },
+  { rate: 1, label: '1× NORMAL' },
+  { rate: 2, label: '2× FAST' },
+];
 
 function formatTimer(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -46,6 +51,11 @@ function flashLabel(mode) {
   if (m === 'ON') return 'FLASH ON';
   if (m === 'AUTO') return 'FLASH AUTO';
   return 'FLASH OFF';
+}
+
+function speedLabel(rate) {
+  const hit = SPEED_OPTIONS.find((o) => o.rate === rate);
+  return hit?.label || '1× NORMAL';
 }
 
 /**
@@ -74,12 +84,14 @@ export default function ChallengeCamRecorder({
   const [micPerm, requestMicPerm] = useMicrophonePermissions();
   const [facing, setFacing] = useState('back');
   const [flash, setFlash] = useState('off');
+  const [speedRate, setSpeedRate] = useState(1);
   const [cameraReady, setCameraReady] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [phase, setPhase] = useState('camera'); // camera | preview
   const [recordedUri, setRecordedUri] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [error, setError] = useState(null);
 
   const clearTimer = useCallback(() => {
@@ -154,6 +166,31 @@ export default function ChallengeCamRecorder({
       return FLASH_CYCLE[(i + 1) % FLASH_CYCLE.length];
     });
   }, [isRecording, phase]);
+
+  const cycleSpeed = useCallback(() => {
+    if (isRecording) return;
+    setSpeedRate((prev) => {
+      const i = SPEED_OPTIONS.findIndex((o) => o.rate === prev);
+      const next = SPEED_OPTIONS[(i + 1) % SPEED_OPTIONS.length];
+      return next.rate;
+    });
+  }, [isRecording]);
+
+  const applyPreviewRate = useCallback(
+    async (rate) => {
+      try {
+        await videoRef.current?.setRateAsync?.(rate, true);
+      } catch (err) {
+        console.warn('[ChallengeCamRecorder] setRate failed:', err?.message || err);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (phase !== 'preview' || !recordedUri) return;
+    void applyPreviewRate(speedRate);
+  }, [applyPreviewRate, phase, recordedUri, speedRate]);
 
   const flipCamera = useCallback(() => {
     if (isRecording || phase !== 'camera') return;
@@ -251,20 +288,32 @@ export default function ChallengeCamRecorder({
   const handleContinue = useCallback(async () => {
     if (!recordedUri || busy) return;
     setBusy(true);
-    await unloadPreview();
+    setUploadPct(0);
+    setError(null);
     const elapsed = Math.max(
       1,
       elapsedSec || Math.round((Date.now() - startedAtRef.current) / 1000)
     );
-    onContinue?.(recordedUri, {
+    const meta = {
       durationSec: Math.min(maxSec, elapsed),
       facing,
       flash,
+      speedRate,
       videoQuality: VIDEO_QUALITY,
       mimeType: 'video/mp4',
       timestamp: Date.now(),
-    });
-    setBusy(false);
+      onUploadProgress: (pct) => setUploadPct(pct),
+    };
+    try {
+      // Keep preview mounted while parent uploads — unload after handoff returns
+      await Promise.resolve(onContinue?.(recordedUri, meta));
+    } catch (err) {
+      setError(err?.message || 'Continue / upload failed');
+    } finally {
+      await unloadPreview();
+      setBusy(false);
+      setUploadPct(0);
+    }
   }, [
     busy,
     elapsedSec,
@@ -273,6 +322,7 @@ export default function ChallengeCamRecorder({
     maxSec,
     onContinue,
     recordedUri,
+    speedRate,
     unloadPreview,
   ]);
 
@@ -326,18 +376,40 @@ export default function ChallengeCamRecorder({
           resizeMode={ResizeMode.COVER}
           shouldPlay
           isLooping
+          rate={speedRate}
+          shouldCorrectPitch
           useNativeControls={false}
+          onLoad={() => {
+            void applyPreviewRate(speedRate);
+          }}
           onError={(e) => {
             console.warn('[ChallengeCamRecorder] preview error', e);
             setError('Preview playback failed');
           }}
         />
         <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
-          <BackLink label="Back" onPress={handleClose} />
-          <Text style={styles.topTitle}>PREVIEW</Text>
-          <View style={{ width: 72 }} />
+          <BackLink label="Back" onPress={busy ? () => {} : handleClose} />
+          <View style={styles.topCenter}>
+            <Text style={styles.topTitle}>PREVIEW</Text>
+            <Text style={styles.topSub}>{speedLabel(speedRate)}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.chipBtn, styles.speedChip]}
+            onPress={cycleSpeed}
+            disabled={busy}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.chipBtnText, styles.speedChipText]}>SPEED</Text>
+          </TouchableOpacity>
         </View>
         <View style={[styles.previewFooter, { paddingBottom: bottomPad }]}>
+          {busy ? (
+            <Text style={styles.uploadHint}>
+              {uploadPct > 0
+                ? `UPLOADING TO CLOUD · ${Math.round(uploadPct)}%`
+                : 'PREPARING UPLOAD…'}
+            </Text>
+          ) : null}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <View style={styles.previewActions}>
             <TouchableOpacity
@@ -412,6 +484,16 @@ export default function ChallengeCamRecorder({
             <Text style={styles.chipBtnText}>{flashLabel(flash)}</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.chipBtn, styles.speedChip]}
+            onPress={cycleSpeed}
+            disabled={isRecording}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.chipBtnText, styles.speedChipText]}>
+              {speedLabel(speedRate)}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.chipBtn}
             onPress={flipCamera}
             disabled={isRecording}
@@ -424,8 +506,14 @@ export default function ChallengeCamRecorder({
 
       {isRecording ? (
         <View style={styles.timerPill} pointerEvents="none">
-          <View style={styles.recDot} />
-          <Text style={styles.timerText}>{formatTimer(elapsedSec)}</Text>
+          <View style={styles.recPulse}>
+            <View style={styles.recDot} />
+          </View>
+          <View>
+            <Text style={styles.recLiveLabel}>REC</Text>
+            <Text style={styles.timerText}>{formatTimer(elapsedSec)}</Text>
+          </View>
+          <Text style={styles.recSpeedTag}>{speedLabel(speedRate)}</Text>
         </View>
       ) : null}
 
@@ -516,33 +604,69 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.6,
   },
+  speedChip: {
+    borderColor: CONTINUE,
+    backgroundColor: 'rgba(250,204,21,0.14)',
+  },
+  speedChipText: {
+    color: CONTINUE,
+  },
   timerPill: {
     position: 'absolute',
     top: '18%',
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    borderWidth: 1,
+    gap: 12,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderWidth: 1.5,
     borderColor: REC_RED,
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     zIndex: 15,
   },
+  recPulse: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,0,51,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   recDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: REC_RED,
+  },
+  recLiveLabel: {
+    color: REC_RED,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.4,
   },
   timerText: {
     color: WHITE,
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
+  },
+  recSpeedTag: {
+    color: CONTINUE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  uploadHint: {
+    color: CONTINUE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    marginBottom: 10,
   },
   bottomBar: {
     position: 'absolute',

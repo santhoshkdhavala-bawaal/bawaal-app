@@ -1,28 +1,29 @@
 /**
- * ChallengeCam pipeline host — Step 1 recorder → confirm → Arena / upload.
+ * ChallengeCam pipeline host — Step 1 recorder → Storage upload → Arena persist.
  */
 import React, { useCallback, useState } from 'react';
-import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Pressable,
-  Image,
-  ActivityIndicator,
-} from 'react-native';
+import { View, StyleSheet, Text, ActivityIndicator } from 'react-native';
 import ChallengeCamRecorder from './ChallengeCamRecorder';
 import { setLatestBattleClip } from './battleClipStore';
-import { pushArenaPost } from './arenaFeedStore';
+import {
+  pushArenaPost,
+  pushArenaPostAndPersist,
+} from './arenaFeedStore';
+import {
+  makeBawaalClipFileName,
+  uploadLockedClip,
+} from './src/services/recordToPostService';
+import {
+  ensurePublicBawaalVideoUrl,
+  isRemoteHttpsUri,
+} from './src/services/uploadService';
+import { persistArenaPostToSupabase } from './src/services/arenaPostsService';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
-import { RADIUS } from './theme';
 
 export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
-  const [resultModal, setResultModal] = useState(null);
-  const [isPosting, setIsPosting] = useState(false);
   const [recorderKey, setRecorderKey] = useState(0);
+  const [statusNote, setStatusNote] = useState(null);
 
   const handleClose = useCallback(() => {
     try {
@@ -36,20 +37,54 @@ export default function ChallengeScreen({ route, navigation }) {
     }
   }, [navigation]);
 
+  const goArenaWithPost = useCallback(
+    (post) => {
+      setLatestBattleClip(post);
+      setRecorderKey((k) => k + 1);
+      if (navigation?.navigate) {
+        navigation.navigate('Main', {
+          tab: 'Arena',
+          newArenaPost: post,
+        });
+      } else {
+        handleClose();
+      }
+    },
+    [handleClose, navigation]
+  );
+
   const buildArenaPost = useCallback(
-    (uri, meta = {}) => {
+    (uri, meta = {}, extras = {}) => {
       const timestamp = meta.timestamp || Date.now();
+      const localUri = extras.localVideoUri || meta.localVideoUri || uri;
+      const cloudUri = extras.publicCloudUrl || meta.publicCloudUrl || null;
+      const playUri = cloudUri || localUri || uri;
       return {
         id: `local-${timestamp}`,
-        uri,
-        videoUri: meta.videoUri || uri,
-        recordedVideoUri: meta.recordedVideoUri || uri,
-        localVideoUri: meta.localVideoUri || uri,
+        type: 'battle_thread',
+        uri: playUri,
+        videoUri: playUri,
+        recordedVideoUri: playUri,
+        localVideoUri: localUri,
+        publicCloudUrl: cloudUri,
+        remoteVideoUri: cloudUri,
         speedRate: meta.speedRate ?? 1,
-        target: meta.target || reel?.statSticker || route?.params?.target || 'Battle response',
+        target:
+          meta.target ||
+          reel?.statSticker ||
+          route?.params?.target ||
+          'Battle response',
+        caption:
+          meta.caption ||
+          reel?.statSticker ||
+          route?.params?.target ||
+          'Arena drop',
         timestamp,
+        createdAt: timestamp,
         isMock: !!meta.isMock,
-        opponent: meta.opponent || `@${reel?.creator || route?.params?.handle || 'Challenger'}`,
+        opponent:
+          meta.opponent ||
+          `@${reel?.creator || route?.params?.handle || 'Challenger'}`,
         durationSec: meta.durationSec || 30,
         durationMs: meta.durationMs || (meta.durationSec || 30) * 1000,
         facing: meta.facing || 'back',
@@ -60,86 +95,149 @@ export default function ChallengeScreen({ route, navigation }) {
         creator: 'You',
         author: '@you',
         category: reel?.category || route?.params?.sport || 'GYM',
+        sport: reel?.category || route?.params?.sport || meta.category || 'GYM',
         challengeOf: reel?.creator || route?.params?.handle || 'Challenger',
+        cloudUploaded: !!cloudUri,
+        _freshPublish: true,
+        ...extras,
       };
     },
     [reel, route?.params?.handle, route?.params?.sport, route?.params?.target]
   );
 
-  const postToArena = useCallback(
+  /**
+   * Continue → async Storage upload → https URL → persistArenaPostToSupabase.
+   * Offline / upload miss → still prepend local file:// so feed is not a black card.
+   */
+  const handleContinue = useCallback(
     async (uri, meta = {}) => {
-      if (isPosting) return;
-      setIsPosting(true);
-
       const challengeId =
         route?.params?.battleId || reel?.battleId || reel?.id || undefined;
+      const localUri = uri;
+      const onProgress =
+        typeof meta.onUploadProgress === 'function'
+          ? meta.onUploadProgress
+          : undefined;
 
-      const localUri = meta.localVideoUri || meta.recordedVideoUri || meta.videoUri || uri;
-      const optimisticPost = buildArenaPost(localUri, {
-        ...meta,
-        videoUri: localUri,
-        recordedVideoUri: localUri,
+      setStatusNote('Uploading clip…');
+
+      // 1) Optimistic local feed (skip DB until we have https)
+      const optimistic = buildArenaPost(localUri, meta, {
         localVideoUri: localUri,
+        publicCloudUrl: null,
         cloudUploaded: false,
-        type: 'battle_thread',
-        caption: meta.caption || reel?.statSticker || route?.params?.target || 'Arena drop',
-        ...(challengeId ? { challengeId, battleId: challengeId } : { isBattle: true }),
-        sport: reel?.category || meta.category || 'GYM',
+        _skipPersist: true,
+        ...(challengeId
+          ? { challengeId, battleId: challengeId }
+          : { isBattle: true }),
       });
+      pushArenaPost(optimistic);
 
-      pushArenaPost(optimisticPost);
-      setLatestBattleClip(optimisticPost);
-      setResultModal(null);
-      setRecorderKey((k) => k + 1);
-
-      if (navigation?.navigate) {
-        navigation.navigate('Main', {
-          tab: 'Arena',
-          newArenaPost: optimisticPost,
+      // 2) Upload local file:// → public https://…/bawaalvideos/…
+      let publicUrl = null;
+      let lockedLocal = localUri;
+      try {
+        const uploaded = await uploadLockedClip(localUri, {
+          fileName: makeBawaalClipFileName(),
+          onProgress,
+          onError: (msg) => {
+            console.warn('[ChallengeScreen] upload error:', msg);
+            setStatusNote(String(msg || 'Upload failed — using local clip'));
+          },
         });
-      } else {
-        handleClose();
+        lockedLocal = uploaded.localUri || localUri;
+        if (uploaded.ok && uploaded.publicUrl && isRemoteHttpsUri(uploaded.publicUrl)) {
+          publicUrl =
+            ensurePublicBawaalVideoUrl(uploaded.publicUrl) || uploaded.publicUrl;
+        }
+      } catch (err) {
+        console.warn('[ChallengeScreen] upload threw:', err?.message || err);
+        setStatusNote('Upload pending — showing local recording');
       }
-      setIsPosting(false);
 
-      if (!meta.cloudUploaded && uri && !String(uri).startsWith('emulator-mock://')) {
-        postBattleResponseToSupabase(uri, {
-          battleId: challengeId,
-        }).catch(() => {});
+      // 3) Persist only with verified https URL
+      if (publicUrl) {
+        const cloudPost = buildArenaPost(publicUrl, meta, {
+          localVideoUri: lockedLocal,
+          publicCloudUrl: publicUrl,
+          remoteVideoUri: publicUrl,
+          cloudUploaded: true,
+          _skipPersist: true,
+          ...(challengeId
+            ? { challengeId, battleId: challengeId }
+            : { isBattle: true }),
+        });
+
+        try {
+          const card =
+            (await pushArenaPostAndPersist(cloudPost)) ||
+            pushArenaPost({ ...cloudPost, _skipPersist: true }) ||
+            cloudPost;
+
+          // Explicit persist call with https video_url (guards missing-https skip)
+          const persistRes = await persistArenaPostToSupabase({
+            ...card,
+            videoUri: publicUrl,
+            uri: publicUrl,
+            publicCloudUrl: publicUrl,
+            _fromRemote: false,
+            _skipPersist: false,
+          });
+          if (!persistRes?.ok && !persistRes?.skipped) {
+            console.warn(
+              '[ChallengeScreen] persist missed (clip is live):',
+              persistRes?.error || persistRes?.reason
+            );
+          }
+
+          // Legacy battle response row (soft)
+          postBattleResponseToSupabase(publicUrl, {
+            battleId: challengeId,
+          }).catch(() => {});
+
+          setStatusNote(null);
+          goArenaWithPost({
+            ...card,
+            videoUri: publicUrl,
+            uri: publicUrl,
+            publicCloudUrl: publicUrl,
+            localVideoUri: lockedLocal,
+            cloudUploaded: true,
+            _freshPublish: true,
+          });
+          return;
+        } catch (err) {
+          console.warn(
+            '[ChallengeScreen] cloud publish threw:',
+            err?.message || err
+          );
+        }
       }
+
+      // 4) Graceful local fallback — feed plays file:// immediately
+      const localPost = buildArenaPost(lockedLocal, meta, {
+        localVideoUri: lockedLocal,
+        publicCloudUrl: null,
+        cloudUploaded: false,
+        _skipPersist: true,
+        ...(challengeId
+          ? { challengeId, battleId: challengeId }
+          : { isBattle: true }),
+      });
+      pushArenaPost(localPost);
+      setStatusNote(null);
+      goArenaWithPost(localPost);
     },
     [
       buildArenaPost,
-      handleClose,
-      isPosting,
-      navigation,
+      goArenaWithPost,
       reel,
       route?.params?.battleId,
-      route?.params?.target,
     ]
   );
 
-  const handleContinue = useCallback((uri, meta = {}) => {
-    setResultModal({
-      uri,
-      meta: {
-        ...meta,
-        timestamp: meta.timestamp || Date.now(),
-        videoUri: uri,
-        recordedVideoUri: uri,
-        localVideoUri: uri,
-      },
-      title: 'CHALLENGE RECORDED',
-      body: 'Your battle response is ready. Continue to upload to the Arena.',
-    });
-  }, []);
-
-  const dismissModal = () => setResultModal(null);
-
   const challengeLabel =
-    reel?.statSticker ||
-    route?.params?.target ||
-    'BATTLE RESPONSE';
+    reel?.statSticker || route?.params?.target || 'BATTLE RESPONSE';
 
   return (
     <View style={styles.root}>
@@ -155,59 +253,12 @@ export default function ChallengeScreen({ route, navigation }) {
         }
         challengeLabel={challengeLabel}
       />
-
-      <Modal
-        visible={!!resultModal}
-        transparent
-        animationType="fade"
-        onRequestClose={dismissModal}
-        statusBarTranslucent
-      >
-        <Pressable style={styles.backdrop} onPress={dismissModal}>
-          <Pressable style={styles.card} onPress={(e) => e.stopPropagation?.()}>
-            <View style={styles.logoWrap}>
-              <Image
-                source={require('./assets/BAWAAL_white_icon.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.title}>{resultModal?.title}</Text>
-            <Text style={styles.body}>{resultModal?.body}</Text>
-            {!!resultModal?.meta?.durationSec && (
-              <Text style={styles.metaLine}>
-                {resultModal.meta.durationSec}s · {resultModal.meta.facing || 'back'} cam
-              </Text>
-            )}
-
-            <TouchableOpacity
-              style={styles.postBtn}
-              activeOpacity={0.85}
-              disabled={isPosting}
-              onPress={() =>
-                postToArena(resultModal.uri, resultModal.meta || {})
-              }
-            >
-              {isPosting ? (
-                <ActivityIndicator color="#000000" />
-              ) : (
-                <Text style={styles.postBtnText}>UPLOAD TO ARENA</Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => {
-                dismissModal();
-                setRecorderKey((k) => k + 1);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.secondaryBtnText}>RE-TAKE</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      {statusNote ? (
+        <View style={styles.statusBanner} pointerEvents="none">
+          <ActivityIndicator color="#FACC15" size="small" />
+          <Text style={styles.statusText}>{statusNote}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -217,75 +268,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+  statusBanner: {
+    position: 'absolute',
+    top: '42%',
+    left: 24,
+    right: 24,
+    zIndex: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-  },
-  card: {
-    backgroundColor: '#0A0A0A',
-    borderRadius: RADIUS?.card || 14,
+    gap: 10,
+    backgroundColor: 'rgba(0,0,0,0.82)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    padding: 22,
-  },
-  logoWrap: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  logo: {
-    width: 48,
-    height: 48,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
-    textAlign: 'center',
-    letterSpacing: 1,
-  },
-  body: {
-    color: '#A0A0A0',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 10,
-    lineHeight: 18,
-  },
-  metaLine: {
-    color: '#E8ECE9',
-    fontSize: 12,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  postBtn: {
-    marginTop: 20,
-    backgroundColor: '#FACC15',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  postBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  secondaryBtn: {
-    marginTop: 12,
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
+    borderColor: 'rgba(250,204,21,0.45)',
     borderRadius: 12,
     paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: 'rgba(59,130,246,0.14)',
+    paddingHorizontal: 14,
   },
-  secondaryBtnText: {
-    color: '#3B82F6',
+  statusText: {
+    color: '#FACC15',
     fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    flexShrink: 1,
   },
 });

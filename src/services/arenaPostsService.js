@@ -336,14 +336,16 @@ export async function persistArenaPostToSupabase(post) {
 
   const row = mapArenaPostToDbRow(post);
   if (!row) {
-    console.error('[arenaPosts] persist skipped — missing https video_url', {
+    // Soft skip — local file:// posts stay in feed until Storage upload finishes
+    console.warn('[arenaPosts] persist deferred — missing https video_url', {
       id: post?.id,
       videoUri: post?.videoUri,
       publicCloudUrl: post?.publicCloudUrl,
+      localVideoUri: post?.localVideoUri,
     });
     return {
       ok: false,
-      skipped: false,
+      skipped: true,
       reason: 'missing-https-url',
       error: 'Missing public HTTPS video URL for database insert',
     };

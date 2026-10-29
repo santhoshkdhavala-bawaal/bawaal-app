@@ -344,6 +344,7 @@ const ClipSurface = memo(function ClipSurface({
       <SafeFeedVideo
         key={uri}
         uri={uri}
+        source={{ videoUri: uri, localVideoUri: uri }}
         label={label}
         style={styles.clipVideoFill}
         muted={muted}

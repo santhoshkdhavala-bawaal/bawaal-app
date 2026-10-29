@@ -2,7 +2,10 @@
  * BAWAAL Arena feed store — in-memory + Supabase-backed persistence.
  * Hydrate from `bawaal_posts` on Arena mount; prepend locally on publish.
  */
-import { ensurePublicBawaalVideoUrl } from './src/services/uploadService';
+import {
+  ensurePublicBawaalVideoUrl,
+  isRemoteHttpsUri,
+} from './src/services/uploadService';
 import {
   fetchArenaPostsFromSupabase,
   persistArenaPostToSupabase,
@@ -69,6 +72,20 @@ function normalizeArenaPost(post) {
     post.id || (videoKey ? `arena-${videoKey}` : `arena-${ts}`)
   );
   const sport = resolvePostSport(post, 'GYM');
+  const localVideoUri =
+    typeof post.localVideoUri === 'string' && post.localVideoUri.trim()
+      ? post.localVideoUri.trim()
+      : videoUri && !isRemoteHttpsUri(videoUri)
+        ? videoUri
+        : null;
+  const cloudUri = isRemoteHttpsUri(videoUri)
+    ? ensurePublicBawaalVideoUrl(videoUri) || videoUri
+    : typeof post.publicCloudUrl === 'string' &&
+        isRemoteHttpsUri(post.publicCloudUrl)
+      ? ensurePublicBawaalVideoUrl(post.publicCloudUrl) || post.publicCloudUrl
+      : null;
+  // Prefer cloud for network playback; keep file:// as playable fallback (no black card)
+  const playUri = cloudUri || localVideoUri || videoUri;
   return {
     type: 'reel',
     author:
@@ -87,13 +104,13 @@ function normalizeArenaPost(post) {
     sport,
     category: sport,
     timestamp: ts,
-    videoUri,
-    uri: videoUri,
-    recordedVideoUri: videoUri,
-    publicCloudUrl: videoUri,
-    remoteVideoUri: videoUri,
-    localVideoUri:
-      typeof post.localVideoUri === 'string' ? post.localVideoUri : null,
+    videoUri: playUri,
+    uri: playUri,
+    recordedVideoUri: playUri,
+    publicCloudUrl: cloudUri,
+    remoteVideoUri: cloudUri,
+    localVideoUri,
+    cloudUploaded: Boolean(cloudUri || post.cloudUploaded),
   };
 }
 
@@ -134,8 +151,11 @@ export function pushArenaPost(post) {
     );
     mergeIntoStore(normalized, { emitEvent: true });
 
-    // Fire-and-forget cloud persist (skip rows that came from hydrate)
-    if (!post?._fromRemote && !post?._skipPersist) {
+    // Only persist when we have a verified public HTTPS video_url
+    const httpsReady =
+      isRemoteHttpsUri(normalized.publicCloudUrl) ||
+      isRemoteHttpsUri(normalized.videoUri);
+    if (!post?._fromRemote && !post?._skipPersist && httpsReady) {
       void persistArenaPostToSupabase(normalized).then((res) => {
         if (!res?.ok && !res?.skipped) {
           console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
@@ -143,6 +163,10 @@ export function pushArenaPost(post) {
           console.log('[arenaFeedStore] row persisted to bawaal_posts');
         }
       });
+    } else if (!post?._fromRemote && !post?._skipPersist && !httpsReady) {
+      console.warn(
+        '[arenaFeedStore] defer persist — waiting for https video_url (local preview active)'
+      );
     }
 
     return normalized;
