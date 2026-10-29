@@ -7,6 +7,7 @@ import {
   BAWAAL_VIDEO_BUCKET,
   ensurePublicBawaalVideoUrl,
   isRemoteHttpsUri,
+  sanitizePlayableFeedUri,
 } from './uploadService';
 import { resolvePostSport } from '../utils/sportCategory';
 
@@ -23,28 +24,22 @@ const LOCAL_POSTS_MAX = 40;
  * Guarantees videoUri + localVideoUri so ArenaClipPlayer never gets a blank card.
  */
 export function mapChallengeClipToFeedPost(post = {}) {
-  const local =
-    (typeof post.localVideoUri === 'string' && post.localVideoUri.trim()) ||
-    (typeof post.recordedVideoUri === 'string' &&
-      !isRemoteHttpsUri(post.recordedVideoUri) &&
-      post.recordedVideoUri.trim()) ||
-    null;
+  const local = sanitizePlayableFeedUri(
+    post.localVideoUri ||
+      (!isRemoteHttpsUri(post.recordedVideoUri) ? post.recordedVideoUri : null)
+  );
   const cloud =
-    (typeof post.publicCloudUrl === 'string' &&
-      isRemoteHttpsUri(post.publicCloudUrl) &&
-      (ensurePublicBawaalVideoUrl(post.publicCloudUrl) || post.publicCloudUrl)) ||
-    (typeof post.videoUri === 'string' &&
-      isRemoteHttpsUri(post.videoUri) &&
-      (ensurePublicBawaalVideoUrl(post.videoUri) || post.videoUri)) ||
-    (typeof post.uri === 'string' &&
-      isRemoteHttpsUri(post.uri) &&
-      (ensurePublicBawaalVideoUrl(post.uri) || post.uri)) ||
-    null;
+    sanitizePlayableFeedUri(post.publicCloudUrl) ||
+    (isRemoteHttpsUri(post.videoUri)
+      ? sanitizePlayableFeedUri(post.videoUri)
+      : null) ||
+    (isRemoteHttpsUri(post.uri) ? sanitizePlayableFeedUri(post.uri) : null);
   const playUri =
     cloud ||
     local ||
-    (typeof post.videoUri === 'string' && post.videoUri.trim()) ||
-    (typeof post.uri === 'string' && post.uri.trim()) ||
+    sanitizePlayableFeedUri(post.videoUri) ||
+    sanitizePlayableFeedUri(post.uri) ||
+    sanitizePlayableFeedUri(post.recordedVideoUri) ||
     null;
   if (!playUri) return null;
   const ts = Number(post.timestamp || post.createdAt) || Date.now();

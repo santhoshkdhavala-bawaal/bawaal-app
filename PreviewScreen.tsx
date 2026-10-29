@@ -14,6 +14,7 @@ import {
 import { ResizeMode, Video } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './src/components/BackLink';
+import { sanitizePlayableFeedUri } from './src/services/uploadService';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -151,13 +152,18 @@ export default function PreviewScreen({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.continueBtn}
-            onPress={() =>
+            onPress={() => {
+              const safeUri = sanitizePlayableFeedUri(uri);
+              if (!safeUri) {
+                console.warn('[PreviewScreen] Continue blocked — invalid video URI');
+                return;
+              }
               onContinue({
-                videoUri: uri,
-                uri,
-                localVideoUri: uri,
-              })
-            }
+                videoUri: safeUri,
+                uri: safeUri,
+                localVideoUri: safeUri,
+              });
+            }}
             disabled={busy}
             activeOpacity={0.85}
           >

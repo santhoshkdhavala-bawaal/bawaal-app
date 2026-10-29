@@ -1,7 +1,7 @@
 /**
- * Arena / Battle feed clip player — expo-av Video with local file:// + https support.
- * Tap toggles play/pause; auto-loops by default.
- * When Metro stubs expo-av (Expo Go), shows a labeled placeholder instead of a black box.
+ * Arena / Battle feed clip player.
+ * Prefers real expo-av Video; falls back to expo-video so clips still loop
+ * when Metro stubs expo-av (no "dev client" text wall).
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -11,35 +11,51 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import {
-  ensurePublicBawaalVideoUrl,
-  isRemoteHttpsUri,
   resolvePlayableVideoUri,
+  sanitizePlayableFeedUri,
 } from '../services/uploadService';
+import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 
-function loadExpoAv() {
+function loadRealExpoAv() {
   try {
-    return require('expo-av');
-  } catch (err) {
-    console.warn('[ArenaClipPlayer] expo-av missing:', err?.message || err);
-    return null;
+    // Prefer safeNative gate (null in Expo Go; real module in npm start / EAS)
+    const { loadExpoAv } = require('../native/safeNative');
+    const mod = typeof loadExpoAv === 'function' ? loadExpoAv() : null;
+    if (mod?.Video && isRealVideoComponent(mod.Video)) {
+      return mod;
+    }
+  } catch {
+    /* fall through */
   }
+  try {
+    const mod = require('expo-av');
+    if (mod?.Video && isRealVideoComponent(mod.Video)) {
+      return { Video: mod.Video, ResizeMode: mod.ResizeMode };
+    }
+  } catch (err) {
+    console.warn('[ArenaClipPlayer] expo-av unavailable:', err?.message || err);
+  }
+  return null;
 }
 
-const ExpoAv = loadExpoAv();
-const Video = ExpoAv?.Video || null;
-const ResizeMode = ExpoAv?.ResizeMode || null;
-const isStubVideo =
-  !Video ||
-  Video.displayName === 'StubExpoAvVideo' ||
-  String(Video.displayName || '').includes('Stub');
+function isRealVideoComponent(VideoComp) {
+  if (!VideoComp) return false;
+  const name = String(VideoComp.displayName || VideoComp.name || '');
+  if (/stub|mock/i.test(name)) return false;
+  return true;
+}
+
+const RealAv = loadRealExpoAv();
+const AvVideo = RealAv?.Video || null;
+const AvResizeMode = RealAv?.ResizeMode || null;
 
 function resolveClipUri(uri, source) {
-  if (typeof uri === 'string' && uri.trim()) {
-    return ensurePublicBawaalVideoUrl(uri) || uri.trim();
-  }
+  const direct = sanitizePlayableFeedUri(uri);
+  if (direct) return direct;
   if (source && typeof source === 'object') {
-    const fromHelper = resolvePlayableVideoUri(source);
+    const fromHelper = sanitizePlayableFeedUri(resolvePlayableVideoUri(source));
     if (fromHelper) return fromHelper;
     const candidates = [
       source.videoUri,
@@ -51,51 +67,47 @@ function resolveClipUri(uri, source) {
       source.localVideoUri,
     ];
     for (const c of candidates) {
-      if (typeof c === 'string' && c.trim()) {
-        return ensurePublicBawaalVideoUrl(c) || c.trim();
-      }
+      const ok = sanitizePlayableFeedUri(c);
+      if (ok) return ok;
     }
   }
   return null;
 }
 
-function isPlayable(uri) {
-  if (!uri || typeof uri !== 'string') return false;
-  const t = uri.trim();
-  return (
-    t.startsWith('https://') ||
-    t.startsWith('http://') ||
-    t.startsWith('file://') ||
-    t.startsWith('content://') ||
-    t.startsWith('ph://') ||
-    t.startsWith('assets-library://')
-  );
+function ClipShell({ style, children, onPress, accessibilityLabel }) {
+  if (onPress) {
+    return (
+      <Pressable
+        style={[styles.shell, style]}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+      >
+        {children}
+      </Pressable>
+    );
+  }
+  return <View style={[styles.shell, style]}>{children}</View>;
 }
 
-function ArenaClipPlayer({
-  uri: uriProp,
-  source,
+/** Real expo-av path (dev client / release). */
+function ExpoAvClipPlayer({
+  resolved,
   style,
-  label = null,
-  muted = true,
-  loop = true,
-  autoPlay = true,
-  active = true,
+  label,
+  muted,
+  loop,
+  autoPlay,
+  active,
 }) {
   const videoRef = useRef(null);
-  const resolved = useMemo(
-    () => resolveClipUri(uriProp, source),
-    [uriProp, source]
-  );
-  const playable = isPlayable(resolved);
-  // Parent keys this player by URI — remount resets pause/load/error state
   const [paused, setPaused] = useState(!autoPlay);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const node = videoRef.current;
-    if (!node || !playable || failed || isStubVideo) return undefined;
+    if (!node || failed || !AvVideo) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -107,14 +119,14 @@ function ArenaClipPlayer({
         });
       } catch (err) {
         if (!cancelled) {
-          console.warn('[ArenaClipPlayer] status:', err?.message || err);
+          console.warn('[ArenaClipPlayer] av status:', err?.message || err);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [active, autoPlay, failed, loop, muted, paused, playable, resolved]);
+  }, [active, autoPlay, failed, loop, muted, paused, resolved]);
 
   useEffect(() => {
     const node = videoRef.current;
@@ -129,45 +141,29 @@ function ArenaClipPlayer({
   }, []);
 
   const togglePlay = useCallback(() => {
-    if (!playable || failed) return;
+    if (failed) return;
     setPaused((p) => !p);
-  }, [failed, playable]);
+  }, [failed]);
 
-  if (!active) {
-    return <View style={[styles.shell, style, styles.idle]} />;
-  }
-
-  if (!playable || failed || isStubVideo || !Video) {
-    const localHint =
-      resolved && !isRemoteHttpsUri(resolved) ? 'LOCAL CLIP READY' : null;
+  if (failed) {
     return (
-      <View style={[styles.shell, style]}>
-        <View style={styles.fallback}>
-          <Text style={styles.fallbackTitle}>
-            {failed ? 'CLIP UNAVAILABLE' : label || 'BAWAAL CLIP'}
-          </Text>
-          <Text style={styles.fallbackSub}>
-            {isStubVideo
-              ? 'Use npm start (dev client) for live playback'
-              : localHint || 'Waiting for video URI'}
-          </Text>
-        </View>
+      <View style={[styles.shell, style, styles.fallback]}>
+        <Text style={styles.fallbackTitle}>CLIP UNAVAILABLE</Text>
       </View>
     );
   }
 
   return (
-    <Pressable
-      style={[styles.shell, style]}
+    <ClipShell
+      style={style}
       onPress={togglePlay}
-      accessibilityRole="button"
       accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
     >
-      <Video
+      <AvVideo
         ref={videoRef}
         style={styles.video}
-        source={{ uri: resolved || source?.videoUri || source?.uri }}
-        resizeMode={ResizeMode?.COVER || 'cover'}
+        source={{ uri: resolved }}
+        resizeMode={AvResizeMode?.COVER || 'cover'}
         shouldPlay={!!autoPlay && !paused && active}
         isLooping={!!loop}
         isMuted={!!muted}
@@ -177,7 +173,7 @@ function ArenaClipPlayer({
         onLoad={() => setLoading(false)}
         onReadyForDisplay={() => setLoading(false)}
         onError={(e) => {
-          console.warn('[ArenaClipPlayer] error:', e?.error || e);
+          console.warn('[ArenaClipPlayer] av error:', e?.error || e);
           setFailed(true);
           setLoading(false);
         }}
@@ -197,8 +193,208 @@ function ArenaClipPlayer({
           <Text style={styles.cornerText}>{label}</Text>
         </View>
       ) : null}
-    </Pressable>
+    </ClipShell>
   );
+}
+
+/** expo-video fallback — works when expo-av is Metro-stubbed. */
+function ExpoVideoClipPlayer({
+  resolved,
+  style,
+  label,
+  muted,
+  loop,
+  autoPlay,
+  active,
+}) {
+  const [paused, setPaused] = useState(!autoPlay);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  const player = useVideoPlayer(resolved ? { uri: resolved } : null, (p) => {
+    try {
+      p.loop = !!loop;
+      p.muted = !!muted;
+      if (autoPlay) p.play();
+    } catch {
+      /* ignore */
+    }
+  });
+
+  useEffect(() => {
+    if (!player || !resolved) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      try {
+        player.muted = !!muted;
+        player.loop = !!loop;
+        if (active && autoPlay && !paused) player.play();
+        else player.pause();
+        setLoading(false);
+      } catch (err) {
+        console.warn('[ArenaClipPlayer] expo-video status:', err?.message || err);
+        setFailed(true);
+        setLoading(false);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [active, autoPlay, loop, muted, paused, player, resolved]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        player?.pause?.();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [player]);
+
+  const togglePlay = useCallback(() => {
+    if (failed || !player) return;
+    setPaused((p) => {
+      const next = !p;
+      try {
+        if (next) player.pause();
+        else player.play();
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, [failed, player]);
+
+  if (failed) {
+    return (
+      <View style={[styles.shell, style, styles.fallback]}>
+        <Text style={styles.fallbackTitle}>CLIP UNAVAILABLE</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ClipShell
+      style={style}
+      onPress={togglePlay}
+      accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
+    >
+      <VideoView
+        style={styles.video}
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+      />
+      {loading ? (
+        <View style={styles.loading} pointerEvents="none">
+          <ActivityIndicator color="#FFFFFF" />
+        </View>
+      ) : null}
+      {paused ? (
+        <View style={styles.playBadge} pointerEvents="none">
+          <Text style={styles.playBadgeText}>▶ PLAY</Text>
+        </View>
+      ) : null}
+      {!!label ? (
+        <View style={styles.corner} pointerEvents="none">
+          <Text style={styles.cornerText}>{label}</Text>
+        </View>
+      ) : null}
+    </ClipShell>
+  );
+}
+
+function ArenaClipPlayer({
+  uri: uriProp,
+  source,
+  style,
+  label = null,
+  muted = true,
+  loop = true,
+  autoPlay = true,
+  active = true,
+}) {
+  const resolved = useMemo(
+    () => resolveClipUri(uriProp, source),
+    [uriProp, source]
+  );
+
+  if (!active) {
+    return <View style={[styles.shell, style, styles.idle]} />;
+  }
+
+  if (!resolved) {
+    return (
+      <View style={[styles.shell, style, styles.fallback]}>
+        <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
+        <Text style={styles.fallbackSub}>Waiting for video</Text>
+      </View>
+    );
+  }
+
+  // Prefer native expo-av when the real module is present (npm start / EAS)
+  if (AvVideo) {
+    return (
+      <ExpoAvClipPlayer
+        key={`av-${resolved}`}
+        resolved={resolved}
+        style={style}
+        label={label}
+        muted={muted}
+        loop={loop}
+        autoPlay={autoPlay}
+        active={active}
+      />
+    );
+  }
+
+  // Fallback: expo-video auto-loop when expo-av is stubbed — plays file:// + https
+  return (
+    <ExpoVideoErrorBoundary style={style} label={label} seed={resolved}>
+      <ExpoVideoClipPlayer
+        key={`ev-${resolved}`}
+        resolved={resolved}
+        style={style}
+        label={label}
+        muted={muted}
+        loop={loop}
+        autoPlay={autoPlay}
+        active={active}
+      />
+    </ExpoVideoErrorBoundary>
+  );
+}
+
+class ExpoVideoErrorBoundary extends React.Component {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.warn('[ArenaClipPlayer] expo-video crashed:', error?.message || error);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <View style={[styles.shell, this.props.style]}>
+          <SportsFeedPlaceholder
+            style={StyleSheet.absoluteFill}
+            label={this.props.label || 'BAWAAL CLIP'}
+            seed={String(this.props.seed || 'clip').length}
+            variant="feed"
+            showExpoBadge={false}
+          />
+        </View>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -275,4 +471,7 @@ const styles = StyleSheet.create({
 });
 
 export default memo(ArenaClipPlayer);
-export { resolveClipUri, isPlayable as isPlayableClipUri };
+export { resolveClipUri };
+export function isPlayableClipUri(uri) {
+  return Boolean(sanitizePlayableFeedUri(uri));
+}

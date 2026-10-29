@@ -22,7 +22,10 @@ import {
 } from 'expo-camera';
 import { Audio } from 'expo-av';
 import BackLink from './src/components/BackLink';
-import { persistLocalVideoUri } from './src/services/uploadService';
+import {
+  persistLocalVideoUri,
+  sanitizePlayableFeedUri,
+} from './src/services/uploadService';
 import PreviewScreen from './PreviewScreen';
 
 const BG = '#000000';
@@ -296,11 +299,13 @@ export default function ChallengeCamRecorder({
 
   const handleContinue = useCallback(
     async (payload) => {
-      const handoffUri =
-        (typeof payload?.videoUri === 'string' && payload.videoUri.trim()) ||
-        (typeof payload?.localVideoUri === 'string' && payload.localVideoUri.trim()) ||
-        recordedUri;
-      if (!handoffUri || busy) return;
+      const handoffUri = sanitizePlayableFeedUri(
+        payload?.videoUri || payload?.localVideoUri || payload?.uri || recordedUri
+      );
+      if (!handoffUri || busy) {
+        if (!handoffUri) setError('Invalid clip URI — retake the recording');
+        return;
+      }
       setBusy(true);
       setUploadPct(0);
       setError(null);

@@ -84,6 +84,37 @@ export function isRemoteHttpsUri(uri) {
   return typeof uri === 'string' && /^https:\/\//i.test(uri.trim());
 }
 
+/**
+ * Strict feed / Preview URI guard — never pass empty, "null", or garbage to Video.
+ * Returns a sanitized playable string or null.
+ */
+export function sanitizePlayableFeedUri(raw) {
+  if (raw == null) return null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (
+    !trimmed ||
+    trimmed === 'null' ||
+    trimmed === 'undefined' ||
+    trimmed === '[object Object]'
+  ) {
+    return null;
+  }
+  const sanitized = sanitizeVideoUriForUpload(trimmed) || trimmed;
+  if (!sanitized) return null;
+  if (
+    sanitized.startsWith('https://') ||
+    sanitized.startsWith('http://') ||
+    sanitized.startsWith('file://') ||
+    sanitized.startsWith('content://') ||
+    sanitized.startsWith('ph://') ||
+    sanitized.startsWith('assets-library://')
+  ) {
+    return ensurePublicBawaalVideoUrl(sanitized) || sanitized;
+  }
+  return null;
+}
+
 /** Collapse `https://host//path` and repeated `/public/` segments. */
 function cleanStorageUrl(url) {
   if (!url || typeof url !== 'string') return url;
