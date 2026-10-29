@@ -10,10 +10,11 @@ import {
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import SafeFeedVideo, {
+import {
   isPlayableFeedUri,
   resolveFeedVideoUri,
 } from './src/components/SafeFeedVideo';
+import ArenaClipPlayer from './src/components/ArenaClipPlayer';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -33,14 +34,21 @@ function ReelPage({ item, index, total, active, labelPrefix }) {
   return (
     <View style={styles.page}>
       {playable && active ? (
-        <SafeFeedVideo
+        <ArenaClipPlayer
           key={`resp-${item?.id || index}-${uri}`}
           uri={uri}
+          source={{
+            videoUri: item?.videoUri,
+            video_url: item?.video_url,
+            uri: item?.uri,
+            localVideoUri: item?.localVideoUri,
+          }}
           style={StyleSheet.absoluteFillObject}
           muted={false}
           loop
           autoPlay
-          contentFit="cover"
+          active={active}
+          label={handle}
         />
       ) : playable ? (
         <View style={styles.placeholder}>

@@ -33,9 +33,8 @@ import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
-import SafeFeedVideo, {
-  resolveFeedVideoUri,
-} from './src/components/SafeFeedVideo';
+import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
+import ArenaClipPlayer from './src/components/ArenaClipPlayer';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
@@ -259,7 +258,13 @@ function sortFeedItems(list) {
 }
 
 function mapPostToReel(post) {
-  const uri = resolveFeedVideoUri(post);
+  const uri =
+    resolveFeedVideoUri(post) ||
+    post?.videoUri ||
+    post?.video_url ||
+    post?.uri ||
+    post?.localVideoUri ||
+    null;
   const ts = post.timestamp || post.createdAt || Date.now();
   const rawHandle =
     post.author ||
@@ -279,6 +284,12 @@ function mapPostToReel(post) {
     post._freshPublish === true ||
     ts > Date.now() - 120_000 ||
     author === '@you';
+  const localVideoUri =
+    typeof post.localVideoUri === 'string' && post.localVideoUri.trim()
+      ? post.localVideoUri.trim()
+      : uri && String(uri).startsWith('file://')
+        ? uri
+        : null;
   return {
     id,
     type: 'reel',
@@ -289,6 +300,10 @@ function mapPostToReel(post) {
     caption: post.caption || post.title || post.target || 'Arena drop',
     hypeCount: post.hypeCount || 0,
     videoUri: uri,
+    uri,
+    video_url: post.video_url || null,
+    localVideoUri,
+    publicCloudUrl: post.publicCloudUrl || null,
     createdAt: ts,
     _freshPublish: !!fresh,
   };
@@ -323,36 +338,51 @@ function buildInitialFeed(route) {
 
 const ClipSurface = memo(function ClipSurface({
   uri,
+  source,
   label,
   style,
   muted = true,
   /** When false, skip decoder entirely (far cells). Neighbors pass active=true to warm. */
   active = true,
 }) {
-  // B&W shell only — no LOADING CLIP spinner on empty / offscreen cells
-  if (!uri || !active) {
+  const playSource = source || {
+    videoUri: uri,
+    video_url: uri,
+    uri,
+    localVideoUri: uri,
+  };
+  const playUri =
+    uri ||
+    playSource.videoUri ||
+    playSource.video_url ||
+    playSource.uri ||
+    playSource.localVideoUri ||
+    null;
+
+  // Empty / offscreen — labeled shell (never a silent black void)
+  if (!playUri || !active) {
     return (
-      <View
-        style={[styles.clipShell, style, styles.clipPlaceholder]}
-        pointerEvents="none"
-      />
+      <View style={[styles.clipShell, style, styles.clipPlaceholder]}>
+        <Text style={styles.clipPlaceholderText}>
+          {!active ? '…' : label || 'NO CLIP'}
+        </Text>
+      </View>
     );
   }
+
   // Keep player keyed by URI so FlatList recycle never shows the wrong clip
   return (
-    <View style={[styles.clipShell, style]} pointerEvents="none">
-      <SafeFeedVideo
-        key={uri}
-        uri={uri}
-        source={{ videoUri: uri, localVideoUri: uri }}
+    <View style={[styles.clipShell, style]}>
+      <ArenaClipPlayer
+        key={playUri}
+        uri={playUri}
+        source={playSource}
         label={label}
         style={styles.clipVideoFill}
         muted={muted}
         loop
         autoPlay
-        paused={false}
-        contentFit="cover"
-        nativeControls={false}
+        active={active}
       />
     </View>
   );
@@ -367,13 +397,21 @@ function sortResponses(list, mode) {
 }
 
 function mapPostToResponse(post) {
-  const uri = resolveFeedVideoUri(post);
+  const uri =
+    resolveFeedVideoUri(post) ||
+    post?.videoUri ||
+    post?.video_url ||
+    post?.uri ||
+    post?.localVideoUri ||
+    null;
   const creator =
     post.creator === 'You' || post.creator === 'YOU' ? 'You' : post.creator || 'You';
   return {
     id: post.id || `resp-${Date.now()}`,
     creator,
     videoUri: uri,
+    uri,
+    localVideoUri: post.localVideoUri || (uri?.startsWith?.('file://') ? uri : null),
     // Fresh posts from the device sit at #1 until real votes sync
     votes: post.votes ?? (creator === 'You' ? 10_000 : 1),
     createdAt: post.timestamp || post.createdAt || Date.now(),
@@ -425,6 +463,12 @@ function ingestArenaPost(prev, post) {
         : `@${leader.creator.replace(/^@/, '')}`
       : thread.leaderLabel;
     thread.status = 'LIVE BATTLE';
+    if (!thread.challengeVideoUri && post.challengeVideoUri) {
+      thread.challengeVideoUri = post.challengeVideoUri;
+    }
+    if (response.localVideoUri && !thread.localVideoUri) {
+      thread.localVideoUri = response.localVideoUri;
+    }
     next.splice(idx, 1);
     return [thread, ...next];
   }
@@ -447,6 +491,9 @@ function ingestArenaPost(prev, post) {
     target: post.target || 'OPEN CHALLENGE',
     status: 'LIVE BATTLE',
     challengeVideoUri: post.challengeVideoUri || null,
+    videoUri: response.videoUri || null,
+    uri: response.uri || response.videoUri || null,
+    localVideoUri: response.localVideoUri || post.localVideoUri || null,
     responses,
     createdAt: Date.now(),
   };
@@ -556,7 +603,15 @@ const GeneralReelCard = memo(function GeneralReelCard({
       {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
       <ClipSurface
         key={`clip-${item.id}`}
-        uri={item.videoUri}
+        uri={item.videoUri || item.video_url || item.uri || item.localVideoUri}
+        source={{
+          videoUri: item.videoUri,
+          video_url: item.video_url,
+          uri: item.uri,
+          localVideoUri: item.localVideoUri,
+          publicCloudUrl: item.publicCloudUrl,
+          remoteVideoUri: item.remoteVideoUri,
+        }}
         label={null}
         style={styles.reelFullBleed}
         muted={muted}
@@ -704,8 +759,13 @@ const BattleCard = memo(function BattleCard({
       <View style={styles.splitRow}>
         <View style={styles.splitPane}>
           <ClipSurface
-            uri={item.challengeVideoUri}
-            label={item.opponent}
+            uri={item.challengeVideoUri || item.videoUri}
+            source={{
+              videoUri: item.challengeVideoUri || item.videoUri,
+              localVideoUri: item.localVideoUri,
+              uri: item.challengeVideoUri || item.uri,
+            }}
+            label={item.opponent || 'CHALLENGE'}
             style={styles.splitClip}
             active={active}
           />
@@ -715,7 +775,17 @@ const BattleCard = memo(function BattleCard({
         </View>
         <View style={styles.splitPane}>
           <ClipSurface
-            uri={leaderUri}
+            uri={leaderUri || leader?.localVideoUri}
+            source={
+              leader
+                ? {
+                    videoUri: leader.videoUri,
+                    video_url: leader.video_url,
+                    uri: leader.uri,
+                    localVideoUri: leader.localVideoUri,
+                  }
+                : null
+            }
             label={
               leader
                 ? leader.creator === 'You'
@@ -1585,6 +1655,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 8,
+  },
+  clipPlaceholderText: {
+    color: PLATINUM,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: 0.6,
   },
   clipPlaceholderLabel: {
     color: PLATINUM,

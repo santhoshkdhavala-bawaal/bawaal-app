@@ -109,19 +109,74 @@ export async function publishRecordedClipToArena(input) {
     onError: input?.onError,
   });
 
-  if (!uploaded.ok || !uploaded.publicUrl) {
-    return {
-      ok: false,
-      error: uploaded.error || 'upload-failed',
-      localUri: uploaded.localUri || null,
-    };
-  }
-
-  const publicUrl = uploaded.publicUrl;
   const caption = String(
     input?.caption ||
       (input?.tagline ? `${title} ${input.tagline}` : title)
   );
+  const lockedLocal =
+    uploaded.localUri ||
+    (typeof input?.localUri === 'string' ? input.localUri.trim() : null);
+
+  // Cloud miss / null URL → still publish local file:// into the Arena feed
+  if (!uploaded.ok || !uploaded.publicUrl) {
+    if (!lockedLocal) {
+      return {
+        ok: false,
+        error: uploaded.error || 'upload-failed',
+        localUri: null,
+      };
+    }
+    const localPayload = {
+      id: `arena-${String(mode).toLowerCase()}-local-${timestamp}`,
+      type: 'reel',
+      mode,
+      title,
+      caption,
+      tagline: input?.tagline || null,
+      creator: input?.creator || 'You',
+      author,
+      category: sport,
+      sport,
+      videoUri: lockedLocal,
+      uri: lockedLocal,
+      recordedVideoUri: lockedLocal,
+      publicCloudUrl: null,
+      remoteVideoUri: null,
+      localVideoUri: lockedLocal,
+      cloudUploaded: false,
+      hypeCount: 0,
+      durationSec: Number(input?.durationSec) || 30,
+      feed: 'ARENA',
+      feedTarget: 'ARENA',
+      timestamp,
+      createdAt: timestamp,
+      _freshPublish: true,
+      _skipPersist: true,
+    };
+    const localCard = pushArenaPost(localPayload) || localPayload;
+    console.warn(
+      '[recordToPost] cloud upload missed — Arena playing local URI',
+      lockedLocal
+    );
+    return {
+      ok: true,
+      publicUrl: null,
+      localUri: lockedLocal,
+      localOnly: true,
+      post: {
+        ...localCard,
+        _persistOk: false,
+        _persistWarning: uploaded.error || 'storage-upload-failed',
+        _freshPublish: true,
+        videoUri: lockedLocal,
+        localVideoUri: lockedLocal,
+        publicCloudUrl: null,
+      },
+      feedTarget: 'ARENA',
+    };
+  }
+
+  const publicUrl = uploaded.publicUrl;
 
   const arenaPayload = {
     id: `arena-${String(mode).toLowerCase()}-${timestamp}`,
@@ -139,7 +194,7 @@ export async function publishRecordedClipToArena(input) {
     recordedVideoUri: publicUrl,
     publicCloudUrl: publicUrl,
     remoteVideoUri: publicUrl,
-    localVideoUri: uploaded.localUri || null,
+    localVideoUri: lockedLocal || null,
     hypeCount: 0,
     durationSec: Number(input?.durationSec) || 30,
     feed: 'ARENA',
@@ -174,6 +229,7 @@ export async function publishRecordedClipToArena(input) {
       _freshPublish: true,
       videoUri: publicUrl,
       publicCloudUrl: publicUrl,
+      localVideoUri: lockedLocal || null,
     },
     feedTarget: 'ARENA',
   };

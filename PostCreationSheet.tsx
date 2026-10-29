@@ -602,7 +602,7 @@ function PostCreationSheet({
           onError: (msg: string) => setUploadErrorDetail(String(msg || '')),
         });
 
-        if (!published.ok || !published.publicUrl || !published.post) {
+        if (!published.ok || !published.post) {
           Alert.alert(
             'Upload failed',
             uploadErrorDetail
@@ -613,16 +613,28 @@ function PostCreationSheet({
           return;
         }
 
+        // Cloud miss → still open success with local file:// (ArenaClipPlayer plays it)
         const playbackUri =
-          ensurePublicBawaalVideoUrl(published.publicUrl) || published.publicUrl;
-        console.log('[PostCreationSheet] Arena publish ok:', playbackUri);
+          (published.publicUrl
+            ? ensurePublicBawaalVideoUrl(published.publicUrl) || published.publicUrl
+            : null) ||
+          published.post?.videoUri ||
+          published.localUri ||
+          localVideoUri;
+        console.log(
+          '[PostCreationSheet] Arena publish ok:',
+          playbackUri,
+          published.localOnly ? '(local fallback)' : ''
+        );
 
         setPendingPayload({
           mode,
           videoUri: playbackUri,
           localVideoUri,
-          publicCloudUrl: playbackUri,
-          remoteVideoUri: playbackUri,
+          publicCloudUrl: published.publicUrl
+            ? ensurePublicBawaalVideoUrl(published.publicUrl) || published.publicUrl
+            : null,
+          remoteVideoUri: published.publicUrl || null,
           title: trimmed,
           tagline: showTaglines ? tagline : undefined,
           sport,
@@ -632,7 +644,7 @@ function PostCreationSheet({
           slowMoStartSec: safeNum(slowMoStartSec, 0),
           slowMoEndSec: safeNum(slowMoEndSec, safeNum(durationSec, 30)),
           durationSec: safeNum(durationSec, 30),
-          uploadSkipped: false,
+          uploadSkipped: !!published.localOnly,
           feedTarget: 'ARENA',
           newPost: published.post as FeedPostCard,
         });

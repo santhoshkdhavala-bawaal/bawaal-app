@@ -18,7 +18,24 @@ export function resolveFeedVideoUri(source) {
   const fromHelper = resolvePlayableVideoUri(source);
   const normalized = toPublicFeedVideoUrl(fromHelper);
   if (normalized) return normalized;
-  if (typeof source === 'string') return toPublicFeedVideoUrl(source);
+  if (typeof source === 'string') {
+    return toPublicFeedVideoUrl(source) || source.trim() || null;
+  }
+  // Cloud miss → keep local file:// / content:// so feed cards are not black
+  if (source && typeof source === 'object') {
+    const locals = [
+      source.localVideoUri,
+      source.videoUri,
+      source.uri,
+      source.recordedVideoUri,
+      source.video_url,
+    ];
+    for (const c of locals) {
+      if (typeof c === 'string' && c.trim()) {
+        return toPublicFeedVideoUrl(c) || c.trim();
+      }
+    }
+  }
   return null;
 }
 

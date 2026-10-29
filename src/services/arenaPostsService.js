@@ -336,18 +336,28 @@ export async function persistArenaPostToSupabase(post) {
 
   const row = mapArenaPostToDbRow(post);
   if (!row) {
-    // Soft skip — local file:// posts stay in feed until Storage upload finishes
+    // Soft skip — keep local file:// / uri on the feed card until Storage succeeds
+    const localFallback =
+      (typeof post?.localVideoUri === 'string' && post.localVideoUri.trim()) ||
+      (typeof post?.videoUri === 'string' &&
+      !/^https:\/\//i.test(post.videoUri) &&
+      post.videoUri.trim()) ||
+      (typeof post?.uri === 'string' &&
+      !/^https:\/\//i.test(post.uri) &&
+      post.uri.trim()) ||
+      null;
     console.warn('[arenaPosts] persist deferred — missing https video_url', {
       id: post?.id,
       videoUri: post?.videoUri,
       publicCloudUrl: post?.publicCloudUrl,
-      localVideoUri: post?.localVideoUri,
+      localVideoUri: localFallback || post?.localVideoUri,
     });
     return {
       ok: false,
       skipped: true,
       reason: 'missing-https-url',
       error: 'Missing public HTTPS video URL for database insert',
+      localVideoUri: localFallback,
     };
   }
 

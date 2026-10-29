@@ -2,18 +2,23 @@
  * Metro stub for `expo-av` while bundling for Expo Go.
  * Prevents `Cannot find native module ExponentAV` by keeping the real
  * package out of the dependency graph.
+ * Renders a labeled slate (not a silent black box) so feed cards stay readable.
  */
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 function MockVideo({ style, children, ...rest }) {
   return (
     <View
       {...rest}
-      style={[styles.black, style]}
+      style={[styles.shell, style]}
       pointerEvents="none"
-      accessibilityLabel="Video unavailable in Expo Go"
+      accessibilityLabel="Video unavailable in Expo Go — use npm start (dev client)"
     >
+      <View style={styles.labelWrap}>
+        <Text style={styles.label}>CLIP READY</Text>
+        <Text style={styles.sub}>Dev client required for playback</Text>
+      </View>
       {children}
     </View>
   );
@@ -55,8 +60,30 @@ export default {
 };
 
 const styles = StyleSheet.create({
-  black: {
-    backgroundColor: '#000000',
+  shell: {
+    backgroundColor: '#121212',
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labelWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  label: {
+    color: '#E8ECE9',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  sub: {
+    color: '#A0A0A0',
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 6,
+    textAlign: 'center',
   },
 });
