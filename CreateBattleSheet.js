@@ -13,14 +13,13 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as ImagePicker from 'expo-image-picker';
-import {
-  createLiveBattle,
-  createOpenChallenge,
-  newBattleId,
-} from './src/services/battleSyncService';
+import { createLiveBattle, newBattleId } from './src/services/battleSyncService';
+import { publishArenaChallenge } from './src/services/arenaChallengeService';
 import { getActiveUser } from './src/services/activeUserProfile';
-import { BAWAAL_FORM_SPORTS } from './src/utils/sportCategory';
+import {
+  ARENA_SPORT_OPTIONS,
+  BAWAAL_FORM_SPORTS,
+} from './src/utils/sportCategory';
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
@@ -28,7 +27,8 @@ const BORDER = '#1F2937';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 
-const SPORTS = BAWAAL_FORM_SPORTS;
+const LIVE_SPORTS = BAWAAL_FORM_SPORTS.filter((s) => s !== 'ALL');
+const ARENA_SPORTS = ARENA_SPORT_OPTIONS;
 const DURATIONS = [
   { id: '1m', label: '1 Min', seconds: 60 },
   { id: '3m', label: '3 Min', seconds: 180 },
@@ -77,7 +77,7 @@ function resolveHost() {
 /**
  * Create Battle bottom sheet.
  *
- * intent="openChallenge" — + BATTLE FAB: title, category, optional opener → OPEN Arena card
+ * intent="openChallenge" — + BATTLE FAB: Create Arena Challenge (sport / target / details / Record Opener)
  * intent="liveBattle"    — Battles / BattleChallengeForm: full LIVE schedule launch
  */
 export default function CreateBattleSheet({
@@ -85,12 +85,16 @@ export default function CreateBattleSheet({
   onClose,
   onLaunch,
   onPublishOpen,
+  onRecordOpener,
+  draft = null,
   intent = 'liveBattle',
 }) {
   const insets = useSafeAreaInsets();
   const isOpenChallenge = intent === 'openChallenge';
-  const [sport, setSport] = useState('CRICKET');
+  const sportOptions = isOpenChallenge ? ARENA_SPORTS : LIVE_SPORTS;
+  const [sport, setSport] = useState('COMBAT');
   const [title, setTitle] = useState('');
+  const [targetDetails, setTargetDetails] = useState('');
   const [battleType, setBattleType] = useState('open'); // open | direct
   const [rivalHandle, setRivalHandle] = useState('@NYC_LIFT');
   const [durationId, setDurationId] = useState('3m');
@@ -98,6 +102,7 @@ export default function CreateBattleSheet({
   const [laterOffsetMin, setLaterOffsetMin] = useState(135); // 2h 15m demo
   const [openerUri, setOpenerUri] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [tick, setTick] = useState(Date.now());
 
   useEffect(() => {
@@ -108,8 +113,20 @@ export default function CreateBattleSheet({
 
   useEffect(() => {
     if (!visible) return;
-    setSport('CRICKET');
-    setTitle('');
+    if (draft && isOpenChallenge) {
+      setSport(String(draft.sport || 'COMBAT').toUpperCase());
+      setTitle(String(draft.title || draft.target || ''));
+      setTargetDetails(String(draft.targetDetails || draft.details || ''));
+      setOpenerUri(draft.openerUri || draft.openerClipUri || null);
+      setSubmitting(false);
+      setUploadPct(0);
+      return;
+    }
+    setSport(isOpenChallenge ? 'COMBAT' : 'CRICKET');
+    setTitle(isOpenChallenge ? '30-Sec Heavy Bag Combination' : '');
+    setTargetDetails(
+      isOpenChallenge ? 'Jab-Cross-Hook-Upper · High Tempo' : ''
+    );
     setBattleType('open');
     setRivalHandle('@NYC_LIFT');
     setDurationId('3m');
@@ -117,7 +134,8 @@ export default function CreateBattleSheet({
     setLaterOffsetMin(135);
     setOpenerUri(null);
     setSubmitting(false);
-  }, [visible]);
+    setUploadPct(0);
+  }, [visible, draft, isOpenChallenge]);
 
   const duration = DURATIONS.find((d) => d.id === durationId) || DURATIONS[1];
 
@@ -139,23 +157,17 @@ export default function CreateBattleSheet({
     [scheduledAtUTC]
   );
 
-  const pickOpenerClip = async () => {
-    try {
-      const mediaTypesSetting = ImagePicker.MediaTypeOptions
-        ? ImagePicker.MediaTypeOptions.Videos
-        : ['videos'];
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: mediaTypesSetting,
-        allowsEditing: false,
-        quality: 1,
-        videoMaxDuration: 60,
-      });
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setOpenerUri(result.assets[0].uri);
-      }
-    } catch (err) {
-      console.warn('[CreateBattleSheet] opener pick failed:', err?.message || err);
-    }
+  const buildOpenDraft = () => ({
+    sport,
+    title: title.trim(),
+    target: title.trim(),
+    targetDetails: targetDetails.trim(),
+    openerUri,
+  });
+
+  const recordOpener = () => {
+    const nextDraft = buildOpenDraft();
+    onRecordOpener?.(nextDraft);
   };
 
   const buildLivePayload = (host) => {
@@ -237,51 +249,54 @@ export default function CreateBattleSheet({
   const publishOpenChallenge = async () => {
     if (submitting) return;
     setSubmitting(true);
+    setUploadPct(0);
     const host = resolveHost();
-    const battleId = newBattleId();
     const challengeTitle = title.trim() || 'OPEN CHALLENGE';
-    const ts = Date.now();
 
     try {
-      await createOpenChallenge({
-        id: battleId,
+      const result = await publishArenaChallenge({
+        sport,
+        targetTitle: challengeTitle,
+        targetDetails: targetDetails.trim() || null,
+        openerVideoUri: openerUri || null,
         hostId: host.userId,
         hostUsername: host.handle,
         hostFlag: host.flag,
-        title: challengeTitle,
-        category: sport,
-        openerVideoUrl: openerUri || null,
-        matchLength: `${duration.seconds}s`,
+        onUploadProgress: (pct) => setUploadPct(Number(pct) || 0),
       });
 
       const card = {
-        id: battleId,
-        challengeId: battleId,
-        battleId,
+        ...(result?.card || {}),
+        id: result?.challengeId || result?.card?.id || newBattleId(),
         type: 'battle_thread',
         isOpenChallenge: true,
         isBattle: true,
+        status: 'OPEN',
         sport,
         category: sport,
         target: challengeTitle,
         title: challengeTitle,
+        targetDetails: targetDetails.trim() || null,
         host: host.handle,
         opponent: host.handle,
-        author: 'CHALLENGE',
-        challengerLabel: 'YOU',
-        leaderLabel: host.handle,
-        status: 'OPEN',
-        challengeVideoUri: openerUri || null,
+        challengerLabel: '@YOU',
+        leaderLabel: 'OPEN',
+        challengeVideoUri:
+          result?.card?.challengeVideoUri ||
+          result?.card?.localVideoUri ||
+          openerUri ||
+          null,
         openerVideoUri: openerUri || null,
-        videoUri: openerUri || null,
-        uri: openerUri || null,
         localVideoUri: openerUri || null,
+        videoUri:
+          result?.card?.publicCloudUrl ||
+          result?.card?.challengeVideoUri ||
+          openerUri ||
+          null,
         responses: [],
-        timestamp: ts,
-        createdAt: ts,
         _freshPublish: true,
         feedTarget: 'ARENA',
-        source: 'CREATE_OPEN_CHALLENGE',
+        source: 'ARENA_CHALLENGE',
       };
 
       onClose?.();
@@ -290,6 +305,7 @@ export default function CreateBattleSheet({
       console.warn('[CreateBattleSheet] open publish failed:', err?.message || err);
     } finally {
       setSubmitting(false);
+      setUploadPct(0);
     }
   };
 
@@ -349,7 +365,7 @@ export default function CreateBattleSheet({
 
           <View style={styles.header}>
             <Text style={styles.headerTitle}>
-              {isOpenChallenge ? 'PUBLISH OPEN CHALLENGE' : 'CREATE A BAWAAL BATTLE'}
+              {isOpenChallenge ? 'CREATE ARENA CHALLENGE' : 'CREATE A BAWAAL BATTLE'}
             </Text>
             <TouchableOpacity onPress={onClose} hitSlop={12}>
               <Text style={styles.close}>✕</Text>
@@ -361,9 +377,9 @@ export default function CreateBattleSheet({
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.form}
           >
-            <Text style={styles.label}>SPORT CATEGORY</Text>
+            <Text style={styles.label}>SPORT</Text>
             <View style={styles.wrapPills}>
-              {SPORTS.map((s) => {
+              {sportOptions.map((s) => {
                 const active = sport === s;
                 return (
                   <TouchableOpacity
@@ -378,25 +394,43 @@ export default function CreateBattleSheet({
               })}
             </View>
 
-            <Text style={styles.label}>CHALLENGE TITLE</Text>
+            <Text style={styles.label}>
+              {isOpenChallenge ? 'CHALLENGE TARGET TITLE' : 'CHALLENGE TITLE'}
+            </Text>
             <TextInput
               style={styles.input}
               value={title}
               onChangeText={setTitle}
-              placeholder="Name your battle / target"
+              placeholder={
+                isOpenChallenge
+                  ? 'e.g. 30-Sec Heavy Bag Combination'
+                  : 'Name your battle / target'
+              }
               placeholderTextColor="#666"
             />
 
             {isOpenChallenge ? (
               <>
-                <Text style={styles.label}>OPENER CLIP (OPTIONAL)</Text>
+                <Text style={styles.label}>TARGET DETAILS / REP COUNT</Text>
+                <TextInput
+                  style={[styles.input, styles.inputMultiline]}
+                  value={targetDetails}
+                  onChangeText={setTargetDetails}
+                  placeholder="e.g. Jab-Cross-Hook-Upper · High Tempo"
+                  placeholderTextColor="#666"
+                  multiline
+                />
+
+                <Text style={styles.label}>BENCHMARK OPENER</Text>
                 <TouchableOpacity
                   style={styles.openerBtn}
-                  onPress={pickOpenerClip}
+                  onPress={recordOpener}
                   activeOpacity={0.85}
                 >
                   <Text style={styles.openerBtnText}>
-                    {openerUri ? '✓ OPENER ATTACHED · TAP TO REPLACE' : '+ ADD OPENER CLIP'}
+                    {openerUri
+                      ? '✓ OPENER RECORDED · TAP TO RE-RECORD'
+                      : '● RECORD OPENER'}
                   </Text>
                 </TouchableOpacity>
                 {openerUri ? (
@@ -405,7 +439,7 @@ export default function CreateBattleSheet({
                   </TouchableOpacity>
                 ) : (
                   <Text style={styles.hint}>
-                    Skip to publish a text challenge — athletes can still RESPOND.
+                    Opens ChallengeCam to capture your heavy-bag benchmark. Publish still works without a clip.
                   </Text>
                 )}
               </>
@@ -534,10 +568,15 @@ export default function CreateBattleSheet({
               disabled={submitting}
             >
               {submitting ? (
-                <ActivityIndicator color={WHITE} />
+                <View style={styles.submittingRow}>
+                  <ActivityIndicator color={WHITE} />
+                  {isOpenChallenge && uploadPct > 0 ? (
+                    <Text style={styles.uploadPctText}>{Math.round(uploadPct)}%</Text>
+                  ) : null}
+                </View>
               ) : (
                 <Text style={styles.launchBtnText}>
-                  {isOpenChallenge ? 'PUBLISH TO ARENA' : 'LAUNCH BATTLE ⚡'}
+                  {isOpenChallenge ? 'PUBLISH CHALLENGE' : 'LAUNCH BATTLE ⚡'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -643,6 +682,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  inputMultiline: {
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
+  submittingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  uploadPctText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '800',
   },
   openerBtn: {
     borderWidth: 1,

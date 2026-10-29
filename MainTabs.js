@@ -14,6 +14,13 @@ import { pushOpenChallenge } from './arenaFeedStore';
 import { pushBattleChallenge } from './battlesFeedStore';
 import { MainTabContext } from './mainTabContext';
 
+const EMPTY_CHALLENGE_DRAFT = {
+  sport: 'COMBAT',
+  title: '30-Sec Heavy Bag Combination',
+  targetDetails: 'Jab-Cross-Hook-Upper · High Tempo',
+  openerUri: null,
+};
+
 export { useMainTabs } from './mainTabContext';
 
 const CHARCOAL = '#000000';
@@ -50,6 +57,7 @@ export default function MainTabs({ navigation, route }) {
   const [challengeAlert, setChallengeAlert] = useState(DEMO_CHALLENGE);
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
   const [createChallengeOpen, setCreateChallengeOpen] = useState(false);
+  const [challengeDraft, setChallengeDraft] = useState(EMPTY_CHALLENGE_DRAFT);
 
   useEffect(() => {
     const nextTab = route?.params?.tab;
@@ -81,11 +89,45 @@ export default function MainTabs({ navigation, route }) {
       setTab('Battles');
       navigation?.setParams?.({ newBattlePost: undefined, tab: undefined });
     }
+    // UniversalCamera Record Opener → reopen Create Arena Challenge with clip
+    if (
+      route?.params?.reopenCreateChallenge ||
+      route?.params?.openerClipUri
+    ) {
+      const incomingDraft = route.params.createChallengeDraft || {};
+      const openerUri =
+        route.params.openerClipUri ||
+        incomingDraft.openerUri ||
+        null;
+      setChallengeDraft({
+        sport: incomingDraft.sport || 'COMBAT',
+        title:
+          incomingDraft.title ||
+          incomingDraft.target ||
+          EMPTY_CHALLENGE_DRAFT.title,
+        targetDetails:
+          incomingDraft.targetDetails ||
+          incomingDraft.details ||
+          EMPTY_CHALLENGE_DRAFT.targetDetails,
+        openerUri,
+      });
+      setCreateChallengeOpen(true);
+      setTab('Arena');
+      navigation?.setParams?.({
+        reopenCreateChallenge: undefined,
+        openerClipUri: undefined,
+        createChallengeDraft: undefined,
+        tab: undefined,
+      });
+    }
   }, [
     route?.params?.tab,
     route?.params?.focusHubId,
     route?.params?.newArenaPost,
     route?.params?.newBattlePost,
+    route?.params?.reopenCreateChallenge,
+    route?.params?.openerClipUri,
+    route?.params?.createChallengeDraft,
     navigation,
   ]);
 
@@ -105,8 +147,9 @@ export default function MainTabs({ navigation, route }) {
     void import('./UniversalCamera').catch(() => {});
   }, []);
 
-  /** Center + BATTLE FAB → open-challenge sheet (title / sport / optional opener). */
+  /** Center + BATTLE FAB → Create Arena Challenge sheet. */
   const openCreate = useCallback(() => {
+    setChallengeDraft(EMPTY_CHALLENGE_DRAFT);
     setCreateChallengeOpen(true);
   }, []);
 
@@ -126,6 +169,29 @@ export default function MainTabs({ navigation, route }) {
     setTab('Locker');
   }, []);
 
+  /** Record Opener → UniversalCamera / ChallengeCam, then return clip to sheet. */
+  const onRecordOpener = useCallback(
+    (draft) => {
+      const next = {
+        sport: draft?.sport || 'COMBAT',
+        title: draft?.title || draft?.target || EMPTY_CHALLENGE_DRAFT.title,
+        targetDetails:
+          draft?.targetDetails || EMPTY_CHALLENGE_DRAFT.targetDetails,
+        openerUri: draft?.openerUri || null,
+      };
+      setChallengeDraft(next);
+      setCreateChallengeOpen(false);
+      navigation?.navigate?.('UniversalCamera', {
+        initialMode: 'SPARKS',
+        captureOpenerOnly: true,
+        challengeMaxDuration: 30,
+        target: next.title || 'Arena Opener',
+        createChallengeDraft: next,
+      });
+    },
+    [navigation]
+  );
+
   /** Publish OPEN challenge → Arena feed top + Battles OPEN list. */
   const onPublishOpenChallenge = useCallback((card) => {
     if (!card) return;
@@ -134,8 +200,10 @@ export default function MainTabs({ navigation, route }) {
       ...card,
       status: 'OPEN',
       responses: 0,
-      source: 'CREATE_OPEN_CHALLENGE',
+      source: 'ARENA_CHALLENGE',
     });
+    setChallengeDraft(EMPTY_CHALLENGE_DRAFT);
+    setCreateChallengeOpen(false);
     setTab('Arena');
     setArenaRoute((prev) => ({
       key: prev?.key || 'arena',
@@ -146,6 +214,8 @@ export default function MainTabs({ navigation, route }) {
           type: 'battle_thread',
           isOpenChallenge: true,
           status: 'OPEN',
+          challengerLabel: '@YOU',
+          leaderLabel: 'OPEN',
           _freshPublish: true,
         },
       },
@@ -298,7 +368,12 @@ export default function MainTabs({ navigation, route }) {
         <CreateBattleSheet
           visible={createChallengeOpen}
           intent="openChallenge"
-          onClose={() => setCreateChallengeOpen(false)}
+          draft={challengeDraft}
+          onClose={() => {
+            setCreateChallengeOpen(false);
+            setChallengeDraft(EMPTY_CHALLENGE_DRAFT);
+          }}
+          onRecordOpener={onRecordOpener}
           onPublishOpen={onPublishOpenChallenge}
         />
       </View>

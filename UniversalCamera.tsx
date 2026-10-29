@@ -903,11 +903,15 @@ export default function UniversalCamera({
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   const respondParams = route?.params || {};
-  const isChallengeResponse = Boolean(
-    respondParams.isChallengeResponse ||
-      respondParams.battleId ||
-      respondParams.challengeId
-  );
+  /** + BATTLE → Record Opener: capture benchmark clip and return to Create Arena Challenge */
+  const isOpenerCapture = Boolean(respondParams.captureOpenerOnly);
+  const isChallengeResponse =
+    !isOpenerCapture &&
+    Boolean(
+      respondParams.isChallengeResponse ||
+        respondParams.battleId ||
+        respondParams.challengeId
+    );
   const rawBootMode: CreationMode =
     initialMode ||
     (respondParams.initialMode as CreationMode | undefined) ||
@@ -1488,11 +1492,15 @@ export default function UniversalCamera({
             (respondParams.reel as { statSticker?: string }).statSticker
           ).trim()
         : null;
-  const modeLabel = isChallengeResponse
+  const modeLabel = isOpenerCapture
     ? challengeTitle
-      ? `RESPOND · ${challengeTitle}`.slice(0, 36)
-      : 'RESPOND'
-    : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
+      ? `OPENER · ${challengeTitle}`.slice(0, 36)
+      : 'RECORD OPENER'
+    : isChallengeResponse
+      ? challengeTitle
+        ? `RESPOND · ${challengeTitle}`.slice(0, 36)
+        : 'RESPOND'
+      : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
 
   if (permissionsPending) {
     return (
@@ -1720,6 +1728,26 @@ export default function UniversalCamera({
               Number.isFinite(start) ? Math.min(start, clipDur - 0.5) : 0
             );
             setSlowMoEndSec(clipDur);
+            // Record Opener for Create Arena Challenge — skip post sheet, return clip
+            if (isOpenerCapture && recordedVideoUri) {
+              const draft =
+                (respondParams.createChallengeDraft as Record<string, unknown>) ||
+                {};
+              setShowPreview(false);
+              releaseCameraRecorder();
+              requestAnimationFrame(() => {
+                safeNavigateHome({
+                  tab: 'Arena',
+                  reopenCreateChallenge: true,
+                  openerClipUri: recordedVideoUri,
+                  createChallengeDraft: {
+                    ...draft,
+                    openerUri: recordedVideoUri,
+                  },
+                });
+              });
+              return;
+            }
             // Keep recordedVideoUri — only dismiss preview, open post sheet
             setShowPreview(false);
             setTimeout(() => setShowPostSheet(true), 60);

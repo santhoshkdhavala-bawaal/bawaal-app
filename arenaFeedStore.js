@@ -212,11 +212,13 @@ export function pushOpenChallenge(challenge) {
       author: 'CHALLENGE',
       opponent: host,
       host,
-      challengerLabel: 'YOU',
-      leaderLabel: host,
+      challengerLabel: '@YOU',
+      leaderLabel: 'OPEN',
       target,
       title: target,
+      targetDetails: challenge.targetDetails || challenge.details || null,
       challengeVideoUri: opener,
+      openerVideoUri: opener,
       videoUri: opener,
       uri: opener,
       localVideoUri:
@@ -228,6 +230,7 @@ export function pushOpenChallenge(challenge) {
       createdAt: ts,
       _freshPublish: challenge._freshPublish !== false,
       feedTarget: 'ARENA',
+      source: challenge.source || 'ARENA_CHALLENGE',
     };
 
     mergeIntoStore(card, { emitEvent: true });

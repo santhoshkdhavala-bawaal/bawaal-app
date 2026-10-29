@@ -512,9 +512,10 @@ function ingestArenaPost(prev, post) {
       author: 'CHALLENGE',
       opponent,
       host: opponent,
-      challengerLabel: 'YOU',
-      leaderLabel: opponent,
+      challengerLabel: '@YOU',
+      leaderLabel: 'OPEN',
       target: post.target || post.title || existing?.target || 'OPEN CHALLENGE',
+      targetDetails: post.targetDetails || existing?.targetDetails || null,
       status: 'OPEN',
       challengeVideoUri: opener || existing?.challengeVideoUri || null,
       videoUri: opener || existing?.videoUri || null,
@@ -853,21 +854,35 @@ const BattleCard = memo(function BattleCard({
   active = true,
 }) {
   const [muted, setMuted] = useState(true);
+  const isOpenChallenge =
+    item?.isOpenChallenge === true ||
+    String(item?.status || '').toUpperCase() === 'OPEN';
   const responses = sortResponses(item.responses, 'top');
   const leader = responses[0];
   const responseCount = responses.length;
-  // ChallengeCam Continue → post.videoUri / leader response URI
-  const responseUri =
-    leader?.videoUri ||
-    leader?.uri ||
-    leader?.localVideoUri ||
-    item.videoUri ||
-    item.uri ||
-    item.localVideoUri ||
-    null;
-  const challengeUri =
-    item.challengeVideoUri &&
-    item.challengeVideoUri !== responseUri
+  // Host opener benchmark (left pane for OPEN challenges)
+  const openerUri =
+    item.challengeVideoUri ||
+    item.openerVideoUri ||
+    (isOpenChallenge
+      ? item.videoUri || item.uri || item.localVideoUri || null
+      : null);
+  // Athlete response URI — never fall back to opener on OPEN cards
+  const responseUri = isOpenChallenge
+    ? leader?.videoUri ||
+      leader?.uri ||
+      leader?.localVideoUri ||
+      null
+    : leader?.videoUri ||
+      leader?.uri ||
+      leader?.localVideoUri ||
+      item.videoUri ||
+      item.uri ||
+      item.localVideoUri ||
+      null;
+  const challengeUri = isOpenChallenge
+    ? openerUri
+    : item.challengeVideoUri && item.challengeVideoUri !== responseUri
       ? item.challengeVideoUri
       : null;
 
@@ -875,37 +890,48 @@ const BattleCard = memo(function BattleCard({
     setMuted((m) => !m);
   }, []);
 
+  const leftLabel = isOpenChallenge
+    ? '@YOU'
+    : challengeUri
+      ? item.opponent || 'CHALLENGE'
+      : leader?.creator === 'You'
+        ? 'YOU'
+        : item.opponent || 'CLIP';
+
   return (
     <View style={styles.feedCard}>
       <View style={styles.feedCardHeader}>
         <View style={styles.battleBadge}>
-          <Text style={styles.battleBadgeText}>OFFICIAL BATTLE</Text>
+          <Text style={styles.battleBadgeText}>
+            {isOpenChallenge ? 'OPEN CHALLENGE' : 'OFFICIAL BATTLE'}
+          </Text>
         </View>
         <Text style={styles.feedTime}>{item.status || 'BATTLE'}</Text>
       </View>
 
       <View style={styles.vsRow}>
         <Text style={styles.vsTitle}>
-          {item.challengerLabel || 'YOU'} vs {item.leaderLabel || item.opponent}
+          {isOpenChallenge
+            ? '@YOU vs OPEN FIELD'
+            : `${item.challengerLabel || 'YOU'} vs ${item.leaderLabel || item.opponent}`}
         </Text>
       </View>
 
       <View style={styles.splitRow}>
         <View style={styles.splitPane}>
           <ClipSurface
-            uri={challengeUri || responseUri}
+            uri={challengeUri || (!isOpenChallenge ? responseUri : null)}
             source={{
-              uri: challengeUri || responseUri,
-              videoUri: challengeUri || responseUri,
-              localVideoUri: challengeUri ? null : item.localVideoUri,
+              uri: challengeUri || (!isOpenChallenge ? responseUri : null),
+              videoUri: challengeUri || (!isOpenChallenge ? responseUri : null),
+              localVideoUri: isOpenChallenge
+                ? item.localVideoUri || openerUri
+                : challengeUri
+                  ? null
+                  : item.localVideoUri,
+              publicCloudUrl: item.publicCloudUrl,
             }}
-            label={
-              challengeUri
-                ? item.opponent || 'CHALLENGE'
-                : leader?.creator === 'You'
-                  ? 'YOU'
-                  : item.opponent || 'CLIP'
-            }
+            label={leftLabel}
             style={styles.splitClip}
             muted={muted}
             active={active}
@@ -915,27 +941,40 @@ const BattleCard = memo(function BattleCard({
           <Text style={styles.splitVs}>VS</Text>
         </View>
         <View style={styles.splitPane}>
-          <ClipSurface
-            uri={responseUri}
-            source={{
-              uri: responseUri,
-              videoUri: responseUri,
-              video_url: leader?.video_url,
-              localVideoUri: leader?.localVideoUri || item.localVideoUri,
-              recordedVideoUri: leader?.recordedVideoUri,
-              publicCloudUrl: leader?.publicCloudUrl || item.publicCloudUrl,
-            }}
-            label={
-              leader
-                ? leader.creator === 'You'
-                  ? 'YOU'
-                  : `@${leader.creator}`
-                : 'YOU'
-            }
-            active={active}
-            muted={muted}
-            style={styles.splitClip}
-          />
+          {isOpenChallenge && !responseUri ? (
+            <TouchableOpacity
+              style={[styles.splitClip, styles.openSlot]}
+              onPress={() => onRespond?.(item)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Respond to open challenge"
+            >
+              <Text style={styles.openSlotLabel}>CHALLENGER</Text>
+              <Text style={styles.openSlotCta}>TAP TO RESPOND</Text>
+            </TouchableOpacity>
+          ) : (
+            <ClipSurface
+              uri={responseUri}
+              source={{
+                uri: responseUri,
+                videoUri: responseUri,
+                video_url: leader?.video_url,
+                localVideoUri: leader?.localVideoUri || item.localVideoUri,
+                recordedVideoUri: leader?.recordedVideoUri,
+                publicCloudUrl: leader?.publicCloudUrl || item.publicCloudUrl,
+              }}
+              label={
+                leader
+                  ? leader.creator === 'You'
+                    ? 'YOU'
+                    : `@${leader.creator}`
+                  : 'YOU'
+              }
+              active={active}
+              muted={muted}
+              style={styles.splitClip}
+            />
+          )}
         </View>
         <MuteToggleButton
           muted={muted}
@@ -943,6 +982,12 @@ const BattleCard = memo(function BattleCard({
           style={styles.battleMuteBtn}
         />
       </View>
+
+      {item.targetDetails ? (
+        <Text style={styles.targetDetailsText} numberOfLines={2}>
+          {item.targetDetails}
+        </Text>
+      ) : null}
 
       <TouchableOpacity
         style={styles.responseBadge}
@@ -1278,11 +1323,15 @@ export default function ArenaFeed({ navigation, route }) {
   const openChallengeRespond = useCallback(
     (item) => {
       if (!item) return;
-      const handle = String(item.opponent || item.challengeOf || 'Challenger').replace(
-        /^@/,
-        ''
-      );
+      const handle = String(
+        item.opponent || item.host || item.challengeOf || 'Challenger'
+      ).replace(/^@/, '');
       const maxDur = item.challengeMaxDuration || item.durationSec || 30;
+      const opener =
+        item.challengeVideoUri ||
+        item.openerVideoUri ||
+        (item.isOpenChallenge ? item.videoUri || item.uri : null) ||
+        null;
       // Locked UniversalCamera only — never ChallengeScreen / ChallengeCamRecorder
       navigation?.navigate?.('ChallengeCam', {
         initialMode: 'BATTLE_REWIND',
@@ -1301,7 +1350,8 @@ export default function ArenaFeed({ navigation, route }) {
           category: item.sport || item.category || 'GYM',
           challengeMaxDuration: maxDur,
           durationSec: maxDur,
-          videoUri: item.challengeVideoUri || item.videoUri || null,
+          videoUri: opener,
+          challengeVideoUri: opener,
         },
       });
     },
@@ -1819,6 +1869,29 @@ const styles = StyleSheet.create({
   splitClip: {
     flex: 1,
   },
+  openSlot: {
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  openSlotLabel: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  openSlotCta: {
+    color: '#3B82F6',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
   splitDivider: {
     width: 28,
     alignItems: 'center',
@@ -1830,6 +1903,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 11,
     letterSpacing: 1,
+  },
+  targetDetailsText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+    marginHorizontal: 12,
+    marginTop: 10,
+    lineHeight: 17,
   },
   clipVideoWrap: {
     flex: 1,
