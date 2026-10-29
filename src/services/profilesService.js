@@ -18,8 +18,14 @@ function mapProfileRow(row) {
     handle,
     bio: row.bio || '',
     city: row.city || '',
+    location: row.location || row.city || '',
     primarySport: row.sport || 'GYM',
     sport: row.sport || 'GYM',
+    tags: Array.isArray(row.tags)
+      ? row.tags
+      : row.sport
+        ? [String(row.sport).toUpperCase()]
+        : [],
     avatarUri: row.avatar_uri || null,
     verified: Boolean(row.verified),
     role: row.role || 'athlete',
@@ -29,6 +35,8 @@ function mapProfileRow(row) {
       bawaalPts: Number(row.bawaal_pts) || 0,
       rank: row.rank != null ? Number(row.rank) : null,
       battlesWon: Number(row.battles_won) || 0,
+      battlesFought:
+        Number(row.battles_fought) || Number(row.battles_won) || 0,
       followers: Number(row.followers) || 0,
       following: Number(row.following_count) || 0,
       winRate: Number(row.win_rate) || 0,

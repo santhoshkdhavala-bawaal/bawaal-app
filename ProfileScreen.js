@@ -1,12 +1,13 @@
 /**
- * PASSPORT tab hub — my profile + Following + Suggested.
+ * PASSPORT tab hub — my profile + Following + Suggested + Connected Squads.
  * Tap an athlete → inline preview; "VIEW FULL PROFILE" → AthletePassport stack screen.
  *
- * LOCKED production surface — header card, stats, blue FOLLOWING rings,
- * crimson SUGGESTED / + Follow as shipped. Do not modify without an explicit unlock.
+ * LOCKED production surface — header card, Followers/Following/Win Rate stats,
+ * blue FOLLOWING rings, crimson SUGGESTED / + Follow as shipped.
+ * Additive: sport badge, location/tags, locker utility metrics, Connected Squads.
  * See `.cursor/rules/bawaal-passport-locked.mdc`.
  */
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Image,
   RefreshControl,
@@ -29,6 +30,7 @@ import RoleBadge from './src/components/RoleBadge';
 import VerifiedBadge from './src/components/VerifiedBadge';
 import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
 import { fetchPassportGraph } from './src/services/profilesService';
+import { fetchPassportSquads } from './src/services/lockerService';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -92,7 +94,24 @@ function AccentStat({ label, value, accent = 'blue' }) {
   );
 }
 
+function SportBadge({ sport }) {
+  if (!sport) return null;
+  return (
+    <View style={styles.sportBadge}>
+      <Text style={styles.sportBadgeText}>{String(sport).toUpperCase()}</Text>
+    </View>
+  );
+}
+
 function MeCard({ user }) {
+  const sport = user.primarySport || user.sport;
+  const location = user.location || user.city;
+  const tags = Array.isArray(user.tags) && user.tags.length
+    ? user.tags
+    : sport
+      ? [sport]
+      : [];
+
   return (
     <View style={styles.card}>
       <View style={styles.meRow}>
@@ -107,6 +126,7 @@ function MeCard({ user }) {
             textStyle={styles.meHandle}
           />
           <View style={styles.roleRow}>
+            <SportBadge sport={sport} />
             <RoleBadge role={user.role || 'athlete'} compact />
             {user.statusBadge ? (
               <View style={styles.badgeBw}>
@@ -116,7 +136,26 @@ function MeCard({ user }) {
           </View>
         </View>
       </View>
-      <Text style={styles.bio}>{user.bio}</Text>
+
+      {user.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
+
+      {(location || tags.length > 0) && (
+        <View style={styles.attrBlock}>
+          {location ? (
+            <Text style={styles.attrLocation}>{location}</Text>
+          ) : null}
+          {tags.length > 0 ? (
+            <View style={styles.tagRow}>
+              {tags.map((tag) => (
+                <View key={String(tag)} style={styles.tagChip}>
+                  <Text style={styles.tagChipText}>{String(tag).toUpperCase()}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      )}
+
       <View style={styles.statsRow}>
         <AccentStat
           label="FOLLOWERS"
@@ -137,6 +176,46 @@ function MeCard({ user }) {
     </View>
   );
 }
+
+function LockerUtilityBar({ activeSquads, battlesFought, briefsPinned }) {
+  return (
+    <View style={styles.utilityBar}>
+      <AccentStat label="ACTIVE SQUADS" value={activeSquads} accent="blue" />
+      <AccentStat label="BATTLES FOUGHT" value={battlesFought} accent="green" />
+      <AccentStat label="BRIEFS PINNED" value={briefsPinned} accent="red" />
+    </View>
+  );
+}
+
+const ConnectedSquadRow = memo(function ConnectedSquadRow({ hub, onPress }) {
+  const sportTag = hub?.brief?.sportTag;
+  return (
+    <TouchableOpacity
+      style={styles.squadRow}
+      onPress={() => onPress?.(hub)}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`Open ${hub.title} in Locker Room`}
+    >
+      <View style={styles.squadMeta}>
+        <Text style={styles.squadKind}>{hub.kind || 'TRAINING SQUAD'}</Text>
+        <Text style={styles.squadTitle} numberOfLines={1}>
+          {hub.title}
+        </Text>
+        <Text style={styles.squadDetail} numberOfLines={1}>
+          {hub.meta || hub.detail}
+        </Text>
+      </View>
+      {sportTag ? (
+        <View style={styles.squadSportBadge}>
+          <Text style={styles.squadSportText}>{sportTag}</Text>
+        </View>
+      ) : (
+        <Text style={styles.squadAction}>{hub.action || 'VIEW'}</Text>
+      )}
+    </TouchableOpacity>
+  );
+});
 
 const FollowChip = memo(function FollowChip({ athlete, onPress }) {
   return (
@@ -281,27 +360,62 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
 }
 
 export default function ProfileScreen({ navigation }) {
-  const { openProfileGateway } = useMainTabs();
+  const { openProfileGateway, setTab } = useMainTabs();
   const [selected, setSelected] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [me, setMe] = useState(CURRENT_USER);
   const [followingList, setFollowingList] = useState(FOLLOWING);
   const [suggestedList, setSuggestedList] = useState(SUGGESTED);
+  const [squads, setSquads] = useState([]);
   const [followedIds, setFollowedIds] = useState(
     () => new Set(FOLLOWING.map((a) => a.id))
   );
 
-  const loadProfiles = useCallback(async () => {
-    const graph = await fetchPassportGraph();
+  const applyGraph = useCallback((graph) => {
     setMe(graph.me || CURRENT_USER);
     setFollowingList(graph.following?.length ? graph.following : FOLLOWING);
     setSuggestedList(graph.suggested?.length ? graph.suggested : SUGGESTED);
     setFollowedIds(new Set((graph.following || FOLLOWING).map((a) => a.id)));
   }, []);
 
+  const loadPassportData = useCallback(async () => {
+    const [graph, squadResult] = await Promise.all([
+      fetchPassportGraph(),
+      fetchPassportSquads(),
+    ]);
+    applyGraph(graph);
+    setSquads(Array.isArray(squadResult?.hubs) ? squadResult.hubs : []);
+  }, [applyGraph]);
+
   useEffect(() => {
-    loadProfiles();
-  }, [loadProfiles]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [graph, squadResult] = await Promise.all([
+          fetchPassportGraph(),
+          fetchPassportSquads(),
+        ]);
+        if (cancelled) return;
+        applyGraph(graph);
+        setSquads(Array.isArray(squadResult?.hubs) ? squadResult.hubs : []);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('[Passport] initial load failed:', err?.message || err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyGraph]);
+
+  const lockerStats = useMemo(() => {
+    const activeSquads = squads.filter((h) => h.source !== 'brief').length;
+    const briefsPinned = squads.filter((h) => h?.brief).length;
+    const battlesFought =
+      me?.stats?.battlesFought ?? me?.stats?.battlesWon ?? 0;
+    return { activeSquads, battlesFought, briefsPinned };
+  }, [squads, me]);
 
   const toggleFollow = useCallback((id) => {
     setFollowedIds((prev) => {
@@ -324,16 +438,20 @@ export default function ProfileScreen({ navigation }) {
     });
   }, [navigation, selected]);
 
+  const openLockerSquad = useCallback(() => {
+    setTab?.('Locker');
+  }, [setTab]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshArenaPostsFromSupabase(), loadProfiles()]);
+      await Promise.all([refreshArenaPostsFromSupabase(), loadPassportData()]);
     } catch (err) {
       console.warn('[Passport] refresh failed:', err?.message || err);
     } finally {
       setRefreshing(false);
     }
-  }, [loadProfiles]);
+  }, [loadPassportData]);
 
   return (
     <View style={styles.container}>
@@ -378,6 +496,12 @@ export default function ProfileScreen({ navigation }) {
           <>
             <MeCard user={me} />
 
+            <LockerUtilityBar
+              activeSquads={lockerStats.activeSquads}
+              battlesFought={lockerStats.battlesFought}
+              briefsPinned={lockerStats.briefsPinned}
+            />
+
             <Text style={[styles.sectionTitle, styles.followingSectionTitle]}>
               FOLLOWING
             </Text>
@@ -407,6 +531,23 @@ export default function ProfileScreen({ navigation }) {
                 onToggleFollow={toggleFollow}
               />
             ))}
+
+            <Text style={[styles.sectionTitle, styles.squadsSectionTitle]}>
+              CONNECTED SQUADS
+            </Text>
+            {squads.length === 0 ? (
+              <Text style={styles.emptySquads}>
+                Join a Training Squad from the Locker Room.
+              </Text>
+            ) : (
+              squads.map((hub) => (
+                <ConnectedSquadRow
+                  key={hub.id}
+                  hub={hub}
+                  onPress={openLockerSquad}
+                />
+              ))
+            )}
           </>
         )}
       </ScrollView>
@@ -477,6 +618,54 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 12,
   },
+  sportBadge: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: WHITE,
+    backgroundColor: WHITE,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sportBadgeText: {
+    color: BG,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  attrBlock: {
+    marginTop: 12,
+    gap: 8,
+  },
+  attrLocation: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagChip: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: BG,
+  },
+  tagChipText: {
+    color: OFF,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  utilityBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 18,
+  },
   statsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -522,6 +711,70 @@ const styles = StyleSheet.create({
   suggestedSectionTitle: {
     color: SUGGEST_RED,
     letterSpacing: 1.6,
+  },
+  squadsSectionTitle: {
+    color: WHITE,
+    letterSpacing: 1.6,
+    marginTop: 10,
+  },
+  emptySquads: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  squadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: SURFACE,
+    marginBottom: 10,
+  },
+  squadMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  squadKind: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  squadTitle: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  squadDetail: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  squadSportBadge: {
+    borderWidth: 1,
+    borderColor: WHITE,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  squadSportText: {
+    color: WHITE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  squadAction: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
   },
   followingRow: {
     gap: 12,

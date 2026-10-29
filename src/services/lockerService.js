@@ -144,6 +144,78 @@ async function updateSquadBriefFields(squadId, { title, sportTag, intel }) {
   }
 }
 
+/** Local seed when Supabase is offline — mirrors Locker Room demo hubs. */
+export const FALLBACK_ACTIVE_HUBS = [
+  {
+    id: 'squad-iron',
+    kind: 'TRAINING SQUAD',
+    title: 'Iron Circle',
+    meta: '6 athletes · Invite only',
+    detail: 'Coach brief · Film tomorrow 6AM · pads + headgear',
+    action: 'VIEW SQUAD',
+    source: 'squad',
+    brief: {
+      id: 'brief-iron',
+      title: 'Matchday Lineup & Strategy',
+      sportTag: 'COMBAT',
+      intel: 'Coach brief · Film tomorrow 6AM · pads + headgear',
+    },
+  },
+  {
+    id: 'gym-south',
+    kind: 'GYM CIRCLE',
+    title: 'South Turf Unit',
+    meta: '12 members · Open join',
+    detail: 'PR night · Chalk + straps · open floor 7PM',
+    action: 'JOIN CIRCLE',
+    source: 'squad',
+    brief: {
+      id: 'brief-south',
+      title: 'Friday Sparring Block',
+      sportTag: 'GYM',
+      intel: 'PR night · Chalk + straps · open floor 7PM',
+    },
+  },
+  {
+    id: 'squad-night',
+    kind: 'TRAINING SQUAD',
+    title: 'Night Shift Athletics',
+    meta: '8 athletes · Invite only',
+    detail: '3-round shadow · notes pinned · south bay',
+    action: 'VIEW SQUAD',
+    source: 'squad',
+    brief: {
+      id: 'brief-night',
+      title: 'Night Shift Block',
+      sportTag: 'RUNNING',
+      intel: '3-round shadow · notes pinned · south bay',
+    },
+  },
+  {
+    id: 'squad-lift',
+    kind: 'TRAINING SQUAD',
+    title: 'Lift Wars Inner',
+    meta: '4 athletes · Strategy board',
+    detail: 'Next block: heavy triples',
+    action: 'VIEW SQUAD',
+    source: 'squad',
+    brief: null,
+  },
+];
+
+/** Passport Connected Squads — live hubs, or fallback seed. */
+export async function fetchPassportSquads() {
+  const { hubs, error } = await fetchActiveHubs();
+  if (hubs?.length) {
+    return { hubs, fromCloud: true, error: null };
+  }
+  return {
+    hubs: FALLBACK_ACTIVE_HUBS,
+    fromCloud: false,
+    error: error || null,
+  };
+}
+
 /** Active hubs = squads (with pinned briefs) + orphan briefs. */
 export async function fetchActiveHubs() {
   if (!isSupabaseConfigured()) {
