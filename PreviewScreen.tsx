@@ -15,6 +15,7 @@ import { ResizeMode, Video } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './src/components/BackLink';
 import { sanitizePlayableFeedUri } from './src/services/uploadService';
+import { safeUnloadExpoAvVideo } from './src/utils/safeUnloadVideo';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -72,12 +73,13 @@ export default function PreviewScreen({
     void applyRate(speedRate);
   }, [applyRate, speedRate, uri]);
 
+  // Pause → stop → unload on unmount / URI change (camera → feed hand-off)
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      void node?.unloadAsync?.().catch?.(() => {});
+      void safeUnloadExpoAvVideo(node);
     };
-  }, []);
+  }, [uri]);
 
   return (
     <View style={styles.root}>

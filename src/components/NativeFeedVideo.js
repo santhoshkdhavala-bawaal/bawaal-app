@@ -161,13 +161,27 @@ function NativeFeedVideo({
     return () => {
       if (!node) return;
       try {
+        node.setStatusAsync?.({ shouldPlay: false }).catch?.(() => {});
+      } catch (_) {
+        /* ignore */
+      }
+      try {
+        node.pauseAsync?.().catch?.(() => {});
+      } catch (_) {
+        /* ignore */
+      }
+      try {
         node.stopAsync?.().catch?.(() => {});
+      } catch (_) {
+        /* ignore */
+      }
+      try {
         node.unloadAsync?.().catch?.(() => {});
       } catch (_) {
         /* ignore */
       }
     };
-  }, []);
+  }, [resolved]);
 
   if (!Video || !playable || failed) {
     return (

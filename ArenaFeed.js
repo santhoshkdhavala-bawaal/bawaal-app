@@ -944,30 +944,44 @@ export default function ArenaFeed({ navigation, route }) {
     }
     setWarmIndices(next);
   }, []);
+  /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
+  const absorbedUriById = useRef(new Map());
+
   const absorbPost = useCallback((post) => {
     if (!post) return;
-    const key = post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
-    // Always re-ingest if this is a fresh publish (newer timestamp) so it stays at index 0
-    const ts = Number(post.timestamp || post.createdAt) || 0;
-    const forceTop =
-      post._freshPublish === true ||
-      ts > Date.now() - 120_000 ||
-      post.author === '@you' ||
-      post.creator === 'You' ||
-      post.creator === 'YOU';
-    if (key && ingestedIds.current.has(key) && !forceTop) return;
+    const key = String(
+      post.id || `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`
+    );
+    const nextUri = String(
+      post.videoUri || post.uri || post.localVideoUri || ''
+    ).trim();
+    const prevUri = absorbedUriById.current.get(key) || '';
+    // Identical payload already in feed — never re-stamp timestamps (crash loop)
+    if (key && ingestedIds.current.has(key) && prevUri === nextUri) {
+      return;
+    }
+    // Allow one upgrade pass (file:// → https) without rewriting createdAt each emit
+    const isUpgrade =
+      !!prevUri &&
+      !!nextUri &&
+      prevUri !== nextUri &&
+      ingestedIds.current.has(key);
+    const ts = Number(post.timestamp || post.createdAt) || Date.now();
+    const firstFresh = post._freshPublish === true && !ingestedIds.current.has(key);
     if (key) ingestedIds.current.add(key);
+    if (key) absorbedUriById.current.set(key, nextUri);
+
     setFeedItems((prev) =>
       sortFeedItems(
         ingestArenaPost(prev, {
           ...post,
-          _freshPublish: forceTop || post._freshPublish,
-          createdAt: forceTop ? Date.now() : post.createdAt || ts,
-          timestamp: forceTop ? Date.now() : post.timestamp || ts,
+          _freshPublish: firstFresh || (isUpgrade ? false : !!post._freshPublish),
+          createdAt: post.createdAt || ts,
+          timestamp: post.timestamp || ts,
         })
       )
     );
-    if (forceTop) {
+    if (firstFresh) {
       requestAnimationFrame(() => {
         try {
           listRef.current?.scrollToOffset?.({ offset: 0, animated: false });
@@ -1082,29 +1096,25 @@ export default function ArenaFeed({ navigation, route }) {
   useEffect(() => {
     const fromParams = route?.params?.newArenaPost;
     if (!fromParams) return;
-    // Stamp as newest so hydrate / demos cannot bury it
     absorbPost({
       ...fromParams,
       _freshPublish: true,
-      createdAt: Date.now(),
-      timestamp: Date.now(),
     });
     navigation?.setParams?.({ newArenaPost: undefined });
   }, [route?.params?.newArenaPost, absorbPost, navigation]);
 
   useFocusEffect(
     useCallback(() => {
-      // New post first (index 0), then store catch-up
+      // New post first (index 0) — absorbPost dedupes identical URIs (no re-render loop)
       const fromParams = route?.params?.newArenaPost;
       if (fromParams) {
         absorbPost({
           ...fromParams,
           _freshPublish: true,
-          createdAt: Date.now(),
-          timestamp: Date.now(),
         });
       }
-      getArenaPosts().forEach(absorbPost);
+      // Catch-up only — skip posts already absorbed with the same URI
+      getArenaPosts().forEach((p) => absorbPost(p));
       const fromStore = consumeLatestBattleClip();
       if (fromStore) absorbPost({ ...fromStore, _freshPublish: true });
       else {

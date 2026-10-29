@@ -1784,7 +1784,9 @@ export default function UniversalCamera({
               timestamp: Date.now(),
               feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
             };
-            // Soft teardown — remounting CameraView here slows the next open
+            // Unmount preview + release decoder BEFORE feed mounts the same URI
+            setShowPreview(false);
+            setShowPostSheet(false);
             releaseCameraRecorder();
             resetCreationSession({ remountCamera: false });
             const freshPost = {
@@ -1822,10 +1824,13 @@ export default function UniversalCamera({
               timestamp: Date.now(),
               _freshPublish: true,
             };
-            safeNavigateHome({
-              tab,
-              ...(tab === 'Arena' ? { newArenaPost: freshPost } : {}),
-              ...(tab === 'Battles' ? { newBattlePost: freshPost } : {}),
+            // Defer navigation one tick so Video unload can finish
+            requestAnimationFrame(() => {
+              safeNavigateHome({
+                tab,
+                ...(tab === 'Arena' ? { newArenaPost: freshPost } : {}),
+                ...(tab === 'Battles' ? { newBattlePost: freshPost } : {}),
+              });
             });
           }}
         />

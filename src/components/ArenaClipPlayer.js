@@ -16,6 +16,10 @@ import {
   resolvePlayableVideoUri,
   sanitizePlayableFeedUri,
 } from '../services/uploadService';
+import {
+  safeReleaseExpoVideoPlayer,
+  safeUnloadExpoAvVideo,
+} from '../utils/safeUnloadVideo';
 import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 
 function loadRealExpoAv() {
@@ -111,6 +115,10 @@ function ExpoAvClipPlayer({
     let cancelled = false;
     (async () => {
       try {
+        if (!active) {
+          await node.setStatusAsync({ shouldPlay: false });
+          return;
+        }
         await node.setStatusAsync({
           shouldPlay: !!autoPlay && !paused && active,
           isLooping: !!loop,
@@ -128,17 +136,13 @@ function ExpoAvClipPlayer({
     };
   }, [active, autoPlay, failed, loop, muted, paused, resolved]);
 
+  // Full native teardown on unmount / URI swap — prevents camera→feed memory crashes
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      try {
-        node?.stopAsync?.().catch?.(() => {});
-        node?.unloadAsync?.().catch?.(() => {});
-      } catch {
-        /* ignore */
-      }
+      void safeUnloadExpoAvVideo(node);
     };
-  }, []);
+  }, [resolved]);
 
   const togglePlay = useCallback(() => {
     if (failed) return;
@@ -246,11 +250,7 @@ function ExpoVideoClipPlayer({
 
   useEffect(() => {
     return () => {
-      try {
-        player?.pause?.();
-      } catch {
-        /* ignore */
-      }
+      safeReleaseExpoVideoPlayer(player);
     };
   }, [player]);
 
