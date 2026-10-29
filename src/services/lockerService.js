@@ -31,7 +31,7 @@ function mapBrief(row) {
     id: String(row.id),
     squadId: row.squad_id ? String(row.squad_id) : null,
     title: String(row.title || 'Squad Brief'),
-    sportTag: String(row.sport_tag || 'Other').toUpperCase(),
+    sportTag: String(row.sport_tag || 'OTHERS').toUpperCase(),
     intel: String(row.intel || row.brief_intel || ''),
     createdBy: row.created_by || null,
     createdAt: row.created_at || null,
@@ -50,7 +50,7 @@ function mapSquadRow(row, brief = null) {
       ? {
           id: `pinned-${row.id}`,
           title: String(row.brief_title),
-          sportTag: String(row.brief_sport || 'Other').toUpperCase(),
+          sportTag: String(row.brief_sport || 'OTHERS').toUpperCase(),
           intel: String(row.brief_intel || ''),
         }
       : null);
@@ -371,14 +371,14 @@ export async function createTrainingSquad({
  */
 export async function createSquadBrief({
   title,
-  sportTag = 'Other',
+  sportTag = 'OTHERS',
   intel = '',
   squadId = null,
   createdBy,
   athleteHandle,
 } = {}) {
   const briefTitle = String(title || '').trim() || 'Squad Brief';
-  const sport = String(sportTag || 'Other').trim() || 'Other';
+  const sport = String(sportTag || 'OTHERS').trim().toUpperCase() || 'OTHERS';
   const briefIntel = String(intel || '').trim();
   const created_by = String(createdBy || ACTIVE_USER?.handle || 'athlete').trim();
   const athlete_handle = normalizeHandle(athleteHandle || created_by);

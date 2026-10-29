@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Image } from 'react-native';
+import BackLink from './src/components/BackLink';
 
 export default function TermsModal({ visible, onAgree, onBack }) {
   return (
@@ -80,9 +81,7 @@ export default function TermsModal({ visible, onAgree, onBack }) {
 
             {/* Action Buttons */}
             <View style={styles.btnRow}>
-              <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-                <Text style={styles.backText}>← Back</Text>
-              </TouchableOpacity>
+              <BackLink label="Back" onPress={onBack} />
 
               <TouchableOpacity style={styles.agreeBtn} onPress={onAgree}>
                 <Text style={styles.agreeText}>I AGREE & ENTER 🔥</Text>

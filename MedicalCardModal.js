@@ -10,10 +10,11 @@ import {
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import BackLink from './src/components/BackLink';
 
 const dictionary = {
   English: {
-    back: '← BACK TO REGISTRATION',
+    back: 'BACK TO REGISTRATION',
     // FIX 1: Removed Stethoscope from title
     title: 'Athlete Medical Card',
     subtitle: 'Verify health clearance & emergency details for arena access.',
@@ -54,14 +55,13 @@ export default function MedicalCardModal({ visible, selectedLang = 'English', on
           
           {/* Top Header Row with Back Button */}
           <View style={styles.headerRow}>
-            <TouchableOpacity style={styles.backBtn} onPress={onClose}>
-              <Text style={styles.backBtnText}>{t.back}</Text>
-            </TouchableOpacity>
-<Image
-  source={require('./assets/icon.png')}
-  style={styles.headerLogo}
-  resizeMode="contain"
-/>          </View>
+            <BackLink label={t.back} onPress={onClose} />
+            <Image
+              source={require('./assets/icon.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+          </View>
 
           {/* Title Section (No Stethoscope) */}
           <View style={styles.titleSection}>

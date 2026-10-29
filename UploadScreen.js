@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ARENA_SPORT_OPTIONS } from './src/utils/sportCategory';
+import BackLink from './src/components/BackLink';
 
 export default function UploadScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -135,12 +137,13 @@ export default function UploadScreen({ navigation }) {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => navigation?.navigate?.('Arena')}
-        >
-          <Text style={styles.closeBtnText}>✕</Text>
-        </TouchableOpacity>
+        <BackLink
+          label="Back"
+          onPress={() => {
+            if (navigation?.canGoBack?.()) navigation.goBack();
+            else navigation?.navigate?.('Arena');
+          }}
+        />
       </View>
 
       {/* VIEWPORT AREA */}
@@ -161,7 +164,7 @@ export default function UploadScreen({ navigation }) {
 
             <Text style={styles.inputLabel}>CATEGORY</Text>
             <View style={styles.categoryRow}>
-              {['GYM', 'CRICKET', 'FOOTBALL', 'BOXING'].map((cat) => (
+              {ARENA_SPORT_OPTIONS.map((cat) => (
                 <TouchableOpacity
                   key={cat}
                   style={[

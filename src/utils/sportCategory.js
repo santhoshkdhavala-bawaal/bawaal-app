@@ -1,9 +1,10 @@
 /**
- * Canonical sport keys for Arena filters + publish.
- * Matches case-insensitively and maps common aliases (football/soccer, mma/combat).
+ * Canonical BAWAAL sport taxonomy — forms, briefs, Arena tabs, publish.
+ * LOCKED production list. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
  */
 
-export const ARENA_SPORT_TABS = [
+/** Full locked taxonomy (forms / briefs / filters). */
+export const BAWAAL_SPORT_TAXONOMY = [
   'ALL',
   'CRICKET',
   'FOOTBALL',
@@ -14,10 +15,17 @@ export const ARENA_SPORT_TABS = [
   'WAVE & BLADE',
   'COURT KINGS',
   'SKY & SUMMIT',
+  'OTHERS',
 ];
 
-/** Publish picker (excludes ALL). */
-export const ARENA_SPORT_OPTIONS = ARENA_SPORT_TABS.filter((t) => t !== 'ALL');
+/** @deprecated Prefer BAWAAL_SPORT_TAXONOMY — kept for Arena imports. */
+export const ARENA_SPORT_TABS = BAWAAL_SPORT_TAXONOMY;
+
+/** Publish / picker options (excludes ALL). */
+export const ARENA_SPORT_OPTIONS = BAWAAL_SPORT_TAXONOMY.filter((t) => t !== 'ALL');
+
+/** Alias used by Squad Brief + battle forms (includes ALL). */
+export const BAWAAL_FORM_SPORTS = BAWAAL_SPORT_TAXONOMY;
 
 const ALIASES = {
   all: 'ALL',
@@ -48,6 +56,9 @@ const ALIASES = {
   'sky & summit': 'SKY & SUMMIT',
   climbing: 'SKY & SUMMIT',
   summit: 'SKY & SUMMIT',
+  others: 'OTHERS',
+  other: 'OTHERS',
+  misc: 'OTHERS',
 };
 
 /**
@@ -60,15 +71,13 @@ export function canonicalizeSport(value) {
   const raw = String(value).trim();
   if (!raw) return null;
   const upper = raw.toUpperCase();
-  if (ARENA_SPORT_TABS.includes(upper)) return upper;
-  // Preserve known spaced tabs with flexible whitespace
+  if (BAWAAL_SPORT_TAXONOMY.includes(upper)) return upper;
   const collapsed = raw.replace(/\s+/g, ' ').trim().toLowerCase();
   if (ALIASES[collapsed]) return ALIASES[collapsed];
   const compact = collapsed.replace(/[^a-z0-9]+/g, '');
   for (const [alias, canon] of Object.entries(ALIASES)) {
     if (alias.replace(/[^a-z0-9]+/g, '') === compact) return canon;
   }
-  // Last resort: uppercase raw for equality with tabs
   return upper;
 }
 
@@ -84,6 +93,8 @@ export function matchesSportFilter(item, activeTab) {
   const candidates = [
     item.sport,
     item.category,
+    item.sport_tag,
+    item.sportTag,
     item.sport_category,
     item.sportCategory,
   ];
@@ -104,5 +115,6 @@ export function resolvePostSport(post, fallback = 'GYM') {
     canonicalizeSport(post?.sport_category) ||
     canonicalizeSport(fallback) ||
     'GYM';
-  return key === 'ALL' ? 'GYM' : key;
+  if (key === 'ALL') return 'GYM';
+  return BAWAAL_SPORT_TAXONOMY.includes(key) ? key : 'OTHERS';
 }

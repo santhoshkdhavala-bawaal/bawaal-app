@@ -48,7 +48,15 @@ Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaime
 
 ## Passport / Profile (locked)
 
-`ProfileScreen.js` (Passport tab) is **production-final and untouchable** — profile header card, stats metrics, electric blue FOLLOWING (`#3B82F6`) rings/accents, electric crimson SUGGESTED ATHLETES (`#FF3366`) headers and `+ Follow` buttons, as shipped. Do not restyle or rebuild a parallel Passport UI. See `.cursor/rules/bawaal-passport-locked.mdc`.
+`ProfileScreen.js` (Passport tab) is **production-final and untouchable** — profile card (avatar, handle, sport badge, Athlete/Coach/Fan role), social + locker utility stats, Connected Squads, electric blue FOLLOWING (`#3B82F6`), electric crimson SUGGESTED ATHLETES (`#FF3366`), as shipped. Passport ↔ Locker hub nav via `openLockerHub`. Do not restyle or rebuild a parallel Passport UI. See `.cursor/rules/bawaal-passport-locked.mdc`.
+
+## Sport taxonomy (locked)
+
+Canonical list in `src/utils/sportCategory.js`: ALL, CRICKET, FOOTBALL, GYM, KABADDI, COMBAT, THROTTLE, WAVE & BLADE, COURT KINGS, SKY & SUMMIT, OTHERS. Forms/briefs must import shared constants — no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
+
+## Back controls (locked)
+
+Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.
 
 ## Rules
 

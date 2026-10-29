@@ -21,6 +21,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BAWAAL_FORM_SPORTS } from '../utils/sportCategory';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -39,20 +40,8 @@ function resolveConfirmColor(confirmLabel, confirmColor) {
   return ACCENT;
 }
 
-/** Complete BAWAAL sport taxonomy for Post Squad Brief (single-select). */
-export const SQUAD_BRIEF_SPORTS = [
-  'ALL',
-  'CRICKET',
-  'FOOTBALL',
-  'GYM',
-  'KABADDI',
-  'COMBAT',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
-  'OTHERS',
-];
+/** @deprecated Prefer BAWAAL_FORM_SPORTS from sportCategory — re-export for callers. */
+export const SQUAD_BRIEF_SPORTS = BAWAAL_FORM_SPORTS;
 
 /**
  * @param {object} props

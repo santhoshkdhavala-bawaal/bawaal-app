@@ -363,7 +363,7 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
 }
 
 export default function ProfileScreen({ navigation }) {
-  const { openProfileGateway, setTab } = useMainTabs();
+  const { openProfileGateway, openLockerHub, setTab } = useMainTabs();
   const [selected, setSelected] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [me, setMe] = useState(CURRENT_USER);
@@ -441,9 +441,16 @@ export default function ProfileScreen({ navigation }) {
     });
   }, [navigation, selected]);
 
-  const openLockerSquad = useCallback(() => {
-    setTab?.('Locker');
-  }, [setTab]);
+  const openLockerSquad = useCallback(
+    (hub) => {
+      if (hub?.id && openLockerHub) {
+        openLockerHub(hub);
+        return;
+      }
+      setTab?.('Locker');
+    },
+    [openLockerHub, setTab]
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -463,14 +470,13 @@ export default function ProfileScreen({ navigation }) {
         onBrandPress={openProfileGateway}
         rightSlot={
           selected ? (
-            <TouchableOpacity
-              style={styles.headerLink}
-              onPress={() => setSelected(null)}
-              hitSlop={10}
-            >
-              <Text style={styles.headerLinkText}>Hub</Text>
-            </TouchableOpacity>
-          ) : null
+            <BackLink label="Hub" onPress={() => setSelected(null)} />
+          ) : (
+            <BackLink
+              label="Locker"
+              onPress={() => setTab?.('Locker')}
+            />
+          )
         }
       />
 
@@ -921,14 +927,5 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 12,
     marginTop: 4,
-  },
-  headerLink: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-  },
-  headerLinkText: {
-    color: WHITE,
-    fontSize: 12,
-    fontWeight: '800',
   },
 });

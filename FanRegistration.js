@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView, 
   Platform 
 } from 'react-native';
+import BackLink from './src/components/BackLink';
 
 export default function FanRegistration({ navigation }) {
   const [name, setName] = useState('');
@@ -69,9 +70,7 @@ export default function FanRegistration({ navigation }) {
       >
         {/* Header Bar */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Text style={styles.backText}>← BACK</Text>
-          </TouchableOpacity>
+          <BackLink label="BACK" onPress={handleBack} />
 
           <Image 
             source={require('./assets/icon.png')} 

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createLiveBattle, newBattleId } from './src/services/battleSyncService';
+import { BAWAAL_FORM_SPORTS } from './src/utils/sportCategory';
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
@@ -20,19 +21,7 @@ const BORDER = '#1F2937';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 
-const SPORTS = [
-  'ALL',
-  'CRICKET',
-  'FOOTBALL',
-  'GYM',
-  'KABADDI',
-  'COMBAT',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
-  'OTHERS',
-];
+const SPORTS = BAWAAL_FORM_SPORTS;
 const DURATIONS = [
   { id: '1m', label: '1 Min', seconds: 60 },
   { id: '3m', label: '3 Min', seconds: 180 },

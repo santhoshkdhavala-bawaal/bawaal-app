@@ -1,5 +1,5 @@
 /**
- * Account role tags — Athlete / Scout / Pro.
+ * Account role tags — Athlete / Coach / Fan (+ legacy Scout / Pro).
  * Monochrome chrome; Scout uses inverted fill to read as a recruiter signal.
  */
 import React, { memo } from 'react';
@@ -7,12 +7,16 @@ import { StyleSheet, Text, View } from 'react-native';
 
 export const ACCOUNT_ROLES = {
   athlete: { key: 'athlete', label: 'ATHLETE', variant: 'outline' },
+  coach: { key: 'coach', label: 'COACH', variant: 'outline' },
+  fan: { key: 'fan', label: 'FAN', variant: 'outline' },
   scout: { key: 'scout', label: 'SCOUT', variant: 'solid' },
   pro: { key: 'pro', label: 'PRO', variant: 'outline' },
 };
 
 export function normalizeRole(role) {
-  const key = String(role || 'athlete').toLowerCase();
+  const key = String(role || 'athlete').toLowerCase().trim();
+  if (key === 'trainer' || key === 'coaching') return ACCOUNT_ROLES.coach;
+  if (key === 'spectator' || key === 'supporter') return ACCOUNT_ROLES.fan;
   return ACCOUNT_ROLES[key] || ACCOUNT_ROLES.athlete;
 }
 

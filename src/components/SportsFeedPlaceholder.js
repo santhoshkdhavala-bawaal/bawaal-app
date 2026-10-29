@@ -15,7 +15,10 @@ const MOCK_TAGS = [
   'KABADDI',
   'COMBAT',
   'THROTTLE',
+  'WAVE & BLADE',
   'COURT KINGS',
+  'SKY & SUMMIT',
+  'OTHERS',
 ];
 
 function pickMockTags(sport, seed = 0) {

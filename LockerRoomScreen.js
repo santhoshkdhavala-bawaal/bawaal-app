@@ -29,6 +29,7 @@ import {
 import { isSupabaseConfigured } from './src/services/supabase';
 import { ACTIVE_USER } from './src/services/activeUserProfile';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
+import BackLink from './src/components/BackLink';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -152,7 +153,8 @@ function HubCard({ item, onPress }) {
 
 export default function LockerRoomScreen({ navigation }) {
   const insets = useSafeAreaInsets();
-  const { openProfileGateway } = useMainTabs() || {};
+  const { openProfileGateway, focusHubId, clearFocusHub, setTab } =
+    useMainTabs() || {};
   const [hubs, setHubs] = useState(SEED_HUBS);
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -197,6 +199,17 @@ export default function LockerRoomScreen({ navigation }) {
   useEffect(() => {
     loadHubs();
   }, [loadHubs]);
+
+  // Passport Connected Squads → open matching hub notice once hubs are ready
+  useEffect(() => {
+    if (!focusHubId || !hubs?.length) return;
+    const hub = hubs.find((h) => String(h.id) === String(focusHubId));
+    const frame = requestAnimationFrame(() => {
+      if (hub) openHub(hub);
+      clearFocusHub?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusHubId, hubs, openHub, clearFocusHub]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -284,7 +297,7 @@ export default function LockerRoomScreen({ navigation }) {
 
     if (prompt.kind === 'brief') {
       const title = String(payload?.title || '').trim();
-      const sportTag = String(payload?.sportTag || 'Other').trim();
+      const sportTag = String(payload?.sportTag || 'OTHERS').trim().toUpperCase();
       const intel = String(payload?.intel || '').trim();
       if (!title) {
         showNotice('BAWAAL', 'Enter a brief title to continue.');
@@ -346,14 +359,21 @@ export default function LockerRoomScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
       <View style={styles.brandRow}>
-        <TouchableOpacity
-          onPress={openProfileGateway}
-          activeOpacity={0.75}
-          accessibilityRole="button"
-          accessibilityLabel="Open profile"
-        >
-          <Text style={styles.brand}>BAWAAL</Text>
-        </TouchableOpacity>
+        <View style={styles.brandCol}>
+          <TouchableOpacity
+            onPress={openProfileGateway}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel="Open profile"
+          >
+            <Text style={styles.brand}>BAWAAL</Text>
+          </TouchableOpacity>
+          <BackLink
+            label="Passport"
+            onPress={() => setTab?.('Passport')}
+            style={styles.passportBack}
+          />
+        </View>
         <TouchableOpacity
           style={styles.clinicBadge}
           onPress={openClinic}
@@ -458,15 +478,21 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     marginBottom: 18,
+  },
+  brandCol: {
+    flexShrink: 1,
   },
   brand: {
     color: WHITE,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2.4,
+  },
+  passportBack: {
+    marginTop: 10,
   },
   clinicBadge: {
     paddingVertical: 6,

@@ -14,6 +14,7 @@ import RoleSelection from './RoleSelection';
 import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
+import SportHubMapScreen from './SportHubMapScreen';
 import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
@@ -252,6 +253,11 @@ export default function App() {
               <Stack.Screen
                 name="Clinic"
                 component={ClinicScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="SportHubMap"
+                component={SportHubMapScreen}
                 options={{ animation: 'slide_from_right' }}
               />
               {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}

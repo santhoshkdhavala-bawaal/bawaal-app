@@ -43,6 +43,7 @@ export default function MainTabs({ navigation, route }) {
     },
   });
   const [profileOpen, setProfileOpen] = useState(false);
+  const [focusHubId, setFocusHubId] = useState(null);
   const [challengeAlert, setChallengeAlert] = useState(DEMO_CHALLENGE);
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
 
@@ -52,6 +53,15 @@ export default function MainTabs({ navigation, route }) {
       setTab(
         nextTab === 'LockerRoom' ? 'Locker' : nextTab === 'Profile' ? 'Passport' : nextTab
       );
+    }
+    if (route?.params?.focusHubId) {
+      setFocusHubId(String(route.params.focusHubId));
+      setTab('Locker');
+      navigation?.setParams?.({
+        focusHubId: undefined,
+        tab: undefined,
+        joinSquadHint: undefined,
+      });
     }
     if (route?.params?.newArenaPost) {
       setTab('Arena');
@@ -69,6 +79,7 @@ export default function MainTabs({ navigation, route }) {
     }
   }, [
     route?.params?.tab,
+    route?.params?.focusHubId,
     route?.params?.newArenaPost,
     route?.params?.newBattlePost,
     navigation,
@@ -97,6 +108,20 @@ export default function MainTabs({ navigation, route }) {
   }, [navigation]);
 
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
+
+  const clearFocusHub = useCallback(() => setFocusHubId(null), []);
+
+  /** Passport Connected Squads → Locker Room hub (single-tap). */
+  const openLockerHub = useCallback((hubOrId) => {
+    const id =
+      typeof hubOrId === 'string'
+        ? hubOrId
+        : hubOrId?.id != null
+          ? String(hubOrId.id)
+          : null;
+    setFocusHubId(id);
+    setTab('Locker');
+  }, []);
 
   /** Center FAB is create-only; thunder alerts live on the BATTLES tab. */
   const onCreatePress = useCallback(() => {
@@ -184,9 +209,20 @@ export default function MainTabs({ navigation, route }) {
       setTab,
       openCreate,
       openProfileGateway,
+      openLockerHub,
+      focusHubId,
+      clearFocusHub,
       challengeAlertActive,
     }),
-    [tab, openCreate, openProfileGateway, challengeAlertActive]
+    [
+      tab,
+      openCreate,
+      openProfileGateway,
+      openLockerHub,
+      focusHubId,
+      clearFocusHub,
+      challengeAlertActive,
+    ]
   );
   // Clear Android 3-button / iOS home-indicator — never let tabs collide with system nav
   const systemFloor = Platform.OS === 'android' ? 24 : 12;
@@ -218,6 +254,10 @@ export default function MainTabs({ navigation, route }) {
           visible={profileOpen}
           onClose={() => setProfileOpen(false)}
           onOpenPassport={() => setTab('Passport')}
+          onOpenSportHubMap={() => {
+            setProfileOpen(false);
+            navigation?.navigate?.('SportHubMap');
+          }}
         />
         <ChallengeAlertModal
           visible={challengeModalOpen}

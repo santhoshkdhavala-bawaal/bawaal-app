@@ -1,0 +1,24 @@
+---
+description: Locked high-visibility BackLink chrome for stealth-black screens and modals
+alwaysApply: true
+---
+
+# BAWAAL Back controls (LOCKED)
+
+All navigational **Back** affordances on stealth-black surfaces use `src/components/BackLink.js`.
+
+## Visual contract
+
+- Accent default: electric blue `#3B82F6`
+- Theme overrides allowed (e.g. Clinic mint `#4ADE80`) via `accent` prop
+- Bold/black weight (`fontWeight: '900'`), `←` arrow prefix, bordered chip touch target
+- Must remain readable on `#000000` — never mute gray / faint text
+
+## Required usage
+
+- Passport inline preview — “Back to Passport”
+- Athlete Passport, Clinic, Upload, Fan Registration, Terms, Medical Card
+- Locker Room — “Passport” reverse link to the Passport tab
+
+Do not reintroduce dim `#94a3b8` / `#A0A0A0` back labels on these surfaces.
+---

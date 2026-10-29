@@ -5,6 +5,10 @@ export const MainTabContext = createContext({
   setTab: (_t) => {},
   openCreate: () => {},
   openProfileGateway: () => {},
+  /** Open Locker Room and surface a specific training hub (from Passport). */
+  openLockerHub: (_hubOrId) => {},
+  focusHubId: null,
+  clearFocusHub: () => {},
   challengeAlertActive: false,
 });
 

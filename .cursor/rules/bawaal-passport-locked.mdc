@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL Passport/Profile screen — header, stats, Following blue, Suggested crimson — immutable
+description: Locked BAWAAL Passport hub — profile, stats, Following, Suggested, Connected Squads
 alwaysApply: true
 ---
 
@@ -9,22 +9,26 @@ The Passport tab hub (`ProfileScreen.js`) is **production-final**. Do **not** re
 
 ## Locked files (do not edit)
 
-- `ProfileScreen.js` — Passport hub (me card, Following rail, Suggested Athletes)
-- Related presentation used as-shipped on this screen: `BrandHeader` usage, `UserHandle`, `RoleBadge`, `VerifiedBadge`, `src/data/athleteSocial` seed wiring for CURRENT_USER / FOLLOWING / SUGGESTED (do not change solely to restyle Passport)
+- `ProfileScreen.js` — Passport hub
+- Related presentation: `BrandHeader`, `UserHandle`, `RoleBadge` (Athlete / Coach / Fan), `VerifiedBadge`, `BackLink`, `src/data/athleteSocial` seed wiring
 
 ## Locked visual contract
 
-- **Profile header card** + bio + role/status badges — keep as shipped (strict dark surface, B&W chrome)
-- **Stats row** — Followers / Following / Win Rate layout and existing metric accents — do not reshape
-- **FOLLOWING** — electric blue `#3B82F6` section title; blue avatar rings / chip edge highlights on the horizontal list
-- **SUGGESTED ATHLETES** — electric crimson `#FF3366` section title; `+ Follow` outline/text in crimson
-- Borderless-minimalist dark layout as shipped
-- Bottom content padding must continue to clear the tab bar / system safe area (do not regress vs `CustomTabBar` / `MainTabs` padding)
+- Stealth black `#000000`; header **PASSPORT**
+- **Profile card** — avatar, display name, `@handle`, primary sport badge, role tag, status badge, bio, location + combat/sport tags
+- **Social stats row** — Followers / Following / Win Rate (existing metric accents) — do not reshape
+- **Locker utility bar** — Active Squads / Battles Fought / Briefs Pinned
+- **FOLLOWING** — electric blue `#3B82F6` section title; blue avatar rings / chip edges
+- **SUGGESTED ATHLETES** — electric crimson `#FF3366`; `+ Follow` outline/text in crimson
+- **CONNECTED SQUADS** — Training Squads from Locker (`fetchPassportSquads`); tap → `openLockerHub` → Locker hub notice
+- Header **Locker** / preview **Hub** use `BackLink`
+- Bottom content padding must clear the tab bar / safe area
 
 ## App wiring
 
-- Main tab **Passport** continues to mount `ProfileScreen`
-- Inline athlete preview → `AthletePassport` stack remains the navigation path
+- Main tab **Passport** mounts `ProfileScreen`
+- Inline athlete preview → `AthletePassport` stack
+- Passport ↔ Locker via `openLockerHub` / Locker `← Passport` BackLink
 - Do not replace with a parallel Passport/Profile UI
 
 ## Allowed elsewhere

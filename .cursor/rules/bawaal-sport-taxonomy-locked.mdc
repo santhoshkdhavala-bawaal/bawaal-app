@@ -1,0 +1,39 @@
+---
+description: Locked BAWAAL sport taxonomy for forms, briefs, Arena, and publish pickers
+alwaysApply: true
+---
+
+# BAWAAL sport taxonomy (LOCKED)
+
+Canonical list lives in `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` / `BAWAAL_FORM_SPORTS`.
+
+## Exact order (do not reorder or rename)
+
+1. ALL  
+2. CRICKET  
+3. FOOTBALL  
+4. GYM  
+5. KABADDI  
+6. COMBAT  
+7. THROTTLE  
+8. WAVE & BLADE  
+9. COURT KINGS  
+10. SKY & SUMMIT  
+11. OTHERS  
+
+## Consumers (must import shared constants — no local sport arrays)
+
+- Post Squad Brief — `BawaalPromptModal` (`SQUAD_BRIEF_SPORTS` re-export)
+- Create Battle — `CreateBattleSheet`
+- Arena publish — `PostCreationSheet` via `ARENA_SPORT_OPTIONS` (excludes ALL)
+- Upload challenge category — `UploadScreen`
+- Arena filter tabs — `ARENA_SPORT_TABS`
+
+## Onboarding exception
+
+`RoleSelection.js` sport interest pills stay as the locked landing list (no ALL / OTHERS) — see `bawaal-onboarding-locked.mdc`.
+
+## Accent
+
+Single-select highlight on Post Squad Brief uses electric purple `#A855F7` (POST theme). Other forms may use their surface accents but keep the same labels.
+---
