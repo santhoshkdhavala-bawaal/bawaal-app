@@ -7,7 +7,10 @@ import {
   isRemoteHttpsUri,
 } from './src/services/uploadService';
 import {
+  cacheLocalArenaPost,
   fetchArenaPostsFromSupabase,
+  loadLocalArenaPosts,
+  mapChallengeClipToFeedPost,
   persistArenaPostToSupabase,
 } from './src/services/arenaPostsService';
 import { resolvePostSport } from './src/utils/sportCategory';
@@ -140,8 +143,12 @@ function mergeIntoStore(normalized, { emitEvent = true } = {}) {
  */
 export function pushArenaPost(post) {
   try {
-    const normalized = normalizeArenaPost(post);
-    if (!normalized) return null;
+    const mapped = mapChallengeClipToFeedPost(post) || post;
+    const normalized = normalizeArenaPost(mapped);
+    if (!normalized || !normalized.videoUri) {
+      console.warn('[arenaFeedStore] push skipped — missing playable videoUri');
+      return null;
+    }
 
     console.log(
       '[arenaFeedStore] prepend post',
@@ -151,7 +158,12 @@ export function pushArenaPost(post) {
     );
     mergeIntoStore(normalized, { emitEvent: true });
 
-    // Only persist when we have a verified public HTTPS video_url
+    // Device cache for local file:// + https so cards survive reload
+    if (!post?._fromRemote) {
+      void cacheLocalArenaPost(normalized);
+    }
+
+    // Only cloud-persist when we have a verified public HTTPS video_url
     const httpsReady =
       isRemoteHttpsUri(normalized.publicCloudUrl) ||
       isRemoteHttpsUri(normalized.videoUri);
@@ -165,7 +177,7 @@ export function pushArenaPost(post) {
       });
     } else if (!post?._fromRemote && !post?._skipPersist && !httpsReady) {
       console.warn(
-        '[arenaFeedStore] defer persist — waiting for https video_url (local preview active)'
+        '[arenaFeedStore] defer cloud persist — local URI cached for feed playback'
       );
     }
 
@@ -304,25 +316,38 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
 
   hydratePromise = (async () => {
     try {
-      const remote = await fetchArenaPostsFromSupabase();
-      if (!Array.isArray(remote) || remote.length === 0) {
-        return arenaPosts.slice();
-      }
-
+      // 1) Device cache first — ChallengeCam local URIs play immediately
+      const localCached = await loadLocalArenaPosts();
       const incoming = [];
-      for (const row of remote) {
-        const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
-        if (!normalized) continue;
+      for (const row of localCached) {
+        const normalized = normalizeArenaPost({
+          ...row,
+          _fromRemote: false,
+          _skipPersist: true,
+        });
+        if (!normalized?.videoUri) continue;
         mergeIntoStore(normalized, { emitEvent: false });
         incoming.push(normalized);
       }
 
-      // Default: notify listeners. Silent mode lets ArenaFeed do one render pass.
-      if (!silent) emitBatch(incoming);
+      // 2) Cloud rows (https) merge on top without wiping local-only clips
+      const remote = await fetchArenaPostsFromSupabase();
+      if (Array.isArray(remote) && remote.length > 0) {
+        for (const row of remote) {
+          const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
+          if (!normalized?.videoUri) continue;
+          mergeIntoStore(normalized, { emitEvent: false });
+          incoming.push(normalized);
+        }
+      }
+
+      if (!silent && incoming.length) emitBatch(incoming);
       console.log(
         '[arenaFeedStore] hydrated',
-        incoming.length,
-        'posts from Supabase',
+        'local=',
+        localCached.length,
+        'remote=',
+        Array.isArray(remote) ? remote.length : 0,
         silent ? '(silent)' : ''
       );
       return arenaPosts.slice();

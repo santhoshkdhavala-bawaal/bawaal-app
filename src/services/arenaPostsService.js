@@ -1,10 +1,12 @@
 /**
- * BAWAAL Arena posts ↔ Supabase `bawaal_posts` (+ Storage fallback).
+ * BAWAAL Arena posts ↔ Supabase `bawaal_posts` (+ Storage + AsyncStorage fallback).
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase, getSupabaseUrl } from './supabase';
 import {
   BAWAAL_VIDEO_BUCKET,
   ensurePublicBawaalVideoUrl,
+  isRemoteHttpsUri,
 } from './uploadService';
 import { resolvePostSport } from '../utils/sportCategory';
 
@@ -12,6 +14,87 @@ const TABLE = 'bawaal_posts';
 const FEED = 'ARENA';
 /** Storage folder for JSON post metadata when `bawaal_posts` table is missing. */
 const POSTS_META_PREFIX = 'posts';
+/** Device cache — keeps ChallengeCam file:// / https posts across reloads. */
+const LOCAL_POSTS_KEY = '@bawaal/arena_local_posts_v1';
+const LOCAL_POSTS_MAX = 40;
+
+/**
+ * Normalize a ChallengeCam / Continue clip into a feed-safe post shape.
+ * Guarantees videoUri + localVideoUri so ArenaClipPlayer never gets a blank card.
+ */
+export function mapChallengeClipToFeedPost(post = {}) {
+  const local =
+    (typeof post.localVideoUri === 'string' && post.localVideoUri.trim()) ||
+    (typeof post.recordedVideoUri === 'string' &&
+      !isRemoteHttpsUri(post.recordedVideoUri) &&
+      post.recordedVideoUri.trim()) ||
+    null;
+  const cloud =
+    (typeof post.publicCloudUrl === 'string' &&
+      isRemoteHttpsUri(post.publicCloudUrl) &&
+      (ensurePublicBawaalVideoUrl(post.publicCloudUrl) || post.publicCloudUrl)) ||
+    (typeof post.videoUri === 'string' &&
+      isRemoteHttpsUri(post.videoUri) &&
+      (ensurePublicBawaalVideoUrl(post.videoUri) || post.videoUri)) ||
+    (typeof post.uri === 'string' &&
+      isRemoteHttpsUri(post.uri) &&
+      (ensurePublicBawaalVideoUrl(post.uri) || post.uri)) ||
+    null;
+  const playUri =
+    cloud ||
+    local ||
+    (typeof post.videoUri === 'string' && post.videoUri.trim()) ||
+    (typeof post.uri === 'string' && post.uri.trim()) ||
+    null;
+  if (!playUri) return null;
+  const ts = Number(post.timestamp || post.createdAt) || Date.now();
+  return {
+    ...post,
+    id: String(post.id || `local-${ts}`),
+    videoUri: playUri,
+    uri: playUri,
+    recordedVideoUri: playUri,
+    localVideoUri: local || (!isRemoteHttpsUri(playUri) ? playUri : null),
+    publicCloudUrl: cloud,
+    remoteVideoUri: cloud,
+    cloudUploaded: !!cloud,
+    timestamp: ts,
+    createdAt: ts,
+  };
+}
+
+export async function loadLocalArenaPosts() {
+  try {
+    const raw = await AsyncStorage.getItem(LOCAL_POSTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((p) => mapChallengeClipToFeedPost(p))
+      .filter(Boolean)
+      .slice(0, LOCAL_POSTS_MAX);
+  } catch (err) {
+    console.warn('[arenaPosts] local cache read failed:', err?.message || err);
+    return [];
+  }
+}
+
+export async function cacheLocalArenaPost(post) {
+  const mapped = mapChallengeClipToFeedPost(post);
+  if (!mapped) return { ok: false, reason: 'missing-video-uri' };
+  try {
+    const existing = await loadLocalArenaPosts();
+    const next = [
+      mapped,
+      ...existing.filter((p) => p.id !== mapped.id),
+    ].slice(0, LOCAL_POSTS_MAX);
+    await AsyncStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(next));
+    return { ok: true, post: mapped };
+  } catch (err) {
+    console.warn('[arenaPosts] local cache write failed:', err?.message || err);
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
 
 function videoIdentityKey(uri) {
   if (!uri || typeof uri !== 'string') return '';
@@ -334,10 +417,18 @@ export async function persistArenaPostToSupabase(post) {
     return { ok: true, skipped: true, reason: 'from-remote' };
   }
 
+  // Always mirror into device cache so Continue clips survive reload (file:// or https)
+  const deviceMapped = mapChallengeClipToFeedPost(post);
+  if (deviceMapped) {
+    void cacheLocalArenaPost(deviceMapped);
+  }
+
   const row = mapArenaPostToDbRow(post);
   if (!row) {
     // Soft skip — keep local file:// / uri on the feed card until Storage succeeds
     const localFallback =
+      deviceMapped?.localVideoUri ||
+      deviceMapped?.videoUri ||
       (typeof post?.localVideoUri === 'string' && post.localVideoUri.trim()) ||
       (typeof post?.videoUri === 'string' &&
       !/^https:\/\//i.test(post.videoUri) &&
@@ -358,6 +449,7 @@ export async function persistArenaPostToSupabase(post) {
       reason: 'missing-https-url',
       error: 'Missing public HTTPS video URL for database insert',
       localVideoUri: localFallback,
+      post: deviceMapped,
     };
   }
 

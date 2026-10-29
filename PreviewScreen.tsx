@@ -35,7 +35,8 @@ type PreviewScreenProps = {
   speedRate?: number;
   onSpeedChange?: (rate: number) => void;
   onRetake: () => void;
-  onContinue: () => void;
+  /** Continue must receive the recorded URI so Arena posts keep a playable videoUri. */
+  onContinue: (payload?: { videoUri: string; uri: string; localVideoUri: string }) => void;
   busy?: boolean;
   uploadPct?: number;
   error?: string | null;
@@ -150,7 +151,13 @@ export default function PreviewScreen({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.continueBtn}
-            onPress={onContinue}
+            onPress={() =>
+              onContinue({
+                videoUri: uri,
+                uri,
+                localVideoUri: uri,
+              })
+            }
             disabled={busy}
             activeOpacity={0.85}
           >

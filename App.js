@@ -33,11 +33,10 @@ if (isExpoGo) {
 const ROOT_BG = '#000000';
 
 /**
- * TEMP: force splash → Entry (landing / OTP onboarding) on every reload.
- * Ignores persisted sessionStore so we can test RoleSelection without clearing storage.
- * Set back to `false` before shipping.
+ * When true, always open Entry (onboarding) and ignore AsyncStorage session.
+ * Keep false so returning athletes restore Passport profile on reload.
  */
-const FORCE_ONBOARDING_ENTRY = true;
+const FORCE_ONBOARDING_ENTRY = false;
 
 const Stack = createNativeStackNavigator();
 const navTheme = {
@@ -113,9 +112,9 @@ function EntryScreen({ navigation }) {
 }
 
 export default function App() {
-  // Expo Go: skip JS splash so a hung session/FS read cannot freeze on "BAWAAL"
-  const [showSplash, setShowSplash] = useState(!isExpoGo);
-  const [bootReady, setBootReady] = useState(isExpoGo);
+  // Wait for AsyncStorage session restore before choosing Entry vs Main
+  const [showSplash, setShowSplash] = useState(true);
+  const [bootReady, setBootReady] = useState(false);
   const [initialRoute, setInitialRoute] = useState('Entry');
   const [bootError, setBootError] = useState(null);
 
@@ -138,18 +137,19 @@ export default function App() {
     (async () => {
       try {
         if (FORCE_ONBOARDING_ENTRY) {
-          // Always land on Entry so splash → RoleSelection / OTP is testable
           if (!cancelled) setInitialRoute('Entry');
         } else {
-          // File-system session read can hang in Expo Go — race a short timeout
-          const bootTimeoutMs = isExpoGo ? 600 : 3500;
+          // AsyncStorage session restore — short race so Expo Go never hangs
+          const bootTimeoutMs = isExpoGo ? 900 : 3500;
           const session = await Promise.race([
             getRegisteredSession(),
             new Promise((resolve) => setTimeout(() => resolve(null), bootTimeoutMs)),
           ]);
-          // Returning registered users skip onboarding → BAWAAL Arena (Main tabs)
           if (!cancelled && session?.registered) {
+            applyRegisteredProfile(session);
             setInitialRoute('Main');
+          } else if (!cancelled) {
+            setInitialRoute('Entry');
           }
         }
       } catch (err) {
@@ -159,8 +159,8 @@ export default function App() {
       }
     })();
 
-    // Hard failsafe: never stay on splash (especially under BAWAAL_EXPO_GO=1)
-    const failsafeMs = isExpoGo ? 900 : 5000;
+    // Hard failsafe: never stay on splash
+    const failsafeMs = isExpoGo ? 1200 : 5000;
     const failsafe = setTimeout(() => {
       dismissSplash();
     }, failsafeMs);

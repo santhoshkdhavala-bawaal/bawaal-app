@@ -17,7 +17,11 @@ import {
   ensurePublicBawaalVideoUrl,
   isRemoteHttpsUri,
 } from './src/services/uploadService';
-import { persistArenaPostToSupabase } from './src/services/arenaPostsService';
+import {
+  cacheLocalArenaPost,
+  mapChallengeClipToFeedPost,
+  persistArenaPostToSupabase,
+} from './src/services/arenaPostsService';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 
 export default function ChallengeScreen({ route, navigation }) {
@@ -150,16 +154,29 @@ export default function ChallengeScreen({ route, navigation }) {
         : { isBattle: true };
 
       // 1) Instant Arena hand-off — post.videoUri = recorded file:// (or https later)
-      const optimistic = buildArenaPost(localUri, meta, {
-        localVideoUri: localUri,
-        videoUri: localUri,
-        uri: localUri,
-        publicCloudUrl: null,
-        cloudUploaded: false,
-        _skipPersist: true,
-        ...battleIds,
-      });
+      const optimistic =
+        mapChallengeClipToFeedPost(
+          buildArenaPost(localUri, meta, {
+            localVideoUri: localUri,
+            videoUri: localUri,
+            uri: localUri,
+            publicCloudUrl: null,
+            cloudUploaded: false,
+            _skipPersist: true,
+            ...battleIds,
+          })
+        ) ||
+        buildArenaPost(localUri, meta, {
+          localVideoUri: localUri,
+          videoUri: localUri,
+          uri: localUri,
+          publicCloudUrl: null,
+          cloudUploaded: false,
+          _skipPersist: true,
+          ...battleIds,
+        });
       console.log('[ChallengeScreen] Arena hand-off videoUri ->', optimistic.videoUri);
+      void cacheLocalArenaPost(optimistic);
       pushArenaPost(optimistic);
       goArenaWithPost(optimistic);
 

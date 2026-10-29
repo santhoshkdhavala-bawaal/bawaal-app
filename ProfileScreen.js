@@ -375,7 +375,19 @@ export default function ProfileScreen({ navigation }) {
   );
 
   const applyGraph = useCallback((graph) => {
-    setMe(graph.me || CURRENT_USER);
+    // Merge AsyncStorage session fields onto Passport card (no layout change)
+    const base = graph.me || CURRENT_USER;
+    setMe({
+      ...base,
+      handle: CURRENT_USER.handle || base.handle,
+      username: CURRENT_USER.username || base.username,
+      displayName: CURRENT_USER.displayName || base.displayName,
+      primarySport: CURRENT_USER.primarySport || base.primarySport,
+      location: CURRENT_USER.location || base.location,
+      city: CURRENT_USER.city || base.city,
+      role: CURRENT_USER.role || base.role,
+      tags: CURRENT_USER.tags?.length ? CURRENT_USER.tags : base.tags,
+    });
     setFollowingList(graph.following?.length ? graph.following : FOLLOWING);
     setSuggestedList(graph.suggested?.length ? graph.suggested : SUGGESTED);
     setFollowedIds(new Set((graph.following || FOLLOWING).map((a) => a.id)));

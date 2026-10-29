@@ -294,42 +294,51 @@ export default function ChallengeCamRecorder({
     setBusy(false);
   }, []);
 
-  const handleContinue = useCallback(async () => {
-    if (!recordedUri || busy) return;
-    setBusy(true);
-    setUploadPct(0);
-    setError(null);
-    const elapsed = Math.max(
-      1,
-      elapsedSec || Math.round((Date.now() - startedAtRef.current) / 1000)
-    );
-    const meta = {
-      durationSec: Math.min(maxSec, elapsed),
-      facing,
-      flash: 'off',
-      speedRate,
-      videoQuality: VIDEO_QUALITY,
-      mimeType: 'video/mp4',
-      timestamp: Date.now(),
-      onUploadProgress: (pct) => setUploadPct(pct),
-    };
-    try {
-      await Promise.resolve(onContinue?.(recordedUri, meta));
-    } catch (err) {
-      setError(err?.message || 'Continue / upload failed');
-    } finally {
-      setBusy(false);
+  const handleContinue = useCallback(
+    async (payload) => {
+      const handoffUri =
+        (typeof payload?.videoUri === 'string' && payload.videoUri.trim()) ||
+        (typeof payload?.localVideoUri === 'string' && payload.localVideoUri.trim()) ||
+        recordedUri;
+      if (!handoffUri || busy) return;
+      setBusy(true);
       setUploadPct(0);
-    }
-  }, [
-    busy,
-    elapsedSec,
-    facing,
-    maxSec,
-    onContinue,
-    recordedUri,
-    speedRate,
-  ]);
+      setError(null);
+      const elapsed = Math.max(
+        1,
+        elapsedSec || Math.round((Date.now() - startedAtRef.current) / 1000)
+      );
+      const meta = {
+        durationSec: Math.min(maxSec, elapsed),
+        facing,
+        flash: 'off',
+        speedRate,
+        videoQuality: VIDEO_QUALITY,
+        mimeType: 'video/mp4',
+        timestamp: Date.now(),
+        localVideoUri: handoffUri,
+        videoUri: handoffUri,
+        onUploadProgress: (pct) => setUploadPct(pct),
+      };
+      try {
+        await Promise.resolve(onContinue?.(handoffUri, meta));
+      } catch (err) {
+        setError(err?.message || 'Continue / upload failed');
+      } finally {
+        setBusy(false);
+        setUploadPct(0);
+      }
+    },
+    [
+      busy,
+      elapsedSec,
+      facing,
+      maxSec,
+      onContinue,
+      recordedUri,
+      speedRate,
+    ]
+  );
 
   const requestPerms = useCallback(() => {
     void requestCamPerm();
