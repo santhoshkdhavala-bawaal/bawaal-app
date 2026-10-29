@@ -7,11 +7,14 @@ alwaysApply: true
 
 This is the **finalized visual baseline**. Do **not** alter these layout structures or re-introduce stripped UI. Further work builds on this state only.
 
-## 1. Camera (`UniversalCamera.tsx`)
+## 1. Camera (`UniversalCamera.tsx` + ChallengeCam)
 
-- **Keep:** Cancel, Flip, shutter only (plus existing duration/hub flows as already present).
-- **Keep:** Native pinch-to-zoom on the camera surface (works while recording).
-- **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
+- **Keep:** Cancel/Close, Flip, shutter only (plus existing duration/hub flows as already present on UniversalCamera).
+- **Keep:** Minimalist shutter — animated spinning dotted ring around a solid red center.
+- **Keep:** Native pinch-to-zoom on the UniversalCamera surface (works while recording).
+- **Speed / slow-mo:** preview-only (`PreviewScreen.tsx` / ClipPreviewModal) — never on the live lens.
+- **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, floating speed badges, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
+- Full contract: `.cursor/rules/bawaal-challengecam-locked.mdc`.
 
 ## 2. Arena header & sports ticker (`ArenaFeed.js` + `src/components/ScoresSportsPanel.js`)
 

@@ -1,11 +1,12 @@
 /**
- * ChallengeCam Step 1 — full-screen record → local preview → Re-take / Continue.
- * Uses expo-camera for capture and expo-av for preview playback.
- * (UniversalCamera remains the locked create-FAB surface — do not merge flash chrome there.)
+ * ChallengeCam live viewfinder — LOCKED.
+ * Top: Close + title only · Bottom: flip + spinning dotted shutter.
+ * Speed / slow-mo live exclusively on PreviewScreen (post-record).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
+  Easing,
   Platform,
   StatusBar,
   StyleSheet,
@@ -19,25 +20,18 @@ import {
   useCameraPermissions,
   useMicrophonePermissions,
 } from 'expo-camera';
-import { Audio, ResizeMode, Video } from 'expo-av';
+import { Audio } from 'expo-av';
 import BackLink from './src/components/BackLink';
 import { persistLocalVideoUri } from './src/services/uploadService';
+import PreviewScreen from './PreviewScreen';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ACCENT = '#3B82F6';
 const REC_RED = '#FF0033';
-const CONTINUE = '#FACC15';
 const MAX_DURATION_SEC = 60;
 const VIDEO_QUALITY = '720p';
-
-const FLASH_CYCLE = ['off', 'on', 'auto'];
-const SPEED_OPTIONS = [
-  { rate: 0.5, label: '0.5× SLOW' },
-  { rate: 1, label: '1× NORMAL' },
-  { rate: 2, label: '2× FAST' },
-];
+const DOT_COUNT = 28;
 
 function formatTimer(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -46,17 +40,77 @@ function formatTimer(seconds) {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
-function flashLabel(mode) {
-  const m = String(mode || 'off').toUpperCase();
-  if (m === 'ON') return 'FLASH ON';
-  if (m === 'AUTO') return 'FLASH AUTO';
-  return 'FLASH OFF';
+/** Animated spinning dotted ring around solid red shutter — matches UniversalCamera. */
+function DottedProgressRing({ progress, recording }) {
+  const [spin] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!recording) {
+      spin.stopAnimation();
+      spin.setValue(0);
+      return undefined;
+    }
+    spin.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1400,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [recording, spin]);
+
+  const rotate = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+  const lit = Math.round(Math.min(1, Math.max(0, progress)) * DOT_COUNT);
+
+  return (
+    <Animated.View
+      style={[ringStyles.ring, recording && { transform: [{ rotate }] }]}
+      pointerEvents="none"
+    >
+      {Array.from({ length: DOT_COUNT }).map((_, i) => {
+        const angle = (i / DOT_COUNT) * Math.PI * 2 - Math.PI / 2;
+        const r = 44;
+        const x = 48 + Math.cos(angle) * r - 3;
+        const y = 48 + Math.sin(angle) * r - 3;
+        const active = recording ? i <= lit : false;
+        return (
+          <View
+            key={`dot-${i}`}
+            style={[
+              ringStyles.dot,
+              {
+                left: x,
+                top: y,
+                backgroundColor: active ? '#FF0000' : 'rgba(255,0,0,0.35)',
+              },
+            ]}
+          />
+        );
+      })}
+    </Animated.View>
+  );
 }
 
-function speedLabel(rate) {
-  const hit = SPEED_OPTIONS.find((o) => o.rate === rate);
-  return hit?.label || '1× NORMAL';
-}
+const ringStyles = StyleSheet.create({
+  ring: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+  },
+  dot: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+});
 
 /**
  * @param {object} props
@@ -73,7 +127,6 @@ export default function ChallengeCamRecorder({
 }) {
   const insets = useSafeAreaInsets();
   const cameraRef = useRef(null);
-  const videoRef = useRef(null);
   const recordingLockRef = useRef(false);
   const stoppingRef = useRef(false);
   const timerRef = useRef(null);
@@ -83,7 +136,6 @@ export default function ChallengeCamRecorder({
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [micPerm, requestMicPerm] = useMicrophonePermissions();
   const [facing, setFacing] = useState('back');
-  const [flash, setFlash] = useState('off');
   const [speedRate, setSpeedRate] = useState(1);
   const [cameraReady, setCameraReady] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -99,15 +151,6 @@ export default function ChallengeCamRecorder({
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  }, []);
-
-  const unloadPreview = useCallback(async () => {
-    try {
-      await videoRef.current?.unloadAsync?.();
-    } catch {
-      /* ignore */
-    }
-    videoRef.current = null;
   }, []);
 
   const stopNativeRecording = useCallback(async () => {
@@ -129,21 +172,19 @@ export default function ChallengeCamRecorder({
     if (isRecording) {
       await stopNativeRecording();
     }
-    await unloadPreview();
-  }, [clearTimer, isRecording, stopNativeRecording, unloadPreview]);
+  }, [clearTimer, isRecording, stopNativeRecording]);
 
   useEffect(() => {
     const camera = cameraRef.current;
     return () => {
       clearTimer();
-      void unloadPreview();
       try {
         camera?.stopRecording?.();
       } catch {
         /* ignore */
       }
     };
-  }, [clearTimer, unloadPreview]);
+  }, [clearTimer]);
 
   useEffect(() => {
     void Audio.setAudioModeAsync({
@@ -156,41 +197,9 @@ export default function ChallengeCamRecorder({
     await cleanupSession();
     setRecordedUri(null);
     setPhase('camera');
+    setSpeedRate(1);
     onClose?.();
   }, [cleanupSession, onClose]);
-
-  const cycleFlash = useCallback(() => {
-    if (isRecording || phase !== 'camera') return;
-    setFlash((prev) => {
-      const i = FLASH_CYCLE.indexOf(prev);
-      return FLASH_CYCLE[(i + 1) % FLASH_CYCLE.length];
-    });
-  }, [isRecording, phase]);
-
-  const cycleSpeed = useCallback(() => {
-    if (isRecording) return;
-    setSpeedRate((prev) => {
-      const i = SPEED_OPTIONS.findIndex((o) => o.rate === prev);
-      const next = SPEED_OPTIONS[(i + 1) % SPEED_OPTIONS.length];
-      return next.rate;
-    });
-  }, [isRecording]);
-
-  const applyPreviewRate = useCallback(
-    async (rate) => {
-      try {
-        await videoRef.current?.setRateAsync?.(rate, true);
-      } catch (err) {
-        console.warn('[ChallengeCamRecorder] setRate failed:', err?.message || err);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (phase !== 'preview' || !recordedUri) return;
-    void applyPreviewRate(speedRate);
-  }, [applyPreviewRate, phase, recordedUri, speedRate]);
 
   const flipCamera = useCallback(() => {
     if (isRecording || phase !== 'camera') return;
@@ -206,7 +215,6 @@ export default function ChallengeCamRecorder({
       const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
       setElapsedSec(elapsed);
       if (elapsed >= maxSec) {
-        clearTimer();
         void stopNativeRecording();
       }
     }, 250);
@@ -214,9 +222,9 @@ export default function ChallengeCamRecorder({
 
   const beginRecording = useCallback(async () => {
     if (
-      recordingLockRef.current ||
-      isRecording ||
       phase !== 'camera' ||
+      isRecording ||
+      recordingLockRef.current ||
       !cameraReady ||
       !cameraRef.current?.recordAsync
     ) {
@@ -247,6 +255,7 @@ export default function ChallengeCamRecorder({
         stable = uri;
       }
       setRecordedUri(stable);
+      setSpeedRate(1);
       setPhase('preview');
     } catch (err) {
       clearTimer();
@@ -277,13 +286,13 @@ export default function ChallengeCamRecorder({
 
   const handleRetake = useCallback(async () => {
     setBusy(true);
-    await unloadPreview();
     setRecordedUri(null);
     setElapsedSec(0);
     setError(null);
+    setSpeedRate(1);
     setPhase('camera');
     setBusy(false);
-  }, [unloadPreview]);
+  }, []);
 
   const handleContinue = useCallback(async () => {
     if (!recordedUri || busy) return;
@@ -297,7 +306,7 @@ export default function ChallengeCamRecorder({
     const meta = {
       durationSec: Math.min(maxSec, elapsed),
       facing,
-      flash,
+      flash: 'off',
       speedRate,
       videoQuality: VIDEO_QUALITY,
       mimeType: 'video/mp4',
@@ -305,12 +314,10 @@ export default function ChallengeCamRecorder({
       onUploadProgress: (pct) => setUploadPct(pct),
     };
     try {
-      // Keep preview mounted while parent uploads — unload after handoff returns
       await Promise.resolve(onContinue?.(recordedUri, meta));
     } catch (err) {
       setError(err?.message || 'Continue / upload failed');
     } finally {
-      await unloadPreview();
       setBusy(false);
       setUploadPct(0);
     }
@@ -318,123 +325,53 @@ export default function ChallengeCamRecorder({
     busy,
     elapsedSec,
     facing,
-    flash,
     maxSec,
     onContinue,
     recordedUri,
     speedRate,
-    unloadPreview,
   ]);
 
-  const requestPerms = async () => {
-    try {
-      if (!camPerm?.granted) await requestCamPerm();
-      if (!micPerm?.granted) await requestMicPerm();
-    } catch (err) {
-      setError(err?.message || 'Permission request failed');
-    }
-  };
+  const requestPerms = useCallback(() => {
+    void requestCamPerm();
+    void requestMicPerm();
+  }, [requestCamPerm, requestMicPerm]);
 
-  if (!camPerm || !micPerm) {
+  const topPad = Math.max(insets.top, 12);
+  const bottomPad = Math.max(insets.bottom, 16) + 12;
+  const progress =
+    isRecording && maxSec > 0 ? Math.min(1, elapsedSec / maxSec) : 0;
+
+  if (!camPerm?.granted || !micPerm?.granted) {
     return (
       <View style={styles.root}>
         <StatusBar barStyle="light-content" backgroundColor={BG} />
-        <ActivityIndicator color={WHITE} size="large" />
-        <Text style={styles.hint}>Checking camera & microphone…</Text>
-      </View>
-    );
-  }
-
-  if (!camPerm.granted || !micPerm.granted) {
-    return (
-      <View style={[styles.root, { paddingTop: insets.top + 24 }]}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
-        <Text style={styles.permTitle}>Camera & mic required</Text>
+        <Text style={styles.permTitle}>Camera & mic needed</Text>
         <Text style={styles.hint}>
           Grant lens + microphone to record your battle response.
         </Text>
-        <TouchableOpacity style={styles.primaryBtn} onPress={requestPerms} activeOpacity={0.85}>
-          <Text style={styles.primaryBtnText}>GRANT PERMISSIONS</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={requestPerms}>
+          <Text style={styles.primaryBtnText}>GRANT ACCESS</Text>
         </TouchableOpacity>
-        <BackLink label="Back" onPress={handleClose} style={{ marginTop: 20 }} />
+        <TouchableOpacity onPress={handleClose} style={{ marginTop: 16 }}>
+          <Text style={styles.hint}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const torchOn = flash === 'on' && facing === 'back';
-  const topPad = Math.max(insets.top, 12);
-  const bottomPad = Math.max(insets.bottom, 16) + 12;
-
   if (phase === 'preview' && recordedUri) {
     return (
-      <View style={styles.root}>
-        <StatusBar barStyle="light-content" backgroundColor={BG} />
-        <Video
-          ref={videoRef}
-          style={StyleSheet.absoluteFill}
-          source={{ uri: recordedUri }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay
-          isLooping
-          rate={speedRate}
-          shouldCorrectPitch
-          useNativeControls={false}
-          onLoad={() => {
-            void applyPreviewRate(speedRate);
-          }}
-          onError={(e) => {
-            console.warn('[ChallengeCamRecorder] preview error', e);
-            setError('Preview playback failed');
-          }}
-        />
-        <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
-          <BackLink label="Back" onPress={busy ? () => {} : handleClose} />
-          <View style={styles.topCenter}>
-            <Text style={styles.topTitle}>PREVIEW</Text>
-            <Text style={styles.topSub}>{speedLabel(speedRate)}</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.chipBtn, styles.speedChip]}
-            onPress={cycleSpeed}
-            disabled={busy}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.chipBtnText, styles.speedChipText]}>SPEED</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={[styles.previewFooter, { paddingBottom: bottomPad }]}>
-          {busy ? (
-            <Text style={styles.uploadHint}>
-              {uploadPct > 0
-                ? `UPLOADING TO CLOUD · ${Math.round(uploadPct)}%`
-                : 'PREPARING UPLOAD…'}
-            </Text>
-          ) : null}
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-          <View style={styles.previewActions}>
-            <TouchableOpacity
-              style={styles.retakeBtn}
-              onPress={handleRetake}
-              disabled={busy}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.retakeBtnText}>RE-TAKE</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.continueBtn}
-              onPress={handleContinue}
-              disabled={busy}
-              activeOpacity={0.85}
-            >
-              {busy ? (
-                <ActivityIndicator color={BG} />
-              ) : (
-                <Text style={styles.continueBtnText}>CONTINUE</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+      <PreviewScreen
+        uri={recordedUri}
+        speedRate={speedRate}
+        onSpeedChange={setSpeedRate}
+        onRetake={handleRetake}
+        onContinue={handleContinue}
+        busy={busy}
+        uploadPct={uploadPct}
+        error={error}
+        title="PREVIEW"
+      />
     );
   }
 
@@ -446,8 +383,8 @@ export default function ChallengeCamRecorder({
         style={StyleSheet.absoluteFill}
         facing={facing}
         mode="video"
-        flash={flash}
-        enableTorch={torchOn}
+        flash="off"
+        enableTorch={false}
         mute={false}
         mirror={facing === 'front'}
         videoQuality={VIDEO_QUALITY}
@@ -466,54 +403,23 @@ export default function ChallengeCamRecorder({
         }}
       />
 
+      {/* LOCKED top chrome — Close + title only */}
       <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
-        <BackLink label="Close" onPress={handleClose} />
+        <BackLink label="Close" onPress={busy ? () => {} : handleClose} />
         <View style={styles.topCenter}>
           <Text style={styles.topTitle}>CHALLENGE CAM</Text>
           <Text style={styles.topSub} numberOfLines={1}>
             {challengeLabel}
           </Text>
         </View>
-        <View style={styles.topRight}>
-          <TouchableOpacity
-            style={styles.chipBtn}
-            onPress={cycleFlash}
-            disabled={isRecording}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.chipBtnText}>{flashLabel(flash)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.chipBtn, styles.speedChip]}
-            onPress={cycleSpeed}
-            disabled={isRecording}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.chipBtnText, styles.speedChipText]}>
-              {speedLabel(speedRate)}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.chipBtn}
-            onPress={flipCamera}
-            disabled={isRecording}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.chipBtnText}>FLIP</Text>
-          </TouchableOpacity>
-        </View>
+        <View style={styles.topSpacer} />
       </View>
 
       {isRecording ? (
         <View style={styles.timerPill} pointerEvents="none">
-          <View style={styles.recPulse}>
-            <View style={styles.recDot} />
-          </View>
-          <View>
-            <Text style={styles.recLiveLabel}>REC</Text>
-            <Text style={styles.timerText}>{formatTimer(elapsedSec)}</Text>
-          </View>
-          <Text style={styles.recSpeedTag}>{speedLabel(speedRate)}</Text>
+          <View style={styles.recDot} />
+          <Text style={styles.recLiveLabel}>REC</Text>
+          <Text style={styles.timerText}>{formatTimer(elapsedSec)}</Text>
         </View>
       ) : null}
 
@@ -523,22 +429,38 @@ export default function ChallengeCamRecorder({
         </View>
       ) : null}
 
+      {/* LOCKED bottom — Flip + dotted spinning shutter */}
       <View style={[styles.bottomBar, { paddingBottom: bottomPad }]}>
         {!cameraReady && !error ? (
           <Text style={styles.hint}>Starting lens…</Text>
         ) : null}
-        <TouchableOpacity
-          style={styles.shutterHit}
-          onPress={toggleRecord}
-          disabled={!cameraReady && !isRecording}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
-        >
-          <View style={[styles.shutterRing, isRecording && styles.shutterRingLive]}>
-            <View style={[styles.shutterCore, isRecording && styles.shutterCoreLive]} />
-          </View>
-        </TouchableOpacity>
+        <View style={styles.bottomRow}>
+          <TouchableOpacity
+            style={styles.flipBtn}
+            onPress={flipCamera}
+            disabled={isRecording}
+            activeOpacity={0.8}
+            accessibilityLabel="Flip camera"
+          >
+            <Text style={styles.flipBtnText}>FLIP</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.shutterWrap}
+            onPress={toggleRecord}
+            disabled={!cameraReady && !isRecording}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
+          >
+            <DottedProgressRing progress={progress} recording={isRecording} />
+            <View
+              style={[styles.shutterCore, isRecording && styles.shutterCoreLive]}
+            />
+          </TouchableOpacity>
+
+          <View style={styles.flipBtnPlaceholder} />
+        </View>
         <Text style={styles.shutterHint}>
           {isRecording ? 'TAP TO STOP' : `TAP TO RECORD · MAX ${maxSec}s`}
         </Text>
@@ -583,33 +505,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,
-    maxWidth: 160,
+    maxWidth: 180,
   },
-  topRight: {
-    alignItems: 'flex-end',
-    gap: 8,
-    minWidth: 96,
-  },
-  chipBtn: {
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    backgroundColor: 'rgba(59,130,246,0.16)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  chipBtnText: {
-    color: ACCENT,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.6,
-  },
-  speedChip: {
-    borderColor: CONTINUE,
-    backgroundColor: 'rgba(250,204,21,0.14)',
-  },
-  speedChipText: {
-    color: CONTINUE,
+  topSpacer: {
+    minWidth: 72,
   },
   timerPill: {
     position: 'absolute',
@@ -617,23 +516,12 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: 'rgba(0,0,0,0.82)',
-    borderWidth: 1.5,
-    borderColor: REC_RED,
+    gap: 10,
+    backgroundColor: 'rgba(0,0,0,0.72)',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 10,
     zIndex: 15,
-  },
-  recPulse: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255,0,51,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   recDot: {
     width: 10,
@@ -649,24 +537,10 @@ const styles = StyleSheet.create({
   },
   timerText: {
     color: WHITE,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
-  },
-  recSpeedTag: {
-    color: CONTINUE,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  uploadHint: {
-    color: CONTINUE,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textAlign: 'center',
-    marginBottom: 10,
   },
   bottomBar: {
     position: 'absolute',
@@ -678,21 +552,36 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     zIndex: 20,
   },
-  shutterHit: {
-    padding: 8,
+  bottomRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
   },
-  shutterRing: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    borderWidth: 4,
-    borderColor: REC_RED,
+  flipBtn: {
+    minWidth: 64,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  flipBtnPlaceholder: {
+    minWidth: 64,
+  },
+  flipBtnText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  shutterWrap: {
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  shutterRingLive: {
-    borderColor: WHITE,
   },
   shutterCore: {
     width: 58,
@@ -704,7 +593,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 6,
-    backgroundColor: REC_RED,
   },
   shutterHint: {
     color: MUTED,
@@ -713,52 +601,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginTop: 10,
   },
-  previewFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
-  previewActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  retakeBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: ACCENT,
-    backgroundColor: 'rgba(59,130,246,0.14)',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  retakeBtnText: {
-    color: ACCENT,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-  continueBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: CONTINUE,
-    backgroundColor: CONTINUE,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  continueBtnText: {
-    color: BG,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
   primaryBtn: {
     marginTop: 20,
-    backgroundColor: ACCENT,
+    backgroundColor: '#3B82F6',
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 14,

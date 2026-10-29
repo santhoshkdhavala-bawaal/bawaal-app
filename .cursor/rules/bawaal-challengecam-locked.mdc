@@ -1,0 +1,47 @@
+---
+description: Locked ChallengeCam + UniversalCamera live viewfinder — no speed/flash chrome on camera
+alwaysApply: true
+---
+
+# BAWAAL ChallengeCam / UniversalCamera (LOCKED)
+
+The **live camera viewfinder** and its interaction model are **production-final**. Do **not** restyle, reorder, or re-clutter these surfaces unless the user explicitly unlocks this rule.
+
+## Locked files
+
+- `UniversalCamera.tsx` (+ `components/UniversalCamera.tsx` re-export) — create FAB / SPARKS / JOSH / BATTLE hub camera
+- `ChallengeCamRecorder.js` — Arena / Battles RESPOND ChallengeCam live view
+- `PreviewScreen.tsx` — ChallengeCam **post-record** preview (speed / slow-mo only here)
+
+## Live viewfinder contract (camera phase)
+
+**Keep only:**
+- Dark full-bleed viewfinder
+- Top: Close / Cancel + clean title (mode or CHALLENGE CAM + challenge label)
+- Bottom: Flip + **minimalist shutter** with **animated spinning dotted ring** around a **solid red center** (square/stop while recording)
+- Native pinch-to-zoom on UniversalCamera (works while recording)
+- Existing duration pill / BAWAAL Hub flows on UniversalCamera only (already shipped)
+
+**Never re-add on the live camera:**
+- Floating speed badges / speed chips / SPEED cycle buttons
+- Slow-mo capture overlays or rails
+- Flash toggle / torch chrome
+- Zoom preset pills (1× / 2× / 3×)
+- Extra text overlays, cluttered control clusters, or decorative badges
+
+## Preview-only speed
+
+- Speed options (**1× Normal**, **Slow-Mo**, Fast, etc.) live **exclusively** on `PreviewScreen.tsx` (ChallengeCam) or UniversalCamera’s post-record `ClipPreviewModal`.
+- Do not move playback-rate / slow-mo controls onto the active lens.
+
+## App wiring
+
+- Stack `ChallengeCam` → `ChallengeScreen` → `ChallengeCamRecorder`
+- Stack `UniversalCamera` / `Challenge` → `UniversalCamera`
+- Do not merge flash/speed chrome from ChallengeCam into UniversalCamera (or the reverse)
+
+## Allowed elsewhere
+
+- Upload, persist, Arena feed playback, and non-UI logic behind these screens
+- Critical crash/security fixes that must touch them: ask the user first and preserve this visual contract
+---

@@ -38,6 +38,10 @@ Docs: https://docs.expo.dev/eas/index.md
 
 Camera (minimal shutter/cancel/flip + pinch zoom), Arena B&W sports ticker, clean feed surfaces (no category pills), and the spaced bottom tab bar are **finalized**. Do not re-introduce removed chrome or reshape those layouts. See `.cursor/rules/bawaal-ui-baseline.mdc`.
 
+## ChallengeCam / UniversalCamera (locked)
+
+Live viewfinder is **untouchable** — Close/Cancel + title, Flip, spinning dotted red shutter only; **no** floating speed/flash/zoom chrome on the lens. Speed / slow-mo stay on `PreviewScreen.tsx` (ChallengeCam) or post-record ClipPreviewModal (UniversalCamera). See `.cursor/rules/bawaal-challengecam-locked.mdc`.
+
 ## Onboarding stack (locked)
 
 Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaimers, and worldwide location→flag resolution (`src/utils/locationFlag.js`, `src/data/worldCountries.js`) are **production-final and untouchable**. Do not restyle, reorder fields, change sport pills, or rebuild a parallel LandingScreen. See `.cursor/rules/bawaal-onboarding-locked.mdc`.

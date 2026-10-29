@@ -1,7 +1,9 @@
 /**
  * UniversalCamera — LOCKED minimal BAWAAL creation engine.
- * Cancel · flip · shutter · native pinch-to-zoom (works while recording).
- * Do NOT re-add zoom presets, flash, or slow-mo overlays (see bawaal-ui-baseline).
+ * Cancel · Flip · dotted spinning shutter · native pinch-to-zoom (works while recording).
+ * Do NOT re-add zoom presets, flash, floating speed badges, or slow-mo overlays on the live lens.
+ * Speed / slow-mo live only on post-record ClipPreviewModal.
+ * See `.cursor/rules/bawaal-challengecam-locked.mdc` + `bawaal-ui-baseline`.
  */
 import React, {
   useCallback,
