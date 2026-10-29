@@ -58,16 +58,32 @@ export default function ChallengeScreen({ route, navigation }) {
       const timestamp = meta.timestamp || Date.now();
       const localUri = extras.localVideoUri || meta.localVideoUri || uri;
       const cloudUri = extras.publicCloudUrl || meta.publicCloudUrl || null;
+      // Playback URI for Arena battle cards — always a concrete string
       const playUri = cloudUri || localUri || uri;
+      const challengeSeed =
+        extras.challengeVideoUri ||
+        meta.challengeVideoUri ||
+        reel?.videoUri ||
+        reel?.challengeVideoUri ||
+        route?.params?.reel?.videoUri ||
+        null;
+      const finalVideoUri = extras.videoUri || playUri;
+      const finalLocalUri = extras.localVideoUri || localUri;
       return {
-        id: `local-${timestamp}`,
+        id: extras.id || `local-${timestamp}`,
         type: 'battle_thread',
-        uri: playUri,
-        videoUri: playUri,
-        recordedVideoUri: playUri,
-        localVideoUri: localUri,
-        publicCloudUrl: cloudUri,
-        remoteVideoUri: cloudUri,
+        uri: extras.uri || finalVideoUri,
+        videoUri: finalVideoUri,
+        recordedVideoUri: extras.recordedVideoUri || finalVideoUri,
+        localVideoUri: finalLocalUri,
+        publicCloudUrl: extras.publicCloudUrl !== undefined ? extras.publicCloudUrl : cloudUri,
+        remoteVideoUri: extras.remoteVideoUri !== undefined ? extras.remoteVideoUri : cloudUri,
+        // Opponent seed clip (left pane); athlete response is videoUri (right pane)
+        challengeVideoUri:
+          extras.challengeVideoUri !== undefined
+            ? extras.challengeVideoUri
+            : challengeSeed,
+        isBattleResponse: true,
         speedRate: meta.speedRate ?? 1,
         target:
           meta.target ||
@@ -97,75 +113,95 @@ export default function ChallengeScreen({ route, navigation }) {
         category: reel?.category || route?.params?.sport || 'GYM',
         sport: reel?.category || route?.params?.sport || meta.category || 'GYM',
         challengeOf: reel?.creator || route?.params?.handle || 'Challenger',
-        cloudUploaded: !!cloudUri,
+        cloudUploaded:
+          extras.cloudUploaded !== undefined
+            ? extras.cloudUploaded
+            : !!cloudUri,
         _freshPublish: true,
-        ...extras,
+        _skipPersist: extras._skipPersist,
+        challengeId: extras.challengeId,
+        battleId: extras.battleId,
+        isBattle: extras.isBattle,
       };
     },
-    [reel, route?.params?.handle, route?.params?.sport, route?.params?.target]
+    [reel, route?.params?.handle, route?.params?.reel?.videoUri, route?.params?.sport, route?.params?.target]
   );
 
   /**
-   * Continue → async Storage upload → https URL → persistArenaPostToSupabase.
-   * Offline / upload miss → still prepend local file:// so feed is not a black card.
+   * Continue → hand recorded URI into Arena immediately, then cloud upload in background.
    */
   const handleContinue = useCallback(
     async (uri, meta = {}) => {
       const challengeId =
         route?.params?.battleId || reel?.battleId || reel?.id || undefined;
-      const localUri = uri;
+      const localUri = typeof uri === 'string' && uri.trim() ? uri.trim() : null;
+      if (!localUri) {
+        console.warn('[ChallengeScreen] Continue with empty video URI');
+        setStatusNote('Recording missing — retake the clip');
+        return;
+      }
       const onProgress =
         typeof meta.onUploadProgress === 'function'
           ? meta.onUploadProgress
           : undefined;
 
-      setStatusNote('Uploading clip…');
+      const battleIds = challengeId
+        ? { challengeId, battleId: challengeId }
+        : { isBattle: true };
 
-      // 1) Optimistic local feed (skip DB until we have https)
+      // 1) Instant Arena hand-off — post.videoUri = recorded file:// (or https later)
       const optimistic = buildArenaPost(localUri, meta, {
         localVideoUri: localUri,
+        videoUri: localUri,
+        uri: localUri,
         publicCloudUrl: null,
         cloudUploaded: false,
         _skipPersist: true,
-        ...(challengeId
-          ? { challengeId, battleId: challengeId }
-          : { isBattle: true }),
+        ...battleIds,
       });
+      console.log('[ChallengeScreen] Arena hand-off videoUri ->', optimistic.videoUri);
       pushArenaPost(optimistic);
+      goArenaWithPost(optimistic);
 
-      // 2) Upload local file:// → public https://…/bawaalvideos/…
-      let publicUrl = null;
-      let lockedLocal = localUri;
-      try {
-        const uploaded = await uploadLockedClip(localUri, {
-          fileName: makeBawaalClipFileName(),
-          onProgress,
-          onError: (msg) => {
-            console.warn('[ChallengeScreen] upload error:', msg);
-            setStatusNote(String(msg || 'Upload failed — using local clip'));
-          },
-        });
-        lockedLocal = uploaded.localUri || localUri;
-        if (uploaded.ok && uploaded.publicUrl && isRemoteHttpsUri(uploaded.publicUrl)) {
-          publicUrl =
-            ensurePublicBawaalVideoUrl(uploaded.publicUrl) || uploaded.publicUrl;
+      // 2) Background: Storage upload → https → refresh feed + persist
+      setStatusNote(null);
+      void (async () => {
+        let publicUrl = null;
+        let lockedLocal = localUri;
+        try {
+          const uploaded = await uploadLockedClip(localUri, {
+            fileName: makeBawaalClipFileName(),
+            onProgress,
+            onError: (msg) => {
+              console.warn('[ChallengeScreen] upload error:', msg);
+            },
+          });
+          lockedLocal = uploaded.localUri || localUri;
+          if (
+            uploaded.ok &&
+            uploaded.publicUrl &&
+            isRemoteHttpsUri(uploaded.publicUrl)
+          ) {
+            publicUrl =
+              ensurePublicBawaalVideoUrl(uploaded.publicUrl) ||
+              uploaded.publicUrl;
+          }
+        } catch (err) {
+          console.warn('[ChallengeScreen] upload threw:', err?.message || err);
         }
-      } catch (err) {
-        console.warn('[ChallengeScreen] upload threw:', err?.message || err);
-        setStatusNote('Upload pending — showing local recording');
-      }
 
-      // 3) Persist only with verified https URL
-      if (publicUrl) {
+        if (!publicUrl) return;
+
         const cloudPost = buildArenaPost(publicUrl, meta, {
+          id: optimistic.id,
           localVideoUri: lockedLocal,
+          videoUri: publicUrl,
+          uri: publicUrl,
           publicCloudUrl: publicUrl,
           remoteVideoUri: publicUrl,
           cloudUploaded: true,
           _skipPersist: true,
-          ...(challengeId
-            ? { challengeId, battleId: challengeId }
-            : { isBattle: true }),
+          ...battleIds,
         });
 
         try {
@@ -173,8 +209,6 @@ export default function ChallengeScreen({ route, navigation }) {
             (await pushArenaPostAndPersist(cloudPost)) ||
             pushArenaPost({ ...cloudPost, _skipPersist: true }) ||
             cloudPost;
-
-          // Explicit persist call with https video_url (guards missing-https skip)
           const persistRes = await persistArenaPostToSupabase({
             ...card,
             videoUri: publicUrl,
@@ -189,44 +223,17 @@ export default function ChallengeScreen({ route, navigation }) {
               persistRes?.error || persistRes?.reason
             );
           }
-
-          // Legacy battle response row (soft)
           postBattleResponseToSupabase(publicUrl, {
             battleId: challengeId,
           }).catch(() => {});
-
-          setStatusNote(null);
-          goArenaWithPost({
-            ...card,
-            videoUri: publicUrl,
-            uri: publicUrl,
-            publicCloudUrl: publicUrl,
-            localVideoUri: lockedLocal,
-            cloudUploaded: true,
-            _freshPublish: true,
-          });
-          return;
         } catch (err) {
           console.warn(
             '[ChallengeScreen] cloud publish threw:',
             err?.message || err
           );
+          pushArenaPost({ ...cloudPost, _skipPersist: true });
         }
-      }
-
-      // 4) Graceful local fallback — feed plays file:// immediately
-      const localPost = buildArenaPost(lockedLocal, meta, {
-        localVideoUri: lockedLocal,
-        publicCloudUrl: null,
-        cloudUploaded: false,
-        _skipPersist: true,
-        ...(challengeId
-          ? { challengeId, battleId: challengeId }
-          : { isBattle: true }),
-      });
-      pushArenaPost(localPost);
-      setStatusNote(null);
-      goArenaWithPost(localPost);
+      })();
     },
     [
       buildArenaPost,

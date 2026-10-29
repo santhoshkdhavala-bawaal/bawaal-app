@@ -166,7 +166,7 @@ function ArenaClipPlayer({
       <Video
         ref={videoRef}
         style={styles.video}
-        source={{ uri: resolved }}
+        source={{ uri: resolved || source?.videoUri || source?.uri }}
         resizeMode={ResizeMode?.COVER || 'cover'}
         shouldPlay={!!autoPlay && !paused && active}
         isLooping={!!loop}

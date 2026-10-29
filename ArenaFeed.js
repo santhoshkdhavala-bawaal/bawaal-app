@@ -402,16 +402,23 @@ function mapPostToResponse(post) {
     post?.videoUri ||
     post?.video_url ||
     post?.uri ||
+    post?.recordedVideoUri ||
     post?.localVideoUri ||
     null;
   const creator =
     post.creator === 'You' || post.creator === 'YOU' ? 'You' : post.creator || 'You';
+  const localVideoUri =
+    (typeof post.localVideoUri === 'string' && post.localVideoUri.trim()) ||
+    (uri && String(uri).startsWith('file://') ? uri : null);
   return {
     id: post.id || `resp-${Date.now()}`,
     creator,
     videoUri: uri,
     uri,
-    localVideoUri: post.localVideoUri || (uri?.startsWith?.('file://') ? uri : null),
+    video_url: post.video_url || null,
+    recordedVideoUri: post.recordedVideoUri || uri,
+    localVideoUri,
+    publicCloudUrl: post.publicCloudUrl || null,
     // Fresh posts from the device sit at #1 until real votes sync
     votes: post.votes ?? (creator === 'You' ? 10_000 : 1),
     createdAt: post.timestamp || post.createdAt || Date.now(),
@@ -466,8 +473,22 @@ function ingestArenaPost(prev, post) {
     if (!thread.challengeVideoUri && post.challengeVideoUri) {
       thread.challengeVideoUri = post.challengeVideoUri;
     }
-    if (response.localVideoUri && !thread.localVideoUri) {
+    // Keep thread.videoUri = latest athlete response so battle cards always have a playable URI
+    const responseUri =
+      response.videoUri || response.uri || response.localVideoUri || null;
+    if (responseUri) {
+      thread.videoUri = responseUri;
+      thread.uri = responseUri;
+    }
+    if (response.localVideoUri) {
       thread.localVideoUri = response.localVideoUri;
+    }
+    if (post.publicCloudUrl) {
+      thread.publicCloudUrl = post.publicCloudUrl;
+    }
+    if (post._freshPublish) {
+      thread._freshPublish = true;
+      thread.createdAt = Date.now();
     }
     next.splice(idx, 1);
     return [thread, ...next];
@@ -475,6 +496,8 @@ function ingestArenaPost(prev, post) {
 
   const responses = [response, ...buildDemoResponses(challengeId).slice(0, 9)];
   const leader = sortResponses(responses, 'top')[0];
+  const responseUri =
+    response.videoUri || response.uri || response.localVideoUri || null;
   const thread = {
     id: challengeId,
     challengeId,
@@ -490,10 +513,13 @@ function ingestArenaPost(prev, post) {
       : 'YOU',
     target: post.target || 'OPEN CHALLENGE',
     status: 'LIVE BATTLE',
+    // Left pane = challenge seed; right pane = athlete response (ChallengeCam URI)
     challengeVideoUri: post.challengeVideoUri || null,
-    videoUri: response.videoUri || null,
-    uri: response.uri || response.videoUri || null,
+    videoUri: responseUri,
+    uri: responseUri,
     localVideoUri: response.localVideoUri || post.localVideoUri || null,
+    publicCloudUrl: post.publicCloudUrl || null,
+    _freshPublish: !!post._freshPublish,
     responses,
     createdAt: Date.now(),
   };
@@ -736,10 +762,28 @@ const BattleCard = memo(function BattleCard({
   onRespond,
   active = true,
 }) {
+  const [muted, setMuted] = useState(true);
   const responses = sortResponses(item.responses, 'top');
   const leader = responses[0];
   const responseCount = responses.length;
-  const leaderUri = leader?.videoUri || null;
+  // ChallengeCam Continue → post.videoUri / leader response URI
+  const responseUri =
+    leader?.videoUri ||
+    leader?.uri ||
+    leader?.localVideoUri ||
+    item.videoUri ||
+    item.uri ||
+    item.localVideoUri ||
+    null;
+  const challengeUri =
+    item.challengeVideoUri &&
+    item.challengeVideoUri !== responseUri
+      ? item.challengeVideoUri
+      : null;
+
+  const toggleMute = useCallback(() => {
+    setMuted((m) => !m);
+  }, []);
 
   return (
     <View style={styles.feedCard}>
@@ -759,14 +803,21 @@ const BattleCard = memo(function BattleCard({
       <View style={styles.splitRow}>
         <View style={styles.splitPane}>
           <ClipSurface
-            uri={item.challengeVideoUri || item.videoUri}
+            uri={challengeUri || responseUri}
             source={{
-              videoUri: item.challengeVideoUri || item.videoUri,
-              localVideoUri: item.localVideoUri,
-              uri: item.challengeVideoUri || item.uri,
+              uri: challengeUri || responseUri,
+              videoUri: challengeUri || responseUri,
+              localVideoUri: challengeUri ? null : item.localVideoUri,
             }}
-            label={item.opponent || 'CHALLENGE'}
+            label={
+              challengeUri
+                ? item.opponent || 'CHALLENGE'
+                : leader?.creator === 'You'
+                  ? 'YOU'
+                  : item.opponent || 'CLIP'
+            }
             style={styles.splitClip}
+            muted={muted}
             active={active}
           />
         </View>
@@ -775,28 +826,32 @@ const BattleCard = memo(function BattleCard({
         </View>
         <View style={styles.splitPane}>
           <ClipSurface
-            uri={leaderUri || leader?.localVideoUri}
-            source={
-              leader
-                ? {
-                    videoUri: leader.videoUri,
-                    video_url: leader.video_url,
-                    uri: leader.uri,
-                    localVideoUri: leader.localVideoUri,
-                  }
-                : null
-            }
+            uri={responseUri}
+            source={{
+              uri: responseUri,
+              videoUri: responseUri,
+              video_url: leader?.video_url,
+              localVideoUri: leader?.localVideoUri || item.localVideoUri,
+              recordedVideoUri: leader?.recordedVideoUri,
+              publicCloudUrl: leader?.publicCloudUrl || item.publicCloudUrl,
+            }}
             label={
               leader
                 ? leader.creator === 'You'
                   ? 'YOU'
                   : `@${leader.creator}`
-                : 'LEADER'
+                : 'YOU'
             }
             active={active}
+            muted={muted}
             style={styles.splitClip}
           />
         </View>
+        <MuteToggleButton
+          muted={muted}
+          onPress={toggleMute}
+          style={styles.battleMuteBtn}
+        />
       </View>
 
       <TouchableOpacity
@@ -1452,6 +1507,12 @@ const styles = StyleSheet.create({
     right: 14,
     zIndex: 14,
   },
+  battleMuteBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 14,
+  },
   reelMiddleTap: {
     position: 'absolute',
     top: '22%',
@@ -1622,6 +1683,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   splitRow: {
+    position: 'relative',
     flexDirection: 'row',
     height: 200,
     backgroundColor: DARK_BG,
