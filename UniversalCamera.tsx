@@ -902,18 +902,37 @@ export default function UniversalCamera({
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
+  const respondParams = route?.params || {};
+  const isChallengeResponse = Boolean(
+    respondParams.isChallengeResponse ||
+      respondParams.battleId ||
+      respondParams.challengeId
+  );
   const rawBootMode: CreationMode =
     initialMode ||
-    (route?.params?.initialMode as CreationMode | undefined) ||
+    (respondParams.initialMode as CreationMode | undefined) ||
+    (isChallengeResponse ? 'BATTLE_REWIND' : undefined) ||
     'SPARKS';
   // Never boot camera into BATTLE_BAWAAL — that route is the challenge form
   const bootMode: CreationMode =
     rawBootMode === 'BATTLE_BAWAAL' ? 'SPARKS' : rawBootMode;
 
+  const challengeMaxDuration = Math.max(
+    5,
+    Math.min(
+      60,
+      Number(respondParams.challengeMaxDuration) ||
+        Number((respondParams.reel as { challengeMaxDuration?: number } | undefined)?.challengeMaxDuration) ||
+        defaultDuration(bootMode)
+    )
+  );
+
   const [mode, setMode] = useState<CreationMode>(bootMode);
   const [hubOpen, setHubOpen] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(() =>
-    defaultDuration(bootMode)
+    isChallengeResponse
+      ? Math.min(challengeMaxDuration, modeCeiling(bootMode, false))
+      : defaultDuration(bootMode)
   );
   const [showTimePill, setShowTimePill] = useState(true);
   const [timePillOpacity] = useState(() => new Animated.Value(1));
@@ -1460,8 +1479,20 @@ export default function UniversalCamera({
   const permissionsGranted =
     Boolean(cameraPermission?.granted) && Boolean(micPermission?.granted);
 
-  const modeLabel =
-    HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
+  const challengeTitle =
+    typeof respondParams.target === 'string' && respondParams.target.trim()
+      ? respondParams.target.trim()
+      : typeof (respondParams.reel as { statSticker?: string } | undefined)?.statSticker ===
+          'string'
+        ? String(
+            (respondParams.reel as { statSticker?: string }).statSticker
+          ).trim()
+        : null;
+  const modeLabel = isChallengeResponse
+    ? challengeTitle
+      ? `RESPOND · ${challengeTitle}`.slice(0, 36)
+      : 'RESPOND'
+    : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
 
   if (permissionsPending) {
     return (
@@ -1726,13 +1757,30 @@ export default function UniversalCamera({
           }}
           onSuccess={(payload) => {
             if (payload) onPublished?.(payload);
-            const tab =
-              payload?.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
+            const battleId =
+              (typeof respondParams.battleId === 'string' && respondParams.battleId) ||
+              (typeof respondParams.challengeId === 'string' &&
+                respondParams.challengeId) ||
+              null;
+            const respondSport =
+              (typeof respondParams.sport === 'string' && respondParams.sport) ||
+              (respondParams.reel as { category?: string } | undefined)?.category ||
+              'GYM';
+            const respondHandle =
+              typeof respondParams.handle === 'string'
+                ? respondParams.handle.replace(/^@/, '')
+                : 'Challenger';
+            // Arena RESPOND always returns to Arena (not Battles legacy path)
+            const tab = isChallengeResponse
+              ? 'Arena'
+              : payload?.feedTarget === 'BATTLES'
+                ? 'Battles'
+                : 'Arena';
             const safePost = payload?.newPost || {
               id: `fallback-${Date.now()}`,
               mode,
               videoUri: recordedVideoUri,
-              title: 'BAWAAL Drop',
+              title: challengeTitle || 'BAWAAL Drop',
               timestamp: Date.now(),
               feedTarget: tab === 'Battles' ? 'BATTLES' : 'ARENA',
             };
@@ -1741,9 +1789,38 @@ export default function UniversalCamera({
             resetCreationSession({ remountCamera: false });
             const freshPost = {
               ...safePost,
+              ...(isChallengeResponse
+                ? {
+                    type: 'battle_thread',
+                    isBattleResponse: true,
+                    isBattle: true,
+                    battleId: battleId || safePost.id,
+                    challengeId: battleId || safePost.id,
+                    target: challengeTitle || safePost.title || 'Battle response',
+                    opponent: `@${respondHandle}`,
+                    challengeOf: respondHandle,
+                    sport: respondSport,
+                    category: respondSport,
+                    creator: 'You',
+                    author: '@you',
+                    videoUri:
+                      safePost.videoUri ||
+                      safePost.uri ||
+                      recordedVideoUri ||
+                      null,
+                    uri:
+                      safePost.uri ||
+                      safePost.videoUri ||
+                      recordedVideoUri ||
+                      null,
+                    localVideoUri: safePost.localVideoUri || null,
+                    feedTarget: 'ARENA',
+                  }
+                : {}),
               // Force newest-first so Arena never flashes an older clip on top
               createdAt: Date.now(),
               timestamp: Date.now(),
+              _freshPublish: true,
             };
             safeNavigateHome({
               tab,

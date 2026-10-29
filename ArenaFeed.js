@@ -1209,20 +1209,25 @@ export default function ArenaFeed({ navigation, route }) {
         /^@/,
         ''
       );
+      const maxDur = item.challengeMaxDuration || item.durationSec || 30;
+      // Locked UniversalCamera only — never ChallengeScreen / ChallengeCamRecorder
       navigation?.navigate?.('ChallengeCam', {
-        challengeMaxDuration: item.challengeMaxDuration || item.durationSec || 30,
+        initialMode: 'BATTLE_REWIND',
+        isChallengeResponse: true,
+        challengeMaxDuration: maxDur,
         battleId: item.battleId || item.challengeId || item.id,
         target: item.target || item.statSticker || 'Battle response',
         handle,
         sport: item.sport || item.category || 'GYM',
+        feedTarget: 'ARENA',
         reel: {
           id: item.id,
           battleId: item.battleId || item.challengeId || item.id,
           creator: handle,
           statSticker: item.target || item.statSticker || 'Battle response',
           category: item.sport || item.category || 'GYM',
-          challengeMaxDuration: item.challengeMaxDuration || item.durationSec || 30,
-          durationSec: item.durationSec || 30,
+          challengeMaxDuration: maxDur,
+          durationSec: maxDur,
           videoUri: item.challengeVideoUri || item.videoUri || null,
         },
       });

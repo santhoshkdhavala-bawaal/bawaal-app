@@ -36,9 +36,10 @@ The **live camera viewfinder** and its interaction model are **production-final*
 
 ## App wiring
 
-- Stack `ChallengeCam` → `ChallengeScreen` → `ChallengeCamRecorder`
-- Stack `UniversalCamera` / `Challenge` → `UniversalCamera`
-- Do not merge flash/speed chrome from ChallengeCam into UniversalCamera (or the reverse)
+- Stack `ChallengeCam` / `UniversalCamera` / `Challenge` → **`UniversalCamera` only** (Arena/Battles RESPOND included)
+- Do **not** route Respond through `ChallengeScreen` / `ChallengeCamRecorder` (legacy)
+- Preview speed controls remain on UniversalCamera’s post-record ClipPreviewModal
+- Do not merge flash/speed chrome onto the live lens
 
 ## Allowed elsewhere
 

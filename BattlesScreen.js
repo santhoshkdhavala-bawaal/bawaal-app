@@ -184,12 +184,16 @@ export default function BattlesScreen({ navigation }) {
       return;
     }
     const label = battle.target || battle.description || 'OPEN CHALLENGE';
+    // Locked UniversalCamera viewfinder only (same ChallengeCam stack alias)
     navigation?.navigate?.('ChallengeCam', {
+      initialMode: 'BATTLE_REWIND',
+      isChallengeResponse: true,
       challengeMaxDuration: 30,
       battleId: battle.id,
       target: label,
       handle: battle.host.replace(/^@/, ''),
       sport: battle.sport,
+      feedTarget: 'ARENA',
       reel: {
         id: battle.id,
         battleId: battle.id,
