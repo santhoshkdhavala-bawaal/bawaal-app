@@ -39,13 +39,19 @@ function resolveConfirmColor(confirmLabel, confirmColor) {
   return ACCENT;
 }
 
+/** Complete BAWAAL sport taxonomy for Post Squad Brief (single-select). */
 export const SQUAD_BRIEF_SPORTS = [
-  'Combat',
-  'Football',
-  'Cricket',
-  'Gym',
-  'Running',
-  'Other',
+  'ALL',
+  'CRICKET',
+  'FOOTBALL',
+  'GYM',
+  'KABADDI',
+  'COMBAT',
+  'THROTTLE',
+  'WAVE & BLADE',
+  'COURT KINGS',
+  'SKY & SUMMIT',
+  'OTHERS',
 ];
 
 /**
@@ -143,7 +149,7 @@ export default function BawaalPromptModal({
   const submitBrief = () =>
     runConfirm({
       title: String(briefTitle || '').trim(),
-      sportTag: String(sportTag || 'Other').trim(),
+      sportTag: String(sportTag || 'OTHERS').trim(),
       intel: String(intel || '').trim(),
     });
 
@@ -282,7 +288,7 @@ export default function BawaalPromptModal({
                           <Text
                             style={[styles.sportPillText, on && styles.sportPillTextOn]}
                           >
-                            {sport.toUpperCase()}
+                            {sport}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -471,18 +477,20 @@ const styles = StyleSheet.create({
   sportRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 16,
   },
   sportPill: {
     paddingVertical: 8,
     paddingHorizontal: 10,
-    marginRight: 8,
-    marginBottom: 8,
     backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 0,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    borderRadius: 6,
   },
   sportPillOn: {
-    backgroundColor: 'rgba(168,85,247,0.18)',
+    backgroundColor: 'rgba(168,85,247,0.22)',
+    borderColor: BRIEF_PURPLE,
   },
   sportPillText: {
     color: MUTED,

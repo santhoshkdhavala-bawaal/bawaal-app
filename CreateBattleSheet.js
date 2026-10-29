@@ -21,15 +21,17 @@ const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 
 const SPORTS = [
+  'ALL',
   'CRICKET',
   'FOOTBALL',
-  'KABADDI',
   'GYM',
+  'KABADDI',
   'COMBAT',
   'THROTTLE',
   'WAVE & BLADE',
   'COURT KINGS',
   'SKY & SUMMIT',
+  'OTHERS',
 ];
 const DURATIONS = [
   { id: '1m', label: '1 Min', seconds: 60 },
@@ -246,11 +248,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
             contentContainerStyle={styles.form}
           >
             <Text style={styles.label}>SPORT CATEGORY</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.pillRow}
-            >
+            <View style={styles.wrapPills}>
               {SPORTS.map((s) => {
                 const active = sport === s;
                 return (
@@ -264,7 +262,7 @@ export default function CreateBattleSheet({ visible, onClose, onLaunch }) {
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </View>
 
             <Text style={styles.label}>CHALLENGE TITLE</Text>
             <TextInput

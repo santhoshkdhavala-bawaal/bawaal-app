@@ -81,7 +81,7 @@ export default function TermsModal({ visible, onAgree, onBack }) {
             {/* Action Buttons */}
             <View style={styles.btnRow}>
               <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-                <Text style={styles.backText}>Back</Text>
+                <Text style={styles.backText}>← Back</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.agreeBtn} onPress={onAgree}>
@@ -117,8 +117,15 @@ const styles = StyleSheet.create({
   highlight: { color: '#f59e0b', fontWeight: 'bold' },
   divider: { height: 1, backgroundColor: '#334155', marginVertical: 10 },
   btnRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 4 },
-  backBtn: { paddingVertical: 12, paddingHorizontal: 16 },
-  backText: { color: '#94a3b8', fontWeight: 'bold', fontSize: 13 },
+  backBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
+  },
+  backText: { color: '#3B82F6', fontWeight: '900', fontSize: 13 },
   agreeBtn: { flex: 1, backgroundColor: '#f59e0b', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
   agreeText: { color: '#0f172a', fontWeight: 'bold', fontSize: 13 }
 });

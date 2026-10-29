@@ -25,6 +25,7 @@ import {
 import { isSupabaseConfigured } from './src/services/supabase';
 import { ACTIVE_USER } from './src/services/activeUserProfile';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
+import BackLink from './src/components/BackLink';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -256,13 +257,11 @@ export default function ClinicScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor={BG} />
 
       <View style={styles.topBar}>
-        <TouchableOpacity
+        <BackLink
+          label="BACK"
           onPress={() => navigation?.goBack?.()}
-          activeOpacity={0.75}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.back}>← BACK</Text>
-        </TouchableOpacity>
+          accent={CLINIC_MINT}
+        />
       </View>
 
       <View style={styles.header}>
@@ -348,12 +347,6 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: 20,
     marginBottom: 12,
-  },
-  back: {
-    color: OFF_WHITE,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 1.2,
   },
   header: {
     paddingHorizontal: 20,

@@ -28,6 +28,7 @@ import {
 import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import VerifiedBadge from './src/components/VerifiedBadge';
+import BackLink from './src/components/BackLink';
 import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
 import { fetchPassportGraph } from './src/services/profilesService';
 import { fetchPassportSquads } from './src/services/lockerService';
@@ -288,9 +289,11 @@ const SuggestedRow = memo(function SuggestedRow({
 function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggleFollow }) {
   return (
     <View style={styles.previewWrap}>
-      <TouchableOpacity style={styles.backInline} onPress={onBack} hitSlop={10}>
-        <Text style={styles.backInlineText}>← Back to Passport</Text>
-      </TouchableOpacity>
+      <BackLink
+        label="Back to Passport"
+        onPress={onBack}
+        style={styles.backInline}
+      />
 
       <View style={styles.card}>
         <View style={styles.previewHeader}>
@@ -889,12 +892,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   backInline: {
-    marginBottom: 10,
-  },
-  backInlineText: {
-    color: MUTED,
-    fontSize: 13,
-    fontWeight: '700',
+    marginBottom: 12,
   },
   previewHeader: {
     flexDirection: 'row',

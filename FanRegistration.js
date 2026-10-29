@@ -147,15 +147,17 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   backButton: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
   },
   backText: {
-    color: '#38bdf8',
+    color: '#3B82F6',
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   headerLogo: {
     width: 42,

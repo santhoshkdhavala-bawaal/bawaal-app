@@ -191,16 +191,16 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   backBtn: {
-    backgroundColor: '#1e293b',
+    backgroundColor: 'rgba(59, 130, 246, 0.14)',
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#334155',
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
   },
   backBtnText: {
-    color: '#38bdf8',
-    fontWeight: 'bold',
+    color: '#3B82F6',
+    fontWeight: '900',
     fontSize: 11,
   },
   headerLogo: {

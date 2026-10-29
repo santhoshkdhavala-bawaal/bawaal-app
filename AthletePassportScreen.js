@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +18,7 @@ import {
 import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import ProfileMediaTabs from './src/components/ProfileMediaTabs';
+import BackLink from './src/components/BackLink';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -47,17 +47,15 @@ export default function AthletePassportScreen({ route, navigation }) {
   return (
     <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.topBar}>
-        <TouchableOpacity
+        <BackLink
+          label="Back"
           onPress={() => {
             if (navigation?.canGoBack?.()) navigation.goBack();
             else navigation?.navigate?.('Main', { tab: 'Passport' });
           }}
-          hitSlop={12}
-        >
-          <Text style={styles.back}>← Back</Text>
-        </TouchableOpacity>
+        />
         <Text style={styles.topTitle}>ATHLETE PASSPORT</Text>
-        <View style={{ width: 48 }} />
+        <View style={{ width: 72 }} />
       </View>
 
       <ScrollView
@@ -178,12 +176,6 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
-  },
-  back: {
-    color: WHITE,
-    fontSize: 14,
-    fontWeight: '700',
-    width: 64,
   },
   topTitle: {
     color: MUTED,
