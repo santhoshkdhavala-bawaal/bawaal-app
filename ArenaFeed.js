@@ -90,9 +90,89 @@ function buildDemoResponses(challengeId) {
   }));
 }
 
-/** Lean first paint — heavy demo battles hydrate after first frame. */
-function seedArenaFeedLean() {
+/** Stable ids for always-on official battle shells (ChallengeCam Respond targets). */
+const DEFAULT_BATTLE_GYM_ID = 'challenge-gym-yuki';
+const DEFAULT_BATTLE_CRICKET_ID = 'challenge-cricket-rohit';
+const DEFAULT_BATTLE_COMBAT_ID = 'challenge-combat-aman';
+/** Fixed epoch offsets so ensureDefaultBattles does not remint card identities each render. */
+const DEFAULT_BATTLE_EPOCH = 1_700_000_000_000;
+
+/** Official mock battles — always present so Respond / ChallengeCam is testable. */
+function seedDefaultOfficialBattles() {
+  const gymResponses = buildDemoResponses(DEFAULT_BATTLE_GYM_ID);
+  const cricketResponses = buildDemoResponses(DEFAULT_BATTLE_CRICKET_ID).slice(0, 6);
+  const combatResponses = buildDemoResponses(DEFAULT_BATTLE_COMBAT_ID).slice(0, 8);
+
   return [
+    {
+      id: DEFAULT_BATTLE_GYM_ID,
+      challengeId: DEFAULT_BATTLE_GYM_ID,
+      type: 'battle_thread',
+      sport: 'GYM',
+      category: 'GYM',
+      author: 'CHALLENGE',
+      opponent: '@Yuki_Lift',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${gymResponses[0].creator}`,
+      target: '140 KG x 3 Reps',
+      status: 'LIVE BATTLE',
+      challengeVideoUri: null,
+      responses: gymResponses,
+      createdAt: DEFAULT_BATTLE_EPOCH - 86_400_000,
+      _demoBattle: true,
+    },
+    {
+      id: DEFAULT_BATTLE_CRICKET_ID,
+      challengeId: DEFAULT_BATTLE_CRICKET_ID,
+      type: 'battle_thread',
+      sport: 'CRICKET',
+      category: 'CRICKET',
+      author: 'CHALLENGE',
+      opponent: '@Rohit_VK7',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${cricketResponses[0].creator}`,
+      target: 'Cover drive · 6 balls',
+      status: 'OPEN',
+      challengeVideoUri: null,
+      responses: cricketResponses,
+      createdAt: DEFAULT_BATTLE_EPOCH - 50_000_000,
+      _demoBattle: true,
+    },
+    {
+      id: DEFAULT_BATTLE_COMBAT_ID,
+      challengeId: DEFAULT_BATTLE_COMBAT_ID,
+      type: 'battle_thread',
+      sport: 'COMBAT',
+      category: 'COMBAT',
+      author: 'CHALLENGE',
+      opponent: '@Aman_Striker',
+      challengerLabel: 'YOU',
+      leaderLabel: `@${combatResponses[0].creator}`,
+      target: '3-round shadow spar',
+      status: 'HOT',
+      challengeVideoUri: null,
+      responses: combatResponses,
+      createdAt: DEFAULT_BATTLE_EPOCH - 20_000_000,
+      _demoBattle: true,
+    },
+  ];
+}
+
+/** Merge missing default official battles without wiping live / fresh posts. */
+function ensureDefaultBattles(items) {
+  const list = Array.isArray(items) ? [...items] : [];
+  const ids = new Set(list.map((p) => p?.id).filter(Boolean));
+  for (const battle of seedDefaultOfficialBattles()) {
+    if (ids.has(battle.id)) continue;
+    list.push(battle);
+    ids.add(battle.id);
+  }
+  return list;
+}
+
+/** Lean first paint — official battles + light reel shells (battles always visible). */
+function seedArenaFeedLean() {
+  return ensureDefaultBattles([
     {
       id: 'reel-gym-1',
       type: 'reel',
@@ -104,17 +184,10 @@ function seedArenaFeedLean() {
       videoUri: null,
       createdAt: Date.now() - 12_000_000,
     },
-  ];
+  ]);
 }
 
 function seedArenaFeedDemoBattles() {
-  const gymId = 'challenge-gym-yuki';
-  const cricketId = 'challenge-cricket-rohit';
-  const combatId = 'challenge-combat-aman';
-  const gymResponses = buildDemoResponses(gymId);
-  const cricketResponses = buildDemoResponses(cricketId).slice(0, 6);
-  const combatResponses = buildDemoResponses(combatId).slice(0, 8);
-
   /** General Arena reels — no challenge tags, no battle CTAs */
   const reels = [
     {
@@ -174,56 +247,9 @@ function seedArenaFeedDemoBattles() {
     },
   ];
 
-  /** Official battle cards only — VS / target / athletes responded */
-  const battles = [
-    {
-      id: gymId,
-      challengeId: gymId,
-      type: 'battle_thread',
-      sport: 'GYM',
-      author: 'CHALLENGE',
-      opponent: '@Yuki_Lift',
-      challengerLabel: 'YOU',
-      leaderLabel: `@${gymResponses[0].creator}`,
-      target: '140 KG x 3 Reps',
-      status: 'LIVE BATTLE',
-      challengeVideoUri: null,
-      responses: gymResponses,
-      createdAt: Date.now() - 86_400_000,
-    },
-    {
-      id: cricketId,
-      challengeId: cricketId,
-      type: 'battle_thread',
-      sport: 'CRICKET',
-      author: 'CHALLENGE',
-      opponent: '@Rohit_VK7',
-      challengerLabel: 'YOU',
-      leaderLabel: `@${cricketResponses[0].creator}`,
-      target: 'Cover drive · 6 balls',
-      status: 'OPEN',
-      challengeVideoUri: null,
-      responses: cricketResponses,
-      createdAt: Date.now() - 50_000_000,
-    },
-    {
-      id: combatId,
-      challengeId: combatId,
-      type: 'battle_thread',
-      sport: 'COMBAT',
-      author: 'CHALLENGE',
-      opponent: '@Aman_Striker',
-      challengerLabel: 'YOU',
-      leaderLabel: `@${combatResponses[0].creator}`,
-      target: '3-round shadow spar',
-      status: 'HOT',
-      challengeVideoUri: null,
-      responses: combatResponses,
-      createdAt: Date.now() - 20_000_000,
-    },
-  ];
-
-  return [...reels, ...battles].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  return ensureDefaultBattles(reels).sort(
+    (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+  );
 }
 
 function isOfficialBattlePost(post) {
@@ -333,7 +359,8 @@ function buildInitialFeed(route) {
       timestamp: Date.now(),
     });
   }
-  return sortFeedItems(items);
+  // Always keep Cover drive / gym / combat Respond shells on first paint
+  return sortFeedItems(ensureDefaultBattles(items));
 }
 
 const ClipSurface = memo(function ClipSurface({
@@ -994,8 +1021,8 @@ export default function ArenaFeed({ navigation, route }) {
               if (key) ingestedIds.current.add(key);
               next = ingestArenaPost(next, post);
             }
-            // Fresh publishes stay pinned above older cloud / demo clips
-            return sortFeedItems(next);
+            // Keep official mock battles after cloud merge
+            return sortFeedItems(ensureDefaultBattles(next));
           });
         }
 
@@ -1004,15 +1031,18 @@ export default function ArenaFeed({ navigation, route }) {
         if (!demosSeededRef.current) {
           demosSeededRef.current = true;
           setFeedItems((prev) => {
-            let next = prev;
-            const seen = new Set(prev.map((p) => p.id));
+            let next = ensureDefaultBattles(prev);
+            const seen = new Set(next.map((p) => p.id));
             for (const item of seedArenaFeedDemoBattles()) {
               if (seen.has(item.id)) continue;
               seen.add(item.id);
               next = [...next, item];
             }
-            return sortFeedItems(next);
+            return sortFeedItems(ensureDefaultBattles(next));
           });
+        } else if (!Array.isArray(posts) || posts.length === 0) {
+          // No cloud rows — still guarantee battle shells without wiping feed
+          setFeedItems((prev) => sortFeedItems(ensureDefaultBattles(prev)));
         }
       } catch (err) {
         console.warn(
@@ -1089,9 +1119,10 @@ export default function ArenaFeed({ navigation, route }) {
     try {
       const posts = await refreshArenaPostsFromSupabase();
       setFeedItems((prev) => {
-        // Keep freshly published clips pinned while merging cloud rows
+        // Keep fresh publishes + always-on official battle shells
         let next = prev.filter(
           (p) =>
+            p?._demoBattle ||
             p?._freshPublish ||
             (Number(p?.createdAt) || 0) > Date.now() - 120_000
         );
@@ -1107,10 +1138,11 @@ export default function ArenaFeed({ navigation, route }) {
           if (key) ingestedIds.current.add(key);
           next = ingestArenaPost(next, post);
         }
-        return sortFeedItems(next);
+        return sortFeedItems(ensureDefaultBattles(next));
       });
     } catch (err) {
       console.warn('[ArenaFeed] pull-to-refresh failed:', err?.message || err);
+      setFeedItems((prev) => sortFeedItems(ensureDefaultBattles(prev)));
     } finally {
       setRefreshing(false);
     }
@@ -1119,10 +1151,12 @@ export default function ArenaFeed({ navigation, route }) {
   const visibleFeed = useMemo(() => {
     const tab = canonicalizeSport(activeTab) || 'ALL';
     // Case-insensitive sport/category match (football ≡ FOOTBALL, mma ≡ COMBAT)
+    // Never drop default battles from the source list when filtering
+    const source = ensureDefaultBattles(feedItems);
     const filtered =
       tab === 'ALL'
-        ? feedItems
-        : feedItems.filter((item) => matchesSportFilter(item, tab));
+        ? source
+        : source.filter((item) => matchesSportFilter(item, tab));
     // Final safety: unique ids + unique video files in the FlatList
     const seenIds = new Set();
     const seenVideos = new Set();
@@ -1130,12 +1164,25 @@ export default function ArenaFeed({ navigation, route }) {
     for (const item of filtered) {
       if (!item?.id || seenIds.has(item.id)) continue;
       // Skip shell reels with no playable URI (avoids LOADING CLIP black cards)
+      // Official battle_thread cards always stay (Respond / ChallengeCam)
       if (item.type === 'reel' && !item.videoUri) continue;
       const vKey = videoIdentityKey(item.videoUri);
       if (item.type === 'reel' && vKey && seenVideos.has(vKey)) continue;
       seenIds.add(item.id);
       if (vKey) seenVideos.add(vKey);
       out.push(item);
+    }
+    // If a sport tab has no battle card, surface the matching default (or cricket)
+    const hasBattle = out.some((i) => i.type === 'battle_thread');
+    if (!hasBattle) {
+      const defaults = seedDefaultOfficialBattles();
+      const fallback =
+        defaults.find((b) => matchesSportFilter(b, tab)) ||
+        defaults.find((b) => b.id === DEFAULT_BATTLE_CRICKET_ID) ||
+        defaults[0];
+      if (fallback && !seenIds.has(fallback.id)) {
+        out.unshift(fallback);
+      }
     }
     return out;
   }, [activeTab, feedItems]);
