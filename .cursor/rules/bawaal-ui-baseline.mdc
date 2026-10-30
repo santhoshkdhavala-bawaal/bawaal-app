@@ -16,11 +16,14 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 - **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, floating speed badges, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
 - Full contract: `.cursor/rules/bawaal-challengecam-locked.mdc`.
 
-## 2. Arena header & sports ticker (`ArenaFeed.js` + `src/components/ScoresSportsPanel.js`)
+## 2. Arena header & FACEOFF hub (`ArenaFeed.js` + `FaceoffHub` + `ScoresSportsPanel.js`)
 
-- **Keep:** Black-and-white monochromatic Scores & Sports panel (sport pills → match list → inline score card).
+- **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **FACEOFF** (no feed-top dual toggle or category pill scroller).
+- **Keep:** FACEOFF hub hosts scores ticker, sport category grid, and open callouts.
+- **Keep:** Black-and-white monochromatic Scores & Sports panel inside FACEOFF (sport pills → match list → inline score card).
 - **Keep:** Comprehensive sport selector grouped conceptually as Team Sports, Motorsports, Combat, Racket Sports, Precision/Athletics (and Water & Outdoor as already shipped).
 - **Do not** restyle into colorful/dashboard chrome or replace the sport-first dropdown/pill flow.
+- **Keep:** In-feed floating alert ticker that deep-links into FACEOFF.
 
 ## 3. Video feed surfaces (`SportsFeedPlaceholder.js` feed variant, Arena reel cards)
 
