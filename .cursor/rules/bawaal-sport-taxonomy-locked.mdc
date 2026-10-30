@@ -1,11 +1,11 @@
 ---
-description: Locked BAWAAL sport taxonomy for forms, briefs, Arena, and publish pickers
+description: Locked BAWAAL sport taxonomy for forms, briefs, Arena, GAME ON, and publish pickers
 alwaysApply: true
 ---
 
 # BAWAAL sport taxonomy (LOCKED)
 
-Canonical list lives in `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` / `BAWAAL_FORM_SPORTS`.
+Canonical list lives in `src/constants/sports.js` as `BAWAAL_SPORTS` (re-exported from `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` / `BAWAAL_FORM_SPORTS`).
 
 ## Exact order (do not reorder or rename)
 
@@ -27,7 +27,8 @@ Canonical list lives in `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` 
 - Create Battle — `CreateBattleSheet`
 - Arena publish — `PostCreationSheet` via `ARENA_SPORT_OPTIONS` (excludes ALL)
 - Upload challenge category — `UploadScreen`
-- Arena / BATTLES sport filters — `ARENA_SPORT_TABS` (GAME ON uses ScoresSportsPanel pills, not a duplicate taxonomy grid)
+- Arena / BATTLES sport filters — `ARENA_SPORT_TABS` / `BAWAAL_SPORTS`
+- GAME ON live scores pills — `ScoresSportsPanel` / `GameOnHub` via `BAWAAL_SPORTS` only (never Tennis, Badminton, Baseball, or other fallbacks)
 
 ## Onboarding exception
 

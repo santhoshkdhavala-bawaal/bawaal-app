@@ -1,31 +1,29 @@
 /**
- * Canonical BAWAAL sport taxonomy — forms, briefs, Arena tabs, publish.
- * LOCKED production list. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
+ * Canonical BAWAAL sport taxonomy helpers — forms, briefs, Arena, GAME ON, publish.
+ * Source of truth: `src/constants/sports.js` → `BAWAAL_SPORTS`.
+ * LOCKED. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
  */
 
-/** Full locked taxonomy (forms / briefs / filters). */
-export const BAWAAL_SPORT_TAXONOMY = [
-  'ALL',
-  'CRICKET',
-  'FOOTBALL',
-  'GYM',
-  'KABADDI',
-  'COMBAT',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
-  'OTHERS',
-];
+import {
+  BAWAAL_SPORTS,
+  BAWAAL_SPORT_TAXONOMY,
+  BAWAAL_SPORTS_WITHOUT_ALL,
+} from '../constants/sports';
 
-/** @deprecated Prefer BAWAAL_SPORT_TAXONOMY — kept for Arena imports. */
-export const ARENA_SPORT_TABS = BAWAAL_SPORT_TAXONOMY;
+export {
+  BAWAAL_SPORTS,
+  BAWAAL_SPORT_TAXONOMY,
+  BAWAAL_SPORTS_WITHOUT_ALL,
+};
+
+/** @deprecated Prefer BAWAAL_SPORTS / BAWAAL_SPORT_TAXONOMY. */
+export const ARENA_SPORT_TABS = BAWAAL_SPORTS;
 
 /** Publish / picker options (excludes ALL). */
-export const ARENA_SPORT_OPTIONS = BAWAAL_SPORT_TAXONOMY.filter((t) => t !== 'ALL');
+export const ARENA_SPORT_OPTIONS = BAWAAL_SPORTS_WITHOUT_ALL;
 
 /** Alias used by Squad Brief + battle forms (includes ALL). */
-export const BAWAAL_FORM_SPORTS = BAWAAL_SPORT_TAXONOMY;
+export const BAWAAL_FORM_SPORTS = BAWAAL_SPORTS;
 
 const ALIASES = {
   all: 'ALL',
@@ -43,6 +41,11 @@ const ALIASES = {
   ufc: 'COMBAT',
   boxing: 'COMBAT',
   striking: 'COMBAT',
+  bjj: 'COMBAT',
+  wrestling: 'COMBAT',
+  judo: 'COMBAT',
+  karate: 'COMBAT',
+  taekwondo: 'COMBAT',
   throttle: 'THROTTLE',
   racing: 'THROTTLE',
   motorsport: 'THROTTLE',
@@ -50,15 +53,22 @@ const ALIASES = {
   wave: 'WAVE & BLADE',
   blade: 'WAVE & BLADE',
   surfing: 'WAVE & BLADE',
+  swimming: 'WAVE & BLADE',
   'court kings': 'COURT KINGS',
   basketball: 'COURT KINGS',
+  tennis: 'COURT KINGS',
+  badminton: 'COURT KINGS',
   court: 'COURT KINGS',
   'sky & summit': 'SKY & SUMMIT',
   climbing: 'SKY & SUMMIT',
+  athletics: 'SKY & SUMMIT',
   summit: 'SKY & SUMMIT',
   others: 'OTHERS',
   other: 'OTHERS',
   misc: 'OTHERS',
+  golf: 'OTHERS',
+  baseball: 'OTHERS',
+  rugby: 'OTHERS',
 };
 
 /**
@@ -71,7 +81,7 @@ export function canonicalizeSport(value) {
   const raw = String(value).trim();
   if (!raw) return null;
   const upper = raw.toUpperCase();
-  if (BAWAAL_SPORT_TAXONOMY.includes(upper)) return upper;
+  if (BAWAAL_SPORTS.includes(upper)) return upper;
   const collapsed = raw.replace(/\s+/g, ' ').trim().toLowerCase();
   if (ALIASES[collapsed]) return ALIASES[collapsed];
   const compact = collapsed.replace(/[^a-z0-9]+/g, '');
@@ -116,5 +126,5 @@ export function resolvePostSport(post, fallback = 'GYM') {
     canonicalizeSport(fallback) ||
     'GYM';
   if (key === 'ALL') return 'GYM';
-  return BAWAAL_SPORT_TAXONOMY.includes(key) ? key : 'OTHERS';
+  return BAWAAL_SPORTS.includes(key) ? key : 'OTHERS';
 }

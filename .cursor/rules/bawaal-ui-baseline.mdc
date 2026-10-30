@@ -20,11 +20,10 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 
 - **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **GAME ON** (no feed-top dual toggle, floating alert toasts, or shelf at index 0/1).
 - **Keep:** Inline horizontal **LIVE COMMUNITY CHALLENGES** shelf every 4–5 feed items **after** leading videos (`CommunityChallengesShelf`) deep-linking to BATTLES.
-- **Keep:** GAME ON hub hosts scores ticker with horizontal sport filter pills only (no redundant lower taxonomy grid; no Open Callouts inside GAME ON).
+- **Keep:** GAME ON hub hosts scores ticker with horizontal **BAWAAL_SPORTS** filter pills only (no redundant lower taxonomy grid; no Tennis/Badminton/etc. fallbacks; no Open Callouts inside GAME ON).
 - **Keep:** Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS) on the **BATTLES** tab via `OpenCalloutsPanel`.
-- **Keep:** Black-and-white monochromatic Scores & Sports panel inside GAME ON (sport pills → match list → inline score card).
-- **Keep:** Comprehensive sport selector grouped conceptually as Team Sports, Motorsports, Combat, Racket Sports, Precision/Athletics (and Water & Outdoor as already shipped).
-- **Do not** restyle into colorful/dashboard chrome or replace the sport-first dropdown/pill flow.
+- **Keep:** Black-and-white monochromatic Scores & Sports panel inside GAME ON (locked sport pills → match list → inline score card).
+- **Do not** restyle into colorful/dashboard chrome or invent local sport category arrays.
 
 ## 3. Video feed surfaces (`SportsFeedPlaceholder.js` feed variant, Arena reel cards)
 

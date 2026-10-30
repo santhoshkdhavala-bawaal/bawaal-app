@@ -1,6 +1,6 @@
 /**
- * GAME ON hub — live scores + horizontal sport filter pills only (stealth-black).
- * Open Callouts live on the BATTLES tab. No redundant lower sports grid.
+ * GAME ON hub — live scores + locked BAWAAL_SPORTS filter pills (stealth-black).
+ * Open Callouts live on the BATTLES tab.
  */
 import React, { memo } from 'react';
 import {
@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './BackLink';
 import ScoresSportsPanel from './ScoresSportsPanel';
+import { BAWAAL_SPORTS } from '../constants/sports';
 
 const WHITE = '#FFFFFF';
 const DARK_BG = '#000000';
@@ -51,7 +52,7 @@ function GameOnHub({ visible, onClose }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.section}>
-            <ScoresSportsPanel />
+            <ScoresSportsPanel sports={BAWAAL_SPORTS} />
           </View>
         </ScrollView>
       </View>
