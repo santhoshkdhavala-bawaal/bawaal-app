@@ -37,14 +37,8 @@ import ArenaClipPlayer from './src/components/ArenaClipPlayer';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
-import {
-  canonicalizeSport,
-  resolvePostSport,
-} from './src/utils/sportCategory';
+import { resolvePostSport } from './src/utils/sportCategory';
 import FaceoffHub from './src/components/FaceoffHub';
-import ArenaLiveAlertTicker, {
-  buildArenaAlertLines,
-} from './src/components/ArenaLiveAlertTicker';
 
 const WHITE = '#FFFFFF';
 const DARK_BG = '#000000';
@@ -62,20 +56,6 @@ const ARENA_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 55,
   minimumViewTime: 80,
 };
-
-function isOpenChallengeFeedItem(item) {
-  if (!item || item.type !== 'battle_thread') return false;
-  // Active challenge shells with target + RESPOND (exclude pure reel drops)
-  if (item.isOpenChallenge === true) return true;
-  const status = String(item.status || '').toUpperCase();
-  return (
-    status === 'OPEN' ||
-    status === 'HOT' ||
-    status === 'LIVE BATTLE' ||
-    status === 'BATTLE' ||
-    Boolean(item.target || item.targetDetails)
-  );
-}
 
 const DEMO_ATHLETE_HANDLES = [
   'Aarav_Iron',
@@ -105,8 +85,6 @@ function buildDemoResponses(challengeId) {
 const DEFAULT_BATTLE_GYM_ID = 'challenge-gym-yuki';
 const DEFAULT_BATTLE_CRICKET_ID = 'challenge-cricket-rohit';
 const DEFAULT_BATTLE_COMBAT_ID = 'challenge-combat-aman';
-const DEFAULT_TIP_COMBAT_ID = 'tip-combat-jab-cross';
-const DEFAULT_TIP_CRICKET_ID = 'tip-cricket-form-check';
 /** Fixed epoch offsets so ensureDefaultBattles does not remint card identities each render. */
 const DEFAULT_BATTLE_EPOCH = 1_700_000_000_000;
 
@@ -163,10 +141,9 @@ function seedDefaultOfficialBattles() {
       opponent: '@Aman_Striker',
       challengerLabel: 'YOU',
       leaderLabel: `@${combatResponses[0].creator}`,
-      target: '6 jabs 5 crosses in 30s',
+      target: '3-round shadow spar',
       status: 'HOT',
       calloutKind: 'OPEN_CHALLENGE',
-      isOpenChallenge: true,
       challengeVideoUri: null,
       responses: combatResponses,
       createdAt: DEFAULT_BATTLE_EPOCH - 20_000_000,
@@ -175,60 +152,11 @@ function seedDefaultOfficialBattles() {
   ];
 }
 
-/** FACEOFF tip / form-check shells — TIPS & BREAKDOWNS bucket. */
-function seedDefaultTipCallouts() {
-  return [
-    {
-      id: DEFAULT_TIP_COMBAT_ID,
-      challengeId: DEFAULT_TIP_COMBAT_ID,
-      type: 'battle_thread',
-      sport: 'COMBAT',
-      category: 'COMBAT',
-      author: 'TIP',
-      opponent: '@Nova_Strike',
-      challengerLabel: 'YOU',
-      leaderLabel: '@Nova_Strike',
-      target: 'How to land a clean jab-cross?',
-      status: 'OPEN',
-      calloutKind: 'TIP_BREAKDOWN',
-      isOpenChallenge: true,
-      isTipBreakdown: true,
-      challengeVideoUri: null,
-      responses: [],
-      createdAt: DEFAULT_BATTLE_EPOCH - 12_000_000,
-      _demoBattle: true,
-    },
-    {
-      id: DEFAULT_TIP_CRICKET_ID,
-      challengeId: DEFAULT_TIP_CRICKET_ID,
-      type: 'battle_thread',
-      sport: 'CRICKET',
-      category: 'CRICKET',
-      author: 'TIP',
-      opponent: '@Dev_Drive',
-      challengerLabel: 'YOU',
-      leaderLabel: '@Dev_Drive',
-      target: 'Form check: front-foot drive',
-      status: 'OPEN',
-      calloutKind: 'TIP_BREAKDOWN',
-      isOpenChallenge: true,
-      isTipBreakdown: true,
-      challengeVideoUri: null,
-      responses: [],
-      createdAt: DEFAULT_BATTLE_EPOCH - 8_000_000,
-      _demoBattle: true,
-    },
-  ];
-}
-
-/** Merge missing default official battles + tip callouts without wiping live posts. */
+/** Merge missing default official battles without wiping live / fresh posts. */
 function ensureDefaultBattles(items) {
   const list = Array.isArray(items) ? [...items] : [];
   const ids = new Set(list.map((p) => p?.id).filter(Boolean));
-  for (const battle of [
-    ...seedDefaultOfficialBattles(),
-    ...seedDefaultTipCallouts(),
-  ]) {
+  for (const battle of seedDefaultOfficialBattles()) {
     if (ids.has(battle.id)) continue;
     list.push(battle);
     ids.add(battle.id);
@@ -1089,7 +1017,6 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway } = useMainTabs();
   const [faceoffOpen, setFaceoffOpen] = useState(false);
   const [faceoffSport, setFaceoffSport] = useState('ALL');
-  const [faceoffFocusId, setFaceoffFocusId] = useState(null);
   // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
   const [feedItems, setFeedItems] = useState(() => buildInitialFeed(route));
   const [hubThread, setHubThread] = useState(null);
@@ -1362,59 +1289,12 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [feedItems]);
 
-  /** Open callouts for FACEOFF hub + in-feed alert ticker. */
-  const openChallenges = useMemo(() => {
-    const source = ensureDefaultBattles(feedItems);
-    const seen = new Set();
-    const out = [];
-    for (const item of source) {
-      if (!item?.id || seen.has(item.id)) continue;
-      if (!isOpenChallengeFeedItem(item)) continue;
-      seen.add(item.id);
-      out.push(item);
-    }
-    if (out.length === 0) {
-      for (const battle of [
-        ...seedDefaultOfficialBattles(),
-        ...seedDefaultTipCallouts(),
-      ]) {
-        if (!isOpenChallengeFeedItem(battle) || seen.has(battle.id)) continue;
-        out.push(battle);
-        seen.add(battle.id);
-      }
-    }
-    return out;
-  }, [feedItems]);
-
-  const alertLines = useMemo(
-    () => buildArenaAlertLines(openChallenges),
-    [openChallenges]
-  );
-
-  const openFaceoff = useCallback((opts) => {
-    const challengeId = opts?.challengeId || null;
-    const sportHint = opts?.sport || null;
-    if (challengeId) {
-      setFaceoffFocusId(String(challengeId));
-      const match = openChallenges.find(
-        (c) => String(c.id) === String(challengeId)
-      );
-      const nextSport =
-        canonicalizeSport(sportHint || match?.sport || match?.category) ||
-        'ALL';
-      setFaceoffSport(nextSport);
-    } else {
-      setFaceoffFocusId(null);
-      if (sportHint) {
-        setFaceoffSport(canonicalizeSport(sportHint) || 'ALL');
-      }
-    }
+  const openFaceoff = useCallback(() => {
     setFaceoffOpen(true);
-  }, [openChallenges]);
+  }, []);
 
   const closeFaceoff = useCallback(() => {
     setFaceoffOpen(false);
-    setFaceoffFocusId(null);
   }, []);
 
   const openReel = useCallback((item, opts) => {
@@ -1509,8 +1389,8 @@ export default function ArenaFeed({ navigation, route }) {
       <View style={styles.emptyFeed}>
         <Text style={styles.emptyFeedTitle}>NO CLIPS YET</Text>
         <Text style={styles.emptyFeedSub}>
-          Drop a SPARKS or JOSH clip to light up Arena — or open FACEOFF for
-          live callouts.
+          Drop a SPARKS or JOSH clip to light up Arena. Open callouts live on
+          the Battles tab.
         </Text>
         <TouchableOpacity
           style={styles.emptyFeedBtn}
@@ -1579,30 +1459,11 @@ export default function ArenaFeed({ navigation, route }) {
         }
       />
 
-      {!faceoffOpen && !activeReel ? (
-        <ArenaLiveAlertTicker
-          alerts={alertLines}
-          onPress={(alert) =>
-            openFaceoff({ challengeId: alert?.challengeId || null })
-          }
-        />
-      ) : null}
-
       <FaceoffHub
         visible={faceoffOpen}
         onClose={closeFaceoff}
-        challenges={openChallenges}
         selectedSport={faceoffSport}
         onSelectSport={setFaceoffSport}
-        onRespond={(item) => {
-          closeFaceoff();
-          openChallengeRespond(item);
-        }}
-        onOpenResponses={(item) => {
-          closeFaceoff();
-          openResponses(item);
-        }}
-        focusChallengeId={faceoffFocusId}
       />
 
       <ArenaReelViewer
@@ -1626,12 +1487,12 @@ const styles = StyleSheet.create({
     backgroundColor: DARK_BG,
   },
   scrollContent: {
-    paddingBottom: 168,
+    paddingBottom: 110,
     paddingTop: 0,
   },
   scrollContentEmpty: {
     flexGrow: 1,
-    paddingBottom: 168,
+    paddingBottom: 110,
     paddingTop: 0,
   },
   emptyFeed: {

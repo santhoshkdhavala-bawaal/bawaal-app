@@ -21,6 +21,8 @@ import {
   getBattlesList,
 } from './battlesFeedStore';
 import { useFocusEffect } from '@react-navigation/native';
+import OpenCalloutsPanel from './src/components/OpenCalloutsPanel';
+import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
@@ -87,6 +89,9 @@ export default function BattlesScreen({ navigation }) {
   const { openProfileGateway, openArenaChallenge } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
+  const [openCallouts, setOpenCallouts] = useState(() =>
+    seedBattlesOpenCallouts()
+  );
   const [hotFeatureOverride, setHotFeatureOverride] = useState(() =>
     getHotFeatureBattle()
   );
@@ -105,6 +110,22 @@ export default function BattlesScreen({ navigation }) {
       if (prev.some((b) => b.id === battle.id)) return prev;
       return [battle, ...prev];
     });
+    // Surface newly published open challenges in Open Callouts
+    if (battle.isOpenChallenge || battle.status === 'OPEN' || battle.status === 'HOT') {
+      setOpenCallouts((prev) => {
+        if (prev.some((c) => c.id === battle.id)) {
+          return prev.map((c) => (c.id === battle.id ? { ...c, ...battle } : c));
+        }
+        return [
+          {
+            ...battle,
+            calloutKind: battle.calloutKind || 'OPEN_CHALLENGE',
+            isOpenChallenge: true,
+          },
+          ...prev,
+        ];
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -354,6 +375,7 @@ export default function BattlesScreen({ navigation }) {
           </View>
         </View>
 
+        <Text style={styles.activeBattlesLabel}>ACTIVE BATTLES</Text>
         {visible.map((battle) => {
           const title = battle.target || battle.description || 'OPEN CHALLENGE';
           const isRewind = battle.source === 'BATTLE_REWIND';
@@ -389,6 +411,12 @@ export default function BattlesScreen({ navigation }) {
             </View>
           );
         })}
+
+        <OpenCalloutsPanel
+          callouts={openCallouts}
+          selectedSport="ALL"
+          onRespond={openChallenge}
+        />
 
         <TouchableOpacity
           style={styles.createBtn}
@@ -433,6 +461,14 @@ const styles = StyleSheet.create({
   filterTextOn: { color: WHITE },
   filterTextDark: { color: OBSIDIAN },
   list: { paddingHorizontal: 16, paddingBottom: 120 },
+  activeBattlesLabel: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+    marginTop: 4,
+  },
   arenaLaunchCard: {
     backgroundColor: CARD,
     borderRadius: 14,
