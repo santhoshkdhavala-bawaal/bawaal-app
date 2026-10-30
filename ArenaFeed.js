@@ -40,6 +40,8 @@ import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import GameOnHub from './src/components/GameOnHub';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
+import { useArenaFeed, useOpenBattles } from './src/hooks/useArenaFeed';
+import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
 /** Insert an inline community shelf after every N video/battle rows. */
@@ -1023,7 +1025,16 @@ const BattleCard = memo(function BattleCard({
 export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
-  const communityCallouts = useMemo(() => seedBattlesOpenCallouts(), []);
+  const { callouts: liveCallouts, refresh: refreshOpenBattles } =
+    useOpenBattles();
+  const { items: videoFeedItems, refresh: refreshVideoFeed } = useArenaFeed();
+  const communityCallouts = useMemo(
+    () =>
+      Array.isArray(liveCallouts) && liveCallouts.length > 0
+        ? liveCallouts
+        : seedBattlesOpenCallouts(),
+    [liveCallouts]
+  );
   // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
   const [feedItems, setFeedItems] = useState(() => buildInitialFeed(route));
   const [hubThread, setHubThread] = useState(null);
@@ -1127,12 +1138,25 @@ export default function ArenaFeed({ navigation, route }) {
       if (cancelled) return;
       try {
         // Cloud hydrate first (real posts) — demos load later so they don't block UI
-        const posts = await hydrateArenaPostsFromSupabase({ silent: true });
-        if (!cancelled && Array.isArray(posts) && posts.length > 0) {
+        const [posts, videoRows] = await Promise.all([
+          hydrateArenaPostsFromSupabase({ silent: true }),
+          fetchArenaFeed('ALL').catch(() => []),
+        ]);
+        // Only merge playable `videos` rows (skip offline mock shells without URIs)
+        const playableVideos = (Array.isArray(videoRows) ? videoRows : []).filter(
+          (row) =>
+            row?._fromVideosTable &&
+            (row.videoUri || row.videoUrl || row.video_url || row.uri)
+        );
+        const mergedCloud = [
+          ...(Array.isArray(posts) ? posts : []),
+          ...playableVideos,
+        ];
+        if (!cancelled && mergedCloud.length > 0) {
           setFeedItems((prev) => {
             let next = prev;
             // Ingest oldest→newest so each prepend leaves the newest post on top
-            const ordered = [...posts].sort(
+            const ordered = [...mergedCloud].sort(
               (a, b) =>
                 (Number(a.timestamp || a.createdAt) || 0) -
                 (Number(b.timestamp || b.createdAt) || 0)
@@ -1236,7 +1260,21 @@ export default function ArenaFeed({ navigation, route }) {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const posts = await refreshArenaPostsFromSupabase();
+      refreshVideoFeed();
+      refreshOpenBattles();
+      const [posts, videoRows] = await Promise.all([
+        refreshArenaPostsFromSupabase(),
+        fetchArenaFeed('ALL').catch(() => []),
+      ]);
+      const playableVideos = (Array.isArray(videoRows) ? videoRows : []).filter(
+        (row) =>
+          row?._fromVideosTable &&
+          (row.videoUri || row.videoUrl || row.video_url || row.uri)
+      );
+      const merged = [
+        ...(Array.isArray(posts) ? posts : []),
+        ...playableVideos,
+      ];
       setFeedItems((prev) => {
         // Keep fresh publishes + always-on official battle shells
         let next = prev.filter(
@@ -1245,7 +1283,7 @@ export default function ArenaFeed({ navigation, route }) {
             p?._freshPublish ||
             (Number(p?.createdAt) || 0) > Date.now() - 120_000
         );
-        const ordered = [...(posts || [])].sort(
+        const ordered = [...merged].sort(
           (a, b) =>
             (Number(a.timestamp || a.createdAt) || 0) -
             (Number(b.timestamp || b.createdAt) || 0)
@@ -1265,7 +1303,20 @@ export default function ArenaFeed({ navigation, route }) {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [refreshVideoFeed, refreshOpenBattles]);
+
+  // Absorb hook-driven `videos` rows when they arrive after first paint
+  useEffect(() => {
+    if (!Array.isArray(videoFeedItems) || videoFeedItems.length === 0) return;
+    for (const post of videoFeedItems) {
+      if (
+        post?._fromVideosTable &&
+        (post.videoUri || post.videoUrl || post.video_url || post.uri)
+      ) {
+        absorbPost(post);
+      }
+    }
+  }, [videoFeedItems, absorbPost]);
 
   /** Unified Arena video feed — live scores live in GAME ON; callouts on BATTLES. */
   const visibleFeed = useMemo(() => {

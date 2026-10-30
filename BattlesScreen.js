@@ -22,6 +22,7 @@ import {
 } from './battlesFeedStore';
 import { useFocusEffect } from '@react-navigation/native';
 import OpenCalloutsPanel from './src/components/OpenCalloutsPanel';
+import { useOpenBattles } from './src/hooks/useArenaFeed';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
 const OBSIDIAN = '#000000';
@@ -91,6 +92,8 @@ export default function BattlesScreen({
   onFocusChallengeConsumed,
 }) {
   const { openProfileGateway, openArenaChallenge } = useMainTabs();
+  const { callouts: remoteCallouts, refresh: refreshOpenBattles } =
+    useOpenBattles();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [openCallouts, setOpenCallouts] = useState(() =>
@@ -104,6 +107,11 @@ export default function BattlesScreen({
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
   const scrollRef = useRef(null);
   const calloutsY = useRef(0);
+
+  useEffect(() => {
+    if (!Array.isArray(remoteCallouts) || remoteCallouts.length === 0) return;
+    setOpenCallouts(remoteCallouts);
+  }, [remoteCallouts]);
 
   useEffect(() => {
     if (!focusChallengeId) return undefined;
@@ -170,10 +178,11 @@ export default function BattlesScreen({
 
   useFocusEffect(
     useCallback(() => {
+      refreshOpenBattles();
       getBattlesList().forEach(mergeBattle);
       const hot = getHotFeatureBattle();
       if (hot) setHotFeatureOverride(hot);
-    }, [mergeBattle])
+    }, [mergeBattle, refreshOpenBattles])
   );
 
   const ensureMediaPermissions = useCallback(async () => {

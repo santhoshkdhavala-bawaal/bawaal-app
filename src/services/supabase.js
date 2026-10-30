@@ -1,3 +1,8 @@
+/**
+ * Shared Supabase client for Expo / React Native.
+ * Uses EXPO_PUBLIC_SUPABASE_URL + EXPO_PUBLIC_SUPABASE_ANON_KEY.
+ * Persistent auth sessions via AsyncStorage when the native module is available.
+ */
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
@@ -21,15 +26,42 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 /**
- * In-memory auth storage for Expo Go / environments without the
- * `@react-native-async-storage/async-storage` native module.
- * Avoids "Cannot find native module" crashes on import.
+ * In-memory auth storage fallback when AsyncStorage is unavailable
+ * (broken native link / rare Expo Go edge cases).
  */
 const MemoryStorage = {
   getItem: (_key) => Promise.resolve(null),
   setItem: (_key, _value) => Promise.resolve(),
   removeItem: (_key) => Promise.resolve(),
 };
+
+/**
+ * Prefer AsyncStorage for persistent sessions across app relaunches.
+ * Falls back to MemoryStorage if the native module fails to load.
+ */
+function resolveAuthStorage() {
+  try {
+    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+    const AsyncStorage =
+      require('@react-native-async-storage/async-storage').default;
+    if (
+      AsyncStorage &&
+      typeof AsyncStorage.getItem === 'function' &&
+      typeof AsyncStorage.setItem === 'function'
+    ) {
+      return AsyncStorage;
+    }
+  } catch (err) {
+    console.warn(
+      '[supabase] AsyncStorage unavailable — auth sessions will not persist:',
+      err?.message || err
+    );
+  }
+  return MemoryStorage;
+}
+
+const authStorage = resolveAuthStorage();
+const persistSession = authStorage !== MemoryStorage;
 
 /** Classic Supabase anon keys are JWTs (header.payload.sig). */
 export function looksLikeJwt(token) {
@@ -55,9 +87,9 @@ export const supabase = createClient(
   isValidSupabaseKey(supabaseAnonKey) ? supabaseAnonKey.trim() : PLACEHOLDER_JWT,
   {
     auth: {
-      storage: MemoryStorage,
-      autoRefreshToken: false,
-      persistSession: false,
+      storage: authStorage,
+      autoRefreshToken: persistSession,
+      persistSession,
       detectSessionInUrl: false,
     },
   }
