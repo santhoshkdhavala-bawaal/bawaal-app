@@ -12,7 +12,8 @@ delete env.BAWAAL_DEV_CLIENT;
 delete env.BAWAAL_USE_NATIVE_AV;
 
 const extraArgs = process.argv.slice(2);
-const args = ['expo', 'start', '--clear', ...extraArgs];
+// Force Expo Go mode so the QR uses exp:// (not the custom bawaal:// / exp+ slug scheme).
+const args = ['expo', 'start', '--go', '--clear', ...extraArgs];
 
 const child = spawn('npx', args, {
   stdio: 'inherit',

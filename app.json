@@ -53,7 +53,12 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-dev-client",
+      [
+        "expo-dev-client",
+        {
+          "addGeneratedScheme": false
+        }
+      ],
       [
         "expo-camera",
         {
