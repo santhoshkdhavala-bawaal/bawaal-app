@@ -10,7 +10,10 @@ import ProfileScreen from './ProfileScreen';
 import ProfileGatewayModal from './ProfileGatewayModal';
 import ChallengeAlertModal from './ChallengeAlertModal';
 import CreateBattleSheet from './CreateBattleSheet';
-import { pushOpenChallenge } from './arenaFeedStore';
+import {
+  pushOpenChallenge,
+  startArenaFeedWarmup,
+} from './arenaFeedStore';
 import { pushBattleChallenge } from './battlesFeedStore';
 import { MainTabContext } from './mainTabContext';
 
@@ -59,6 +62,11 @@ export default function MainTabs({ navigation, route }) {
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
   const [createChallengeOpen, setCreateChallengeOpen] = useState(false);
   const [challengeDraft, setChallengeDraft] = useState(EMPTY_CHALLENGE_DRAFT);
+
+  // Warm Arena `videos` + local cache as soon as tabs mount (cuts reload flash)
+  useEffect(() => {
+    startArenaFeedWarmup();
+  }, []);
 
   useEffect(() => {
     const nextTab = route?.params?.tab;

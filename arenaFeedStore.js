@@ -20,6 +20,9 @@ let arenaPosts = [];
 const listeners = new Set();
 /** @type {Promise<object[]>|null} */
 let hydratePromise = null;
+/** Fired after device-cache merge (before network) — supports shared in-flight hydrate. */
+const localReadyListeners = new Set();
+let localPhaseDone = false;
 
 function emit(post) {
   listeners.forEach((fn) => {
@@ -409,14 +412,52 @@ export function drainPendingArenaPosts() {
  * Load posts from Supabase into the store (deduped, newest first).
  * Safe to call multiple times — shares one in-flight promise.
  *
- * @param {{ silent?: boolean }} [opts] When silent, skip per-post emit so the
- *   Arena screen can apply one batched setState (avoids cold-start stutter).
+ * @param {{
+ *   silent?: boolean,
+ *   onLocalReady?: (posts: object[]) => void,
+ * }} [opts] When silent, skip per-post emit so the Arena screen can apply one
+ *   batched setState. `onLocalReady` fires after device-cache merge (before
+ *   network) so first paint can show local reels + challenge cards together.
  * @returns {Promise<object[]>}
  */
-export async function hydrateArenaPostsFromSupabase(opts = {}) {
-  if (hydratePromise) return hydratePromise;
+function notifyLocalReady() {
+  localPhaseDone = true;
+  const snapshot = arenaPosts.slice();
+  localReadyListeners.forEach((fn) => {
+    try {
+      fn(snapshot);
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
 
+export async function hydrateArenaPostsFromSupabase(opts = {}) {
   const silent = !!opts.silent;
+  const onLocalReady =
+    typeof opts.onLocalReady === 'function' ? opts.onLocalReady : null;
+
+  if (onLocalReady) {
+    localReadyListeners.add(onLocalReady);
+    // Warmup may have already finished the local phase
+    if (localPhaseDone) {
+      try {
+        onLocalReady(arenaPosts.slice());
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
+
+  if (hydratePromise) {
+    try {
+      return await hydratePromise;
+    } finally {
+      if (onLocalReady) localReadyListeners.delete(onLocalReady);
+    }
+  }
+
+  localPhaseDone = false;
 
   hydratePromise = (async () => {
     try {
@@ -434,7 +475,11 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
         incoming.push(normalized);
       }
 
-      // 2) Cloud rows (https) merge on top without wiping local-only clips
+      // Paint local reels ASAP (unified with challenge shells) before network
+      notifyLocalReady();
+      if (!silent && incoming.length) emitBatch(incoming);
+
+      // 2) Cloud `videos` rows (https) merge on top without wiping local-only clips
       const remote = await fetchArenaPostsFromSupabase();
       if (Array.isArray(remote) && remote.length > 0) {
         for (const row of remote) {
@@ -445,7 +490,14 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
         }
       }
 
-      if (!silent && incoming.length) emitBatch(incoming);
+      if (!silent && Array.isArray(remote) && remote.length) {
+        emitBatch(
+          remote
+            .map((row) => normalizeArenaPost({ ...row, _fromRemote: true }))
+            .filter((p) => p?.videoUri)
+        );
+      }
+
       console.log(
         '[arenaFeedStore] hydrated',
         'local=',
@@ -460,6 +512,8 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
         '[arenaFeedStore] hydrate failed:',
         err?.message || err
       );
+      // Still unblock first paint listeners
+      if (!localPhaseDone) notifyLocalReady();
       return arenaPosts.slice();
     } finally {
       // Allow a later refresh (e.g. pull-to-refresh) to fetch again
@@ -467,7 +521,20 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
     }
   })();
 
-  return hydratePromise;
+  try {
+    return await hydratePromise;
+  } finally {
+    if (onLocalReady) localReadyListeners.delete(onLocalReady);
+  }
+}
+
+/**
+ * Kick off Arena hydrate as soon as MainTabs mounts so store is warm
+ * before the first Arena paint (cuts reload flash).
+ */
+export function startArenaFeedWarmup() {
+  if (hydratePromise) return hydratePromise;
+  return hydrateArenaPostsFromSupabase({ silent: true });
 }
 
 /**
@@ -488,6 +555,7 @@ const arenaFeedStore = {
   drainPendingArenaPosts,
   hydrateArenaPostsFromSupabase,
   refreshArenaPostsFromSupabase,
+  startArenaFeedWarmup,
 };
 
 export default arenaFeedStore;

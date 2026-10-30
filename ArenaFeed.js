@@ -174,88 +174,6 @@ function ensureDefaultBattles(items) {
   return list;
 }
 
-/** Lean first paint — official battles + light reel shells (battles always visible). */
-function seedArenaFeedLean() {
-  return ensureDefaultBattles([
-    {
-      id: 'reel-gym-1',
-      type: 'reel',
-      sport: 'GYM',
-      author: '@Mia_Torque',
-      verified: true,
-      caption: 'Floor PR session · chalk & chaos',
-      hypeCount: 1204,
-      videoUri: null,
-      createdAt: Date.now() - 12_000_000,
-    },
-  ]);
-}
-
-function seedArenaFeedDemoBattles() {
-  /** General Arena reels — no challenge tags, no battle CTAs */
-  const reels = [
-    {
-      id: 'reel-throttle-1',
-      type: 'reel',
-      sport: 'THROTTLE',
-      author: '@RaceQueen_IN',
-      verified: true,
-      caption: 'Night pull on the expressway · 0–100',
-      hypeCount: 842,
-      videoUri: null,
-      createdAt: Date.now() - 5_000_000,
-    },
-    {
-      id: 'reel-football-1',
-      type: 'reel',
-      sport: 'FOOTBALL',
-      author: '@Karan_FreeKick',
-      verified: false,
-      caption: 'Free-kick practice · top bins',
-      hypeCount: 312,
-      videoUri: null,
-      createdAt: Date.now() - 40_000_000,
-    },
-    {
-      id: 'reel-gym-1',
-      type: 'reel',
-      sport: 'GYM',
-      author: '@Mia_Torque',
-      verified: true,
-      caption: 'Floor PR session · chalk & chaos',
-      hypeCount: 1204,
-      videoUri: null,
-      createdAt: Date.now() - 12_000_000,
-    },
-    {
-      id: 'reel-cricket-1',
-      type: 'reel',
-      sport: 'CRICKET',
-      author: '@StreetBat_MUM',
-      verified: false,
-      caption: 'Gully yorker · street cricket heat',
-      hypeCount: 560,
-      videoUri: null,
-      createdAt: Date.now() - 8_000_000,
-    },
-    {
-      id: 'reel-combat-1',
-      type: 'reel',
-      sport: 'COMBAT',
-      author: '@VirarStriker',
-      verified: true,
-      caption: 'Pad work · late night gym lights',
-      hypeCount: 991,
-      videoUri: null,
-      createdAt: Date.now() - 3_000_000,
-    },
-  ];
-
-  return ensureDefaultBattles(reels).sort(
-    (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
-  );
-}
-
 function isOfficialBattlePost(post) {
   if (!post) return false;
   if (post.type === 'battle_thread' || post.type === 'battle') return true;
@@ -339,6 +257,10 @@ function mapPostToReel(post) {
   };
 }
 
+/**
+ * First paint: in-memory store reels (warmup) + official challenge cards together.
+ * Avoids lean empty-shell flash — null-URI demo reels are filtered from visibleFeed.
+ */
 function buildInitialFeed(route) {
   let items = [];
   const store = getArenaPosts();
@@ -351,8 +273,6 @@ function buildInitialFeed(route) {
     for (const post of ordered) {
       items = ingestArenaPost(items, post);
     }
-  } else {
-    items = seedArenaFeedLean();
   }
   const incoming = route?.params?.newArenaPost;
   if (incoming) {
@@ -363,8 +283,23 @@ function buildInitialFeed(route) {
       timestamp: Date.now(),
     });
   }
-  // Always keep Cover drive / gym / combat Respond shells on first paint
+  // Unified vertical feed from frame 1: challenge cards + any warm reels
   return sortFeedItems(ensureDefaultBattles(items));
+}
+
+/** Batch-ingest posts into a feed list (oldest → newest) without multiple sorts. */
+function ingestPostsBatch(prev, posts) {
+  let next = Array.isArray(prev) ? prev : [];
+  const ordered = [...(posts || [])].sort(
+    (a, b) =>
+      (Number(a.timestamp || a.createdAt) || 0) -
+      (Number(b.timestamp || b.createdAt) || 0)
+  );
+  for (const post of ordered) {
+    if (!post) continue;
+    next = ingestArenaPost(next, post);
+  }
+  return next;
 }
 
 const ClipSurface = memo(function ClipSurface({
@@ -1128,100 +1063,70 @@ export default function ArenaFeed({ navigation, route }) {
     return subscribeArenaPosts(absorbPost);
   }, [absorbPost]);
 
-  // Defer heavy cloud hydrate + demo battles until after first paint
+  // Unified hydrate: local reels ASAP → one cloud merge with challenge cards (no UI jump)
   useEffect(() => {
     let cancelled = false;
-    let idleId = null;
-    let timeoutId = null;
 
-    const runDeferred = async () => {
-      if (cancelled) return;
+    const applyPosts = (posts) => {
+      if (cancelled || !Array.isArray(posts) || posts.length === 0) return;
+      setFeedItems((prev) => {
+        for (const post of posts) {
+          const key =
+            post?.id ||
+            `${post?.videoUri || post?.uri || ''}-${post?.timestamp || ''}`;
+          if (key) ingestedIds.current.add(key);
+        }
+        return sortFeedItems(
+          ensureDefaultBattles(ingestPostsBatch(prev, posts))
+        );
+      });
+    };
+
+    const runUnifiedHydrate = async () => {
       try {
-        // Cloud hydrate first (real posts) — demos load later so they don't block UI
-        const [posts, videoRows] = await Promise.all([
-          hydrateArenaPostsFromSupabase({ silent: true }),
-          fetchArenaFeed('ALL').catch(() => []),
-        ]);
-        // Only merge playable `videos` rows (skip offline mock shells without URIs)
+        // Single pipeline: device cache callback + cloud `videos` (store already warm from MainTabs)
+        const posts = await hydrateArenaPostsFromSupabase({
+          silent: true,
+          onLocalReady: (localPosts) => {
+            applyPosts(localPosts);
+          },
+        });
+        if (cancelled) return;
+
+        applyPosts(posts);
+
+        // Optional playable rows from api path (deduped by ingest) — one batch, no second flash
+        const videoRows = await fetchArenaFeed('ALL').catch(() => []);
+        if (cancelled) return;
         const playableVideos = (Array.isArray(videoRows) ? videoRows : []).filter(
           (row) =>
             row?._fromVideosTable &&
             (row.videoUri || row.videoUrl || row.video_url || row.uri)
         );
-        const mergedCloud = [
-          ...(Array.isArray(posts) ? posts : []),
-          ...playableVideos,
-        ];
-        if (!cancelled && mergedCloud.length > 0) {
-          setFeedItems((prev) => {
-            let next = prev;
-            // Ingest oldest→newest so each prepend leaves the newest post on top
-            const ordered = [...mergedCloud].sort(
-              (a, b) =>
-                (Number(a.timestamp || a.createdAt) || 0) -
-                (Number(b.timestamp || b.createdAt) || 0)
-            );
-            for (const post of ordered) {
-              const key =
-                post.id ||
-                `${post.videoUri || post.uri || ''}-${post.timestamp || ''}`;
-              if (key) ingestedIds.current.add(key);
-              next = ingestArenaPost(next, post);
-            }
-            // Keep official mock battles after cloud merge
-            return sortFeedItems(ensureDefaultBattles(next));
-          });
+        if (playableVideos.length > 0) {
+          applyPosts(playableVideos);
         }
 
-        if (cancelled) return;
-        // Demo shells once only — never re-seed on refresh (avoids MMA flash)
+        // Guarantee challenge shells once — same paint family as videos (no late demo jump)
         if (!demosSeededRef.current) {
           demosSeededRef.current = true;
-          setFeedItems((prev) => {
-            let next = ensureDefaultBattles(prev);
-            const seen = new Set(next.map((p) => p.id));
-            for (const item of seedArenaFeedDemoBattles()) {
-              if (seen.has(item.id)) continue;
-              seen.add(item.id);
-              next = [...next, item];
-            }
-            return sortFeedItems(ensureDefaultBattles(next));
-          });
-        } else if (!Array.isArray(posts) || posts.length === 0) {
-          // No cloud rows — still guarantee battle shells without wiping feed
           setFeedItems((prev) => sortFeedItems(ensureDefaultBattles(prev)));
         }
       } catch (err) {
         console.warn(
-          '[ArenaFeed] deferred hydrate failed:',
+          '[ArenaFeed] unified hydrate failed:',
           err?.message || err
         );
+        if (!cancelled) {
+          setFeedItems((prev) => sortFeedItems(ensureDefaultBattles(prev)));
+        }
       }
     };
 
-    // Paint Arena chrome one frame, then hydrate immediately (no long black wait)
-    timeoutId = setTimeout(() => {
-      if (typeof globalThis.requestIdleCallback === 'function') {
-        idleId = globalThis.requestIdleCallback(
-          () => {
-            void runDeferred();
-          },
-          { timeout: 80 }
-        );
-      } else {
-        void runDeferred();
-      }
-    }, 0);
+    void runUnifiedHydrate();
 
     return () => {
       cancelled = true;
-      if (timeoutId) clearTimeout(timeoutId);
-      if (
-        idleId != null &&
-        typeof globalThis.cancelIdleCallback === 'function'
-      ) {
-        globalThis.cancelIdleCallback(idleId);
-      }
     };
   }, []);
 
@@ -1305,7 +1210,7 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, [refreshVideoFeed, refreshOpenBattles]);
 
-  // Absorb hook-driven `videos` rows when they arrive after first paint
+  // Hook-driven videos: absorb only new playable rows (deduped) — no full-list remount flash
   useEffect(() => {
     if (!Array.isArray(videoFeedItems) || videoFeedItems.length === 0) return;
     for (const post of videoFeedItems) {
@@ -1318,7 +1223,7 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, [videoFeedItems, absorbPost]);
 
-  /** Unified Arena video feed — live scores live in GAME ON; callouts on BATTLES. */
+  /** Unified Arena video feed — reels + challenge cards; shelves inject every N rows. */
   const visibleFeed = useMemo(() => {
     const source = ensureDefaultBattles(feedItems);
     const seenIds = new Set();
@@ -1554,15 +1459,16 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews
-        // 60fps scroll budget — warm neighbors only via ClipSurface `active`
+        // Reels scroll budget — tight window kills stutter (IG / TikTok style)
+        removeClippedSubviews={true}
         initialNumToRender={3}
-        maxToRenderPerBatch={4}
-        windowSize={5}
-        updateCellsBatchingPeriod={40}
+        maxToRenderPerBatch={3}
+        windowSize={3}
+        updateCellsBatchingPeriod={50}
+        onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        extraData={`${warmIndices.size}:${feedWithShelves.length}`}
+        extraData={warmIndices}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
