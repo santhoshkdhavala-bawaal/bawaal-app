@@ -18,7 +18,8 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 
 ## 2. Arena header & FACEOFF hub (`ArenaFeed.js` + `FaceoffHub` + `ScoresSportsPanel.js`)
 
-- **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **FACEOFF** (no feed-top dual toggle, category pill scroller, or in-feed alert ticker).
+- **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **FACEOFF** (no feed-top dual toggle, category pill scroller, or floating alert toasts).
+- **Keep:** Inline horizontal **LIVE COMMUNITY CHALLENGES** shelf every 4–5 feed items (`CommunityChallengesShelf`) deep-linking to BATTLES.
 - **Keep:** FACEOFF hub hosts scores ticker + sport category grid only (no Open Callouts inside FACEOFF).
 - **Keep:** Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS) on the **BATTLES** tab via `OpenCalloutsPanel`.
 - **Keep:** Black-and-white monochromatic Scores & Sports panel inside FACEOFF (sport pills → match list → inline score card).

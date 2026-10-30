@@ -10,8 +10,12 @@ export const MainTabContext = createContext({
   openProfileGateway: () => {},
   /** Open Locker Room and surface a specific training hub (from Passport). */
   openLockerHub: (_hubOrId) => {},
+  /** Arena shelf → BATTLES Open Callouts focused on a challenge id. */
+  openBattlesCallout: (_challengeId) => {},
   focusHubId: null,
   clearFocusHub: () => {},
+  focusChallengeId: null,
+  clearFocusChallenge: () => {},
   challengeAlertActive: false,
 });
 

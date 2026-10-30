@@ -21,7 +21,7 @@ const MUTED = '#A0A0A0';
 const CRIMSON = '#FF0033';
 const TIP_BLUE = '#3B82F6';
 
-function CalloutCard({ item, kind, onRespond }) {
+function CalloutCard({ item, kind, onRespond, focused }) {
   const handle = String(
     item.host || item.opponent || item.challengeOf || 'Athlete'
   ).replace(/^@/, '');
@@ -37,7 +37,7 @@ function CalloutCard({ item, kind, onRespond }) {
     (isTip ? 'Tip request' : 'Open callout');
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, focused && styles.cardFocused]}>
       <View style={styles.top}>
         <View
           style={[
@@ -70,7 +70,14 @@ function CalloutCard({ item, kind, onRespond }) {
   );
 }
 
-function Section({ title, emptyTitle, emptySub, items, onRespond }) {
+function Section({
+  title,
+  emptyTitle,
+  emptySub,
+  items,
+  onRespond,
+  focusChallengeId,
+}) {
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>
@@ -89,6 +96,10 @@ function Section({ title, emptyTitle, emptySub, items, onRespond }) {
             item={item}
             kind={resolveCalloutKind(item)}
             onRespond={onRespond}
+            focused={
+              focusChallengeId &&
+              String(item.id) === String(focusChallengeId)
+            }
           />
         ))
       )}
@@ -100,6 +111,7 @@ function OpenCalloutsPanel({
   callouts = [],
   selectedSport = 'ALL',
   onRespond,
+  focusChallengeId = null,
 }) {
   const sport = canonicalizeSport(selectedSport) || 'ALL';
 
@@ -137,6 +149,7 @@ function OpenCalloutsPanel({
         emptySub="Launch from + BATTLE or LAUNCH ARENA CHALLENGE."
         items={challenges}
         onRespond={onRespond}
+        focusChallengeId={focusChallengeId}
       />
       <Section
         title="TIPS & BREAKDOWNS"
@@ -144,6 +157,7 @@ function OpenCalloutsPanel({
         emptySub="Ask for technique advice or a form-check."
         items={tips}
         onRespond={onRespond}
+        focusChallengeId={focusChallengeId}
       />
     </View>
   );
@@ -207,6 +221,9 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     backgroundColor: SURFACE,
     marginBottom: 10,
+  },
+  cardFocused: {
+    borderColor: '#FF5722',
   },
   top: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -85,7 +85,11 @@ const ARENA_CHALLENGE_DRAFT = {
   openerUri: null,
 };
 
-export default function BattlesScreen({ navigation }) {
+export default function BattlesScreen({
+  navigation,
+  focusChallengeId = null,
+  onFocusChallengeConsumed,
+}) {
   const { openProfileGateway, openArenaChallenge } = useMainTabs();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
@@ -98,6 +102,30 @@ export default function BattlesScreen({ navigation }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const scrollRef = useRef(null);
+  const calloutsY = useRef(0);
+
+  useEffect(() => {
+    if (!focusChallengeId) return undefined;
+    const scrollT = setTimeout(() => {
+      try {
+        scrollRef.current?.scrollTo?.({
+          y: Math.max(0, calloutsY.current - 12),
+          animated: true,
+        });
+      } catch (_) {
+        /* ignore */
+      }
+    }, 280);
+    // Keep highlight on the deep-linked card briefly, then clear parent focus.
+    const clearT = setTimeout(() => {
+      onFocusChallengeConsumed?.();
+    }, 4500);
+    return () => {
+      clearTimeout(scrollT);
+      clearTimeout(clearT);
+    };
+  }, [focusChallengeId, onFocusChallengeConsumed]);
 
   /** Top card → 1-tap UniversalCamera challenge mode (no pre-camera sheet). */
   const launchArenaChallenge = useCallback(() => {
@@ -325,7 +353,11 @@ export default function BattlesScreen({ navigation }) {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      >
         <TouchableOpacity
           style={styles.arenaLaunchCard}
           activeOpacity={0.88}
@@ -412,11 +444,18 @@ export default function BattlesScreen({ navigation }) {
           );
         })}
 
-        <OpenCalloutsPanel
-          callouts={openCallouts}
-          selectedSport="ALL"
-          onRespond={openChallenge}
-        />
+        <View
+          onLayout={(e) => {
+            calloutsY.current = e?.nativeEvent?.layout?.y || 0;
+          }}
+        >
+          <OpenCalloutsPanel
+            callouts={openCallouts}
+            selectedSport="ALL"
+            onRespond={openChallenge}
+            focusChallengeId={focusChallengeId}
+          />
+        </View>
 
         <TouchableOpacity
           style={styles.createBtn}

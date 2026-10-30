@@ -39,6 +39,11 @@ import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import FaceoffHub from './src/components/FaceoffHub';
+import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
+import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
+
+/** Insert an inline community shelf after every N video/battle rows. */
+const COMMUNITY_SHELF_INTERVAL = 4;
 
 const WHITE = '#FFFFFF';
 const DARK_BG = '#000000';
@@ -1014,9 +1019,10 @@ const BattleCard = memo(function BattleCard({
 });
 
 export default function ArenaFeed({ navigation, route }) {
-  const { openProfileGateway } = useMainTabs();
+  const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [faceoffOpen, setFaceoffOpen] = useState(false);
   const [faceoffSport, setFaceoffSport] = useState('ALL');
+  const communityCallouts = useMemo(() => seedBattlesOpenCallouts(), []);
   // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
   const [feedItems, setFeedItems] = useState(() => buildInitialFeed(route));
   const [hubThread, setHubThread] = useState(null);
@@ -1289,9 +1295,52 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [feedItems]);
 
+  /**
+   * Vertical feed with inline horizontal challenge shelves every N media rows.
+   * Shelf rows are non-video so viewability warm indices still map to media cells.
+   */
+  const feedWithShelves = useMemo(() => {
+    const media = visibleFeed;
+    if (!media.length) return media;
+    const out = [];
+    let shelfIdx = 0;
+    for (let i = 0; i < media.length; i += 1) {
+      out.push(media[i]);
+      if ((i + 1) % COMMUNITY_SHELF_INTERVAL === 0) {
+        out.push({
+          id: `community-shelf-${shelfIdx}`,
+          type: 'community_shelf',
+          shelfIndex: shelfIdx,
+        });
+        shelfIdx += 1;
+      }
+    }
+    // Guarantee at least one shelf when feed is shorter than the interval
+    if (shelfIdx === 0) {
+      out.push({
+        id: 'community-shelf-0',
+        type: 'community_shelf',
+        shelfIndex: 0,
+      });
+    }
+    return out;
+  }, [visibleFeed]);
+
   const openFaceoff = useCallback(() => {
     setFaceoffOpen(true);
   }, []);
+
+  const openShelfCallout = useCallback(
+    (item) => {
+      const id = item?.id || item?.challengeId || null;
+      if (openBattlesCallout) {
+        openBattlesCallout(id);
+        return;
+      }
+      navigation?.navigate?.('Battles', { focusChallengeId: id });
+    },
+    [openBattlesCallout, navigation]
+  );
 
   const closeFaceoff = useCallback(() => {
     setFaceoffOpen(false);
@@ -1347,6 +1396,14 @@ export default function ArenaFeed({ navigation, route }) {
 
   const renderFeedItem = useCallback(
     ({ item, index }) => {
+      if (item.type === 'community_shelf') {
+        return (
+          <CommunityChallengesShelf
+            callouts={communityCallouts}
+            onOpenCallout={openShelfCallout}
+          />
+        );
+      }
       // Warm viewport + ±1 neighbor for instant playback while scrolling
       const active =
         warmIndices.size === 0 ? index < 2 : warmIndices.has(index);
@@ -1375,6 +1432,8 @@ export default function ArenaFeed({ navigation, route }) {
       return null;
     },
     [
+      communityCallouts,
+      openShelfCallout,
       openReel,
       openResponses,
       openChallengeRespond,
@@ -1429,25 +1488,25 @@ export default function ArenaFeed({ navigation, route }) {
 
       <FlatList
         ref={listRef}
-        data={visibleFeed}
+        data={feedWithShelves}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
         ListEmptyComponent={emptyFilter}
         contentContainerStyle={
-          visibleFeed.length === 0
+          feedWithShelves.length === 0
             ? styles.scrollContentEmpty
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
         // 60fps scroll budget — warm neighbors only via ClipSurface `active`
-        initialNumToRender={2}
-        maxToRenderPerBatch={3}
+        initialNumToRender={3}
+        maxToRenderPerBatch={4}
         windowSize={5}
         updateCellsBatchingPeriod={40}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        extraData={`${warmIndices.size}:${visibleFeed.length}`}
+        extraData={`${warmIndices.size}:${feedWithShelves.length}`}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

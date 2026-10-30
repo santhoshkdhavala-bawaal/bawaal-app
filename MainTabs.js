@@ -54,6 +54,7 @@ export default function MainTabs({ navigation, route }) {
   });
   const [profileOpen, setProfileOpen] = useState(false);
   const [focusHubId, setFocusHubId] = useState(null);
+  const [focusChallengeId, setFocusChallengeId] = useState(null);
   const [challengeAlert, setChallengeAlert] = useState(DEMO_CHALLENGE);
   const [challengeModalOpen, setChallengeModalOpen] = useState(false);
   const [createChallengeOpen, setCreateChallengeOpen] = useState(false);
@@ -181,6 +182,7 @@ export default function MainTabs({ navigation, route }) {
   const openProfileGateway = useCallback(() => setProfileOpen(true), []);
 
   const clearFocusHub = useCallback(() => setFocusHubId(null), []);
+  const clearFocusChallenge = useCallback(() => setFocusChallengeId(null), []);
 
   /** Passport Connected Squads → Locker Room hub (single-tap). */
   const openLockerHub = useCallback((hubOrId) => {
@@ -192,6 +194,16 @@ export default function MainTabs({ navigation, route }) {
           : null;
     setFocusHubId(id);
     setTab('Locker');
+  }, []);
+
+  /** Arena community shelf → BATTLES Open Callouts focused on challenge id. */
+  const openBattlesCallout = useCallback((challengeId) => {
+    const id =
+      challengeId != null && String(challengeId).trim()
+        ? String(challengeId).trim()
+        : null;
+    setFocusChallengeId(id);
+    setTab('Battles');
   }, []);
 
   /** Sheet "Record Opener" re-entry — same camera route (already 1-tap from FAB). */
@@ -282,6 +294,9 @@ export default function MainTabs({ navigation, route }) {
         return;
       }
       if (name === 'Battles') {
+        if (params?.focusChallengeId != null) {
+          setFocusChallengeId(String(params.focusChallengeId));
+        }
         setTab('Battles');
         return;
       }
@@ -320,8 +335,11 @@ export default function MainTabs({ navigation, route }) {
       openArenaChallenge,
       openProfileGateway,
       openLockerHub,
+      openBattlesCallout,
       focusHubId,
       clearFocusHub,
+      focusChallengeId,
+      clearFocusChallenge,
       challengeAlertActive,
     }),
     [
@@ -330,8 +348,11 @@ export default function MainTabs({ navigation, route }) {
       openArenaChallenge,
       openProfileGateway,
       openLockerHub,
+      openBattlesCallout,
       focusHubId,
       clearFocusHub,
+      focusChallengeId,
+      clearFocusChallenge,
       challengeAlertActive,
     ]
   );
@@ -343,7 +364,13 @@ export default function MainTabs({ navigation, route }) {
   if (tab === 'Arena') {
     ActiveScreen = <ArenaFeed navigation={tabNavigation} route={arenaRoute} />;
   } else if (tab === 'Battles') {
-    ActiveScreen = <BattlesScreen navigation={tabNavigation} />;
+    ActiveScreen = (
+      <BattlesScreen
+        navigation={tabNavigation}
+        focusChallengeId={focusChallengeId}
+        onFocusChallengeConsumed={clearFocusChallenge}
+      />
+    );
   } else if (tab === 'Locker') {
     ActiveScreen = <LockerRoom navigation={tabNavigation} />;
   } else if (tab === 'Passport') {
