@@ -40,7 +40,8 @@ import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import GameOnHub from './src/components/GameOnHub';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
-import { useArenaFeed, useOpenBattles } from './src/hooks/useArenaFeed';
+import { useArenaFeed } from './src/hooks/useArenaFeed';
+import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
@@ -1025,8 +1026,7 @@ const BattleCard = memo(function BattleCard({
 export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
-  const { callouts: liveCallouts, refresh: refreshOpenBattles } =
-    useOpenBattles();
+  const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
   const { items: videoFeedItems, refresh: refreshVideoFeed } = useArenaFeed();
   const communityCallouts = useMemo(
     () =>

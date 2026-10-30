@@ -1,9 +1,11 @@
 /**
- * Shared Supabase client for Expo / React Native.
- * Uses EXPO_PUBLIC_SUPABASE_URL + EXPO_PUBLIC_SUPABASE_ANON_KEY.
- * Persistent auth sessions via AsyncStorage when the native module is available.
+ * Shared Supabase client for Expo / React Native (Expo Go + dev builds).
+ * Env: EXPO_PUBLIC_SUPABASE_URL + EXPO_PUBLIC_SUPABASE_ANON_KEY
+ * Sessions persist via AsyncStorage when the native module is available.
  */
+import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -37,17 +39,15 @@ const MemoryStorage = {
 
 /**
  * Prefer AsyncStorage for persistent sessions across app relaunches.
- * Falls back to MemoryStorage if the native module fails to load.
+ * Falls back to MemoryStorage if the module fails a smoke check.
  */
 function resolveAuthStorage() {
   try {
-    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
-    const AsyncStorage =
-      require('@react-native-async-storage/async-storage').default;
     if (
       AsyncStorage &&
       typeof AsyncStorage.getItem === 'function' &&
-      typeof AsyncStorage.setItem === 'function'
+      typeof AsyncStorage.setItem === 'function' &&
+      typeof AsyncStorage.removeItem === 'function'
     ) {
       return AsyncStorage;
     }
@@ -105,8 +105,8 @@ export function isSupabaseConfigured() {
 }
 
 /**
- * @deprecated Storage uploads no longer call this — public `bawaalvideos`
- * inserts use the anon/publishable key with no user session.
+ * @deprecated Storage uploads no longer call this — public video buckets
+ * use the anon/publishable key with no user session.
  * Kept as a no-op compatibility shim for any legacy callers.
  */
 export async function canAttemptCloudUpload() {
@@ -119,3 +119,8 @@ export function isCloudAuthError(err) {
     msg
   );
 }
+
+/** Canonical public video bucket (new architecture). Legacy uploads still use `bawaalvideos`. */
+export const BAWAAL_VIDEOS_BUCKET = 'bawaal-videos';
+/** Public avatar / passport photo bucket. */
+export const BAWAAL_AVATARS_BUCKET = 'avatars';

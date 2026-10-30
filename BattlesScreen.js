@@ -22,7 +22,7 @@ import {
 } from './battlesFeedStore';
 import { useFocusEffect } from '@react-navigation/native';
 import OpenCalloutsPanel from './src/components/OpenCalloutsPanel';
-import { useOpenBattles } from './src/hooks/useArenaFeed';
+import { useBattles } from './src/hooks/useBattles';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
 const OBSIDIAN = '#000000';
@@ -92,8 +92,7 @@ export default function BattlesScreen({
   onFocusChallengeConsumed,
 }) {
   const { openProfileGateway, openArenaChallenge } = useMainTabs();
-  const { callouts: remoteCallouts, refresh: refreshOpenBattles } =
-    useOpenBattles();
+  const { callouts: remoteCallouts, refresh: refreshOpenBattles } = useBattles();
   const [filter, setFilter] = useState('OPEN');
   const [battles, setBattles] = useState(SEED_BATTLES);
   const [openCallouts, setOpenCallouts] = useState(() =>

@@ -10,4 +10,6 @@ export {
   isValidSupabaseKey,
   isCloudAuthError,
   canAttemptCloudUpload,
+  BAWAAL_VIDEOS_BUCKET,
+  BAWAAL_AVATARS_BUCKET,
 } from '../src/services/supabase';

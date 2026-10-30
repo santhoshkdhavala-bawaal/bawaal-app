@@ -87,8 +87,13 @@ export function mapVideoRowToFeedItem(row) {
     'OTHERS'
   );
   const videoUrl = row.video_url || row.videoUrl || null;
+  const thumbnailUrl = row.thumbnail_url || row.thumbnailUrl || null;
   const createdAt = row.created_at || row.createdAt || null;
   const ts = createdAt ? Date.parse(createdAt) : Date.now();
+  const primarySport =
+    profile?.primary_sport ||
+    profile?.sport ||
+    sport;
 
   return {
     id: String(row.id),
@@ -99,11 +104,14 @@ export function mapVideoRowToFeedItem(row) {
     avatarText: username.charAt(0).toUpperCase() || 'A',
     category: sport,
     sport,
+    primarySport,
     caption: row.caption || '',
     videoUrl,
     video_url: videoUrl,
     videoUri: videoUrl,
     uri: videoUrl,
+    thumbnailUrl,
+    thumbnail_url: thumbnailUrl,
     type: 'reel',
     mode: 'SPARKS',
     author: handle,
@@ -192,6 +200,7 @@ export async function fetchArenaFeed(category = 'ALL') {
         id,
         user_id,
         video_url,
+        thumbnail_url,
         category,
         caption,
         created_at,
@@ -199,9 +208,11 @@ export async function fetchArenaFeed(category = 'ALL') {
           username,
           full_name,
           avatar_url,
+          primary_sport,
           handle,
           display_name,
-          avatar_uri
+          avatar_uri,
+          sport
         )
       `
       )
@@ -242,7 +253,9 @@ async function fetchArenaFeedWithoutJoin(category = 'ALL') {
   try {
     let query = supabase
       .from('videos')
-      .select('id, user_id, video_url, category, caption, created_at')
+      .select(
+        'id, user_id, video_url, thumbnail_url, category, caption, created_at'
+      )
       .order('created_at', { ascending: false })
       .limit(40);
 
@@ -324,6 +337,7 @@ async function fetchOpenBattlesCreatorSchema({ category, limit }) {
           username,
           full_name,
           avatar_url,
+          primary_sport,
           handle,
           display_name
         )
