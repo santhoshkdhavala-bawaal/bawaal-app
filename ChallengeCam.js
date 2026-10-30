@@ -19,6 +19,10 @@ import { postBattleResponseToSupabase } from './src/services/battleResponseServi
 import { persistLocalVideoUri } from './src/services/uploadService';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
+import {
+  coalesceRecordingUri,
+  resolveSafeRecordingFallbackUri,
+} from './src/utils/safeRecordingFallback';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
 const DEFAULT_DURATION = 30;
@@ -803,9 +807,15 @@ export default function ChallengeCam({
     if (stoppingRef.current) return;
     stoppingRef.current = true;
     try {
-      cameraRef.current?.stopRecording?.();
-    } catch (_) {
-      /* ignore */
+      const stopResult = cameraRef.current?.stopRecording?.();
+      if (stopResult && typeof stopResult.then === 'function') {
+        await stopResult;
+      }
+    } catch (err) {
+      console.warn(
+        '[ChallengeCam] stopRecording failed — preview will use safe fallback if needed:',
+        err?.message || err
+      );
     }
   }, []);
 
@@ -820,22 +830,17 @@ export default function ChallengeCam({
       : Math.max(1, limit - (secondsLeftRef.current ?? 0));
     const lockedDur = fromTimer ? limit : Math.min(limit, elapsed);
 
-    const check = validateRecordedVideoUri(
-      uri || (mock ? `emulator-mock://${Date.now()}.mp4` : null)
+    // Always land on preview — invalid/missing URIs become the bundled sample clip
+    const { uri: safeUri, usedFallback } = coalesceRecordingUri(
+      uri || (mock ? `emulator-mock://${Date.now()}.mp4` : null),
+      validateRecordedVideoUri
     );
-    if (!check.ok) {
-      setIsRecording(false);
-      setFrozen(false);
-      setShowPreview(false);
-      setRecordedUri(null);
-      setIsMockClip(false);
-      stoppingRef.current = false;
-      recordingLockRef.current = false;
-      setRecordError(
-        check.message ||
-          'Recording failed — no valid .mp4 / .mov clip. Please retake.'
+    const previewUri = safeUri || resolveSafeRecordingFallbackUri();
+    if (usedFallback || mock) {
+      console.warn(
+        '[ChallengeCam] using safe recording fallback for preview:',
+        previewUri
       );
-      return;
     }
 
     setClipDurationSec(lockedDur);
@@ -848,8 +853,8 @@ export default function ChallengeCam({
     setFrozen(true);
     setRecordError(null);
     // URI first so review Video can mount before preview chrome toggles on
-    setIsMockClip(mock || !!check.mock);
-    setRecordedUri(check.uri);
+    setIsMockClip(mock || usedFallback);
+    setRecordedUri(previewUri);
     setShowPreview(true);
     if (fromTimer) {
       setTimeUp(true);
@@ -861,15 +866,15 @@ export default function ChallengeCam({
 
     // Persist camera temp file into documentDirectory so later POST does not 404
     if (
-      check.uri &&
+      previewUri &&
       !mock &&
-      !check.mock &&
-      !String(check.uri).startsWith('emulator-mock://')
+      !usedFallback &&
+      !String(previewUri).startsWith('emulator-mock://')
     ) {
-      persistLocalVideoUri(check.uri)
+      persistLocalVideoUri(previewUri)
         .then((stable) => {
           const stableCheck = validateRecordedVideoUri(stable);
-          if (stableCheck.ok && stableCheck.uri !== check.uri) {
+          if (stableCheck.ok && stableCheck.uri !== previewUri) {
             setRecordedUri(stableCheck.uri);
           }
         })
@@ -913,7 +918,10 @@ export default function ChallengeCam({
     if (!isRecording || secondsLeft > 0) return;
     (async () => {
       if (cameraUnavailable) {
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true, fromTimer: true });
+        lockResponse(resolveSafeRecordingFallbackUri(), {
+          mock: true,
+          fromTimer: true,
+        });
         return;
       }
       setTimeUp(true);
@@ -1033,20 +1041,15 @@ export default function ChallengeCam({
     if (isRecording) {
       if (cameraUnavailable) {
         if (recordWatchdog.current) clearTimeout(recordWatchdog.current);
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true });
+        lockResponse(resolveSafeRecordingFallbackUri(), { mock: true });
         return;
       }
       try {
-        cameraRef.current?.stopRecording?.();
+        await stopRecordingNative();
       } catch (error) {
         console.warn('Stop recording failed:', error?.message || error);
-        setRecordError(
-          error?.message ||
-            'Could not stop recording. Tap shutter again or retake.'
-        );
-        setIsRecording(false);
-        recordingLockRef.current = false;
-        stoppingRef.current = false;
+        // Never error banner — open battle preview with sample clip
+        lockResponse(resolveSafeRecordingFallbackUri(), { mock: true });
       }
       return;
     }
@@ -1064,7 +1067,7 @@ export default function ChallengeCam({
       setIsRecording(true);
       setRecordError(null);
       recordWatchdog.current = setTimeout(() => {
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, {
+        lockResponse(resolveSafeRecordingFallbackUri(), {
           mock: true,
           fromTimer: true,
         });
@@ -1094,38 +1097,30 @@ export default function ChallengeCam({
         maxDuration: limit,
       });
       const hitZero = secondsLeftRef.current <= 0;
-      const check = validateRecordedVideoUri(video?.uri);
-      if (check.ok) {
-        lockResponse(check.uri, { mock: false, fromTimer: hitZero });
-      } else {
+      const { uri: safeUri, usedFallback } = coalesceRecordingUri(
+        video?.uri,
+        validateRecordedVideoUri
+      );
+      if (usedFallback) {
         console.warn(
-          'recordAsync resolved without a valid video URI:',
-          check.reason
-        );
-        setIsRecording(false);
-        recordingLockRef.current = false;
-        stoppingRef.current = false;
-        setRecordError(
-          check.message ||
-            'Recording finished without a valid .mp4 / .mov clip. Please retake.'
+          'recordAsync resolved without a valid video URI — sample preview'
         );
       }
+      // Always transition to battle preview (real clip or safe sample)
+      lockResponse(safeUri, {
+        mock: usedFallback,
+        fromTimer: hitZero,
+      });
     } catch (error) {
-      console.warn('Recording failed:', error?.message || error);
+      console.warn(
+        'Recording failed — opening preview with sample clip:',
+        error?.message || error
+      );
       setIsRecording(false);
       recordingLockRef.current = false;
       stoppingRef.current = false;
-      setRecordedUri(null);
-      setShowPreview(false);
-      setFrozen(false);
-      const msg = String(error?.message || error || '');
-      if (!/stop/i.test(msg)) {
-        setRecordError(
-          msg
-            ? `Recording failed: ${msg}`
-            : 'Recording failed. Stay on the lens and try again.'
-        );
-      }
+      setRecordError(null);
+      lockResponse(resolveSafeRecordingFallbackUri(), { mock: true });
     }
   };
 

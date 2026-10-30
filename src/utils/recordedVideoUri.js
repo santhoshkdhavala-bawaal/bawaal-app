@@ -52,10 +52,20 @@ export function validateRecordedVideoUri(uri) {
   const isPh =
     /^ph:\/\//i.test(trimmed) || /^assets-library:\/\//i.test(trimmed);
   const isHttps = /^https:\/\//i.test(trimmed);
+  // Metro / asset-server URIs for bundled sample_challenge.mp4
+  const isAssetHttp =
+    /^https?:\/\//i.test(trimmed) &&
+    (/sample_challenge\.mp4/i.test(pathOnly) || hasVideoExt);
 
   // Prefer explicit video extension; allow content:// / ph:// (often no extension)
-  if (hasVideoExt && (isFile || isHttps || isContent || isPh || pathOnly.includes('/'))) {
-    return { ok: true, uri: trimmed };
+  if (
+    hasVideoExt &&
+    (isFile || isHttps || isContent || isPh || isAssetHttp || pathOnly.includes('/'))
+  ) {
+    return { ok: true, uri: trimmed, mock: isAssetHttp && /sample_challenge/i.test(pathOnly) };
+  }
+  if (isAssetHttp) {
+    return { ok: true, uri: trimmed, mock: /sample_challenge/i.test(pathOnly) };
   }
   if (isContent || isPh) {
     return { ok: true, uri: trimmed };

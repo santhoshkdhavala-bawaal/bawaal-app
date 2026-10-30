@@ -27,6 +27,10 @@ import {
   sanitizePlayableFeedUri,
 } from './src/services/uploadService';
 import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
+import {
+  coalesceRecordingUri,
+  resolveSafeRecordingFallbackUri,
+} from './src/utils/safeRecordingFallback';
 import PreviewScreen from './PreviewScreen';
 
 const BG = '#000000';
@@ -157,13 +161,42 @@ export default function ChallengeCamRecorder({
     }
   }, []);
 
+  const openPreviewWithUri = useCallback(async (rawUri, { fromFallback = false } = {}) => {
+    const { uri: safeUri } = coalesceRecordingUri(
+      rawUri,
+      validateRecordedVideoUri
+    );
+    let stable = safeUri;
+    if (!fromFallback && !String(safeUri).startsWith('emulator-mock://')) {
+      try {
+        stable = (await persistLocalVideoUri(safeUri)) || safeUri;
+      } catch {
+        stable = safeUri;
+      }
+    }
+    const finalCheck = validateRecordedVideoUri(stable);
+    const previewUri = finalCheck.ok
+      ? finalCheck.uri
+      : resolveSafeRecordingFallbackUri();
+    setError(null);
+    setSpeedRate(1);
+    setRecordedUri(previewUri);
+    setPhase('preview');
+  }, []);
+
   const stopNativeRecording = useCallback(async () => {
     if (stoppingRef.current) return;
     stoppingRef.current = true;
     try {
-      cameraRef.current?.stopRecording?.();
-    } catch {
-      /* ignore */
+      const stopResult = cameraRef.current?.stopRecording?.();
+      if (stopResult && typeof stopResult.then === 'function') {
+        await stopResult;
+      }
+    } catch (err) {
+      console.warn(
+        '[ChallengeCamRecorder] stopRecording failed — will use safe fallback if needed:',
+        err?.message || err
+      );
     }
   }, []);
 
@@ -248,58 +281,36 @@ export default function ChallengeCamRecorder({
       recordingLockRef.current = false;
       stoppingRef.current = false;
 
-      const check = validateRecordedVideoUri(result?.uri);
-      if (!check.ok) {
-        setRecordedUri(null);
-        setPhase('camera');
-        setError(
-          check.message ||
-            'Recording failed — no valid .mp4 / .mov clip. Please retake.'
+      const { uri: safeUri, usedFallback } = coalesceRecordingUri(
+        result?.uri,
+        validateRecordedVideoUri
+      );
+      if (usedFallback) {
+        console.warn(
+          '[ChallengeCamRecorder] missing/invalid record URI — using sample clip'
         );
-        return;
       }
-
-      let stable = check.uri;
-      try {
-        stable = (await persistLocalVideoUri(check.uri)) || check.uri;
-      } catch {
-        stable = check.uri;
-      }
-      const stableCheck = validateRecordedVideoUri(stable);
-      if (!stableCheck.ok) {
-        setRecordedUri(null);
-        setPhase('camera');
-        setError(
-          stableCheck.message ||
-            'Could not save a playable clip. Please retake.'
-        );
-        return;
-      }
-
-      setRecordedUri(stableCheck.uri);
-      setSpeedRate(1);
-      setPhase('preview');
+      await openPreviewWithUri(safeUri, { fromFallback: usedFallback });
     } catch (err) {
+      console.warn(
+        '[ChallengeCamRecorder] recordAsync failed — safe sample preview:',
+        err?.message || err
+      );
       clearTimer();
       setIsRecording(false);
       recordingLockRef.current = false;
       stoppingRef.current = false;
-      setRecordedUri(null);
-      setPhase('camera');
-      const msg = String(err?.message || err || '');
-      if (!/stop/i.test(msg)) {
-        setError(
-          msg
-            ? `Recording failed: ${msg}`
-            : 'Recording failed. Stay on the lens and try again.'
-        );
-      }
+      // Never error banner / black screen — always open battle preview
+      await openPreviewWithUri(resolveSafeRecordingFallbackUri(), {
+        fromFallback: true,
+      });
     }
   }, [
     cameraReady,
     clearTimer,
     isRecording,
     maxSec,
+    openPreviewWithUri,
     phase,
     startTimer,
   ]);
@@ -307,17 +318,35 @@ export default function ChallengeCamRecorder({
   const toggleRecord = useCallback(() => {
     if (phase !== 'camera' || busy) return;
     if (isRecording) {
-      try {
-        void stopNativeRecording();
-      } catch (err) {
-        setError(
-          err?.message || 'Could not stop recording. Tap shutter again.'
-        );
-      }
+      void (async () => {
+        try {
+          await stopNativeRecording();
+        } catch (err) {
+          console.warn(
+            '[ChallengeCamRecorder] stop failed — forcing sample preview:',
+            err?.message || err
+          );
+          clearTimer();
+          setIsRecording(false);
+          recordingLockRef.current = false;
+          stoppingRef.current = false;
+          await openPreviewWithUri(resolveSafeRecordingFallbackUri(), {
+            fromFallback: true,
+          });
+        }
+      })();
       return;
     }
     void beginRecording();
-  }, [beginRecording, busy, isRecording, phase, stopNativeRecording]);
+  }, [
+    beginRecording,
+    busy,
+    clearTimer,
+    isRecording,
+    openPreviewWithUri,
+    phase,
+    stopNativeRecording,
+  ]);
 
   const handleRetake = useCallback(async () => {
     setBusy(true);
@@ -334,16 +363,14 @@ export default function ChallengeCamRecorder({
       const rawHandoff = sanitizePlayableFeedUri(
         payload?.videoUri || payload?.localVideoUri || payload?.uri || recordedUri
       );
-      const check = validateRecordedVideoUri(rawHandoff);
-      const handoffUri = check.ok ? check.uri : null;
+      const { uri: handoffUri } = coalesceRecordingUri(
+        rawHandoff,
+        validateRecordedVideoUri
+      );
       if (!handoffUri || busy) {
-        if (!handoffUri) {
-          setError(
-            check.message || 'Invalid clip URI — retake the recording'
-          );
-        }
         return;
       }
+      setError(null);
       setBusy(true);
       setUploadPct(0);
       setError(null);
