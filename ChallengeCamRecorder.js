@@ -29,8 +29,11 @@ import {
 import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 import {
   coalesceRecordingUri,
+  ensurePlayableRecordingUri,
   resolveSafeRecordingFallbackUri,
 } from './src/utils/safeRecordingFallback';
+import { getActiveUser } from './src/services/activeUserProfile';
+import { resolvePostSport } from './src/utils/sportCategory';
 import PreviewScreen from './PreviewScreen';
 
 const BG = '#000000';
@@ -162,26 +165,39 @@ export default function ChallengeCamRecorder({
   }, []);
 
   const openPreviewWithUri = useCallback(async (rawUri, { fromFallback = false } = {}) => {
-    const { uri: safeUri } = coalesceRecordingUri(
-      rawUri,
-      validateRecordedVideoUri
-    );
-    let stable = safeUri;
-    if (!fromFallback && !String(safeUri).startsWith('emulator-mock://')) {
-      try {
-        stable = (await persistLocalVideoUri(safeUri)) || safeUri;
-      } catch {
-        stable = safeUri;
-      }
+    try {
+      const { uri: previewUri } = fromFallback
+        ? {
+            uri:
+              coalesceRecordingUri(rawUri).uri ||
+              resolveSafeRecordingFallbackUri(),
+          }
+        : await ensurePlayableRecordingUri(rawUri, {
+            persist: async (u) => {
+              if (
+                !u ||
+                String(u).startsWith('emulator-mock://') ||
+                /^https?:\/\//i.test(String(u))
+              ) {
+                return u;
+              }
+              return (await persistLocalVideoUri(u)) || u;
+            },
+          });
+      setError(null);
+      setSpeedRate(1);
+      setRecordedUri(previewUri || resolveSafeRecordingFallbackUri());
+      setPhase('preview');
+    } catch (err) {
+      console.warn(
+        '[ChallengeCamRecorder] openPreview failed — sample fallback:',
+        err?.message || err
+      );
+      setError(null);
+      setSpeedRate(1);
+      setRecordedUri(resolveSafeRecordingFallbackUri());
+      setPhase('preview');
     }
-    const finalCheck = validateRecordedVideoUri(stable);
-    const previewUri = finalCheck.ok
-      ? finalCheck.uri
-      : resolveSafeRecordingFallbackUri();
-    setError(null);
-    setSpeedRate(1);
-    setRecordedUri(previewUri);
-    setPhase('preview');
   }, []);
 
   const stopNativeRecording = useCallback(async () => {
@@ -360,24 +376,46 @@ export default function ChallengeCamRecorder({
 
   const handleContinue = useCallback(
     async (payload) => {
+      if (busy) return;
       const rawHandoff = sanitizePlayableFeedUri(
         payload?.videoUri || payload?.localVideoUri || payload?.uri || recordedUri
       );
-      const { uri: handoffUri } = coalesceRecordingUri(
-        rawHandoff,
-        validateRecordedVideoUri
-      );
-      if (!handoffUri || busy) {
-        return;
-      }
+      // Always proceed — null/codec failures become the sample clip
+      const { uri: handoffUri } = await ensurePlayableRecordingUri(rawHandoff, {
+        persist: async (u) => {
+          if (
+            !u ||
+            String(u).startsWith('emulator-mock://') ||
+            /^https?:\/\//i.test(String(u))
+          ) {
+            return u;
+          }
+          try {
+            return (await persistLocalVideoUri(u)) || u;
+          } catch {
+            return u;
+          }
+        },
+      });
       setError(null);
       setBusy(true);
       setUploadPct(0);
-      setError(null);
       const elapsed = Math.max(
         1,
         elapsedSec || Math.round((Date.now() - startedAtRef.current) / 1000)
       );
+      const active = getActiveUser?.() || {};
+      const sport = resolvePostSport(
+        {
+          category: payload?.sport_category || payload?.category || payload?.sport,
+          sport: payload?.sport_category || payload?.sport,
+        },
+        'GYM'
+      );
+      const caption =
+        String(
+          payload?.caption || challengeLabel || 'Battle response'
+        ).trim() || 'Battle response';
       const meta = {
         durationSec: Math.min(maxSec, elapsed),
         facing,
@@ -388,12 +426,25 @@ export default function ChallengeCamRecorder({
         timestamp: Date.now(),
         localVideoUri: handoffUri,
         videoUri: handoffUri,
+        // Supabase videos insert fields (public video_url filled after Storage upload)
+        user_id: active.userId || active.id || null,
+        userId: active.userId || active.id || null,
+        sport_category: sport,
+        category: sport,
+        sport,
+        caption,
+        video_url: handoffUri,
         onUploadProgress: (pct) => setUploadPct(pct),
       };
       try {
         await Promise.resolve(onContinue?.(handoffUri, meta));
       } catch (err) {
-        setError(err?.message || 'Continue / upload failed');
+        // Soft — never trap the athlete on a black post failure screen
+        console.warn(
+          '[ChallengeCamRecorder] continue/upload soft-fail:',
+          err?.message || err
+        );
+        setError(null);
       } finally {
         setBusy(false);
         setUploadPct(0);
@@ -401,6 +452,7 @@ export default function ChallengeCamRecorder({
     },
     [
       busy,
+      challengeLabel,
       elapsedSec,
       facing,
       maxSec,

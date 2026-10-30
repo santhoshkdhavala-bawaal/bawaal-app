@@ -23,6 +23,12 @@ import {
   persistArenaPostToSupabase,
 } from './src/services/arenaPostsService';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
+import { getActiveUser } from './src/services/activeUserProfile';
+import {
+  coalesceRecordingUri,
+  resolveSafeRecordingFallbackUri,
+} from './src/utils/safeRecordingFallback';
+import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 
 export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
@@ -114,8 +120,30 @@ export default function ChallengeScreen({ route, navigation }) {
         mimeType: meta.mimeType || 'video/mp4',
         creator: 'You',
         author: '@you',
-        category: reel?.category || route?.params?.sport || 'GYM',
-        sport: reel?.category || route?.params?.sport || meta.category || 'GYM',
+        category:
+          meta.sport_category ||
+          meta.category ||
+          meta.sport ||
+          reel?.category ||
+          route?.params?.sport ||
+          'GYM',
+        sport:
+          meta.sport_category ||
+          meta.sport ||
+          meta.category ||
+          reel?.category ||
+          route?.params?.sport ||
+          'GYM',
+        sport_category:
+          meta.sport_category ||
+          meta.category ||
+          meta.sport ||
+          reel?.category ||
+          route?.params?.sport ||
+          'GYM',
+        user_id: meta.user_id || meta.userId || null,
+        userId: meta.userId || meta.user_id || null,
+        video_url: extras.video_url || extras.publicCloudUrl || null,
         challengeOf: reel?.creator || route?.params?.handle || 'Challenger',
         cloudUploaded:
           extras.cloudUploaded !== undefined
@@ -138,12 +166,29 @@ export default function ChallengeScreen({ route, navigation }) {
     async (uri, meta = {}) => {
       const challengeId =
         route?.params?.battleId || reel?.battleId || reel?.id || undefined;
-      const localUri = typeof uri === 'string' && uri.trim() ? uri.trim() : null;
+      const { uri: localUri } = coalesceRecordingUri(
+        typeof uri === 'string' && uri.trim() ? uri.trim() : null,
+        validateRecordedVideoUri
+      );
       if (!localUri) {
-        console.warn('[ChallengeScreen] Continue with empty video URI');
-        setStatusNote('Recording missing — retake the clip');
-        return;
+        console.warn(
+          '[ChallengeScreen] Continue URI missing — using sample fallback'
+        );
       }
+      const playableLocal = localUri || resolveSafeRecordingFallbackUri();
+      const active = getActiveUser?.() || {};
+      const sport =
+        meta.sport_category ||
+        meta.category ||
+        meta.sport ||
+        reel?.category ||
+        route?.params?.sport ||
+        'GYM';
+      const caption =
+        meta.caption ||
+        reel?.statSticker ||
+        route?.params?.target ||
+        'Battle response';
       const onProgress =
         typeof meta.onUploadProgress === 'function'
           ? meta.onUploadProgress
@@ -156,20 +201,20 @@ export default function ChallengeScreen({ route, navigation }) {
       // 1) Instant Arena hand-off — post.videoUri = recorded file:// (or https later)
       const optimistic =
         mapChallengeClipToFeedPost(
-          buildArenaPost(localUri, meta, {
-            localVideoUri: localUri,
-            videoUri: localUri,
-            uri: localUri,
+          buildArenaPost(playableLocal, { ...meta, caption, category: sport, sport }, {
+            localVideoUri: playableLocal,
+            videoUri: playableLocal,
+            uri: playableLocal,
             publicCloudUrl: null,
             cloudUploaded: false,
             _skipPersist: true,
             ...battleIds,
           })
         ) ||
-        buildArenaPost(localUri, meta, {
-          localVideoUri: localUri,
-          videoUri: localUri,
-          uri: localUri,
+        buildArenaPost(playableLocal, { ...meta, caption, category: sport, sport }, {
+          localVideoUri: playableLocal,
+          videoUri: playableLocal,
+          uri: playableLocal,
           publicCloudUrl: null,
           cloudUploaded: false,
           _skipPersist: true,
@@ -180,20 +225,20 @@ export default function ChallengeScreen({ route, navigation }) {
       pushArenaPost(optimistic);
       goArenaWithPost(optimistic);
 
-      // 2) Background: Storage upload → https → refresh feed + persist
+      // 2) Background: Storage upload → public https → videos row (user_id/category/caption/video_url)
       setStatusNote(null);
       void (async () => {
         let publicUrl = null;
-        let lockedLocal = localUri;
+        let lockedLocal = playableLocal;
         try {
-          const uploaded = await uploadLockedClip(localUri, {
+          const uploaded = await uploadLockedClip(playableLocal, {
             fileName: makeBawaalClipFileName(),
             onProgress,
             onError: (msg) => {
               console.warn('[ChallengeScreen] upload error:', msg);
             },
           });
-          lockedLocal = uploaded.localUri || localUri;
+          lockedLocal = uploaded.localUri || playableLocal;
           if (
             uploaded.ok &&
             uploaded.publicUrl &&
@@ -209,7 +254,7 @@ export default function ChallengeScreen({ route, navigation }) {
 
         if (!publicUrl) return;
 
-        const cloudPost = buildArenaPost(publicUrl, meta, {
+        const cloudPost = buildArenaPost(publicUrl, { ...meta, caption, category: sport, sport }, {
           id: optimistic.id,
           localVideoUri: lockedLocal,
           videoUri: publicUrl,
@@ -228,6 +273,12 @@ export default function ChallengeScreen({ route, navigation }) {
             cloudPost;
           const persistRes = await persistArenaPostToSupabase({
             ...card,
+            user_id: meta.user_id || meta.userId || active.userId || active.id,
+            userId: meta.user_id || meta.userId || active.userId || active.id,
+            sport_category: sport,
+            category: sport,
+            caption,
+            video_url: publicUrl,
             videoUri: publicUrl,
             uri: publicUrl,
             publicCloudUrl: publicUrl,
@@ -242,6 +293,10 @@ export default function ChallengeScreen({ route, navigation }) {
           }
           postBattleResponseToSupabase(publicUrl, {
             battleId: challengeId,
+            caption,
+            sport_category: sport,
+            category: sport,
+            user_id: meta.user_id || meta.userId || active.userId || active.id,
           }).catch(() => {});
         } catch (err) {
           console.warn(
@@ -257,6 +312,8 @@ export default function ChallengeScreen({ route, navigation }) {
       goArenaWithPost,
       reel,
       route?.params?.battleId,
+      route?.params?.sport,
+      route?.params?.target,
     ]
   );
 

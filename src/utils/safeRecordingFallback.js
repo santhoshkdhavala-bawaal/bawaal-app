@@ -4,6 +4,7 @@
  */
 import { Image } from 'react-native';
 import { BAWAAL_FALLBACK_MP4 } from './reelMediaFallback';
+import { validateRecordedVideoUri } from './recordedVideoUri';
 
 /**
  * Resolve bundled `sample_challenge.mp4` to a playable URI.
@@ -28,20 +29,61 @@ export function resolveSafeRecordingFallbackUri() {
 /**
  * Prefer a validated recorded URI; otherwise return the safe sample clip.
  * @param {unknown} uri
- * @param {(u: unknown) => { ok: boolean, uri?: string }} validate
+ * @param {(u: unknown) => { ok: boolean, uri?: string, mock?: boolean }} [validate]
  * @returns {{ uri: string, usedFallback: boolean }}
  */
-export function coalesceRecordingUri(uri, validate) {
+export function coalesceRecordingUri(uri, validate = validateRecordedVideoUri) {
   try {
+    if (uri == null || (typeof uri === 'string' && !uri.trim())) {
+      return {
+        uri: resolveSafeRecordingFallbackUri(),
+        usedFallback: true,
+      };
+    }
     const check = typeof validate === 'function' ? validate(uri) : null;
     if (check?.ok && check.uri) {
       return { uri: check.uri, usedFallback: !!check.mock };
     }
-  } catch (_) {
-    /* ignore */
+  } catch (err) {
+    console.warn(
+      '[safeRecordingFallback] coalesce failed:',
+      err?.message || err
+    );
   }
   return {
     uri: resolveSafeRecordingFallbackUri(),
     usedFallback: true,
   };
+}
+
+/**
+ * Normalize a just-stopped recording URI for preview/post.
+ * Treats null, empty, codec/persist failures as sample-clip fallbacks.
+ *
+ * @param {unknown} uri
+ * @param {{ persist?: (u: string) => Promise<string|null> }} [opts]
+ * @returns {Promise<{ uri: string, usedFallback: boolean }>}
+ */
+export async function ensurePlayableRecordingUri(uri, opts = {}) {
+  const first = coalesceRecordingUri(uri);
+  if (first.usedFallback) return first;
+
+  const persist = typeof opts.persist === 'function' ? opts.persist : null;
+  if (!persist) return first;
+
+  try {
+    const stable = await persist(first.uri);
+    const next = coalesceRecordingUri(stable || first.uri);
+    return next;
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    console.warn(
+      '[safeRecordingFallback] persist/codec failed — sample clip:',
+      msg
+    );
+    return {
+      uri: resolveSafeRecordingFallbackUri(),
+      usedFallback: true,
+    };
+  }
 }

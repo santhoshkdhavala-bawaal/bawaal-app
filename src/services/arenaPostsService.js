@@ -211,37 +211,74 @@ export function mapDbRowToArenaPost(row) {
   };
 }
 
-/** Map an in-memory Arena post → canonical `videos` insert row. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function asUuidOrNull(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return UUID_RE.test(s) ? s : null;
+}
+
+/**
+ * Canonical `videos` insert payload for Supabase.
+ * Uses public Storage HTTPS `video_url` + FK-safe `user_id` (uuid only).
+ * `sport_category` mirrors locked taxonomy into `category` (schema column).
+ */
 export function mapArenaPostToVideosRow(post) {
   if (!post || typeof post !== 'object') return null;
   const videoUrl =
     ensurePublicBawaalVideoUrl(
-      post.publicCloudUrl ||
+      post.video_url ||
+        post.publicCloudUrl ||
         post.remoteVideoUri ||
         post.videoUri ||
         post.uri
-    ) || post.videoUri;
+    ) || null;
   if (!videoUrl || !/^https:\/\//i.test(String(videoUrl))) return null;
 
   const ts = toMs(post.timestamp || post.createdAt);
   const id = String(post.id || `arena-${ts}`);
-  // Only pass uuid-shaped ids into `videos.id` (schema default fills otherwise)
-  const uuidOk =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      id
-    );
-  const userId =
-    post.userId || post.user_id || post.profileId || post.authorId || null;
+  const uuidOk = UUID_RE.test(id);
+  const userId = asUuidOrNull(
+    post.user_id || post.userId || post.profileId || post.authorId
+  );
+  const sport = resolvePostSport(
+    {
+      ...post,
+      category: post.sport_category || post.category || post.sport,
+      sport: post.sport_category || post.sport || post.category,
+    },
+    'OTHERS'
+  );
+  const caption = String(
+    post.caption || post.title || post.target || 'Arena drop'
+  ).trim() || 'Arena drop';
 
-  return {
+  /** Public Storage URL + required fields; omit null user_id (FK/RLS safe). */
+  const row = {
     ...(uuidOk ? { id } : {}),
-    user_id: userId || null,
     video_url: videoUrl,
     thumbnail_url: post.thumbnailUrl || post.thumbnail_url || null,
-    caption: String(post.caption || post.title || 'Arena drop'),
-    category: resolvePostSport(post, 'OTHERS'),
+    caption,
+    // Schema column is `category` (sport_category mapped from client)
+    category: sport,
     created_at: new Date(ts).toISOString(),
   };
+  if (userId) row.user_id = userId;
+  return row;
+}
+
+/** Resolve auth.users uuid for videos.user_id FK (null when anonymous). */
+export async function resolveVideosUserId(explicitId = null) {
+  const fromExplicit = asUuidOrNull(explicitId);
+  if (fromExplicit) return fromExplicit;
+  try {
+    const { data } = await supabase.auth.getUser();
+    return asUuidOrNull(data?.user?.id) || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /** Map an in-memory Arena post → legacy `bawaal_posts` insert row. */
@@ -501,26 +538,38 @@ export async function persistArenaPostToSupabase(post) {
     void cacheLocalArenaPost(deviceMapped);
   }
 
-  const videosRow = mapArenaPostToVideosRow(post);
-  const legacyRow = mapArenaPostToDbRow(post);
+  // Attach auth uuid when present so RLS / profiles FK succeed
+  let enriched = post;
+  try {
+    const authId = await resolveVideosUserId(post?.user_id || post?.userId);
+    if (authId && !asUuidOrNull(post?.user_id || post?.userId)) {
+      enriched = { ...post, user_id: authId, userId: authId };
+    }
+  } catch (_) {
+    enriched = post;
+  }
+
+  const videosRow = mapArenaPostToVideosRow(enriched);
+  const legacyRow = mapArenaPostToDbRow(enriched);
   if (!videosRow && !legacyRow) {
     // Soft skip — keep local file:// / uri on the feed card until Storage succeeds
     const localFallback =
       deviceMapped?.localVideoUri ||
       deviceMapped?.videoUri ||
-      (typeof post?.localVideoUri === 'string' && post.localVideoUri.trim()) ||
-      (typeof post?.videoUri === 'string' &&
-      !/^https:\/\//i.test(post.videoUri) &&
-      post.videoUri.trim()) ||
-      (typeof post?.uri === 'string' &&
-      !/^https:\/\//i.test(post.uri) &&
-      post.uri.trim()) ||
+      (typeof enriched?.localVideoUri === 'string' &&
+        enriched.localVideoUri.trim()) ||
+      (typeof enriched?.videoUri === 'string' &&
+        !/^https:\/\//i.test(enriched.videoUri) &&
+        enriched.videoUri.trim()) ||
+      (typeof enriched?.uri === 'string' &&
+        !/^https:\/\//i.test(enriched.uri) &&
+        enriched.uri.trim()) ||
       null;
     console.warn('[arenaPosts] persist deferred — missing https video_url', {
-      id: post?.id,
-      videoUri: post?.videoUri,
-      publicCloudUrl: post?.publicCloudUrl,
-      localVideoUri: localFallback || post?.localVideoUri,
+      id: enriched?.id,
+      videoUri: enriched?.videoUri,
+      publicCloudUrl: enriched?.publicCloudUrl,
+      localVideoUri: localFallback || enriched?.localVideoUri,
     });
     return {
       ok: false,
@@ -544,33 +593,56 @@ export async function persistArenaPostToSupabase(post) {
   };
 
   try {
-    // 1) Preferred: upsert into canonical `videos`
+    // 1) Preferred: insert into canonical `videos` with public video_url
     if (videosRow) {
-      const upsertVideos = await supabase.from(TABLE).upsert(videosRow, {
-        onConflict: 'id',
-      });
-      if (!upsertVideos.error) {
-        console.log('[arenaPosts] upserted videos', videosRow.id || '(new)', videosRow.video_url);
+      const tryInsert = async (row) => {
+        if (row.id) {
+          const upsert = await supabase
+            .from(TABLE)
+            .upsert(row, { onConflict: 'id' });
+          if (!upsert.error) return { ok: true, via: 'upsert' };
+          const ins = await supabase.from(TABLE).insert(row);
+          if (!ins.error) return { ok: true, via: 'insert' };
+          return { ok: false, error: ins.error || upsert.error };
+        }
+        const ins = await supabase.from(TABLE).insert(row);
+        if (!ins.error) return { ok: true, via: 'insert' };
+        return { ok: false, error: ins.error };
+      };
+
+      let attempt = await tryInsert(videosRow);
+      const errText = (e) =>
+        String(e?.message || e?.code || e || '');
+      // FK / RLS on user_id → retry without user_id
+      if (
+        !attempt.ok &&
+        videosRow.user_id &&
+        /user_id|foreign key|violates|23503|42501|RLS/i.test(
+          errText(attempt.error)
+        )
+      ) {
+        const { user_id: _omit, ...withoutUser } = videosRow;
+        attempt = await tryInsert(withoutUser);
+      }
+      // Unknown `sport_category` column → already using `category`; strip extras if any
+      if (
+        !attempt.ok &&
+        /sport_category|column|schema cache|PGRST204/i.test(
+          errText(attempt.error)
+        )
+      ) {
+        const { sport_category: _sc, ...clean } = videosRow;
+        attempt = await tryInsert(clean);
+      }
+      if (attempt.ok) {
+        console.log(
+          '[arenaPosts] videos',
+          attempt.via,
+          videosRow.video_url
+        );
         return { ok: true };
       }
-      logFail('videos upsert', upsertVideos.error);
-
-      // Plain insert when id was omitted (non-uuid client ids)
-      if (!videosRow.id) {
-        const insertVideos = await supabase.from(TABLE).insert(videosRow);
-        if (!insertVideos.error) {
-          console.log('[arenaPosts] inserted videos', videosRow.video_url);
-          return { ok: true };
-        }
-        logFail('videos insert', insertVideos.error);
-      } else {
-        const insertVideos = await supabase.from(TABLE).insert(videosRow);
-        if (!insertVideos.error) {
-          console.log('[arenaPosts] inserted videos', videosRow.id);
-          return { ok: true };
-        }
-        logFail('videos insert', insertVideos.error);
-      }
+      logFail('videos insert', attempt.error);
     }
 
     // 2) Soft secondary: legacy `bawaal_posts` shape

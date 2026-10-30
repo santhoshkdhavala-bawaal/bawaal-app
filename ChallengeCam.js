@@ -1217,15 +1217,18 @@ export default function ChallengeCam({
    */
   const handlePostToArena = useCallback(
     async (localVideoUri, challengeDetails = {}) => {
-      const uri = localVideoUri || recordedUri;
-      if (!uri) return null;
+      const raw = localVideoUri || recordedUri;
+      if (!raw) return null;
 
       setIsPosting(true);
       try {
-        let stableUri = uri;
-        if (!String(uri).startsWith('emulator-mock://')) {
+        let stableUri = raw;
+        if (
+          !String(raw).startsWith('emulator-mock://') &&
+          !/^https:\/\//i.test(String(raw))
+        ) {
           try {
-            stableUri = await persistLocalVideoUri(uri);
+            stableUri = await persistLocalVideoUri(raw);
             if (stableUri && stableUri !== recordedUri) {
               setRecordedUri(stableUri);
             }
@@ -1239,18 +1242,37 @@ export default function ChallengeCam({
               data: null,
               skipped: true,
               reason: 'missing-local-file',
-              localUri: uri,
+              localUri: raw,
             };
           }
         }
 
         const cloud = await postBattleResponseToSupabase(stableUri, {
+          ...challengeDetails,
           battleId:
             challengeDetails.battleId ||
             route?.params?.battleId ||
             route?.params?.reel?.battleId ||
             route?.params?.reel?.id,
           responderId: challengeDetails.responderId,
+          caption:
+            challengeDetails.caption ||
+            challengeDetails.target ||
+            challengeTarget ||
+            'Battle response',
+          sport_category:
+            challengeDetails.sport_category ||
+            challengeDetails.category ||
+            challengeDetails.sport ||
+            route?.params?.sport ||
+            'GYM',
+          category:
+            challengeDetails.category ||
+            challengeDetails.sport_category ||
+            challengeDetails.sport ||
+            route?.params?.sport ||
+            'GYM',
+          user_id: challengeDetails.user_id || challengeDetails.userId,
           slowMoStartSec:
             challengeDetails.slowMoStartSec ??
             (slowMoEnabled ? slowMoStartSec : 0),
@@ -1260,7 +1282,6 @@ export default function ChallengeCam({
           slowMoRate:
             challengeDetails.slowMoRate ??
             (slowMoEnabled ? slowMoRate : 1),
-          ...challengeDetails,
         });
 
         return cloud;
@@ -1281,9 +1302,11 @@ export default function ChallengeCam({
     },
     [
       recordedUri,
+      challengeTarget,
       route?.params?.battleId,
       route?.params?.reel?.battleId,
       route?.params?.reel?.id,
+      route?.params?.sport,
       slowMoEnabled,
       slowMoStartSec,
       slowMoEndSec,

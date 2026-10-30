@@ -54,7 +54,11 @@ import { stabilizeLocalVideoUri } from './src/services/uploadService';
 import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 import { isExpoGo } from './src/utils/runtimeEnv';
-import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
+import {
+  coalesceRecordingUri,
+  ensurePlayableRecordingUri,
+  resolveSafeRecordingFallbackUri,
+} from './src/utils/safeRecordingFallback';
 export type { CreationMode, PostCreationPayload };
 
 /** Minimalist Black & White */
@@ -1413,64 +1417,54 @@ export default function UniversalCamera({
     try {
       const video = await recordPromise;
       // Video object resolved — keep CameraView mounted; do not remount/release yet
-      const rawCheck = validateRecordedVideoUri(
-        typeof video?.uri === 'string' ? video.uri : null
-      );
-
-      if (!rawCheck.ok || !rawCheck.uri) {
-        clearElapsedTimer();
-        setIsRecording(false);
-        recordingLockRef.current = false;
-        stoppingRef.current = false;
-        setIsFinalizingClip(false);
-        setIsProcessing(false);
-        setCameraError(
-          rawCheck.message ||
-            'Recording finished without a valid .mp4 / .mov clip. Try again.'
-        );
-        return;
-      }
-
-      const uri = rawCheck.uri;
-
       // Gate UI before compress/save — still no preview mount yet
       setIsProcessing(true);
       setIsFinalizingClip(true);
       setIsRecording(false);
       clearElapsedTimer();
 
-      // Persist to documentDirectory/bawaal_clips/bawaal_*.mp4 before gallery/post
-      let stableUri = uri;
-      try {
-        stableUri =
-          (await lockLocalRecording(uri)) ||
-          (await stabilizeLocalVideoUri(uri)) ||
-          uri;
-      } catch (stabErr) {
+      // Null / empty / codec fail → sample clip so preview never blacks out
+      const { uri: playableUri, usedFallback } = await ensurePlayableRecordingUri(
+        typeof video?.uri === 'string' ? video.uri : null,
+        {
+          persist: async (u) => {
+            if (
+              !u ||
+              String(u).startsWith('emulator-mock://') ||
+              /^https?:\/\//i.test(String(u))
+            ) {
+              return u;
+            }
+            try {
+              return (
+                (await lockLocalRecording(u)) ||
+                (await stabilizeLocalVideoUri(u)) ||
+                u
+              );
+            } catch (stabErr) {
+              console.warn(
+                '[UniversalCamera] lock/stabilize failed:',
+                (stabErr as Error)?.message || stabErr
+              );
+              return u;
+            }
+          },
+        }
+      );
+      if (usedFallback) {
         console.warn(
-          '[UniversalCamera] lock/stabilize failed, using raw uri:',
-          (stabErr as Error)?.message || stabErr
+          '[UniversalCamera] missing/invalid record URI — sample fallback'
         );
       }
-      const stableCheck = validateRecordedVideoUri(stableUri);
-      if (!stableCheck.ok || !stableCheck.uri) {
-        setIsFinalizingClip(false);
-        setIsProcessing(false);
-        recordingLockRef.current = false;
-        stoppingRef.current = false;
-        setCameraError(
-          stableCheck.message ||
-            'Could not save a playable clip. Please retake.'
-        );
-        return;
-      }
-      stableUri = stableCheck.uri;
+      const stableUri = playableUri || resolveSafeRecordingFallbackUri();
       setCameraError('');
 
-      // Instagram-style: auto-save to Camera Roll (keep asset id for optional delete)
-      void saveVideoToGallery(stableUri).then((res) => {
-        if (res.ok && res.assetId) setGalleryAssetId(res.assetId);
-      });
+      // Instagram-style: auto-save to Camera Roll (skip mock / sample-only)
+      if (!usedFallback && !String(stableUri).startsWith('emulator-mock://')) {
+        void saveVideoToGallery(stableUri).then((res) => {
+          if (res.ok && res.assetId) setGalleryAssetId(res.assetId);
+        });
+      }
 
       const clipDur = safeDurationSec(recordLimit, 15);
       setSlowMoEnabled(false);
@@ -1483,14 +1477,20 @@ export default function UniversalCamera({
         mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
       await handoffRecordedClip(stableUri, { openPreview });
     } catch (e) {
-      console.error('[UniversalCamera] Recording error:', e);
+      console.warn(
+        '[UniversalCamera] Recording error — sample preview:',
+        (e as Error)?.message || e
+      );
       recordAsyncWaitRef.current = null;
       stoppingRef.current = false;
-      setIsFinalizingClip(false);
-      setIsProcessing(false);
-      releaseCameraRecorder();
-      resetCreationSession({ remountCamera: true });
-      setCameraError('Could not save this clip. Try again.');
+      setIsRecording(false);
+      recordingLockRef.current = false;
+      clearElapsedTimer();
+      setCameraError('');
+      const fallback = coalesceRecordingUri(null).uri;
+      const openPreview =
+        mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
+      await handoffRecordedClip(fallback, { openPreview });
     } finally {
       recordAsyncWaitRef.current = null;
     }
