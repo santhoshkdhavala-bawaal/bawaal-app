@@ -1,6 +1,6 @@
 /**
  * BAWAAL Arena feed store — in-memory + Supabase-backed persistence.
- * Hydrate from `bawaal_posts` on Arena mount; prepend locally on publish.
+ * Hydrate from Supabase `videos` (+ profiles) on Arena mount; prepend locally on publish.
  */
 import {
   ensurePublicBawaalVideoUrl,

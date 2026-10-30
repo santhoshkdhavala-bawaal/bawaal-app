@@ -1,5 +1,6 @@
 /**
- * BAWAAL Arena posts ↔ Supabase `bawaal_posts` (+ Storage + AsyncStorage fallback).
+ * BAWAAL Arena posts ↔ Supabase `videos` (+ profiles) with Storage / AsyncStorage fallback.
+ * Legacy `bawaal_posts` writes are still attempted as a soft secondary persist path.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase, getSupabaseUrl } from './supabase';
@@ -11,13 +12,19 @@ import {
 } from './uploadService';
 import { resolvePostSport } from '../utils/sportCategory';
 
-const TABLE = 'bawaal_posts';
+/** Canonical Arena feed table (joined with profiles on user_id). */
+const TABLE = 'videos';
+/** Legacy table — persist soft-fallback when `videos` insert is rejected. */
+const LEGACY_TABLE = 'bawaal_posts';
 const FEED = 'ARENA';
-/** Storage folder for JSON post metadata when `bawaal_posts` table is missing. */
+/** Storage folder for JSON post metadata when tables are missing. */
 const POSTS_META_PREFIX = 'posts';
 /** Device cache — keeps ChallengeCam file:// / https posts across reloads. */
 const LOCAL_POSTS_KEY = '@bawaal/arena_local_posts_v1';
 const LOCAL_POSTS_MAX = 40;
+
+/** Live Arena select — videos joined with profile handle / avatar. */
+const VIDEOS_WITH_PROFILES_SELECT = '*, profiles(username, avatar_url)';
 
 /**
  * Normalize a ChallengeCam / Continue clip into a feed-safe post shape.
@@ -114,7 +121,7 @@ function dedupePostsByVideo(posts) {
   return out;
 }
 
-/** PostgREST / Postgres signals that the table is absent from schema cache. */
+/** PostgREST / Postgres signals that a feed table is absent from schema cache. */
 export function isMissingBawaalPostsTableError(error) {
   const msg = String(error?.message || error?.details || error || '');
   const code = String(error?.code || '');
@@ -123,12 +130,12 @@ export function isMissingBawaalPostsTableError(error) {
     code === '42P01' ||
     /schema cache/i.test(msg) ||
     /could not find the table/i.test(msg) ||
-    /relation ["']?public\.?bawaal_posts["']? does not exist/i.test(msg)
+    /relation ["']?public\.?(bawaal_posts|videos)["']? does not exist/i.test(msg)
   );
 }
 
 export const BAWAAL_POSTS_SETUP_HINT =
-  'Open Supabase → SQL Editor → paste and run supabase/ENSURE_BAWAAL_POSTS.sql (creates public.bawaal_posts + reloads schema cache).';
+  'Open Supabase → SQL Editor → run supabase_schema.sql (creates public.videos + profiles) or supabase/ENSURE_BAWAAL_POSTS.sql.';
 
 function toMs(value) {
   if (value == null) return Date.now();
@@ -137,7 +144,7 @@ function toMs(value) {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-/** Map a DB row → Arena feed post shape. */
+/** Map a DB row (`videos` + optional nested `profiles`) → Arena feed post shape. */
 export function mapDbRowToArenaPost(row) {
   if (!row || typeof row !== 'object') return null;
   const videoUri =
@@ -146,6 +153,10 @@ export function mapDbRowToArenaPost(row) {
     null;
   if (!videoUri) return null;
 
+  const profile = row.profiles || row.profile || null;
+  const profileUsername = profile?.username
+    ? String(profile.username).replace(/^@/, '').trim()
+    : null;
   const ts = toMs(row.created_at || row.createdAt || row.timestamp);
   const id = String(row.id || `arena-${ts}`);
   const title = String(row.title || row.caption || 'Arena drop');
@@ -153,9 +164,17 @@ export function mapDbRowToArenaPost(row) {
     ? String(row.author).startsWith('@')
       ? String(row.author)
       : `@${String(row.author).replace(/^@/, '')}`
-    : row.creator
-      ? `@${String(row.creator).replace(/^@/, '')}`
-      : '@you';
+    : profileUsername
+      ? `@${profileUsername}`
+      : row.creator
+        ? `@${String(row.creator).replace(/^@/, '')}`
+        : '@athlete';
+  const avatarUrl =
+    profile?.avatar_url ||
+    profile?.avatar_uri ||
+    row.avatar_url ||
+    row.avatarUrl ||
+    null;
 
   return {
     id,
@@ -165,7 +184,9 @@ export function mapDbRowToArenaPost(row) {
     caption: String(row.caption || title),
     tagline: row.tagline || null,
     author,
-    creator: row.creator || author.replace(/^@/, '') || 'You',
+    creator: row.creator || author.replace(/^@/, '') || 'Athlete',
+    avatarUrl,
+    thumbnailUrl: row.thumbnail_url || row.thumbnailUrl || null,
     category: resolvePostSport(row, 'GYM'),
     sport: resolvePostSport(row, 'GYM'),
     videoUri,
@@ -186,10 +207,44 @@ export function mapDbRowToArenaPost(row) {
     timestamp: ts,
     createdAt: ts,
     _fromRemote: true,
+    _fromVideosTable: true,
   };
 }
 
-/** Map an in-memory Arena post → DB insert row. */
+/** Map an in-memory Arena post → canonical `videos` insert row. */
+export function mapArenaPostToVideosRow(post) {
+  if (!post || typeof post !== 'object') return null;
+  const videoUrl =
+    ensurePublicBawaalVideoUrl(
+      post.publicCloudUrl ||
+        post.remoteVideoUri ||
+        post.videoUri ||
+        post.uri
+    ) || post.videoUri;
+  if (!videoUrl || !/^https:\/\//i.test(String(videoUrl))) return null;
+
+  const ts = toMs(post.timestamp || post.createdAt);
+  const id = String(post.id || `arena-${ts}`);
+  // Only pass uuid-shaped ids into `videos.id` (schema default fills otherwise)
+  const uuidOk =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      id
+    );
+  const userId =
+    post.userId || post.user_id || post.profileId || post.authorId || null;
+
+  return {
+    ...(uuidOk ? { id } : {}),
+    user_id: userId || null,
+    video_url: videoUrl,
+    thumbnail_url: post.thumbnailUrl || post.thumbnail_url || null,
+    caption: String(post.caption || post.title || 'Arena drop'),
+    category: resolvePostSport(post, 'OTHERS'),
+    created_at: new Date(ts).toISOString(),
+  };
+}
+
+/** Map an in-memory Arena post → legacy `bawaal_posts` insert row. */
 export function mapArenaPostToDbRow(post) {
   if (!post || typeof post !== 'object') return null;
   const videoUrl =
@@ -227,38 +282,67 @@ export function mapArenaPostToDbRow(post) {
 }
 
 /**
- * Fetch Arena posts from Supabase, newest first.
+ * Offline / empty-table fallback chain: Storage meta JSON + listed battle clips.
+ * Keeps Arena usable when `videos` is empty or unreachable during local testing.
+ */
+async function fetchOfflineArenaFallbacks() {
+  const fromMeta = await fetchArenaPostsFromMetaJson();
+  const fromFiles = await fetchArenaPostsFromStorageFallback();
+  return dedupePostsByVideo([...fromMeta, ...fromFiles]);
+}
+
+/**
+ * Fetch Arena posts from Supabase `videos` ⨝ `profiles`, newest first.
+ * Soft-falls back to Storage / local mock clips when offline or empty.
  * @returns {Promise<object[]>}
  */
 export async function fetchArenaPostsFromSupabase() {
   if (!isSupabaseConfigured()) {
-    console.warn('[arenaPosts] Supabase not configured — skip fetch');
-    return [];
+    console.warn(
+      '[arenaPosts] Supabase not configured — offline/local fallback only'
+    );
+    return fetchOfflineArenaFallbacks();
   }
 
   try {
-    const { data, error } = await supabase
+    // Canonical live query: videos + profile username / avatar
+    let { data, error } = await supabase
       .from(TABLE)
-      .select('*')
-      .eq('feed', FEED)
+      .select(VIDEOS_WITH_PROFILES_SELECT)
       .order('created_at', { ascending: false })
       // Lean cold-start page — keep first paint snappy
       .limit(12);
 
-    if (error) {
+    // Embed missing / schema cache → lean videos select (still live)
+    if (
+      error &&
+      /relationship|embed|schema cache|foreign key|PGRST/i.test(
+        String(error.message || error.code || '')
+      )
+    ) {
       console.warn(
-        '[arenaPosts] table fetch failed:',
-        error.message || error.code || error
+        '[arenaPosts] profiles embed failed — retrying videos *:',
+        error.message || error
       );
-      // Table missing / schema cache → Storage JSON + video list (deduped)
-      const fromMeta = await fetchArenaPostsFromMetaJson();
-      const fromFiles = await fetchArenaPostsFromStorageFallback();
-      return dedupePostsByVideo([...fromMeta, ...fromFiles]);
+      const lean = await supabase
+        .from(TABLE)
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(12);
+      data = lean.data;
+      error = lean.error;
     }
 
-    const mapped = (data || [])
-      .map(mapDbRowToArenaPost)
-      .filter(Boolean);
+    if (error) {
+      console.warn(
+        '[arenaPosts] videos fetch failed:',
+        error.message || error.code || error
+      );
+      // Table missing / network → Storage JSON + video list (deduped)
+      return fetchOfflineArenaFallbacks();
+    }
+
+    const mapped = (data || []).map(mapDbRowToArenaPost).filter(Boolean);
 
     if (mapped.length > 0) {
       console.log('[arenaPosts] loaded', mapped.length, 'rows from', TABLE);
@@ -267,21 +351,20 @@ export async function fetchArenaPostsFromSupabase() {
       return dedupePostsByVideo([...mapped, ...extras]);
     }
 
-    // Empty table → try Storage so older uploads still appear
-    const fromMeta = await fetchArenaPostsFromMetaJson();
-    const fromFiles = await fetchArenaPostsFromStorageFallback();
-    return dedupePostsByVideo([...fromMeta, ...fromFiles]);
+    // Empty `videos` table → Storage / legacy clips so local testing still shows media
+    console.warn(
+      '[arenaPosts] videos empty — offline/local Storage fallback'
+    );
+    return fetchOfflineArenaFallbacks();
   } catch (err) {
     console.warn('[arenaPosts] fetch crashed:', err?.message || err);
-    const fromMeta = await fetchArenaPostsFromMetaJson();
-    const fromFiles = await fetchArenaPostsFromStorageFallback();
-    return dedupePostsByVideo([...fromMeta, ...fromFiles]);
+    return fetchOfflineArenaFallbacks();
   }
 }
 
 /**
  * Fallback: list `bawaalvideos/battles` objects as anonymous reels.
- * Used when `bawaal_posts` is missing/empty so prior uploads still show.
+ * Used when `videos` is missing/empty so prior uploads still show.
  */
 async function fetchArenaPostsFromStorageFallback() {
   if (!isSupabaseConfigured()) return [];
@@ -399,8 +482,8 @@ async function fetchArenaPostsFromMetaJson() {
 }
 
 /**
- * Upsert a post into `bawaal_posts` so it survives app restart.
- * If the table is missing from PostgREST schema cache, falls back to Storage JSON.
+ * Upsert a post into `videos` (preferred) so it survives app restart.
+ * Soft-falls back to legacy `bawaal_posts`, then Storage JSON.
  * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string, warning?: string }>}
  */
 export async function persistArenaPostToSupabase(post) {
@@ -418,8 +501,9 @@ export async function persistArenaPostToSupabase(post) {
     void cacheLocalArenaPost(deviceMapped);
   }
 
-  const row = mapArenaPostToDbRow(post);
-  if (!row) {
+  const videosRow = mapArenaPostToVideosRow(post);
+  const legacyRow = mapArenaPostToDbRow(post);
+  if (!videosRow && !legacyRow) {
     // Soft skip — keep local file:// / uri on the feed card until Storage succeeds
     const localFallback =
       deviceMapped?.localVideoUri ||
@@ -460,20 +544,57 @@ export async function persistArenaPostToSupabase(post) {
   };
 
   try {
-    // 1) Preferred: upsert on primary key
-    const upsertRes = await supabase.from(TABLE).upsert(row, {
+    // 1) Preferred: upsert into canonical `videos`
+    if (videosRow) {
+      const upsertVideos = await supabase.from(TABLE).upsert(videosRow, {
+        onConflict: 'id',
+      });
+      if (!upsertVideos.error) {
+        console.log('[arenaPosts] upserted videos', videosRow.id || '(new)', videosRow.video_url);
+        return { ok: true };
+      }
+      logFail('videos upsert', upsertVideos.error);
+
+      // Plain insert when id was omitted (non-uuid client ids)
+      if (!videosRow.id) {
+        const insertVideos = await supabase.from(TABLE).insert(videosRow);
+        if (!insertVideos.error) {
+          console.log('[arenaPosts] inserted videos', videosRow.video_url);
+          return { ok: true };
+        }
+        logFail('videos insert', insertVideos.error);
+      } else {
+        const insertVideos = await supabase.from(TABLE).insert(videosRow);
+        if (!insertVideos.error) {
+          console.log('[arenaPosts] inserted videos', videosRow.id);
+          return { ok: true };
+        }
+        logFail('videos insert', insertVideos.error);
+      }
+    }
+
+    // 2) Soft secondary: legacy `bawaal_posts` shape
+    const row = legacyRow;
+    if (!row) {
+      const fb = await persistArenaPostMetaToStorage(videosRow);
+      return fb.ok
+        ? { ok: true, reason: 'storage-meta-fallback' }
+        : { ok: true, reason: 'storage-live-no-meta' };
+    }
+
+    const upsertRes = await supabase.from(LEGACY_TABLE).upsert(row, {
       onConflict: 'id',
     });
     if (!upsertRes.error) {
-      console.log('[arenaPosts] upserted', row.id, row.video_url);
-      return { ok: true };
+      console.log('[arenaPosts] upserted legacy', row.id, row.video_url);
+      return { ok: true, reason: 'legacy-bawaal-posts' };
     }
-    logFail('upsert', upsertRes.error);
+    logFail('legacy upsert', upsertRes.error);
 
     // Table missing from schema cache → Storage JSON fallback (video already uploaded)
     if (isMissingBawaalPostsTableError(upsertRes.error)) {
       console.warn(
-        '[arenaPosts] public.bawaal_posts missing from schema cache — using Storage meta fallback'
+        '[arenaPosts] feed tables missing from schema cache — using Storage meta fallback'
       );
       const fb = await persistArenaPostMetaToStorage(row);
       if (fb.ok) {
@@ -484,13 +605,13 @@ export async function persistArenaPostToSupabase(post) {
       return { ok: true, reason: 'storage-live-no-meta' };
     }
 
-    // 2) Fallback: plain insert (first publish)
-    const insertRes = await supabase.from(TABLE).insert(row);
+    // 3) Fallback: plain insert on legacy table
+    const insertRes = await supabase.from(LEGACY_TABLE).insert(row);
     if (!insertRes.error) {
-      console.log('[arenaPosts] inserted', row.id);
-      return { ok: true };
+      console.log('[arenaPosts] inserted legacy', row.id);
+      return { ok: true, reason: 'legacy-bawaal-posts' };
     }
-    logFail('insert', insertRes.error);
+    logFail('legacy insert', insertRes.error);
 
     if (isMissingBawaalPostsTableError(insertRes.error)) {
       const fb = await persistArenaPostMetaToStorage(row);
@@ -500,20 +621,29 @@ export async function persistArenaPostToSupabase(post) {
       return { ok: true, reason: 'storage-live-no-meta' };
     }
 
-    // 3) Fallback: update existing row by id
-    const updateRes = await supabase.from(TABLE).update(row).eq('id', row.id);
+    // 4) Fallback: update existing legacy row by id
+    const updateRes = await supabase
+      .from(LEGACY_TABLE)
+      .update(row)
+      .eq('id', row.id);
     if (!updateRes.error) {
-      console.log('[arenaPosts] updated', row.id);
-      return { ok: true };
+      console.log('[arenaPosts] updated legacy', row.id);
+      return { ok: true, reason: 'legacy-bawaal-posts' };
     }
-    const errMsg = logFail('update', updateRes.error);
+    const errMsg = logFail('legacy update', updateRes.error);
+
+    // Last resort — Storage meta so the clip remains discoverable offline
+    const fb = await persistArenaPostMetaToStorage(row);
+    if (fb.ok) {
+      return { ok: true, reason: 'storage-meta-fallback' };
+    }
 
     return {
       ok: false,
       error:
         errMsg ||
         upsertRes.error?.message ||
-        'Could not save post to bawaal_posts (check RLS/GRANTs)',
+        'Could not save post to videos / bawaal_posts (check RLS/GRANTs)',
     };
   } catch (err) {
     console.error('[arenaPosts] persist crashed:', err?.message || err);

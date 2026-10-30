@@ -193,10 +193,10 @@ export async function fetchArenaFeed(category = 'ALL') {
   }
 
   try {
-    // Live: `select('*, profiles(*)')` — user_id → profiles.id FK embed
+    // Live: videos ⨝ profiles(username, avatar_url)
     let query = supabase
       .from('videos')
-      .select('*, profiles(*)')
+      .select('*, profiles(username, avatar_url)')
       .order('created_at', { ascending: false })
       .limit(40);
 

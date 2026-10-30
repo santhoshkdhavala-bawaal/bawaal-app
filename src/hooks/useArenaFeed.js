@@ -1,5 +1,5 @@
 /**
- * Arena feed — live Supabase `videos` with nested `profiles(*)`.
+ * Arena feed — live Supabase `videos` joined with `profiles(username, avatar_url)`.
  * Soft-falls back to mock rows when offline, misconfigured, or the table is empty.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -8,6 +8,8 @@ import {
   mapVideoRowToFeedItem,
   getMockArenaFeed,
 } from '../services/api';
+
+const VIDEOS_WITH_PROFILES_SELECT = '*, profiles(username, avatar_url)';
 
 /**
  * @param {{ category?: string, enabled?: boolean, limit?: number }} [opts]
@@ -55,10 +57,10 @@ export function useArenaFeed(opts = {}) {
       }
 
       try {
-        // Live query: videos + nested profiles (FK videos.user_id → profiles.id)
+        // Live query: videos + profile handle / avatar
         let query = supabase
           .from('videos')
-          .select('*, profiles(*)')
+          .select(VIDEOS_WITH_PROFILES_SELECT)
           .order('created_at', { ascending: false })
           .limit(limit);
 
