@@ -27,7 +27,7 @@ Canonical list lives in `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` 
 - Create Battle — `CreateBattleSheet`
 - Arena publish — `PostCreationSheet` via `ARENA_SPORT_OPTIONS` (excludes ALL)
 - Upload challenge category — `UploadScreen`
-- FACEOFF hub sport grid / Arena filter tabs — `ARENA_SPORT_TABS`
+- Arena / BATTLES sport filters — `ARENA_SPORT_TABS` (GAME ON uses ScoresSportsPanel pills, not a duplicate taxonomy grid)
 
 ## Onboarding exception
 

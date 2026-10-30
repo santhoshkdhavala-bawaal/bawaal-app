@@ -1,12 +1,12 @@
 ---
-description: BAWAAL Arena inline challenge shelf + BATTLES open-callouts architecture (locked baseline)
+description: BAWAAL Arena GAME ON hub + inline challenge shelf architecture (locked baseline)
 alwaysApply: true
 ---
 
 # BAWAAL Arena Challenge Architecture (LOCKED baseline)
 
 High-performance stealth-black sports network centered on **asynchronous 1v1 video battles**.
-Further work builds on this contract — do not regress the single video Arena feed, inline community shelf, slim FACEOFF hub, BATTLES open callouts, 1-tap challenge camera, or post-record teardown.
+Further work builds on this contract — do not regress the single video Arena feed, inline community shelf (after leading videos), slim GAME ON hub, BATTLES open callouts, 1-tap challenge camera, or post-record teardown.
 
 ## Core mechanics
 
@@ -16,50 +16,31 @@ Further work builds on this contract — do not regress the single video Arena f
 
 ## Single video Arena feed (`ArenaFeed.js`)
 
-- Main Arena is a **clutter-free cinematic video feed** — no dual-segment toggle, no horizontal category pill scroller on the feed chrome, **no floating toast/notification banners** over video.
-- Header: **ARENA** + top-right **FACEOFF** action.
-- **Inline shelf:** every **4–5** media items, inject a horizontal **🔥 LIVE COMMUNITY CHALLENGES** row (`CommunityChallengesShelf`) with OPEN CHALLENGES + TIPS & BREAKDOWNS cards (RESPOND / TEACH). Tap → `openBattlesCallout(id)` deep-links into BATTLES.
+- Main Arena is a **clutter-free cinematic video feed** — no dual-segment toggle, no floating toast/notification banners over video.
+- Header: **ARENA** + top-right **GAME ON** action.
+- **Inline shelf:** every **4–5** media items, inject **🔥 LIVE COMMUNITY CHALLENGES** (`CommunityChallengesShelf`) with OPEN CHALLENGES + TIPS & BREAKDOWNS (RESPOND / TEACH). Tap → `openBattlesCallout(id)` → BATTLES.
+- **Cold-start rule:** list indices **0** and **1** are always video/battle media. Never inject the community shelf before at least **2** media rows have been rendered.
 
-## FACEOFF hub (scores + sports only)
+## GAME ON hub (scores only)
 
-- Tap **FACEOFF** opens a dedicated hub containing:
-  1. Live sports scores ticker (`ScoresSportsPanel` — B&W monochromatic).
-  2. Sports category grid (locked taxonomy).
-- Do **not** reintroduce Open Callouts lists or floating Arena toasts.
+- Tap **GAME ON** opens `GameOnHub` (legacy alias: `FaceoffHub`):
+  1. Live sports scores ticker (`ScoresSportsPanel` — B&W, horizontal sport filter pills).
+- Do **not** reintroduce a redundant lower taxonomy sports grid or Open Callouts inside GAME ON.
 
 ## BATTLES tab — Open Callouts (source of truth)
 
 - `BattlesScreen.js` hosts **Active Battles** and **Open Callouts**.
-- Open Callouts use two categories (`src/utils/faceoffCallout.js`):
-  - **OPEN CHALLENGES** — performance, benchmark, or 1v1 action callouts.
-  - **TIPS & BREAKDOWNS** — technique, advice, or form-check requests.
+- Categories (`src/utils/faceoffCallout.js`): **OPEN CHALLENGES** | **TIPS & BREAKDOWNS**.
 - UI panel: `src/components/OpenCalloutsPanel.js`.
-- Arena shelf deep-link focuses the matching callout via `focusChallengeId`.
-
-## Sports category taxonomy (FACEOFF grid)
-
-Canonical order in `src/utils/sportCategory.js` → `BAWAAL_SPORT_TAXONOMY` (do not rename/reorder; see `bawaal-sport-taxonomy-locked.mdc`):
-
-1. ALL  
-2. CRICKET  
-3. FOOTBALL  
-4. GYM  
-5. KABADDI  
-6. COMBAT  
-7. THROTTLE  
-8. WAVE & BLADE  
-9. COURT KINGS  
-10. SKY & SUMMIT  
-11. OTHERS  
 
 ## Challenge creation & camera (1-tap)
 
-- **`+ BATTLE` FAB** and Battles **LAUNCH ARENA CHALLENGE** → **single tap** into `UniversalCamera` challenge / opener mode.
+- **`+ BATTLE` FAB** / Battles **LAUNCH ARENA CHALLENGE** → **single tap** into `UniversalCamera` challenge mode.
 - Keep **`RECORDING_TEARDOWN_MS = 200`** before preview/unmount.
 
 ## Re-hydration prompt (maintain)
 
-Load project context for BAWAAL: Keep the main Arena surface as a single clutter-free cinematic video feed with ARENA + FACEOFF in the header and no floating alert toasts. Every 4–5 feed items inject an inline horizontal LIVE COMMUNITY CHALLENGES shelf whose cards deep-link into BATTLES Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS). FACEOFF hosts only live scores and the sports category grid. Keep the 1-tap challenge creation route to `UniversalCamera.tsx` active, preserving the asynchronous video teardown delay (200ms).
+Load project context for BAWAAL: Keep the main Arena surface as a single clutter-free cinematic video feed with ARENA + GAME ON in the header and no floating alert toasts. Indices 0–1 are always video content; every 4–5 feed items thereafter inject an inline LIVE COMMUNITY CHALLENGES shelf whose cards deep-link into BATTLES Open Callouts. GAME ON hosts live scores with horizontal sport pills only. Keep the 1-tap challenge creation route to `UniversalCamera.tsx` active, preserving the 200ms teardown delay.
 
 ## Related locks
 

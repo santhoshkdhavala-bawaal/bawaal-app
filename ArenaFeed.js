@@ -38,12 +38,14 @@ import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
-import FaceoffHub from './src/components/FaceoffHub';
+import GameOnHub from './src/components/GameOnHub';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
+/** Cold-start rule: indices 0–1 must always be video/battle media — never a shelf. */
+const MIN_MEDIA_BEFORE_SHELF = 2;
 
 const WHITE = '#FFFFFF';
 const DARK_BG = '#000000';
@@ -1020,8 +1022,7 @@ const BattleCard = memo(function BattleCard({
 
 export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
-  const [faceoffOpen, setFaceoffOpen] = useState(false);
-  const [faceoffSport, setFaceoffSport] = useState('ALL');
+  const [gameOnOpen, setGameOnOpen] = useState(false);
   const communityCallouts = useMemo(() => seedBattlesOpenCallouts(), []);
   // Prefer in-memory store / just-posted clip — never flash lean demo over a fresh upload
   const [feedItems, setFeedItems] = useState(() => buildInitialFeed(route));
@@ -1266,7 +1267,7 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, []);
 
-  /** Unified Arena video feed — discovery filters live in FACEOFF only. */
+  /** Unified Arena video feed — live scores live in GAME ON; callouts on BATTLES. */
   const visibleFeed = useMemo(() => {
     const source = ensureDefaultBattles(feedItems);
     const seenIds = new Set();
@@ -1297,7 +1298,7 @@ export default function ArenaFeed({ navigation, route }) {
 
   /**
    * Vertical feed with inline horizontal challenge shelves every N media rows.
-   * Shelf rows are non-video so viewability warm indices still map to media cells.
+   * Cold start: never place a shelf at list index 0 or 1 — leading rows are video.
    */
   const feedWithShelves = useMemo(() => {
     const media = visibleFeed;
@@ -1306,7 +1307,11 @@ export default function ArenaFeed({ navigation, route }) {
     let shelfIdx = 0;
     for (let i = 0; i < media.length; i += 1) {
       out.push(media[i]);
-      if ((i + 1) % COMMUNITY_SHELF_INTERVAL === 0) {
+      const mediaCount = i + 1;
+      if (
+        mediaCount >= MIN_MEDIA_BEFORE_SHELF &&
+        mediaCount % COMMUNITY_SHELF_INTERVAL === 0
+      ) {
         out.push({
           id: `community-shelf-${shelfIdx}`,
           type: 'community_shelf',
@@ -1315,8 +1320,8 @@ export default function ArenaFeed({ navigation, route }) {
         shelfIdx += 1;
       }
     }
-    // Guarantee at least one shelf when feed is shorter than the interval
-    if (shelfIdx === 0) {
+    // One trailing shelf only after we already have leading video rows
+    if (shelfIdx === 0 && media.length >= MIN_MEDIA_BEFORE_SHELF) {
       out.push({
         id: 'community-shelf-0',
         type: 'community_shelf',
@@ -1326,8 +1331,8 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [visibleFeed]);
 
-  const openFaceoff = useCallback(() => {
-    setFaceoffOpen(true);
+  const openGameOn = useCallback(() => {
+    setGameOnOpen(true);
   }, []);
 
   const openShelfCallout = useCallback(
@@ -1342,8 +1347,8 @@ export default function ArenaFeed({ navigation, route }) {
     [openBattlesCallout, navigation]
   );
 
-  const closeFaceoff = useCallback(() => {
-    setFaceoffOpen(false);
+  const closeGameOn = useCallback(() => {
+    setGameOnOpen(false);
   }, []);
 
   const openReel = useCallback((item, opts) => {
@@ -1453,14 +1458,14 @@ export default function ArenaFeed({ navigation, route }) {
         </Text>
         <TouchableOpacity
           style={styles.emptyFeedBtn}
-          onPress={() => openFaceoff()}
+          onPress={() => openGameOn()}
           activeOpacity={0.85}
         >
-          <Text style={styles.emptyFeedBtnText}>OPEN FACEOFF</Text>
+          <Text style={styles.emptyFeedBtnText}>GAME ON</Text>
         </TouchableOpacity>
       </View>
     ),
-    [openFaceoff]
+    [openGameOn]
   );
 
   const feedKeyExtractor = useCallback((item, index) => {
@@ -1475,13 +1480,13 @@ export default function ArenaFeed({ navigation, route }) {
         onBrandPress={openProfileGateway}
         rightSlot={
           <TouchableOpacity
-            style={styles.faceoffPill}
-            onPress={() => openFaceoff()}
+            style={styles.gameOnPill}
+            onPress={() => openGameOn()}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Open FACEOFF hub"
+            accessibilityLabel="Open GAME ON hub"
           >
-            <Text style={styles.faceoffPillText}>FACEOFF</Text>
+            <Text style={styles.gameOnPillText}>GAME ON</Text>
           </TouchableOpacity>
         }
       />
@@ -1518,12 +1523,7 @@ export default function ArenaFeed({ navigation, route }) {
         }
       />
 
-      <FaceoffHub
-        visible={faceoffOpen}
-        onClose={closeFaceoff}
-        selectedSport={faceoffSport}
-        onSelectSport={setFaceoffSport}
-      />
+      <GameOnHub visible={gameOnOpen} onClose={closeGameOn} />
 
       <ArenaReelViewer
         visible={!!activeReel}
@@ -1591,7 +1591,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.8,
   },
-  faceoffPill: {
+  gameOnPill: {
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 999,
@@ -1599,7 +1599,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: WHITE,
   },
-  faceoffPillText: {
+  gameOnPillText: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '900',
