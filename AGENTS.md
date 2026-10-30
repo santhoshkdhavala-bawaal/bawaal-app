@@ -60,7 +60,7 @@ Canonical list in `src/utils/sportCategory.js`: ALL, CRICKET, FOOTBALL, GYM, KAB
 
 ## Arena challenge architecture (locked)
 
-Main Arena is a **single clutter-free cinematic video feed** with **ARENA** + **GAME ON** and **no** floating toasts. Indices 0–1 are always video; every 4–5 items thereafter inject an inline **LIVE COMMUNITY CHALLENGES** shelf (deep-links to BATTLES). **GAME ON** hosts live scores (horizontal pills only). **BATTLES** hosts Active Battles and Open Callouts (**OPEN CHALLENGES** | **TIPS & BREAKDOWNS**). **1-tap** `+ BATTLE` / Battles LAUNCH → `UniversalCamera` challenge mode; keep **200ms** post-stop teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc`.
+Hubs: **ARENA** (cinematic feed; shelf at index 2+), **GAME ON** (scores + locked `BAWAAL_SPORTS` pills), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Taxonomy source: `src/constants/sports.js`. **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc` and `bawaal-sport-taxonomy-locked.mdc`.
 
 ## Back controls (locked)
 

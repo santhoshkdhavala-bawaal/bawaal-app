@@ -5,7 +5,7 @@ alwaysApply: true
 
 # BAWAAL sport taxonomy (LOCKED)
 
-Canonical list lives in `src/constants/sports.js` as `BAWAAL_SPORTS` (re-exported from `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` / `BAWAAL_FORM_SPORTS`).
+Canonical list lives in `src/constants/sports.js` as **`BAWAAL_SPORTS`** (re-exported from `src/utils/sportCategory.js` as `BAWAAL_SPORT_TAXONOMY` / `BAWAAL_FORM_SPORTS` / `ARENA_SPORT_TABS`). This is locked core architecture — see `BAWAAL_MASTER_BLUEPRINT.md` §2–3.
 
 ## Exact order (do not reorder or rename)
 
