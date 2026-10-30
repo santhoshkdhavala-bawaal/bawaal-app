@@ -105,6 +105,8 @@ function buildDemoResponses(challengeId) {
 const DEFAULT_BATTLE_GYM_ID = 'challenge-gym-yuki';
 const DEFAULT_BATTLE_CRICKET_ID = 'challenge-cricket-rohit';
 const DEFAULT_BATTLE_COMBAT_ID = 'challenge-combat-aman';
+const DEFAULT_TIP_COMBAT_ID = 'tip-combat-jab-cross';
+const DEFAULT_TIP_CRICKET_ID = 'tip-cricket-form-check';
 /** Fixed epoch offsets so ensureDefaultBattles does not remint card identities each render. */
 const DEFAULT_BATTLE_EPOCH = 1_700_000_000_000;
 
@@ -127,6 +129,7 @@ function seedDefaultOfficialBattles() {
       leaderLabel: `@${gymResponses[0].creator}`,
       target: '140 KG x 3 Reps',
       status: 'LIVE BATTLE',
+      calloutKind: 'OPEN_CHALLENGE',
       challengeVideoUri: null,
       responses: gymResponses,
       createdAt: DEFAULT_BATTLE_EPOCH - 86_400_000,
@@ -144,6 +147,7 @@ function seedDefaultOfficialBattles() {
       leaderLabel: `@${cricketResponses[0].creator}`,
       target: 'Cover drive · 6 balls',
       status: 'OPEN',
+      calloutKind: 'OPEN_CHALLENGE',
       challengeVideoUri: null,
       responses: cricketResponses,
       createdAt: DEFAULT_BATTLE_EPOCH - 50_000_000,
@@ -159,8 +163,10 @@ function seedDefaultOfficialBattles() {
       opponent: '@Aman_Striker',
       challengerLabel: 'YOU',
       leaderLabel: `@${combatResponses[0].creator}`,
-      target: '3-round shadow spar',
+      target: '6 jabs 5 crosses in 30s',
       status: 'HOT',
+      calloutKind: 'OPEN_CHALLENGE',
+      isOpenChallenge: true,
       challengeVideoUri: null,
       responses: combatResponses,
       createdAt: DEFAULT_BATTLE_EPOCH - 20_000_000,
@@ -169,11 +175,60 @@ function seedDefaultOfficialBattles() {
   ];
 }
 
-/** Merge missing default official battles without wiping live / fresh posts. */
+/** FACEOFF tip / form-check shells — TIPS & BREAKDOWNS bucket. */
+function seedDefaultTipCallouts() {
+  return [
+    {
+      id: DEFAULT_TIP_COMBAT_ID,
+      challengeId: DEFAULT_TIP_COMBAT_ID,
+      type: 'battle_thread',
+      sport: 'COMBAT',
+      category: 'COMBAT',
+      author: 'TIP',
+      opponent: '@Nova_Strike',
+      challengerLabel: 'YOU',
+      leaderLabel: '@Nova_Strike',
+      target: 'How to land a clean jab-cross?',
+      status: 'OPEN',
+      calloutKind: 'TIP_BREAKDOWN',
+      isOpenChallenge: true,
+      isTipBreakdown: true,
+      challengeVideoUri: null,
+      responses: [],
+      createdAt: DEFAULT_BATTLE_EPOCH - 12_000_000,
+      _demoBattle: true,
+    },
+    {
+      id: DEFAULT_TIP_CRICKET_ID,
+      challengeId: DEFAULT_TIP_CRICKET_ID,
+      type: 'battle_thread',
+      sport: 'CRICKET',
+      category: 'CRICKET',
+      author: 'TIP',
+      opponent: '@Dev_Drive',
+      challengerLabel: 'YOU',
+      leaderLabel: '@Dev_Drive',
+      target: 'Form check: front-foot drive',
+      status: 'OPEN',
+      calloutKind: 'TIP_BREAKDOWN',
+      isOpenChallenge: true,
+      isTipBreakdown: true,
+      challengeVideoUri: null,
+      responses: [],
+      createdAt: DEFAULT_BATTLE_EPOCH - 8_000_000,
+      _demoBattle: true,
+    },
+  ];
+}
+
+/** Merge missing default official battles + tip callouts without wiping live posts. */
 function ensureDefaultBattles(items) {
   const list = Array.isArray(items) ? [...items] : [];
   const ids = new Set(list.map((p) => p?.id).filter(Boolean));
-  for (const battle of seedDefaultOfficialBattles()) {
+  for (const battle of [
+    ...seedDefaultOfficialBattles(),
+    ...seedDefaultTipCallouts(),
+  ]) {
     if (ids.has(battle.id)) continue;
     list.push(battle);
     ids.add(battle.id);
@@ -1319,7 +1374,10 @@ export default function ArenaFeed({ navigation, route }) {
       out.push(item);
     }
     if (out.length === 0) {
-      for (const battle of seedDefaultOfficialBattles()) {
+      for (const battle of [
+        ...seedDefaultOfficialBattles(),
+        ...seedDefaultTipCallouts(),
+      ]) {
         if (!isOpenChallengeFeedItem(battle) || seen.has(battle.id)) continue;
         out.push(battle);
         seen.add(battle.id);

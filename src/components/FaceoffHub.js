@@ -1,6 +1,6 @@
 /**
  * FACEOFF hub — dedicated Arena discovery surface.
- * Scores ticker + sport category grid + open callouts (stealth-black).
+ * Scores ticker + sport category grid + 2-category open callouts (stealth-black).
  */
 import React, { memo, useMemo } from 'react';
 import {
@@ -19,6 +19,11 @@ import {
   canonicalizeSport,
   matchesSportFilter,
 } from '../utils/sportCategory';
+import {
+  CALLOUT_KIND_CHALLENGE,
+  CALLOUT_KIND_TIP,
+  resolveCalloutKind,
+} from '../utils/faceoffCallout';
 
 const WHITE = '#FFFFFF';
 const DARK_BG = '#000000';
@@ -27,10 +32,116 @@ const BORDER = 'rgba(232,236,233,0.28)';
 const MUTED = '#A0A0A0';
 const FLAME = '#FF5722';
 const CRIMSON = '#FF0033';
+const TIP_BLUE = '#3B82F6';
 
 const SPORT_GRID = BAWAAL_SPORT_TAXONOMY.length
   ? BAWAAL_SPORT_TAXONOMY
   : ['ALL'];
+
+function CalloutCard({
+  item,
+  focused,
+  kind,
+  onRespond,
+  onOpenResponses,
+}) {
+  const handle = String(
+    item.opponent || item.host || item.challengeOf || 'Athlete'
+  ).replace(/^@/, '');
+  const isTip = kind === CALLOUT_KIND_TIP;
+  const status = isTip
+    ? 'TIP'
+    : String(item.status || 'OPEN').toUpperCase();
+  const accent = isTip ? TIP_BLUE : CRIMSON;
+
+  return (
+    <View
+      style={[styles.challengeCard, focused && styles.challengeCardFocus]}
+    >
+      <View style={styles.challengeTop}>
+        <View
+          style={[
+            styles.statusPill,
+            { borderColor: accent, backgroundColor: `${accent}22` },
+          ]}
+        >
+          <Text style={[styles.statusPillText, { color: accent }]}>
+            {status}
+          </Text>
+        </View>
+        <Text style={styles.sportTag}>{item.sport || 'ALL'}</Text>
+      </View>
+      <Text style={styles.challengeHandle} numberOfLines={1}>
+        @{handle}
+      </Text>
+      <Text style={styles.challengeTarget} numberOfLines={2}>
+        {item.target || item.statSticker || (isTip ? 'Tip request' : 'Open callout')}
+      </Text>
+      <View style={styles.challengeActions}>
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          onPress={() => onOpenResponses?.(item)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.secondaryBtnText}>
+            {(item.responses || []).length} RESPONSES
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.respondBtn}
+          onPress={() => onRespond?.(item)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={isTip ? 'Respond to tip' : 'Respond to challenge'}
+        >
+          <Text style={styles.respondBtnText}>
+            {isTip ? 'BREAK DOWN' : 'RESPOND'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function CalloutSection({
+  title,
+  emptyTitle,
+  emptySub,
+  items,
+  focusChallengeId,
+  onRespond,
+  onOpenResponses,
+}) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionLabel}>
+        {title}
+        {items.length > 0 ? ` · ${items.length}` : ''}
+      </Text>
+      {items.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+          <Text style={styles.emptySub}>{emptySub}</Text>
+        </View>
+      ) : (
+        items.map((item) => {
+          const focused =
+            focusChallengeId && String(item.id) === String(focusChallengeId);
+          return (
+            <CalloutCard
+              key={item.id}
+              item={item}
+              focused={focused}
+              kind={resolveCalloutKind(item)}
+              onRespond={onRespond}
+              onOpenResponses={onOpenResponses}
+            />
+          );
+        })
+      )}
+    </View>
+  );
+}
 
 function FaceoffHub({
   visible,
@@ -50,6 +161,22 @@ function FaceoffHub({
     if (sport === 'ALL') return list;
     return list.filter((item) => matchesSportFilter(item, sport));
   }, [challenges, sport]);
+
+  const openChallenges = useMemo(
+    () =>
+      filtered.filter(
+        (item) => resolveCalloutKind(item) === CALLOUT_KIND_CHALLENGE
+      ),
+    [filtered]
+  );
+
+  const tipCallouts = useMemo(
+    () =>
+      filtered.filter((item) => resolveCalloutKind(item) === CALLOUT_KIND_TIP),
+    [filtered]
+  );
+
+  const sportLabel = sport === 'ALL' ? '' : ` ${sport}`;
 
   return (
     <Modal
@@ -72,7 +199,9 @@ function FaceoffHub({
           <Text style={styles.title}>FACEOFF</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <Text style={styles.subtitle}>SCORES · SPORTS · OPEN CALLOUTS</Text>
+        <Text style={styles.subtitle}>
+          SCORES · SPORTS · OPEN CHALLENGES · TIPS
+        </Text>
 
         <ScrollView
           style={styles.scroll}
@@ -117,76 +246,25 @@ function FaceoffHub({
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>
-              OPEN CALLOUTS
-              {filtered.length > 0 ? ` · ${filtered.length}` : ''}
-            </Text>
-            {filtered.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyTitle}>
-                  {sport === 'ALL'
-                    ? 'NO OPEN CHALLENGES'
-                    : `NO ${sport} CHALLENGES`}
-                </Text>
-                <Text style={styles.emptySub}>
-                  Launch from Battles or + BATTLE — record an opener and publish.
-                </Text>
-              </View>
-            ) : (
-              filtered.map((item) => {
-                const focused =
-                  focusChallengeId &&
-                  String(item.id) === String(focusChallengeId);
-                const handle = String(
-                  item.opponent || item.host || item.challengeOf || 'Challenger'
-                ).replace(/^@/, '');
-                const status = String(item.status || 'OPEN').toUpperCase();
-                return (
-                  <View
-                    key={item.id}
-                    style={[
-                      styles.challengeCard,
-                      focused && styles.challengeCardFocus,
-                    ]}
-                  >
-                    <View style={styles.challengeTop}>
-                      <View style={styles.statusPill}>
-                        <Text style={styles.statusPillText}>{status}</Text>
-                      </View>
-                      <Text style={styles.sportTag}>{item.sport || 'ALL'}</Text>
-                    </View>
-                    <Text style={styles.challengeHandle} numberOfLines={1}>
-                      @{handle}
-                    </Text>
-                    <Text style={styles.challengeTarget} numberOfLines={2}>
-                      {item.target || item.statSticker || 'Open callout'}
-                    </Text>
-                    <View style={styles.challengeActions}>
-                      <TouchableOpacity
-                        style={styles.secondaryBtn}
-                        onPress={() => onOpenResponses?.(item)}
-                        activeOpacity={0.85}
-                      >
-                        <Text style={styles.secondaryBtnText}>
-                          {(item.responses || []).length} RESPONSES
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.respondBtn}
-                        onPress={() => onRespond?.(item)}
-                        activeOpacity={0.85}
-                        accessibilityRole="button"
-                        accessibilityLabel="Respond to challenge"
-                      >
-                        <Text style={styles.respondBtnText}>RESPOND</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })
-            )}
-          </View>
+          <CalloutSection
+            title="OPEN CHALLENGES"
+            emptyTitle={`NO${sportLabel} OPEN CHALLENGES`}
+            emptySub="Launch a performance or 1v1 callout from Battles or + BATTLE."
+            items={openChallenges}
+            focusChallengeId={focusChallengeId}
+            onRespond={onRespond}
+            onOpenResponses={onOpenResponses}
+          />
+
+          <CalloutSection
+            title="TIPS & BREAKDOWNS"
+            emptyTitle={`NO${sportLabel} TIPS`}
+            emptySub="Ask for technique advice or a form-check — athletes can break it down."
+            items={tipCallouts}
+            focusChallengeId={focusChallengeId}
+            onRespond={onRespond}
+            onOpenResponses={onOpenResponses}
+          />
         </ScrollView>
       </View>
     </Modal>
@@ -271,7 +349,7 @@ const styles = StyleSheet.create({
   },
   emptyBox: {
     marginHorizontal: 16,
-    paddingVertical: 28,
+    paddingVertical: 22,
     paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
@@ -281,9 +359,10 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: WHITE,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1,
+    textAlign: 'center',
   },
   emptySub: {
     color: MUTED,
@@ -315,11 +394,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: CRIMSON,
-    backgroundColor: 'rgba(255,0,51,0.12)',
   },
   statusPillText: {
-    color: CRIMSON,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.6,

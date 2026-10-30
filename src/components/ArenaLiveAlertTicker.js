@@ -1,5 +1,5 @@
 /**
- * Floating in-feed alert ticker for open callouts + live battle accepts.
+ * Floating in-feed alert ticker for open challenges + tips/breakdowns.
  * Tap deep-links into FACEOFF.
  */
 import React, { memo, useEffect, useMemo, useState } from 'react';
@@ -11,6 +11,10 @@ import {
   Text,
   View,
 } from 'react-native';
+import {
+  CALLOUT_KIND_TIP,
+  resolveCalloutKind,
+} from '../utils/faceoffCallout';
 
 const WHITE = '#FFFFFF';
 const SURFACE = 'rgba(18, 18, 18, 0.94)';
@@ -20,7 +24,7 @@ const FLAME = '#FF5722';
 const ROTATE_MS = 4200;
 
 /**
- * Build speakable alert lines from open / live battle cards.
+ * Build speakable alert lines from open callouts (challenges + tips).
  * @param {Array<object>} challenges
  * @returns {Array<{ id: string, emoji: string, text: string, challengeId: string }>}
  */
@@ -29,7 +33,7 @@ export function buildArenaAlertLines(challenges) {
   const lines = [];
   for (const item of list) {
     if (!item?.id) continue;
-    const status = String(item.status || '').toUpperCase();
+    const kind = resolveCalloutKind(item);
     const target = String(item.target || item.statSticker || '').trim();
     const a = String(item.opponent || item.host || 'Athlete')
       .replace(/^@/, '')
@@ -39,11 +43,24 @@ export function buildArenaAlertLines(challenges) {
     )
       .replace(/^@/, '')
       .trim();
+    const status = String(item.status || '').toUpperCase();
     const isLive =
-      status === 'LIVE BATTLE' ||
-      status === 'BATTLE' ||
-      status === 'HOT' ||
-      Boolean(item.responses?.length);
+      kind !== CALLOUT_KIND_TIP &&
+      (status === 'LIVE BATTLE' ||
+        status === 'BATTLE' ||
+        status === 'HOT' ||
+        Boolean(item.responses?.length));
+
+    if (kind === CALLOUT_KIND_TIP && target) {
+      const tipBody = target.replace(/^tip\s*:\s*/i, '').trim() || target;
+      lines.push({
+        id: `tip-${item.id}`,
+        emoji: '💡',
+        text: `TIP: ${tipBody}`,
+        challengeId: String(item.id),
+      });
+      continue;
+    }
 
     if (isLive && a) {
       const vs = b && b.toUpperCase() !== 'YOU' ? b : 'Challenger';

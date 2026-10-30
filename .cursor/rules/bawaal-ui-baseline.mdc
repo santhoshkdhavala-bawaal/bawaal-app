@@ -19,7 +19,7 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 ## 2. Arena header & FACEOFF hub (`ArenaFeed.js` + `FaceoffHub` + `ScoresSportsPanel.js`)
 
 - **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **FACEOFF** (no feed-top dual toggle or category pill scroller).
-- **Keep:** FACEOFF hub hosts scores ticker, sport category grid, and open callouts.
+- **Keep:** FACEOFF hub hosts scores ticker, sport category grid, and 2-category Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS).
 - **Keep:** Black-and-white monochromatic Scores & Sports panel inside FACEOFF (sport pills → match list → inline score card).
 - **Keep:** Comprehensive sport selector grouped conceptually as Team Sports, Motorsports, Combat, Racket Sports, Precision/Athletics (and Water & Outdoor as already shipped).
 - **Do not** restyle into colorful/dashboard chrome or replace the sport-first dropdown/pill flow.
