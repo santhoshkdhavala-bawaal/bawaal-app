@@ -26,6 +26,7 @@ import {
   persistLocalVideoUri,
   sanitizePlayableFeedUri,
 } from './src/services/uploadService';
+import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 import PreviewScreen from './PreviewScreen';
 
 const BG = '#000000';
@@ -246,18 +247,36 @@ export default function ChallengeCamRecorder({
       setIsRecording(false);
       recordingLockRef.current = false;
       stoppingRef.current = false;
-      const uri = result?.uri;
-      if (!uri) {
-        setError('Recording failed — no video URI.');
+
+      const check = validateRecordedVideoUri(result?.uri);
+      if (!check.ok) {
+        setRecordedUri(null);
+        setPhase('camera');
+        setError(
+          check.message ||
+            'Recording failed — no valid .mp4 / .mov clip. Please retake.'
+        );
         return;
       }
-      let stable = uri;
+
+      let stable = check.uri;
       try {
-        stable = (await persistLocalVideoUri(uri)) || uri;
+        stable = (await persistLocalVideoUri(check.uri)) || check.uri;
       } catch {
-        stable = uri;
+        stable = check.uri;
       }
-      setRecordedUri(stable);
+      const stableCheck = validateRecordedVideoUri(stable);
+      if (!stableCheck.ok) {
+        setRecordedUri(null);
+        setPhase('camera');
+        setError(
+          stableCheck.message ||
+            'Could not save a playable clip. Please retake.'
+        );
+        return;
+      }
+
+      setRecordedUri(stableCheck.uri);
       setSpeedRate(1);
       setPhase('preview');
     } catch (err) {
@@ -265,8 +284,15 @@ export default function ChallengeCamRecorder({
       setIsRecording(false);
       recordingLockRef.current = false;
       stoppingRef.current = false;
-      if (!String(err?.message || '').toLowerCase().includes('stop')) {
-        setError(err?.message || 'Recording failed');
+      setRecordedUri(null);
+      setPhase('camera');
+      const msg = String(err?.message || err || '');
+      if (!/stop/i.test(msg)) {
+        setError(
+          msg
+            ? `Recording failed: ${msg}`
+            : 'Recording failed. Stay on the lens and try again.'
+        );
       }
     }
   }, [
@@ -281,7 +307,13 @@ export default function ChallengeCamRecorder({
   const toggleRecord = useCallback(() => {
     if (phase !== 'camera' || busy) return;
     if (isRecording) {
-      void stopNativeRecording();
+      try {
+        void stopNativeRecording();
+      } catch (err) {
+        setError(
+          err?.message || 'Could not stop recording. Tap shutter again.'
+        );
+      }
       return;
     }
     void beginRecording();
@@ -299,11 +331,17 @@ export default function ChallengeCamRecorder({
 
   const handleContinue = useCallback(
     async (payload) => {
-      const handoffUri = sanitizePlayableFeedUri(
+      const rawHandoff = sanitizePlayableFeedUri(
         payload?.videoUri || payload?.localVideoUri || payload?.uri || recordedUri
       );
+      const check = validateRecordedVideoUri(rawHandoff);
+      const handoffUri = check.ok ? check.uri : null;
       if (!handoffUri || busy) {
-        if (!handoffUri) setError('Invalid clip URI — retake the recording');
+        if (!handoffUri) {
+          setError(
+            check.message || 'Invalid clip URI — retake the recording'
+          );
+        }
         return;
       }
       setBusy(true);

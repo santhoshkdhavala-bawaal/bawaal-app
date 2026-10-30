@@ -101,6 +101,7 @@ function SafeFeedVideo({
   nativeControls = false,
   sport = null,
   posterUri = null,
+  onPlaybackError = null,
 }) {
   const resolved = useMemo(() => {
     if (uriProp) return toPublicFeedVideoUrl(uriProp) || uriProp;
@@ -158,6 +159,7 @@ function SafeFeedVideo({
       nativeControls={nativeControls}
       sport={sport}
       posterUri={poster}
+      onPlaybackError={onPlaybackError}
     />
   );
 }

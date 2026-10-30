@@ -110,6 +110,9 @@ export default function ArenaReelViewer({
     [posterUri]
   );
   const [buffering, setBuffering] = useState(true);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+
+  const showPosterCard = !uri || playbackFailed;
 
   useEffect(() => {
     prefetchReelPoster();
@@ -125,11 +128,13 @@ export default function ArenaReelViewer({
     setMoreOpen(false);
     setPaused(false);
     setMuted(!!initialMuted);
-    setBuffering(true);
+    setBuffering(!!uri);
+    setPlaybackFailed(false);
     /* eslint-enable react-hooks/set-state-in-effect */
+    if (!uri) return undefined;
     const t = setTimeout(() => setBuffering(false), 1600);
     return () => clearTimeout(t);
-  }, [visible, reel?.id, reel, initialMuted]);
+  }, [visible, reel?.id, reel, initialMuted, uri]);
 
   const togglePlayPause = useCallback(() => {
     // JS-only play/pause — never enter native VideoView fullscreen
@@ -189,49 +194,85 @@ export default function ArenaReelViewer({
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
         <View style={styles.videoShell} pointerEvents="box-none">
-          {/* Brand poster underlay — never a dead black frame while URL resolves */}
-          <Image
-            source={posterSource}
-            style={styles.posterFill}
-            resizeMode="cover"
-            pointerEvents="none"
-          />
-          <SafeFeedVideo
-            // Stable identity — do NOT remount on every open (avoids re-fetch lag)
-            // Missing/invalid URI → NativeFeedVideo falls back to sample_challenge.mp4
-            uri={uri}
-            source={reel}
-            posterUri={posterUri}
-            style={styles.videoFill}
-            muted={muted}
-            loop
-            autoPlay={visible}
-            paused={paused || !visible}
-            contentFit="cover"
-            nativeControls={false}
-          />
-          {buffering && visible ? (
-            <View style={styles.bufferOverlay} pointerEvents="none">
-              <ActivityIndicator color={WHITE} size="large" />
+          {showPosterCard ? (
+            <View style={styles.posterCard} pointerEvents="none">
+              <Image
+                source={posterSource}
+                style={styles.posterCardImage}
+                resizeMode="cover"
+              />
+              <View style={styles.posterCardScrim} />
+              <View style={styles.posterCardBody}>
+                <Text style={styles.posterCardEyebrow}>ARENA REEL</Text>
+                <UserHandle
+                  handle={handle}
+                  verified={reel.verified ?? isHandleVerified(handle)}
+                  size={18}
+                  color={WHITE}
+                  textStyle={styles.posterCardHandle}
+                />
+                <Text style={styles.posterCardCaption} numberOfLines={4}>
+                  {reel.caption ||
+                    reel.title ||
+                    'Clip unavailable — caption locked in.'}
+                </Text>
+                {!uri ? (
+                  <Text style={styles.posterCardHint}>
+                    No playable video URL · showing poster card
+                  </Text>
+                ) : (
+                  <Text style={styles.posterCardHint}>
+                    Playback failed · showing poster card
+                  </Text>
+                )}
+              </View>
             </View>
-          ) : null}
-          {/* Dedicated tap layer — play/pause only; banter/UI stay above */}
-          <Pressable
-            style={styles.videoTapLayer}
-            onPress={togglePlayPause}
-            accessibilityLabel={paused ? 'Play video' : 'Pause video'}
-          />
-          {/* Single mute control for immersive — feed card mute is hidden while open */}
-          <MuteToggleButton
-            muted={muted}
-            onPress={toggleMute}
-            style={[styles.muteBtn, { top: topPad + 8 }]}
-          />
-          {paused ? (
-            <View style={styles.pauseBadge} pointerEvents="none">
-              <Text style={styles.pauseBadgeText}>PAUSED</Text>
-            </View>
-          ) : null}
+          ) : (
+            <>
+              <Image
+                source={posterSource}
+                style={styles.posterFill}
+                resizeMode="cover"
+                pointerEvents="none"
+              />
+              <SafeFeedVideo
+                uri={uri}
+                source={reel}
+                posterUri={posterUri}
+                style={styles.videoFill}
+                muted={muted}
+                loop
+                autoPlay={visible}
+                paused={paused || !visible}
+                contentFit="cover"
+                nativeControls={false}
+                onPlaybackError={() => {
+                  setPlaybackFailed(true);
+                  setBuffering(false);
+                }}
+              />
+              {buffering && visible ? (
+                <View style={styles.bufferOverlay} pointerEvents="none">
+                  <ActivityIndicator color={WHITE} size="large" />
+                </View>
+              ) : null}
+              <Pressable
+                style={styles.videoTapLayer}
+                onPress={togglePlayPause}
+                accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+              />
+              <MuteToggleButton
+                muted={muted}
+                onPress={toggleMute}
+                style={[styles.muteBtn, { top: topPad + 8 }]}
+              />
+              {paused ? (
+                <View style={styles.pauseBadge} pointerEvents="none">
+                  <Text style={styles.pauseBadgeText}>PAUSED</Text>
+                </View>
+              ) : null}
+            </>
+          )}
         </View>
 
         {activeGifs.map((g) => (
@@ -423,6 +464,55 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#0A0A0A',
     zIndex: 0,
+  },
+  posterCard: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0A0A0A',
+    justifyContent: 'flex-end',
+  },
+  posterCardImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    opacity: 0.45,
+  },
+  posterCardScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  posterCardBody: {
+    paddingHorizontal: 24,
+    paddingBottom: 140,
+    paddingTop: 32,
+    zIndex: 2,
+  },
+  posterCardEyebrow: {
+    color: ACCENT,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 10,
+  },
+  posterCardHandle: {
+    color: WHITE,
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  posterCardCaption: {
+    marginTop: 14,
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 24,
+    maxWidth: '88%',
+  },
+  posterCardHint: {
+    marginTop: 18,
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
   videoFill: {
     position: 'absolute',

@@ -18,6 +18,7 @@ import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { persistLocalVideoUri } from './src/services/uploadService';
 import { isExpoGo } from './src/utils/runtimeEnv';
+import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
 const DEFAULT_DURATION = 30;
@@ -699,6 +700,7 @@ export default function ChallengeCam({
   const [recordedUri, setRecordedUri] = useState(null);
   const [isMockClip, setIsMockClip] = useState(false);
   const [mountError, setMountError] = useState(null);
+  const [recordError, setRecordError] = useState(null);
   const [cameraKey, setCameraKey] = useState(0);
   const [useFallback, setUseFallback] = useState(false);
   const [frozen, setFrozen] = useState(false);
@@ -817,6 +819,25 @@ export default function ChallengeCam({
       ? Math.max(1, Math.round((Date.now() - recordStartedAtRef.current) / 1000))
       : Math.max(1, limit - (secondsLeftRef.current ?? 0));
     const lockedDur = fromTimer ? limit : Math.min(limit, elapsed);
+
+    const check = validateRecordedVideoUri(
+      uri || (mock ? `emulator-mock://${Date.now()}.mp4` : null)
+    );
+    if (!check.ok) {
+      setIsRecording(false);
+      setFrozen(false);
+      setShowPreview(false);
+      setRecordedUri(null);
+      setIsMockClip(false);
+      stoppingRef.current = false;
+      recordingLockRef.current = false;
+      setRecordError(
+        check.message ||
+          'Recording failed — no valid .mp4 / .mov clip. Please retake.'
+      );
+      return;
+    }
+
     setClipDurationSec(lockedDur);
     setSlowMoStartSec(0);
     setSlowMoEndSec(lockedDur);
@@ -825,10 +846,10 @@ export default function ChallengeCam({
     reviewPlayheadRef.current = 0;
     setIsRecording(false);
     setFrozen(true);
+    setRecordError(null);
     // URI first so review Video can mount before preview chrome toggles on
-    setIsMockClip(mock);
-    const fallbackUri = uri || `emulator-mock://${Date.now()}.mp4`;
-    setRecordedUri(fallbackUri);
+    setIsMockClip(mock || !!check.mock);
+    setRecordedUri(check.uri);
     setShowPreview(true);
     if (fromTimer) {
       setTimeUp(true);
@@ -839,11 +860,17 @@ export default function ChallengeCam({
     recordingLockRef.current = false;
 
     // Persist camera temp file into documentDirectory so later POST does not 404
-    if (uri && !mock && !String(uri).startsWith('emulator-mock://')) {
-      persistLocalVideoUri(uri)
+    if (
+      check.uri &&
+      !mock &&
+      !check.mock &&
+      !String(check.uri).startsWith('emulator-mock://')
+    ) {
+      persistLocalVideoUri(check.uri)
         .then((stable) => {
-          if (stable && stable !== uri) {
-            setRecordedUri(stable);
+          const stableCheck = validateRecordedVideoUri(stable);
+          if (stableCheck.ok && stableCheck.uri !== check.uri) {
+            setRecordedUri(stableCheck.uri);
           }
         })
         .catch((err) => {
@@ -1013,6 +1040,13 @@ export default function ChallengeCam({
         cameraRef.current?.stopRecording?.();
       } catch (error) {
         console.warn('Stop recording failed:', error?.message || error);
+        setRecordError(
+          error?.message ||
+            'Could not stop recording. Tap shutter again or retake.'
+        );
+        setIsRecording(false);
+        recordingLockRef.current = false;
+        stoppingRef.current = false;
       }
       return;
     }
@@ -1028,8 +1062,12 @@ export default function ChallengeCam({
       recordStartedAtRef.current = Date.now();
       setTakeCount((n) => n + 1);
       setIsRecording(true);
+      setRecordError(null);
       recordWatchdog.current = setTimeout(() => {
-        lockResponse(`emulator-mock://${Date.now()}.mp4`, { mock: true, fromTimer: true });
+        lockResponse(`emulator-mock://${Date.now()}.mp4`, {
+          mock: true,
+          fromTimer: true,
+        });
       }, limit * 1000);
       return;
     }
@@ -1047,6 +1085,7 @@ export default function ChallengeCam({
     setTakeCount((n) => n + 1);
     setIsRecording(true);
     stoppingRef.current = false;
+    setRecordError(null);
 
     try {
       // mute:false on CameraView + record options keeps mic track without AGC spikes
@@ -1055,20 +1094,38 @@ export default function ChallengeCam({
         maxDuration: limit,
       });
       const hitZero = secondsLeftRef.current <= 0;
-      const fileUri = video?.uri;
-      if (fileUri) {
-        lockResponse(fileUri, { mock: false, fromTimer: hitZero });
+      const check = validateRecordedVideoUri(video?.uri);
+      if (check.ok) {
+        lockResponse(check.uri, { mock: false, fromTimer: hitZero });
       } else {
-        console.warn('recordAsync resolved without a file URI');
+        console.warn(
+          'recordAsync resolved without a valid video URI:',
+          check.reason
+        );
         setIsRecording(false);
         recordingLockRef.current = false;
+        stoppingRef.current = false;
+        setRecordError(
+          check.message ||
+            'Recording finished without a valid .mp4 / .mov clip. Please retake.'
+        );
       }
     } catch (error) {
-      // Log only — do not invent a fallback clip on transient record errors
       console.warn('Recording failed:', error?.message || error);
       setIsRecording(false);
       recordingLockRef.current = false;
       stoppingRef.current = false;
+      setRecordedUri(null);
+      setShowPreview(false);
+      setFrozen(false);
+      const msg = String(error?.message || error || '');
+      if (!/stop/i.test(msg)) {
+        setRecordError(
+          msg
+            ? `Recording failed: ${msg}`
+            : 'Recording failed. Stay on the lens and try again.'
+        );
+      }
     }
   };
 
@@ -1088,6 +1145,7 @@ export default function ChallengeCam({
     setIsRecording(false);
     setFrozen(false);
     setShowPreview(false);
+    setRecordError(null);
     setTimeUp(false);
     setClipDurationSec(0);
     setElapsedSec(0);
@@ -1624,6 +1682,16 @@ export default function ChallengeCam({
           ]}
           pointerEvents="box-none"
         >
+          {recordError ? (
+            <TouchableOpacity
+              style={styles.recordErrorBanner}
+              onPress={() => setRecordError(null)}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.recordErrorText}>{recordError}</Text>
+              <Text style={styles.recordErrorDismiss}>TAP TO DISMISS</Text>
+            </TouchableOpacity>
+          ) : null}
           {renderDurationPills()}
           {renderShutter()}
           {showPostBattle && (
@@ -2504,5 +2572,31 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.2,
+  },
+  recordErrorBanner: {
+    alignSelf: 'stretch',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(18,18,18,0.92)',
+    borderWidth: 1,
+    borderColor: ACTIVE_REC,
+  },
+  recordErrorText: {
+    color: COLORS.OFF_WHITE,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  recordErrorDismiss: {
+    marginTop: 6,
+    color: 'rgba(255,255,255,0.45)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textAlign: 'center',
   },
 });

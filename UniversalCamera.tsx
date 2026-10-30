@@ -54,6 +54,7 @@ import { stabilizeLocalVideoUri } from './src/services/uploadService';
 import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
 import { isExpoGo } from './src/utils/runtimeEnv';
+import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 export type { CreationMode, PostCreationPayload };
 
 /** Minimalist Black & White */
@@ -1412,21 +1413,25 @@ export default function UniversalCamera({
     try {
       const video = await recordPromise;
       // Video object resolved — keep CameraView mounted; do not remount/release yet
-      const uri =
-        typeof video?.uri === 'string' && video.uri.length > 0
-          ? video.uri
-          : null;
+      const rawCheck = validateRecordedVideoUri(
+        typeof video?.uri === 'string' ? video.uri : null
+      );
 
-      if (!uri) {
+      if (!rawCheck.ok || !rawCheck.uri) {
         clearElapsedTimer();
         setIsRecording(false);
         recordingLockRef.current = false;
         stoppingRef.current = false;
         setIsFinalizingClip(false);
         setIsProcessing(false);
-        setCameraError('Recording finished without a clip. Try again.');
+        setCameraError(
+          rawCheck.message ||
+            'Recording finished without a valid .mp4 / .mov clip. Try again.'
+        );
         return;
       }
+
+      const uri = rawCheck.uri;
 
       // Gate UI before compress/save — still no preview mount yet
       setIsProcessing(true);
@@ -1447,6 +1452,19 @@ export default function UniversalCamera({
           (stabErr as Error)?.message || stabErr
         );
       }
+      const stableCheck = validateRecordedVideoUri(stableUri);
+      if (!stableCheck.ok || !stableCheck.uri) {
+        setIsFinalizingClip(false);
+        setIsProcessing(false);
+        recordingLockRef.current = false;
+        stoppingRef.current = false;
+        setCameraError(
+          stableCheck.message ||
+            'Could not save a playable clip. Please retake.'
+        );
+        return;
+      }
+      stableUri = stableCheck.uri;
       setCameraError('');
 
       // Instagram-style: auto-save to Camera Roll (keep asset id for optional delete)

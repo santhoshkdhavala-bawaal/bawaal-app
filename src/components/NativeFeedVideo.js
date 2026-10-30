@@ -106,6 +106,7 @@ function NativeFeedVideo({
   nativeControls,
   sport,
   posterUri = null,
+  onPlaybackError = null,
 }) {
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
@@ -263,7 +264,7 @@ function NativeFeedVideo({
           }}
           onError={(err) => {
             console.log('Video Player Error:', err?.error || err);
-            // Invalid / delayed cloud URL → bundled sample, not black screen
+            // Invalid / delayed cloud URL → bundled sample once; then surface failure
             if (!useFallbackAsset) {
               setUseFallbackAsset(true);
               setFailed(false);
@@ -273,6 +274,11 @@ function NativeFeedVideo({
             }
             setFailed(true);
             setLoading(false);
+            try {
+              onPlaybackError?.(err);
+            } catch (_) {
+              /* ignore */
+            }
           }}
         />
 
