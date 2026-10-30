@@ -58,6 +58,8 @@ import {
   coalesceRecordingUri,
   ensurePlayableRecordingUri,
   resolveSafeRecordingFallbackUri,
+  settleStopRecording,
+  STOP_SAVE_TIMEOUT_MS,
 } from './src/utils/safeRecordingFallback';
 export type { CreationMode, PostCreationPayload };
 
@@ -986,6 +988,8 @@ export default function UniversalCamera({
   const stoppingRef = useRef(false);
   /** Settles when the in-flight `recordAsync` promise resolves (video object ready). */
   const recordAsyncWaitRef = useRef<Promise<unknown> | null>(null);
+  /** Prevents double preview when stop timeout bypass races late recordAsync. */
+  const recordingHandoffDoneRef = useRef(false);
   /** Staged URI — set before React state so we never mount preview on a mid-flush path. */
   const pendingPreviewUriRef = useRef<string | null>(null);
   const pinchBaseZoomRef = useRef(0);
@@ -1240,6 +1244,7 @@ export default function UniversalCamera({
       // 2) Clear all JS session / trimmer / rate state to defaults
       pendingPreviewUriRef.current = null;
       recordAsyncWaitRef.current = null;
+      recordingHandoffDoneRef.current = false;
       setShowPreview(false);
       setShowPostSheet(false);
       setHubOpen(false);
@@ -1402,6 +1407,7 @@ export default function UniversalCamera({
     const cam = cameraRef.current;
     recordingLockRef.current = true;
     stoppingRef.current = false;
+    recordingHandoffDoneRef.current = false;
     setIsFinalizingClip(false);
     setIsProcessing(false);
     setIsRecording(true);
@@ -1412,10 +1418,20 @@ export default function UniversalCamera({
       maxDuration: recordLimit,
       // Higher bitrate when slow-mo capture is armed (cleaner ramp / punch-ins)
     });
-    recordAsyncWaitRef.current = recordPromise;
+    // Swallow late Invariant rejections after stop already opened preview
+    recordAsyncWaitRef.current = Promise.resolve(recordPromise).catch((err) => {
+      console.warn(
+        '[UniversalCamera] recordAsync late reject:',
+        (err as Error)?.message || err
+      );
+      return null;
+    });
 
     try {
-      const video = await recordPromise;
+      const video = (await recordPromise) as { uri?: string } | null;
+      // Stop-timeout path already handed off sample — ignore late settle
+      if (recordingHandoffDoneRef.current) return;
+
       // Video object resolved — keep CameraView mounted; do not remount/release yet
       // Gate UI before compress/save — still no preview mount yet
       setIsProcessing(true);
@@ -1451,6 +1467,7 @@ export default function UniversalCamera({
           },
         }
       );
+      if (recordingHandoffDoneRef.current) return;
       if (usedFallback) {
         console.warn(
           '[UniversalCamera] missing/invalid record URI — sample fallback'
@@ -1458,6 +1475,7 @@ export default function UniversalCamera({
       }
       const stableUri = playableUri || resolveSafeRecordingFallbackUri();
       setCameraError('');
+      recordingHandoffDoneRef.current = true;
 
       // Instagram-style: auto-save to Camera Roll (skip mock / sample-only)
       if (!usedFallback && !String(stableUri).startsWith('emulator-mock://')) {
@@ -1477,6 +1495,7 @@ export default function UniversalCamera({
         mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
       await handoffRecordedClip(stableUri, { openPreview });
     } catch (e) {
+      if (recordingHandoffDoneRef.current) return;
       console.warn(
         '[UniversalCamera] Recording error — sample preview:',
         (e as Error)?.message || e
@@ -1487,6 +1506,7 @@ export default function UniversalCamera({
       recordingLockRef.current = false;
       clearElapsedTimer();
       setCameraError('');
+      recordingHandoffDoneRef.current = true;
       const fallback = coalesceRecordingUri(null).uri;
       const openPreview =
         mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
@@ -1512,47 +1532,76 @@ export default function UniversalCamera({
   ]);
 
   /**
-   * Stop capture and await native stop + recordAsync video object BEFORE any
-   * React state / navigation. CameraView stays mounted through the 200ms HW window.
+   * Stop capture with a strict 2s settle. On Invariant / hang, bypass native
+   * save and hand off the sample clip so UI never sticks on "Saving clip…".
    */
   const stopRecording = useCallback(async () => {
     if ((!isRecording && !recordingLockRef.current) || stoppingRef.current) {
       return;
     }
     stoppingRef.current = true;
-    try {
-      const stopResult = cameraRef.current?.stopRecording?.() as
-        | void
-        | Promise<unknown>
-        | undefined;
-      if (stopResult && typeof (stopResult as Promise<unknown>).then === 'function') {
-        await stopResult;
-      }
-    } catch (e) {
-      console.warn('[UniversalCamera] stopRecording:', e);
-    }
-    // Await video object from the active recordAsync (started in startRecording)
-    const pending = recordAsyncWaitRef.current;
-    if (pending) {
-      try {
-        await Promise.race([
-          pending,
-          waitMs(10_000).then(() => {
-            throw new Error('recordAsync settle timeout');
-          }),
-        ]);
-      } catch (err) {
-        console.warn(
-          '[UniversalCamera] await recordAsync after stop:',
-          (err as Error)?.message || err
-        );
-      }
-    }
-    // Safety timeout — expo-camera / muxer release before any state flip
-    await waitMs(RECORDING_TEARDOWN_MS);
     setIsProcessing(true);
     setIsFinalizingClip(true);
-  }, [isRecording]);
+    setIsRecording(false);
+    clearElapsedTimer();
+
+    const openPreview =
+      mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
+
+    try {
+      const settled = await settleStopRecording({
+        timeoutMs: STOP_SAVE_TIMEOUT_MS,
+        recordPromise: recordAsyncWaitRef.current as
+          | Promise<{ uri?: string } | null>
+          | null
+          | undefined,
+        stopRecording: () => cameraRef.current?.stopRecording?.(),
+      });
+
+      if (recordingHandoffDoneRef.current) return;
+
+      // Real URI — let startRecording's await finish normal persist/handoff
+      if (!settled.usedFallback && settled.uri) {
+        await waitMs(RECORDING_TEARDOWN_MS);
+        return;
+      }
+
+      // Timeout / Invariant / missing URI → force preview immediately
+      console.warn(
+        '[UniversalCamera] stop/save bypass — sample preview:',
+        settled.error || 'fallback'
+      );
+      recordingHandoffDoneRef.current = true;
+      recordingLockRef.current = false;
+      stoppingRef.current = false;
+      recordAsyncWaitRef.current = null;
+      setCameraError('');
+      await handoffRecordedClip(
+        settled.uri || resolveSafeRecordingFallbackUri(),
+        { openPreview }
+      );
+    } catch (err) {
+      if (recordingHandoffDoneRef.current) return;
+      console.warn(
+        '[UniversalCamera] stopRecording crash — sample preview:',
+        (err as Error)?.message || err
+      );
+      recordingHandoffDoneRef.current = true;
+      recordingLockRef.current = false;
+      stoppingRef.current = false;
+      recordAsyncWaitRef.current = null;
+      setCameraError('');
+      await handoffRecordedClip(resolveSafeRecordingFallbackUri(), {
+        openPreview,
+      });
+    }
+  }, [
+    isRecording,
+    mode,
+    isOpenerCapture,
+    clearElapsedTimer,
+    handoffRecordedClip,
+  ]);
 
   const handleShutter = useCallback(() => {
     if (mode === 'BATTLE_BAWAAL') {

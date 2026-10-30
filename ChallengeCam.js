@@ -22,6 +22,8 @@ import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 import {
   coalesceRecordingUri,
   resolveSafeRecordingFallbackUri,
+  settleStopRecording,
+  STOP_SAVE_TIMEOUT_MS,
 } from './src/utils/safeRecordingFallback';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
@@ -677,6 +679,8 @@ export default function ChallengeCam({
   const recordWatchdog = useRef(null);
   const stoppingRef = useRef(false);
   const recordingLockRef = useRef(false);
+  const recordAsyncWaitRef = useRef(null);
+  const recordingCompleteRef = useRef(false);
 
   const initialDuration = snapChallengeDuration(
     challengeMaxDurationProp ??
@@ -803,23 +807,10 @@ export default function ChallengeCam({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const stopRecordingNative = useCallback(async () => {
-    if (stoppingRef.current) return;
-    stoppingRef.current = true;
-    try {
-      const stopResult = cameraRef.current?.stopRecording?.();
-      if (stopResult && typeof stopResult.then === 'function') {
-        await stopResult;
-      }
-    } catch (err) {
-      console.warn(
-        '[ChallengeCam] stopRecording failed — preview will use safe fallback if needed:',
-        err?.message || err
-      );
-    }
-  }, []);
-
   const lockResponse = useCallback((uri, { mock = false, fromTimer = false } = {}) => {
+    // Already opened preview via timeout bypass — ignore late recordAsync
+    if (recordingCompleteRef.current) return;
+    recordingCompleteRef.current = true;
     if (recordWatchdog.current) {
       clearTimeout(recordWatchdog.current);
       recordWatchdog.current = null;
@@ -863,6 +854,15 @@ export default function ChallengeCam({
     }
     stoppingRef.current = false;
     recordingLockRef.current = false;
+    recordAsyncWaitRef.current = null;
+
+    try {
+      onVideoCaptured?.(previewUri, {
+        usedFallback: mock || usedFallback,
+      });
+    } catch (_) {
+      /* ignore */
+    }
 
     // Persist camera temp file into documentDirectory so later POST does not 404
     if (
@@ -882,7 +882,35 @@ export default function ChallengeCam({
           console.warn('Could not persist recorded clip:', err?.message || err);
         });
     }
-  }, []);
+  }, [onVideoCaptured]);
+
+  const stopAndSettleRecording = useCallback(
+    async ({ fromTimer = false } = {}) => {
+      if (recordingCompleteRef.current) return;
+      stoppingRef.current = true;
+      try {
+        const settled = await settleStopRecording({
+          timeoutMs: STOP_SAVE_TIMEOUT_MS,
+          recordPromise: recordAsyncWaitRef.current,
+          stopRecording: () => cameraRef.current?.stopRecording?.(),
+        });
+        lockResponse(settled.uri, {
+          mock: settled.usedFallback,
+          fromTimer,
+        });
+      } catch (err) {
+        console.warn(
+          '[ChallengeCam] stop/save Invariant/timeout — sample preview:',
+          err?.message || err
+        );
+        lockResponse(resolveSafeRecordingFallbackUri(), {
+          mock: true,
+          fromTimer,
+        });
+      }
+    },
+    [lockResponse]
+  );
 
   // Floating elapsed duration (smooth) + 1s countdown while recording
   useEffect(() => {
@@ -913,7 +941,7 @@ export default function ChallengeCam({
     };
   }, [isRecording]);
 
-  // Auto-stop at 00 — stopRecording resolves the pending recordAsync promise
+  // Auto-stop at 00 — stop/save with 2s timeout → preview (never hang)
   useEffect(() => {
     if (!isRecording || secondsLeft > 0) return;
     (async () => {
@@ -925,9 +953,15 @@ export default function ChallengeCam({
         return;
       }
       setTimeUp(true);
-      await stopRecordingNative();
+      await stopAndSettleRecording({ fromTimer: true });
     })();
-  }, [secondsLeft, isRecording, cameraUnavailable, stopRecordingNative, lockResponse]);
+  }, [
+    secondsLeft,
+    isRecording,
+    cameraUnavailable,
+    stopAndSettleRecording,
+    lockResponse,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1037,26 +1071,21 @@ export default function ChallengeCam({
   const handleRecordPress = async () => {
     if (frozen || recordedUri || showPreview) return;
 
-    // Stop current take — resolves pending recordAsync()
+    // Stop current take — 2s settle, then preview (sample on Invariant/hang)
     if (isRecording) {
       if (cameraUnavailable) {
         if (recordWatchdog.current) clearTimeout(recordWatchdog.current);
         lockResponse(resolveSafeRecordingFallbackUri(), { mock: true });
         return;
       }
-      try {
-        await stopRecordingNative();
-      } catch (error) {
-        console.warn('Stop recording failed:', error?.message || error);
-        // Never error banner — open battle preview with sample clip
-        lockResponse(resolveSafeRecordingFallbackUri(), { mock: true });
-      }
+      await stopAndSettleRecording();
       return;
     }
 
     const limit = maxDurationRef.current || DEFAULT_DURATION;
 
     if (cameraUnavailable) {
+      recordingCompleteRef.current = false;
       setTimeUp(false);
       setShowPreview(false);
       setElapsedSec(0);
@@ -1079,6 +1108,7 @@ export default function ChallengeCam({
     if (!isCameraReady || !cameraRef.current || recordingLockRef.current) return;
 
     recordingLockRef.current = true;
+    recordingCompleteRef.current = false;
     setTimeUp(false);
     setShowPreview(false);
     setElapsedSec(0);
@@ -1090,12 +1120,22 @@ export default function ChallengeCam({
     stoppingRef.current = false;
     setRecordError(null);
 
+    const recordPromise = cameraRef.current.recordAsync({
+      mute: false,
+      maxDuration: limit,
+    });
+    recordAsyncWaitRef.current = recordPromise.catch((err) => {
+      console.warn(
+        '[ChallengeCam] recordAsync late reject:',
+        err?.message || err
+      );
+      return null;
+    });
+
     try {
       // mute:false on CameraView + record options keeps mic track without AGC spikes
-      const video = await cameraRef.current.recordAsync({
-        mute: false,
-        maxDuration: limit,
-      });
+      const video = await recordPromise;
+      if (recordingCompleteRef.current) return;
       const hitZero = secondsLeftRef.current <= 0;
       const { uri: safeUri, usedFallback } = coalesceRecordingUri(
         video?.uri,
@@ -1112,6 +1152,7 @@ export default function ChallengeCam({
         fromTimer: hitZero,
       });
     } catch (error) {
+      if (recordingCompleteRef.current) return;
       console.warn(
         'Recording failed — opening preview with sample clip:',
         error?.message || error
@@ -1134,6 +1175,10 @@ export default function ChallengeCam({
     } catch (_) {
       /* ignore */
     }
+    recordingCompleteRef.current = false;
+    stoppingRef.current = false;
+    recordingLockRef.current = false;
+    recordAsyncWaitRef.current = null;
     const limit = maxDurationRef.current || DEFAULT_DURATION;
     setRecordedUri(null);
     setIsMockClip(false);

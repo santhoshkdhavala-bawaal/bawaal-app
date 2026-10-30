@@ -6,6 +6,123 @@ import { Image } from 'react-native';
 import { BAWAAL_FALLBACK_MP4 } from './reelMediaFallback';
 import { validateRecordedVideoUri } from './recordedVideoUri';
 
+/** Max wait for native stopRecording / recordAsync flush before sample fallback. */
+export const STOP_SAVE_TIMEOUT_MS = 2000;
+
+/**
+ * Race a promise against a hard timeout. Never leaves callers hanging on
+ * expo-camera Invariant / muxer stalls.
+ * @template T
+ * @param {Promise<T>|T} promise
+ * @param {number} [ms]
+ * @param {string} [label]
+ * @returns {Promise<T>}
+ */
+export function raceWithTimeout(
+  promise,
+  ms = STOP_SAVE_TIMEOUT_MS,
+  label = 'operation'
+) {
+  const limit = Math.max(250, Number(ms) || STOP_SAVE_TIMEOUT_MS);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`${label} timeout after ${limit}ms`));
+    }, limit);
+    Promise.resolve(promise).then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+/**
+ * Stop native capture + await recordAsync settle, with a strict timeout.
+ * On Invariant / reject / hang → returns sample-clip URI so preview can open.
+ *
+ * @param {{
+ *   stopRecording?: () => unknown,
+ *   recordPromise?: Promise<{ uri?: string }|null>|null,
+ *   timeoutMs?: number,
+ * }} opts
+ * @returns {Promise<{ uri: string, usedFallback: boolean, timedOut?: boolean, error?: string }>}
+ */
+export async function settleStopRecording(opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? STOP_SAVE_TIMEOUT_MS;
+  let stopError = null;
+
+  try {
+    const stopFn = opts.stopRecording;
+    if (typeof stopFn === 'function') {
+      const stopResult = stopFn();
+      if (stopResult != null && typeof stopResult.then === 'function') {
+        await raceWithTimeout(
+          Promise.resolve(stopResult).catch((err) => {
+            stopError = err;
+            return null;
+          }),
+          timeoutMs,
+          'stopRecording'
+        );
+      }
+    }
+  } catch (err) {
+    stopError = err;
+  }
+
+  const pending = opts.recordPromise;
+  if (pending && typeof pending.then === 'function') {
+    try {
+      const video = await raceWithTimeout(pending, timeoutMs, 'recordAsync settle');
+      const coalesced = coalesceRecordingUri(
+        video && typeof video === 'object' ? video.uri : null
+      );
+      return {
+        ...coalesced,
+        timedOut: false,
+        error: stopError ? String(stopError?.message || stopError) : undefined,
+      };
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      console.warn(
+        '[safeRecordingFallback] stop/save bypass — sample clip:',
+        msg
+      );
+      return {
+        uri: resolveSafeRecordingFallbackUri(),
+        usedFallback: true,
+        timedOut: /timeout/i.test(msg),
+        error: msg,
+      };
+    }
+  }
+
+  if (stopError) {
+    console.warn(
+      '[safeRecordingFallback] stopRecording error — sample clip:',
+      stopError?.message || stopError
+    );
+  }
+  return {
+    uri: resolveSafeRecordingFallbackUri(),
+    usedFallback: true,
+    timedOut: false,
+    error: stopError ? String(stopError?.message || stopError) : undefined,
+  };
+}
+
 /**
  * Resolve bundled `sample_challenge.mp4` to a playable URI.
  * Falls back to emulator-mock scheme if asset resolution fails.
@@ -71,14 +188,19 @@ export async function ensurePlayableRecordingUri(uri, opts = {}) {
   const persist = typeof opts.persist === 'function' ? opts.persist : null;
   if (!persist) return first;
 
+  const timeoutMs = opts.timeoutMs ?? STOP_SAVE_TIMEOUT_MS;
   try {
-    const stable = await persist(first.uri);
+    const stable = await raceWithTimeout(
+      Promise.resolve().then(() => persist(first.uri)),
+      timeoutMs,
+      'persist/save'
+    );
     const next = coalesceRecordingUri(stable || first.uri);
     return next;
   } catch (err) {
     const msg = String(err?.message || err || '');
     console.warn(
-      '[safeRecordingFallback] persist/codec failed — sample clip:',
+      '[safeRecordingFallback] persist/codec/timeout — sample clip:',
       msg
     );
     return {
