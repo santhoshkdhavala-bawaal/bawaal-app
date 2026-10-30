@@ -1459,10 +1459,10 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        // Reels scroll budget — tight window kills stutter (IG / TikTok style)
+        // Android scroll budget — tight window kills reel stutter
         removeClippedSubviews={true}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
         windowSize={3}
         updateCellsBatchingPeriod={50}
         onEndReachedThreshold={0.6}

@@ -43,6 +43,7 @@ export function isPlayableFeedUri(uri) {
   if (uri == null || typeof uri !== 'string') return false;
   const t = uri.trim();
   if (!t || t === 'null' || t === 'undefined') return false;
+  if (/^(mock|placeholder|local:|blob:)/i.test(t)) return false;
   return (
     t.startsWith('https://') ||
     t.startsWith('http://') ||
@@ -99,11 +100,26 @@ function SafeFeedVideo({
   label = null,
   nativeControls = false,
   sport = null,
+  posterUri = null,
 }) {
   const resolved = useMemo(() => {
     if (uriProp) return toPublicFeedVideoUrl(uriProp) || uriProp;
     return resolveFeedVideoUri(source);
   }, [uriProp, source]);
+
+  const poster = useMemo(() => {
+    if (posterUri) return posterUri;
+    if (source && typeof source === 'object') {
+      return (
+        source.thumbnailUrl ||
+        source.thumbnail_url ||
+        source.posterUri ||
+        source.avatarUrl ||
+        null
+      );
+    }
+    return null;
+  }, [posterUri, source]);
 
   // Expo Go / missing native AV → solid placeholder, zero ExponentAV touch.
   if (isExpoGo || !canUseNativeVideo) {
@@ -141,6 +157,7 @@ function SafeFeedVideo({
       label={label}
       nativeControls={nativeControls}
       sport={sport}
+      posterUri={poster}
     />
   );
 }

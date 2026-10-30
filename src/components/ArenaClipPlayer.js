@@ -6,6 +6,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -21,6 +22,11 @@ import {
   safeUnloadExpoAvVideo,
 } from '../utils/safeUnloadVideo';
 import SportsFeedPlaceholder from './SportsFeedPlaceholder';
+import {
+  isUsablePlaybackUri,
+  resolvePosterSource,
+  resolveVideoSource,
+} from '../utils/reelMediaFallback';
 
 function loadRealExpoAv() {
   try {
@@ -57,10 +63,10 @@ const AvResizeMode = RealAv?.ResizeMode || null;
 
 function resolveClipUri(uri, source) {
   const direct = sanitizePlayableFeedUri(uri);
-  if (direct) return direct;
+  if (direct && isUsablePlaybackUri(direct)) return direct;
   if (source && typeof source === 'object') {
     const fromHelper = sanitizePlayableFeedUri(resolvePlayableVideoUri(source));
-    if (fromHelper) return fromHelper;
+    if (fromHelper && isUsablePlaybackUri(fromHelper)) return fromHelper;
     const candidates = [
       source.videoUri,
       source.video_url,
@@ -72,10 +78,20 @@ function resolveClipUri(uri, source) {
     ];
     for (const c of candidates) {
       const ok = sanitizePlayableFeedUri(c);
-      if (ok) return ok;
+      if (ok && isUsablePlaybackUri(ok)) return ok;
     }
   }
   return null;
+}
+
+function resolveClipPoster(source) {
+  if (!source || typeof source !== 'object') return null;
+  return (
+    source.thumbnailUrl ||
+    source.thumbnail_url ||
+    source.posterUri ||
+    null
+  );
 }
 
 function ClipShell({ style, children, onPress, accessibilityLabel }) {
@@ -103,15 +119,35 @@ function ExpoAvClipPlayer({
   loop,
   autoPlay,
   active,
+  posterUri = null,
 }) {
   const videoRef = useRef(null);
   const [paused, setPaused] = useState(!autoPlay);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [useFallbackAsset, setUseFallbackAsset] = useState(
+    !isUsablePlaybackUri(resolved)
+  );
+  const posterSource = useMemo(
+    () => resolvePosterSource(posterUri),
+    [posterUri]
+  );
+  const videoSource = useMemo(() => {
+    if (failed || useFallbackAsset || !isUsablePlaybackUri(resolved)) {
+      return resolveVideoSource(null);
+    }
+    return resolveVideoSource(resolved);
+  }, [failed, resolved, useFallbackAsset]);
+
+  useEffect(() => {
+    setFailed(false);
+    setUseFallbackAsset(!isUsablePlaybackUri(resolved));
+    setLoading(true);
+  }, [resolved]);
 
   useEffect(() => {
     const node = videoRef.current;
-    if (!node || failed || !AvVideo) return undefined;
+    if (!node || !AvVideo) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -121,7 +157,7 @@ function ExpoAvClipPlayer({
         }
         await node.setStatusAsync({
           shouldPlay: !!autoPlay && !paused && active,
-          isLooping: !!loop,
+          isLooping: loop !== false,
           isMuted: !!muted,
           volume: muted ? 0 : 1,
         });
@@ -134,7 +170,7 @@ function ExpoAvClipPlayer({
     return () => {
       cancelled = true;
     };
-  }, [active, autoPlay, failed, loop, muted, paused, resolved]);
+  }, [active, autoPlay, loop, muted, paused, videoSource]);
 
   // Full native teardown on unmount / URI swap — prevents camera→feed memory crashes
   useEffect(() => {
@@ -142,20 +178,11 @@ function ExpoAvClipPlayer({
     return () => {
       void safeUnloadExpoAvVideo(node);
     };
-  }, [resolved]);
+  }, [videoSource]);
 
   const togglePlay = useCallback(() => {
-    if (failed) return;
     setPaused((p) => !p);
-  }, [failed]);
-
-  if (failed) {
-    return (
-      <View style={[styles.shell, style, styles.fallback]}>
-        <Text style={styles.fallbackTitle}>CLIP UNAVAILABLE</Text>
-      </View>
-    );
-  }
+  }, []);
 
   return (
     <ClipShell
@@ -163,21 +190,35 @@ function ExpoAvClipPlayer({
       onPress={togglePlay}
       accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
     >
+      <Image
+        source={posterSource}
+        style={styles.poster}
+        resizeMode="cover"
+        pointerEvents="none"
+      />
       <AvVideo
         ref={videoRef}
         style={styles.video}
-        source={{ uri: resolved }}
+        source={videoSource}
         resizeMode={AvResizeMode?.COVER || 'cover'}
         shouldPlay={!!autoPlay && !paused && active}
-        isLooping={!!loop}
+        isLooping={loop !== false}
         isMuted={!!muted}
         volume={muted ? 0 : 1}
         useNativeControls={false}
+        usePoster
+        posterSource={posterSource}
+        posterStyle={styles.poster}
         onLoadStart={() => setLoading(true)}
         onLoad={() => setLoading(false)}
         onReadyForDisplay={() => setLoading(false)}
         onError={(e) => {
           console.warn('[ArenaClipPlayer] av error:', e?.error || e);
+          if (!useFallbackAsset) {
+            setUseFallbackAsset(true);
+            setLoading(true);
+            return;
+          }
           setFailed(true);
           setLoading(false);
         }}
@@ -322,24 +363,26 @@ function ArenaClipPlayer({
     [uriProp, source]
   );
 
-  if (!active) {
-    return <View style={[styles.shell, style, styles.idle]} />;
-  }
+  const posterUri = resolveClipPoster(source);
 
-  if (!resolved) {
+  if (!active) {
     return (
-      <View style={[styles.shell, style, styles.fallback]}>
-        <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
-        <Text style={styles.fallbackSub}>Waiting for video</Text>
+      <View style={[styles.shell, style, styles.idle]}>
+        <Image
+          source={resolvePosterSource(posterUri)}
+          style={styles.poster}
+          resizeMode="cover"
+        />
       </View>
     );
   }
 
   // Prefer native expo-av when the real module is present (npm start / EAS)
+  // Missing URI → player still mounts with bundled sample_challenge.mp4
   if (AvVideo) {
     return (
       <ExpoAvClipPlayer
-        key={`av-${resolved}`}
+        key={`av-${resolved || 'fallback'}`}
         resolved={resolved}
         style={style}
         label={label}
@@ -347,23 +390,41 @@ function ArenaClipPlayer({
         loop={loop}
         autoPlay={autoPlay}
         active={active}
+        posterUri={posterUri}
       />
     );
   }
 
   // Fallback: expo-video auto-loop when expo-av is stubbed — plays file:// + https
+  const expoVideoUri = resolved || null;
   return (
-    <ExpoVideoErrorBoundary style={style} label={label} seed={resolved}>
-      <ExpoVideoClipPlayer
-        key={`ev-${resolved}`}
-        resolved={resolved}
-        style={style}
-        label={label}
-        muted={muted}
-        loop={loop}
-        autoPlay={autoPlay}
-        active={active}
-      />
+    <ExpoVideoErrorBoundary
+      style={style}
+      label={label}
+      seed={resolved || 'fallback'}
+    >
+      {expoVideoUri ? (
+        <ExpoVideoClipPlayer
+          key={`ev-${expoVideoUri}`}
+          resolved={expoVideoUri}
+          style={style}
+          label={label}
+          muted={muted}
+          loop={loop}
+          autoPlay={autoPlay}
+          active={active}
+        />
+      ) : (
+        <View style={[styles.shell, style, styles.fallback]}>
+          <Image
+            source={resolvePosterSource(posterUri)}
+            style={styles.poster}
+            resizeMode="cover"
+          />
+          <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
+          <Text style={styles.fallbackSub}>Loading clip…</Text>
+        </View>
+      )}
     </ExpoVideoErrorBoundary>
   );
 }
@@ -403,11 +464,27 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#0A0A0A',
     overflow: 'hidden',
+    position: 'relative',
   },
   idle: {
-    backgroundColor: '#000000',
+    backgroundColor: '#0A0A0A',
+  },
+  poster: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0A0A0A',
   },
   video: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
     height: '100%',
     backgroundColor: 'transparent',

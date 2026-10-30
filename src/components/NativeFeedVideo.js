@@ -7,30 +7,26 @@ import React, {
   Component,
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
-import { isRemoteHttpsUri } from '../services/uploadService';
 import SportsFeedPlaceholder from './SportsFeedPlaceholder';
+import {
+  isUsablePlaybackUri,
+  resolvePosterSource,
+  resolveVideoSource,
+} from '../utils/reelMediaFallback';
 
 function isPlayableFeedUri(uri) {
-  if (uri == null || typeof uri !== 'string') return false;
-  const t = uri.trim();
-  if (!t || t === 'null' || t === 'undefined') return false;
-  return (
-    t.startsWith('https://') ||
-    t.startsWith('http://') ||
-    t.startsWith('file://') ||
-    t.startsWith('content://') ||
-    t.startsWith('ph://') ||
-    t.startsWith('assets-library://')
-  );
+  return isUsablePlaybackUri(uri);
 }
 
 function loadNativeAvBinding() {
@@ -109,17 +105,32 @@ function NativeFeedVideo({
   label,
   nativeControls,
   sport,
+  posterUri = null,
 }) {
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
+  const [useFallbackAsset, setUseFallbackAsset] = useState(!playable);
   const [loading, setLoading] = useState(true);
   const [hasFrame, setHasFrame] = useState(false);
   const videoRef = useRef(null);
   const readyFallback = useRef(null);
 
+  const videoSource = useMemo(() => {
+    if (failed || useFallbackAsset || !playable) {
+      return resolveVideoSource(null);
+    }
+    return resolveVideoSource(resolved);
+  }, [failed, playable, resolved, useFallbackAsset]);
+
+  const posterSource = useMemo(
+    () => resolvePosterSource(posterUri),
+    [posterUri]
+  );
+
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     setFailed(false);
+    setUseFallbackAsset(!isPlayableFeedUri(resolved));
     setLoading(true);
     setHasFrame(false);
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -134,13 +145,13 @@ function NativeFeedVideo({
 
   useEffect(() => {
     const node = videoRef.current;
-    if (!node || !playable || failed || !Video) return undefined;
+    if (!node || failed || !Video) return undefined;
     let cancelled = false;
     (async () => {
       try {
         await node.setStatusAsync({
           shouldPlay: !!autoPlay && !paused,
-          isLooping: !!loop,
+          isLooping: loop !== false,
           isMuted: !!muted,
           volume: muted ? 0 : 1,
           progressUpdateIntervalMillis: 800,
@@ -154,7 +165,7 @@ function NativeFeedVideo({
     return () => {
       cancelled = true;
     };
-  }, [autoPlay, paused, muted, loop, playable, failed, resolved]);
+  }, [autoPlay, paused, muted, loop, failed, videoSource]);
 
   useEffect(() => {
     const node = videoRef.current;
@@ -181,22 +192,15 @@ function NativeFeedVideo({
         /* ignore */
       }
     };
-  }, [resolved]);
+  }, [videoSource]);
 
-  if (!Video || !playable || failed) {
+  if (!Video) {
     return (
       <View style={[styles.shell, style]}>
         <SportsFeedPlaceholder
           style={StyleSheet.absoluteFill}
           sport={sport}
-          label={label || (failed ? 'CLIP UNAVAILABLE' : 'BAWAAL CLIP')}
-          subtitle={
-            failed
-              ? isRemoteHttpsUri(resolved)
-                ? 'Cloud clip failed to decode'
-                : 'No playable URL'
-              : undefined
-          }
+          label={label || 'BAWAAL CLIP'}
           seed={hashSeed(resolved || label)}
           showExpoBadge={false}
         />
@@ -206,10 +210,15 @@ function NativeFeedVideo({
 
   return (
     <VideoErrorBoundary
-      resetKey={resolved}
+      resetKey={String(resolved || 'fallback')}
       style={style}
       fallback={
         <View style={[styles.shell, style]}>
+          <Image
+            source={posterSource}
+            style={styles.poster}
+            resizeMode="contain"
+          />
           <SportsFeedPlaceholder
             style={StyleSheet.absoluteFill}
             label="CLIP UNAVAILABLE"
@@ -220,20 +229,27 @@ function NativeFeedVideo({
       }
     >
       <View style={[styles.shell, style]} pointerEvents="box-none">
-        <View style={styles.underlay} pointerEvents="none">
-          <Text style={styles.placeholderText}>{label || 'BAWAAL'}</Text>
-        </View>
+        {/* Poster underlay — never a dead black frame while URL buffers */}
+        <Image
+          source={posterSource}
+          style={styles.poster}
+          resizeMode="cover"
+          pointerEvents="none"
+        />
 
         <Video
           ref={videoRef}
           style={styles.video}
-          source={{ uri: resolved }}
+          source={videoSource}
           resizeMode={mapContentFit(contentFit)}
           shouldPlay={!!autoPlay && !paused}
-          isLooping={!!loop}
+          isLooping={loop !== false}
           isMuted={!!muted}
           volume={muted ? 0 : 1}
           useNativeControls={!!nativeControls}
+          usePoster
+          posterSource={posterSource}
+          posterStyle={styles.poster}
           progressUpdateIntervalMillis={800}
           onLoadStart={() => {
             setLoading(true);
@@ -247,6 +263,14 @@ function NativeFeedVideo({
           }}
           onError={(err) => {
             console.log('Video Player Error:', err?.error || err);
+            // Invalid / delayed cloud URL → bundled sample, not black screen
+            if (!useFallbackAsset) {
+              setUseFallbackAsset(true);
+              setFailed(false);
+              setLoading(true);
+              setHasFrame(false);
+              return;
+            }
             setFailed(true);
             setLoading(false);
           }}
@@ -274,16 +298,26 @@ const styles = StyleSheet.create({
   shell: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#000000',
+    backgroundColor: '#0A0A0A',
     overflow: 'hidden',
+    position: 'relative',
   },
-  underlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#121212',
-    alignItems: 'center',
-    justifyContent: 'center',
+  poster: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#0A0A0A',
   },
   video: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
     height: '100%',
     backgroundColor: 'transparent',

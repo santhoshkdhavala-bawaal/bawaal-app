@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
   Text,
+  Image,
   TouchableOpacity,
   Pressable,
   StyleSheet,
@@ -12,16 +13,21 @@ import {
   Platform,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeFeedVideo, {
-  isPlayableFeedUri,
   resolveFeedVideoUri,
   toPublicFeedVideoUrl,
 } from './src/components/SafeFeedVideo';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
+import {
+  isUsablePlaybackUri,
+  prefetchReelPoster,
+  resolvePosterSource,
+} from './src/utils/reelMediaFallback';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -78,18 +84,36 @@ export default function ArenaReelViewer({
     };
   }, []);
 
-  const uri = (() => {
+  const uri = useMemo(() => {
     const raw =
       resolveFeedVideoUri(reel) ||
       toPublicFeedVideoUrl(reel?.videoUri) ||
       toPublicFeedVideoUrl(reel?.publicCloudUrl) ||
       toPublicFeedVideoUrl(reel?.remoteVideoUri) ||
+      toPublicFeedVideoUrl(reel?.localVideoUri) ||
       null;
-    if (raw) {
+    if (raw && isUsablePlaybackUri(raw)) {
       console.log('[ArenaReelViewer] public playback URL:', raw);
+      return raw;
     }
-    return isPlayableFeedUri(raw) ? raw : null;
-  })();
+    // Mock / invalid / delayed URL → keep player mounted with bundled sample
+    return null;
+  }, [reel]);
+
+  const posterUri =
+    reel?.thumbnailUrl ||
+    reel?.thumbnail_url ||
+    reel?.posterUri ||
+    null;
+  const posterSource = useMemo(
+    () => resolvePosterSource(posterUri),
+    [posterUri]
+  );
+  const [buffering, setBuffering] = useState(true);
+
+  useEffect(() => {
+    prefetchReelPoster();
+  }, []);
 
   useEffect(() => {
     if (!visible || !reel) return undefined;
@@ -101,8 +125,10 @@ export default function ArenaReelViewer({
     setMoreOpen(false);
     setPaused(false);
     setMuted(!!initialMuted);
+    setBuffering(true);
     /* eslint-enable react-hooks/set-state-in-effect */
-    return undefined;
+    const t = setTimeout(() => setBuffering(false), 1600);
+    return () => clearTimeout(t);
   }, [visible, reel?.id, reel, initialMuted]);
 
   const togglePlayPause = useCallback(() => {
@@ -163,23 +189,32 @@ export default function ArenaReelViewer({
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
       <View style={styles.root}>
         <View style={styles.videoShell} pointerEvents="box-none">
-          {uri ? (
-            <SafeFeedVideo
-              // Stable identity — do NOT remount on every open (avoids re-fetch lag)
-              uri={uri}
-              style={styles.videoFill}
-              muted={muted}
-              loop
-              autoPlay={visible}
-              paused={paused || !visible}
-              contentFit="cover"
-              nativeControls={false}
-            />
-          ) : (
-            <View style={styles.placeholder}>
-              <Text style={styles.placeholderText}>CLIP UNAVAILABLE</Text>
+          {/* Brand poster underlay — never a dead black frame while URL resolves */}
+          <Image
+            source={posterSource}
+            style={styles.posterFill}
+            resizeMode="cover"
+            pointerEvents="none"
+          />
+          <SafeFeedVideo
+            // Stable identity — do NOT remount on every open (avoids re-fetch lag)
+            // Missing/invalid URI → NativeFeedVideo falls back to sample_challenge.mp4
+            uri={uri}
+            source={reel}
+            posterUri={posterUri}
+            style={styles.videoFill}
+            muted={muted}
+            loop
+            autoPlay={visible}
+            paused={paused || !visible}
+            contentFit="cover"
+            nativeControls={false}
+          />
+          {buffering && visible ? (
+            <View style={styles.bufferOverlay} pointerEvents="none">
+              <ActivityIndicator color={WHITE} size="large" />
             </View>
-          )}
+          ) : null}
           {/* Dedicated tap layer — play/pause only; banter/UI stay above */}
           <Pressable
             style={styles.videoTapLayer}
@@ -375,12 +410,37 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: '#000',
+    backgroundColor: '#0A0A0A',
+    overflow: 'hidden',
   },
-  videoFill: {
+  posterFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     width: '100%',
     height: '100%',
-    backgroundColor: '#000',
+    backgroundColor: '#0A0A0A',
+    zIndex: 0,
+  },
+  videoFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+    zIndex: 1,
+  },
+  bufferOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.22)',
+    zIndex: 2,
   },
   videoTapLayer: {
     position: 'absolute',
