@@ -1,19 +1,25 @@
 /**
- * Arena feed hook — live Supabase `videos` (+ profiles), newest first.
- * Soft-falls back to mock rows inside `fetchArenaFeed` when offline / empty.
+ * Arena feed — live Supabase `videos` with nested `profiles(*)`.
+ * Soft-falls back to mock rows when offline, misconfigured, or the table is empty.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchArenaFeed } from '../services/api';
+import { supabase, isSupabaseConfigured } from '../services/supabase';
+import {
+  mapVideoRowToFeedItem,
+  getMockArenaFeed,
+} from '../services/api';
 
 /**
- * @param {{ category?: string, enabled?: boolean }} [opts]
+ * @param {{ category?: string, enabled?: boolean, limit?: number }} [opts]
  */
 export function useArenaFeed(opts = {}) {
   const category = opts.category || 'ALL';
   const enabled = opts.enabled !== false;
-  const [items, setItems] = useState([]);
+  const limit = Math.min(Math.max(Number(opts.limit) || 40, 1), 80);
+  const [items, setItems] = useState(() => getMockArenaFeed(category));
   const [loading, setLoading] = useState(!!enabled);
   const [error, setError] = useState(null);
+  const [fromLive, setFromLive] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const mounted = useRef(true);
 
@@ -35,14 +41,92 @@ export function useArenaFeed(opts = {}) {
     setError(null);
 
     (async () => {
-      try {
-        const rows = await fetchArenaFeed(category);
+      const fallback = getMockArenaFeed(category);
+
+      if (!isSupabaseConfigured()) {
         if (cancelled || !mounted.current) return;
-        setItems(Array.isArray(rows) ? rows : []);
+        console.warn(
+          '[useArenaFeed] Supabase not configured — using mock Arena feed'
+        );
+        setItems(fallback);
+        setFromLive(false);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Live query: videos + nested profiles (FK videos.user_id → profiles.id)
+        let query = supabase
+          .from('videos')
+          .select('*, profiles(*)')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        const sport = String(category || 'ALL').trim().toUpperCase();
+        if (sport && sport !== 'ALL') {
+          query = query.eq('category', sport);
+        }
+
+        let { data, error: queryError } = await query;
+
+        // FK embed missing / schema cache — lean select, still live
+        if (
+          queryError &&
+          /relationship|embed|schema cache|foreign key|PGRST/i.test(
+            String(queryError.message || queryError.code || '')
+          )
+        ) {
+          console.warn(
+            '[useArenaFeed] profiles(*) embed failed — retrying videos only:',
+            queryError.message || queryError
+          );
+          let lean = supabase
+            .from('videos')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+          if (sport && sport !== 'ALL') {
+            lean = lean.eq('category', sport);
+          }
+          const retry = await lean;
+          data = retry.data;
+          queryError = retry.error;
+        }
+
+        if (cancelled || !mounted.current) return;
+
+        if (queryError) {
+          console.warn(
+            '[useArenaFeed] live fetch failed — mock fallback:',
+            queryError.message || queryError
+          );
+          setError(queryError);
+          setItems(fallback);
+          setFromLive(false);
+          return;
+        }
+
+        const mapped = (data || []).map(mapVideoRowToFeedItem).filter(Boolean);
+        if (mapped.length === 0) {
+          console.warn(
+            '[useArenaFeed] videos empty — soft-fallback mock for local dev'
+          );
+          setItems(fallback);
+          setFromLive(false);
+          return;
+        }
+
+        setItems(mapped);
+        setFromLive(true);
       } catch (err) {
         if (cancelled || !mounted.current) return;
+        console.warn(
+          '[useArenaFeed] crashed — mock fallback:',
+          err?.message || err
+        );
         setError(err);
-        setItems([]);
+        setItems(fallback);
+        setFromLive(false);
       } finally {
         if (!cancelled && mounted.current) setLoading(false);
       }
@@ -51,13 +135,13 @@ export function useArenaFeed(opts = {}) {
     return () => {
       cancelled = true;
     };
-  }, [category, enabled, refreshKey]);
+  }, [category, enabled, limit, refreshKey]);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  return { items, loading, error, refresh, category };
+  return { items, loading, error, refresh, category, fromLive };
 }
 
 export default useArenaFeed;

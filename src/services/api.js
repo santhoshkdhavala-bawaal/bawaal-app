@@ -10,7 +10,7 @@ import {
 } from '../utils/faceoffCallout';
 
 /** Offline / cold-start Arena feed cards (api schema shape). */
-const MOCK_ARENA_FEED = [
+export const MOCK_ARENA_FEED = [
   {
     id: 'post_001',
     username: 'Yuki_Lift',
@@ -193,29 +193,10 @@ export async function fetchArenaFeed(category = 'ALL') {
   }
 
   try {
+    // Live: `select('*, profiles(*)')` — user_id → profiles.id FK embed
     let query = supabase
       .from('videos')
-      .select(
-        `
-        id,
-        user_id,
-        video_url,
-        thumbnail_url,
-        category,
-        caption,
-        created_at,
-        profiles:user_id (
-          username,
-          full_name,
-          avatar_url,
-          primary_sport,
-          handle,
-          display_name,
-          avatar_uri,
-          sport
-        )
-      `
-      )
+      .select('*, profiles(*)')
       .order('created_at', { ascending: false })
       .limit(40);
 
@@ -224,15 +205,32 @@ export async function fetchArenaFeed(category = 'ALL') {
       query = query.eq('category', sport);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+
+    if (
+      error &&
+      /relationship|embed|schema cache|foreign key|PGRST/i.test(
+        String(error.message || error.code || '')
+      )
+    ) {
+      console.warn(
+        '[api] profiles(*) embed failed — retrying videos * only:',
+        error.message || error
+      );
+      let lean = supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(40);
+      if (sport && sport !== 'ALL') {
+        lean = lean.eq('category', sport);
+      }
+      const retry = await lean;
+      data = retry.data;
+      error = retry.error;
+    }
 
     if (error) {
-      // Retry without embed if profiles FK / schema cache is incomplete
-      if (/relationship|embed|schema cache|foreign key|PGRST/i.test(
-        String(error.message || error.code || '')
-      )) {
-        return fetchArenaFeedWithoutJoin(category);
-      }
       console.warn('[api] videos fetch failed:', error.message || error);
       return filterMockByCategory(MOCK_ARENA_FEED, category);
     }
@@ -249,43 +247,17 @@ export async function fetchArenaFeed(category = 'ALL') {
   }
 }
 
-async function fetchArenaFeedWithoutJoin(category = 'ALL') {
-  try {
-    let query = supabase
-      .from('videos')
-      .select(
-        'id, user_id, video_url, thumbnail_url, category, caption, created_at'
-      )
-      .order('created_at', { ascending: false })
-      .limit(40);
-
-    const sport = String(category || 'ALL').trim().toUpperCase();
-    if (sport && sport !== 'ALL') {
-      query = query.eq('category', sport);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      console.warn('[api] videos lean fetch failed:', error.message || error);
-      return filterMockByCategory(MOCK_ARENA_FEED, category);
-    }
-
-    const mapped = (data || []).map(mapVideoRowToFeedItem).filter(Boolean);
-    return mapped.length
-      ? mapped
-      : filterMockByCategory(MOCK_ARENA_FEED, category);
-  } catch (err) {
-    console.warn('[api] lean videos fetch crashed:', err?.message || err);
-    return filterMockByCategory(MOCK_ARENA_FEED, category);
-  }
-}
-
 function filterMockByCategory(items, category) {
   const sport = String(category || 'ALL').trim().toUpperCase();
   if (!sport || sport === 'ALL') return items.slice();
   return items.filter(
     (item) => String(item.category || item.sport || '').toUpperCase() === sport
   );
+}
+
+/** Mock Arena rows for hooks / local-dev soft-fallback. */
+export function getMockArenaFeed(category = 'ALL') {
+  return filterMockByCategory(MOCK_ARENA_FEED, category);
 }
 
 /**
@@ -305,45 +277,11 @@ export async function fetchOpenBattles(opts = {}) {
     return filterCalloutsByCategory(seedBattlesOpenCallouts(), category);
   }
 
-  const fromCreatorSchema = await fetchOpenBattlesCreatorSchema({
-    category,
-    limit,
-  });
-  if (fromCreatorSchema.length > 0) return fromCreatorSchema;
-
-  const fromLegacy = await fetchOpenBattlesLegacyHost({ category, limit });
-  if (fromLegacy.length > 0) return fromLegacy;
-
-  console.warn('[api] open battles empty — soft-fallback seed callouts');
-  return filterCalloutsByCategory(seedBattlesOpenCallouts(), category);
-}
-
-async function fetchOpenBattlesCreatorSchema({ category, limit }) {
   try {
+    // Live: `select('*')` newest first — works for creator_id and legacy host rows
     let query = supabase
       .from('battles')
-      .select(
-        `
-        id,
-        creator_id,
-        responder_id,
-        target_description,
-        category,
-        status,
-        creator_video_url,
-        responder_video_url,
-        created_at,
-        profiles:creator_id (
-          username,
-          full_name,
-          avatar_url,
-          primary_sport,
-          handle,
-          display_name
-        )
-      `
-      )
-      .in('status', ['open', 'active'])
+      .select('*')
       .order('created_at', { ascending: false })
       .limit(limit);
 
@@ -351,63 +289,57 @@ async function fetchOpenBattlesCreatorSchema({ category, limit }) {
       query = query.eq('category', category);
     }
 
-    const { data, error } = await query;
-    if (error) {
-      // Column missing → legacy path
-      if (/column|schema cache|PGRST204|does not exist|relationship/i.test(
+    let { data, error } = await query;
+
+    if (
+      error &&
+      /column|schema cache|PGRST204|does not exist/i.test(
         String(error.message || error.code || error.details || '')
-      )) {
-        return [];
-      }
-      console.warn(
-        '[api] open battles (creator) failed:',
-        error.message || error
-      );
-      return [];
+      )
+    ) {
+      const retry = await supabase
+        .from('battles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      data = retry.data;
+      error = retry.error;
     }
 
-    return (data || [])
+    if (error) {
+      console.warn('[api] battles fetch failed:', error.message || error);
+      return filterCalloutsByCategory(seedBattlesOpenCallouts(), category);
+    }
+
+    const mapped = (data || [])
       .map((row) =>
         mapBattleRowToCallout({
           ...row,
-          creator_profile: row.profiles,
+          creator_profile: row.profiles || null,
         })
       )
       .filter(Boolean);
-  } catch (err) {
-    console.warn('[api] creator battles crashed:', err?.message || err);
-    return [];
-  }
-}
 
-async function fetchOpenBattlesLegacyHost({ category, limit }) {
-  try {
-    let query = supabase
-      .from('battles')
-      .select(
-        'id, host_id, host_username, title, category, status, opener_video_url, created_at'
-      )
-      .eq('status', 'open')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (category && category !== 'ALL') {
-      query = query.eq('category', category);
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      console.warn(
-        '[api] open battles (legacy) failed:',
-        error.message || error
+    const openish = mapped.filter((row) => {
+      const s = String(row.status || '').toUpperCase();
+      return (
+        !s ||
+        s === 'OPEN' ||
+        s === 'HOT' ||
+        s === 'ACTIVE' ||
+        s === 'LIVE'
       );
-      return [];
-    }
+    });
+    const next = openish.length > 0 ? openish : mapped;
 
-    return (data || []).map(mapBattleRowToCallout).filter(Boolean);
+    if (next.length === 0) {
+      console.warn('[api] open battles empty — soft-fallback seed callouts');
+      return filterCalloutsByCategory(seedBattlesOpenCallouts(), category);
+    }
+    return filterCalloutsByCategory(next, category);
   } catch (err) {
-    console.warn('[api] legacy battles crashed:', err?.message || err);
-    return [];
+    console.warn('[api] fetchOpenBattles crashed:', err?.message || err);
+    return filterCalloutsByCategory(seedBattlesOpenCallouts(), category);
   }
 }
 
