@@ -3,7 +3,7 @@
  * Do not modify layout, fields, OTP, terms, or sport pills without an explicit unlock.
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -21,6 +21,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { resolveLocationFlag } from './src/utils/locationFlag';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
+import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -131,8 +132,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const showNotice = (title, message) => setNotice({ title, message });
 
-  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
-  const otpInputs = useRef([]);
+  const [otpDigits, setOtpDigits] = useState(emptyOtpDigits);
 
   const locationMeta = useMemo(
     () => resolveLocationFlag(location),
@@ -169,28 +169,18 @@ export default function RoleSelection({ onCompleteRegistration }) {
       );
       return;
     }
+    setOtpDigits(emptyOtpDigits());
     setOtpModalVisible(true);
   };
 
-  const handleOtpChange = (value, index) => {
-    const newOtp = [...otpDigits];
-    newOtp[index] = value;
-    setOtpDigits(newOtp);
-    if (value && index < 5) {
-      otpInputs.current[index + 1]?.focus();
-    }
-  };
-
-  const handleOtpKeyPress = (e, index) => {
-    if (e.nativeEvent.key === 'Backspace' && !otpDigits[index] && index > 0) {
-      otpInputs.current[index - 1]?.focus();
-    }
-  };
-
+  /** Manual verify only — never call from OTPInput digit handlers. */
   const handleEnterArena = () => {
     const fullOtp = otpDigits.join('');
-    if (fullOtp.length < 6) {
-      showNotice('Invalid OTP', 'Please enter the complete 6-digit verification code.');
+    if (fullOtp.length < OTP_LENGTH) {
+      showNotice(
+        'Invalid OTP',
+        `Please enter the complete ${OTP_LENGTH}-digit verification code.`
+      );
       return;
     }
 
@@ -474,33 +464,24 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <Text style={styles.otpBrand}>BAWAAL</Text>
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
-                Enter the 6-digit code sent to {phone || 'your phone'}
+                Enter the {OTP_LENGTH}-digit code sent to {phone || 'your phone'}
               </Text>
 
               <View style={styles.otpInputContainer}>
-                {otpDigits.map((digit, idx) => (
-                  <TextInput
-                    key={idx}
-                    ref={(ref) => {
-                      otpInputs.current[idx] = ref;
-                    }}
-                    style={styles.otpBox}
-                    keyboardType="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChangeText={(val) => handleOtpChange(val, idx)}
-                    onKeyPress={(e) => handleOtpKeyPress(e, idx)}
-                    selectionColor={WHITE}
-                  />
-                ))}
+                <OTPInput
+                  digits={otpDigits}
+                  onChangeDigits={setOtpDigits}
+                />
               </View>
 
               <TouchableOpacity
                 style={styles.ctaBtn}
                 onPress={handleEnterArena}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Submit verify OTP"
               >
-                <Text style={styles.ctaBtnText}>ENTER ARENA</Text>
+                <Text style={styles.ctaBtnText}>SUBMIT / VERIFY</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -802,21 +783,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   otpInputContainer: {
-    flexDirection: 'row',
-    gap: 10,
     marginBottom: 28,
-  },
-  otpBox: {
-    width: 40,
-    height: 48,
-    backgroundColor: 'transparent',
-    borderRadius: 0,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: LINE_FOCUS,
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
+    alignItems: 'center',
   },
 });

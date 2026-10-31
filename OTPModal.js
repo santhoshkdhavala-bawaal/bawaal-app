@@ -1,11 +1,11 @@
 /**
  * Standalone OTP modal — stealth black, B solo watermark, no white framing.
+ * Locked to 4-digit OTPInput; verify only via SUBMIT / VERIFY (no auto-submit).
  */
 import React, { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Modal,
@@ -15,23 +15,24 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
+import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const HAIRLINE = 'rgba(255,255,255,0.72)';
 const LOGO = require('./assets/BAWAAL_B_solo.png');
 
-export default function OTPModal({ visible, onVerify }) {
+function OTPModalBody({ onVerify, onNotice }) {
   const insets = useSafeAreaInsets();
-  const [otp, setOtp] = useState('');
-  const [notice, setNotice] = useState(null);
+  const [otpDigits, setOtpDigits] = useState(emptyOtpDigits);
 
+  /** Manual verify only — never triggered by completing the 4th digit. */
   const handleVerify = () => {
-    if (String(otp || '').trim().length < 6) {
-      setNotice({
+    const otp = otpDigits.join('');
+    if (otp.length < OTP_LENGTH) {
+      onNotice?.({
         title: 'Invalid OTP',
-        message: 'Please enter the complete 6-digit verification code.',
+        message: `Please enter the complete ${OTP_LENGTH}-digit verification code.`,
       });
       return;
     }
@@ -39,66 +40,78 @@ export default function OTPModal({ visible, onVerify }) {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={[
+        styles.overlay,
+        { paddingBottom: Math.max(48, insets.bottom + 40) },
+      ]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View
+        style={[
+          styles.card,
+          { paddingBottom: Math.max(48, insets.bottom + 36) },
+        ]}
+      >
+        <Image
+          source={LOGO}
+          style={styles.watermark}
+          resizeMode="contain"
+          pointerEvents="none"
+        />
+        <Image
+          source={LOGO}
+          style={styles.logo}
+          resizeMode="contain"
+          tintColor={WHITE}
+        />
+        <Text style={styles.brand}>BAWAAL</Text>
+        <Text style={styles.title}>VERIFY MOBILE NUMBER</Text>
+        <Text style={styles.subtitle}>
+          Enter the {OTP_LENGTH}-digit OTP sent to your registered mobile number
+        </Text>
+
+        <View style={styles.otpWrap}>
+          <OTPInput digits={otpDigits} onChangeDigits={setOtpDigits} />
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.verifyBtn,
+            otpDigits.join('').length < OTP_LENGTH && styles.verifyBtnDisabled,
+          ]}
+          onPress={handleVerify}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Submit verify OTP"
+        >
+          <Text style={styles.verifyBtnText}>SUBMIT / VERIFY</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.resendBtn} activeOpacity={0.75}>
+          <Text style={styles.resendText}>
+            {"Didn't receive code? "}
+            <Text style={styles.resendHighlight}>Resend OTP</Text>
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+export default function OTPModal({ visible, onVerify }) {
+  const [notice, setNotice] = useState(null);
+
+  return (
     <>
       <Modal visible={visible} animationType="fade" transparent>
-        <KeyboardAvoidingView
-          style={[
-            styles.overlay,
-            { paddingBottom: Math.max(48, insets.bottom + 40) },
-          ]}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View
-            style={[
-              styles.card,
-              { paddingBottom: Math.max(48, insets.bottom + 36) },
-            ]}
-          >
-            <Image
-              source={LOGO}
-              style={styles.watermark}
-              resizeMode="contain"
-              pointerEvents="none"
-            />
-            <Image
-              source={LOGO}
-              style={styles.logo}
-              resizeMode="contain"
-              tintColor={WHITE}
-            />
-            <Text style={styles.brand}>BAWAAL</Text>
-            <Text style={styles.title}>VERIFY MOBILE NUMBER</Text>
-            <Text style={styles.subtitle}>
-              Enter the 6-digit OTP sent to your registered mobile number
-            </Text>
-
-            <TextInput
-              style={styles.otpInput}
-              placeholder="• • • • • •"
-              placeholderTextColor={MUTED}
-              keyboardType="number-pad"
-              maxLength={6}
-              value={otp}
-              onChangeText={setOtp}
-              selectionColor={WHITE}
-              blurOnSubmit
-            />
-
-            <TouchableOpacity
-              style={[styles.verifyBtn, otp.length < 6 && styles.verifyBtnDisabled]}
-              onPress={handleVerify}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.verifyBtnText}>VERIFY & ENTER ARENA</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.resendBtn} activeOpacity={0.75}>
-              <Text style={styles.resendText}>
-                Didn't receive code? <Text style={styles.resendHighlight}>Resend OTP</Text>
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+        {visible ? (
+          <OTPModalBody
+            key="otp-session"
+            onVerify={onVerify}
+            onNotice={setNotice}
+          />
+        ) : null}
       </Modal>
 
       <BawaalPromptModal
@@ -169,19 +182,9 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     lineHeight: 18,
   },
-  otpInput: {
-    width: '88%',
-    backgroundColor: 'transparent',
-    borderRadius: 0,
-    borderWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: HAIRLINE,
-    color: WHITE,
-    fontSize: 26,
-    fontWeight: '800',
-    textAlign: 'center',
-    paddingVertical: 12,
-    letterSpacing: 8,
+  otpWrap: {
+    marginBottom: 8,
+    alignItems: 'center',
   },
   verifyBtn: {
     width: '100%',
