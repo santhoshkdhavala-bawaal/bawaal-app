@@ -20,7 +20,8 @@ const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 const ACCENT = '#FF5722';
 const OFF_WHITE = '#E8ECE9';
-const LOGOUT_RED = '#EF4444';
+const LOGOUT_RED = '#7F1D1D';
+const LOGOUT_RED_MUTED = '#F87171';
 
 const DEFAULT_USER = {
   displayName: 'Rohit Kumar',
@@ -233,21 +234,6 @@ export default function ProfileGatewayModal({
                 ))}
 
                 <TouchableOpacity
-                  style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
-                  onPress={handleLogOut}
-                  activeOpacity={0.85}
-                  disabled={loggingOut}
-                  accessibilityRole="button"
-                  accessibilityLabel="Log out"
-                >
-                  {loggingOut ? (
-                    <ActivityIndicator color={LOGOUT_RED} size="small" />
-                  ) : (
-                    <Text style={styles.logOutBtnText}>LOG OUT</Text>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
                   style={styles.mapBtn}
                   activeOpacity={0.85}
                   onPress={() => {
@@ -267,6 +253,21 @@ export default function ProfileGatewayModal({
                   }}
                 >
                   <Text style={styles.passportBtnText}>OPEN FULL PASSPORT</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
+                  onPress={handleLogOut}
+                  activeOpacity={0.85}
+                  disabled={loggingOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Log out"
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator color={LOGOUT_RED_MUTED} size="small" />
+                  ) : (
+                    <Text style={styles.logOutBtnText}>LOG OUT</Text>
+                  )}
                 </TouchableOpacity>
               </>
             )}
@@ -449,25 +450,28 @@ const styles = StyleSheet.create({
   settingText: { color: WHITE, fontSize: 14, fontWeight: '600' },
   settingChevron: { color: MUTED, fontSize: 20, fontWeight: '300' },
   logOutBtn: {
-    marginTop: 10,
-    marginBottom: 4,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 10,
     backgroundColor: BG,
-    borderRadius: 10,
-    borderWidth: 1.5,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: LOGOUT_RED,
-    paddingVertical: 14,
+    paddingVertical: 7,
+    paddingHorizontal: 18,
+    minWidth: 112,
+    maxWidth: 140,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 48,
   },
   logOutBtnBusy: {
     opacity: 0.55,
   },
   logOutBtnText: {
-    color: LOGOUT_RED,
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    color: LOGOUT_RED_MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.0,
   },
   mapBtn: {
     marginTop: 16,
@@ -486,7 +490,7 @@ const styles = StyleSheet.create({
   },
   passportBtn: {
     marginTop: 12,
-    marginBottom: 8,
+    marginBottom: 0,
     backgroundColor: CARD,
     borderRadius: 12,
     borderWidth: 1.5,
