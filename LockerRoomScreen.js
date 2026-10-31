@@ -10,6 +10,8 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Modal,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -28,8 +30,11 @@ import {
 } from './src/services/lockerService';
 import { isSupabaseConfigured } from './src/services/supabase';
 import { ACTIVE_USER } from './src/services/activeUserProfile';
+import { FOLLOWING, SUGGESTED } from './src/data/athleteSocial';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
 import BackLink from './src/components/BackLink';
+import DMChatSheet from './DMChatSheet';
+import UserHandle from './src/components/UserHandle';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -51,6 +56,9 @@ const BRIEF_CRIMSON = '#EF4444';
 const BRIEF_CRIMSON_SOFT = 'rgba(239,68,68,0.16)';
 const LINE = 'rgba(255,255,255,0.14)';
 
+/** Default squad roster for DM entry points (seed + cloud hubs without members). */
+const DEFAULT_SQUAD_MEMBERS = [...FOLLOWING.slice(0, 3), ...SUGGESTED.slice(0, 2)];
+
 /** Seed hubs — squads with pinned Squad Brief headers. */
 const SEED_HUBS = [
   {
@@ -60,6 +68,7 @@ const SEED_HUBS = [
     meta: '6 athletes · Invite only',
     detail: 'Coach brief · Film tomorrow 6AM · pads + headgear',
     action: 'VIEW SQUAD',
+    members: DEFAULT_SQUAD_MEMBERS.slice(0, 4),
     brief: {
       id: 'brief-iron',
       title: 'Matchday Lineup & Strategy',
@@ -74,6 +83,7 @@ const SEED_HUBS = [
     meta: '12 members · Open join',
     detail: 'PR night · Chalk + straps · open floor 7PM',
     action: 'JOIN CIRCLE',
+    members: DEFAULT_SQUAD_MEMBERS.slice(1, 5),
     brief: {
       id: 'brief-south',
       title: 'Friday Sparring Block',
@@ -88,6 +98,7 @@ const SEED_HUBS = [
     meta: '8 athletes · Invite only',
     detail: '3-round shadow · notes pinned · south bay',
     action: 'VIEW SQUAD',
+    members: DEFAULT_SQUAD_MEMBERS.slice(0, 3),
     brief: {
       id: 'brief-night',
       title: 'Night Shift Block',
@@ -102,9 +113,16 @@ const SEED_HUBS = [
     meta: '4 athletes · Strategy board',
     detail: 'Next block: heavy triples',
     action: 'VIEW SQUAD',
+    members: DEFAULT_SQUAD_MEMBERS.slice(2, 5),
     brief: null,
   },
 ];
+
+function withMembers(hub) {
+  if (!hub) return hub;
+  if (Array.isArray(hub.members) && hub.members.length) return hub;
+  return { ...hub, members: DEFAULT_SQUAD_MEMBERS };
+}
 
 function HubCard({ item, onPress }) {
   const brief = item?.brief;
@@ -160,27 +178,17 @@ export default function LockerRoomScreen({ navigation }) {
   const [busy, setBusy] = useState(false);
   const [prompt, setPrompt] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [selectedHub, setSelectedHub] = useState(null);
+  const [dmPeer, setDmPeer] = useState(null);
 
   const showNotice = useCallback((title, message) => {
     setNotice({ title, message });
   }, []);
 
-  const openHub = useCallback(
-    (hub) => {
-      if (!hub) return;
-      const lines = [
-        hub.kind,
-        hub.meta,
-        hub.brief ? `BRIEF · ${hub.brief.title} · ${hub.brief.sportTag}` : null,
-        '',
-        hub.detail,
-        '',
-        hub.action ? `${hub.action} ready` : null,
-      ].filter((line) => line != null);
-      showNotice(hub.title, lines.join('\n'));
-    },
-    [showNotice]
-  );
+  const openHub = useCallback((hub) => {
+    if (!hub) return;
+    setSelectedHub(withMembers(hub));
+  }, []);
 
   const loadHubs = useCallback(async () => {
     const { hubs: live, error } = await fetchActiveHubs();
@@ -193,7 +201,8 @@ export default function LockerRoomScreen({ navigation }) {
       setHubs((prev) => (prev?.length ? prev : SEED_HUBS));
       return;
     }
-    setHubs(live.length ? live : SEED_HUBS);
+    const next = (live.length ? live : SEED_HUBS).map(withMembers);
+    setHubs(next);
   }, []);
 
   useEffect(() => {
@@ -466,6 +475,80 @@ export default function LockerRoomScreen({ navigation }) {
         message={notice?.message || ''}
         onCancel={() => setNotice(null)}
       />
+
+      <Modal
+        visible={Boolean(selectedHub)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedHub(null)}
+      >
+        <View style={styles.membersOverlay}>
+          <Pressable
+            style={styles.membersBackdrop}
+            onPress={() => setSelectedHub(null)}
+          />
+          <View
+            style={[
+              styles.membersSheet,
+              { paddingBottom: Math.max(insets.bottom, 16) },
+            ]}
+          >
+            <View style={styles.membersHandle} />
+            <Text style={styles.membersKind}>
+              {selectedHub?.kind || 'TRAINING SQUAD'}
+            </Text>
+            <Text style={styles.membersTitle}>{selectedHub?.title}</Text>
+            <Text style={styles.membersMeta}>{selectedHub?.meta}</Text>
+            <Text style={styles.membersSection}>MEMBERS</Text>
+            <ScrollView
+              style={styles.membersList}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              {(selectedHub?.members || []).map((athlete) => (
+                <View key={athlete.id || athlete.handle} style={styles.memberRow}>
+                  <View style={styles.memberMeta}>
+                    <Text style={styles.memberName} numberOfLines={1}>
+                      {athlete.displayName || 'Athlete'}
+                    </Text>
+                    <UserHandle
+                      handle={athlete.handle || '@athlete'}
+                      verified={athlete.verified}
+                      size={11}
+                      color={SLATE}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={styles.memberDmBtn}
+                    onPress={() => {
+                      setSelectedHub(null);
+                      setDmPeer(athlete);
+                    }}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Message ${athlete.displayName || 'athlete'}`}
+                  >
+                    <Text style={styles.memberDmText}>MESSAGE</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.membersClose}
+              onPress={() => setSelectedHub(null)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.membersCloseText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <DMChatSheet
+        visible={Boolean(dmPeer)}
+        peer={dmPeer}
+        onClose={() => setDmPeer(null)}
+      />
     </View>
   );
 }
@@ -665,5 +748,100 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.4,
+  },
+  membersOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  membersBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+  },
+  membersSheet: {
+    backgroundColor: BG,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: LINE,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    maxHeight: '72%',
+  },
+  membersHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#333',
+    marginBottom: 14,
+  },
+  membersKind: {
+    color: SLATE,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+  },
+  membersTitle: {
+    color: HUB_ACCENT,
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  membersMeta: {
+    color: SLATE,
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  membersSection: {
+    color: HUBS_BLUE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 10,
+  },
+  membersList: {
+    maxHeight: 320,
+  },
+  memberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: LINE,
+    gap: 12,
+  },
+  memberMeta: {
+    flex: 1,
+    minWidth: 0,
+  },
+  memberName: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  memberDmBtn: {
+    borderWidth: 1.5,
+    borderColor: HUBS_BLUE,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  memberDmText: {
+    color: HUBS_BLUE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  membersClose: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 8,
+  },
+  membersCloseText: {
+    color: SLATE,
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

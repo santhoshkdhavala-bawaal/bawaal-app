@@ -32,6 +32,7 @@ import BackLink from './src/components/BackLink';
 import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
 import { fetchPassportGraph } from './src/services/profilesService';
 import { fetchPassportSquads } from './src/services/lockerService';
+import DMChatSheet from './DMChatSheet';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -248,6 +249,7 @@ const SuggestedRow = memo(function SuggestedRow({
   following,
   onOpen,
   onToggleFollow,
+  onMessage,
 }) {
   return (
     <TouchableOpacity
@@ -273,20 +275,38 @@ const SuggestedRow = memo(function SuggestedRow({
           <Text style={styles.suggestedHandle}> · {athlete.sport}</Text>
         </View>
       </View>
-      <TouchableOpacity
-        style={[styles.followBtn, following && styles.followBtnOn]}
-        onPress={() => onToggleFollow(athlete.id)}
-        activeOpacity={0.85}
-      >
-        <Text style={[styles.followBtnText, following && styles.followBtnTextOn]}>
-          {following ? 'Following' : '+ Follow'}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.suggestedActions}>
+        <TouchableOpacity
+          style={styles.dmChip}
+          onPress={() => onMessage?.(athlete)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${athlete.displayName}`}
+        >
+          <Text style={styles.dmChipText}>DM</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.followBtn, following && styles.followBtnOn]}
+          onPress={() => onToggleFollow(athlete.id)}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.followBtnText, following && styles.followBtnTextOn]}>
+            {following ? 'Following' : '+ Follow'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 });
 
-function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggleFollow }) {
+function InlineAthletePreview({
+  athlete,
+  following,
+  onBack,
+  onOpenFull,
+  onToggleFollow,
+  onMessage,
+}) {
   return (
     <View style={styles.previewWrap}>
       <BackLink
@@ -342,17 +362,28 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
           />
         </View>
 
-        <TouchableOpacity
-          style={[styles.followBtnWide, following && styles.followBtnOn]}
-          onPress={() => onToggleFollow(athlete.id)}
-          activeOpacity={0.85}
-        >
-          <Text
-            style={[styles.followBtnText, following && styles.followBtnTextOn]}
+        <View style={styles.previewActions}>
+          <TouchableOpacity
+            style={styles.messageBtnWide}
+            onPress={() => onMessage?.(athlete)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Message athlete"
           >
-            {following ? 'Following' : '+ Follow'}
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.messageBtnWideText}>MESSAGE / DM</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.followBtnWide, following && styles.followBtnOn]}
+            onPress={() => onToggleFollow(athlete.id)}
+            activeOpacity={0.85}
+          >
+            <Text
+              style={[styles.followBtnText, following && styles.followBtnTextOn]}
+            >
+              {following ? 'Following' : '+ Follow'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Text style={styles.sectionHint}>
@@ -365,6 +396,7 @@ function InlineAthletePreview({ athlete, following, onBack, onOpenFull, onToggle
 export default function ProfileScreen({ navigation }) {
   const { openProfileGateway, openLockerHub, setTab } = useMainTabs();
   const [selected, setSelected] = useState(null);
+  const [dmPeer, setDmPeer] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [me, setMe] = useState(CURRENT_USER);
   const [followingList, setFollowingList] = useState(FOLLOWING);
@@ -373,6 +405,11 @@ export default function ProfileScreen({ navigation }) {
   const [followedIds, setFollowedIds] = useState(
     () => new Set(FOLLOWING.map((a) => a.id))
   );
+
+  const openDm = useCallback((athlete) => {
+    if (!athlete?.id && !athlete?.userId) return;
+    setDmPeer(athlete);
+  }, []);
 
   const applyGraph = useCallback((graph) => {
     // Merge AsyncStorage session fields onto Passport card (no layout change)
@@ -512,6 +549,7 @@ export default function ProfileScreen({ navigation }) {
             onBack={() => setSelected(null)}
             onOpenFull={openFullPassport}
             onToggleFollow={toggleFollow}
+            onMessage={openDm}
           />
         ) : (
           <>
@@ -550,6 +588,7 @@ export default function ProfileScreen({ navigation }) {
                 following={followedIds.has(athlete.id)}
                 onOpen={openPreview}
                 onToggleFollow={toggleFollow}
+                onMessage={openDm}
               />
             ))}
 
@@ -572,6 +611,12 @@ export default function ProfileScreen({ navigation }) {
           </>
         )}
       </ScrollView>
+
+      <DMChatSheet
+        visible={Boolean(dmPeer)}
+        peer={dmPeer}
+        onClose={() => setDmPeer(null)}
+      />
     </View>
   );
 }
@@ -899,12 +944,48 @@ const styles = StyleSheet.create({
     color: SUGGEST_RED,
   },
   followBtnWide: {
-    marginTop: 14,
     borderWidth: 1,
     borderColor: WHITE,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
+  },
+  previewActions: {
+    marginTop: 14,
+    gap: 10,
+  },
+  messageBtnWide: {
+    borderWidth: 1.5,
+    borderColor: FOLLOW_BLUE,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  messageBtnWideText: {
+    color: FOLLOW_BLUE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  suggestedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dmChip: {
+    borderWidth: 1.5,
+    borderColor: FOLLOW_BLUE,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  dmChipText: {
+    color: FOLLOW_BLUE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   previewWrap: {
     gap: 4,

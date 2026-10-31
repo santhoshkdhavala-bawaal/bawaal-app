@@ -12,13 +12,15 @@ import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { STAT_ACCENTS } from './src/data/athleteSocial';
+import DMChatSheet from './DMChatSheet';
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#888888';
+const DM_BLUE = '#3B82F6';
 
-function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
+function AthleteProfileBody({ athlete, roleLabel, onClose, visible, onMessage }) {
   const insets = useSafeAreaInsets();
   const [following, setFollowing] = useState(false);
 
@@ -75,6 +77,16 @@ function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
             </Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.messageBtn}
+            activeOpacity={0.85}
+            onPress={() => onMessage?.(athlete)}
+            accessibilityRole="button"
+            accessibilityLabel="Message athlete"
+          >
+            <Text style={styles.messageBtnText}>MESSAGE / DM</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
             <Text style={styles.closeBtnText}>CLOSE</Text>
           </TouchableOpacity>
@@ -86,6 +98,7 @@ function AthleteProfileBody({ athlete, roleLabel, onClose, visible }) {
 
 /**
  * Compact athlete profile drawer — Follow from live rivalry bar taps.
+ * Message / DM opens stealth chat sheet with this athlete.
  */
 export default function AthleteProfileSheet({
   visible,
@@ -93,16 +106,31 @@ export default function AthleteProfileSheet({
   roleLabel = 'ATHLETE',
   onClose,
 }) {
-  if (!athlete) return null;
+  const [dmPeer, setDmPeer] = useState(null);
+
+  if (!athlete && !dmPeer) return null;
 
   return (
-    <AthleteProfileBody
-      key={`${athlete.id || athlete.handle}-${visible ? '1' : '0'}`}
-      athlete={athlete}
-      roleLabel={roleLabel}
-      onClose={onClose}
-      visible={visible}
-    />
+    <>
+      {athlete ? (
+        <AthleteProfileBody
+          key={`${athlete.id || athlete.handle}-${visible ? '1' : '0'}`}
+          athlete={athlete}
+          roleLabel={roleLabel}
+          onClose={onClose}
+          visible={visible}
+          onMessage={(peer) => {
+            onClose?.();
+            setDmPeer(peer);
+          }}
+        />
+      ) : null}
+      <DMChatSheet
+        visible={Boolean(dmPeer)}
+        peer={dmPeer}
+        onClose={() => setDmPeer(null)}
+      />
+    </>
   );
 }
 
@@ -192,6 +220,21 @@ const styles = StyleSheet.create({
   },
   followBtnTextOn: {
     color: WHITE,
+  },
+  messageBtn: {
+    borderWidth: 1.5,
+    borderColor: DM_BLUE,
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginBottom: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  messageBtnText: {
+    color: DM_BLUE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   closeBtn: {
     alignItems: 'center',

@@ -3,11 +3,12 @@
  * Opened from Passport inline preview via "VIEW FULL PROFILE".
  * B&W chrome; accents only on stats/metrics + official BAWAAL "B" badge.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +20,7 @@ import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import ProfileMediaTabs from './src/components/ProfileMediaTabs';
 import BackLink from './src/components/BackLink';
+import DMChatSheet from './DMChatSheet';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -26,14 +28,17 @@ const WHITE = '#FFFFFF';
 const OFF = '#E8ECE9';
 const MUTED = '#A0A0A0';
 const BORDER = 'rgba(255,255,255,0.22)';
+const DM_BLUE = '#3B82F6';
 
 export default function AthletePassportScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  const [dmOpen, setDmOpen] = useState(false);
   const athlete = useMemo(() => {
     const fromParams = route?.params?.athlete;
     if (fromParams?.id) return fromParams;
     return findAthleteById(route?.params?.athleteId) || findAthleteById('me');
   }, [route?.params?.athlete, route?.params?.athleteId]);
+  const isSelf = athlete?.id === 'me';
 
   const initials = String(athlete.displayName || '?')
     .split(/\s+/)
@@ -88,6 +93,17 @@ export default function AthletePassportScreen({ route, navigation }) {
             ) : null}
           </View>
           <Text style={styles.bio}>{athlete.bio}</Text>
+          {!isSelf ? (
+            <TouchableOpacity
+              style={styles.messageBtn}
+              onPress={() => setDmOpen(true)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Message athlete"
+            >
+              <Text style={styles.messageBtnText}>MESSAGE / DM</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={styles.statsRow}>
@@ -159,6 +175,12 @@ export default function AthletePassportScreen({ route, navigation }) {
           </Text>
         </View>
       </ScrollView>
+
+      <DMChatSheet
+        visible={dmOpen}
+        peer={athlete}
+        onClose={() => setDmOpen(false)}
+      />
     </View>
   );
 }
@@ -167,6 +189,22 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: BG,
+  },
+  messageBtn: {
+    marginTop: 14,
+    alignSelf: 'center',
+    borderWidth: 1.5,
+    borderColor: DM_BLUE,
+    borderRadius: 12,
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  messageBtnText: {
+    color: DM_BLUE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   topBar: {
     flexDirection: 'row',
