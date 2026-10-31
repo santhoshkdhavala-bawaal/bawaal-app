@@ -19,7 +19,7 @@ import { BAWAAL_DARK_MAP_STYLE } from './src/constants/darkMapStyle';
 import {
   HUB_SPORT_COLORS,
   SPORT_HUB_MAP_REGION,
-  SPORT_HUBS,
+  filterVirarSportsSpots,
   hubPinColor,
   isSportsSpotHighlight,
   sportsSpotNeon,
@@ -63,36 +63,22 @@ const JOIN = '#FACC15';
 const BADGE_TEXT = '#FFFFFF';
 
 const HubPin = memo(function HubPin({ sport, selected }) {
-  const highlight = isSportsSpotHighlight(sport);
-  // Always match filter-pill category color (Combat/Gym = flame, Cricket = gold, …)
-  const color = highlight ? sportsSpotNeon(sport) : hubPinColor(sport);
+  // Category-matched accent (Gym flame, Football volt green, Cricket gold, …)
+  const color = hubPinColor(sport) || sportsSpotNeon(sport);
   const label = canonicalizeSport(sport) || 'HUB';
   const short =
     label.length > 10 ? label.split(' ')[0].slice(0, 6) : label.slice(0, 8);
 
-  if (highlight) {
-    return (
-      <View style={[styles.glowWrap, selected && styles.pinWrapOn]}>
-        <View
-          style={[
-            styles.glowHalo,
-            { borderColor: color, shadowColor: color, backgroundColor: `${color}22` },
-          ]}
-        />
-        <View style={[styles.glowBadge, { borderColor: color, shadowColor: color }]}>
-          <Text style={styles.glowBadgeText} numberOfLines={1}>
-            {short}
-          </Text>
-        </View>
-        <View style={[styles.pinStem, { borderTopColor: color }]} />
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.pinWrap, selected && styles.pinWrapOn]}>
-      <View style={[styles.pinDot, { borderColor: color, shadowColor: color }]}>
-        <Text style={styles.pinText} numberOfLines={1}>
+    <View style={[styles.glowWrap, selected && styles.pinWrapOn]}>
+      <View
+        style={[
+          styles.glowHalo,
+          { borderColor: color, shadowColor: color, backgroundColor: `${color}22` },
+        ]}
+      />
+      <View style={[styles.glowBadge, { borderColor: color, shadowColor: color }]}>
+        <Text style={styles.glowBadgeText} numberOfLines={1}>
           {short}
         </Text>
       </View>
@@ -179,18 +165,11 @@ export default function SportHubMapScreen({ navigation }) {
     return () => clearTimeout(t);
   }, []);
 
-  const visibleHubs = useMemo(() => {
-    // ALL + SPORTS SPOTS → every hub pin; otherwise match sport category
-    if (
-      selectedCategory === FILTER_ALL ||
-      selectedCategory === FILTER_SPORTS_SPOTS
-    ) {
-      return SPORT_HUBS;
-    }
-    return SPORT_HUBS.filter(
-      (h) => canonicalizeSport(h.sport) === selectedCategory
-    );
-  }, [selectedCategory]);
+  // Virar / Nalasopara sports database — filter by footer category pill
+  const visibleHubs = useMemo(
+    () => filterVirarSportsSpots(selectedCategory),
+    [selectedCategory]
+  );
 
   const selectedHub = useMemo(
     () => visibleHubs.find((h) => h.id === selectedId) || null,
@@ -203,6 +182,8 @@ export default function SportHubMapScreen({ navigation }) {
     setSheetOpen(false);
     setTracksPins(true);
     setTimeout(() => setTracksPins(false), 600);
+    // Snap camera back to Virar cluster when filtering so new pins are visible
+    mapRef.current?.animateToRegion?.(SPORT_HUB_MAP_REGION, 320);
   }, []);
 
   const goBack = useCallback(() => {

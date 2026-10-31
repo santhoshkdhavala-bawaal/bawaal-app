@@ -149,3 +149,176 @@ export function findSportHubById(id) {
 export function filterSportsSpotHubs(hubs = SPORT_HUBS) {
   return (hubs || []).filter((h) => isSportsSpotHighlight(h?.sport));
 }
+
+/**
+ * Real-world mock sports facilities around Virar / Nalasopara (Palghar).
+ * Schema: { id, name, category, latitude, longitude, address }
+ */
+export const VIRAR_SPORTS_SPOTS = [
+  // —— Gyms ——
+  {
+    id: 'virar-golds-gym',
+    name: "Gold's Gym Virar",
+    category: 'GYM',
+    latitude: 19.4568,
+    longitude: 72.8082,
+    address: 'Near Virar West Station, Palghar',
+  },
+  {
+    id: 'virar-talwalkars',
+    name: 'Talwalkars Fitness Virar',
+    category: 'GYM',
+    latitude: 19.4582,
+    longitude: 72.8125,
+    address: 'Evershine City Road, Virar West',
+  },
+  {
+    id: 'virar-fitzone',
+    name: 'FitZone Local Hub',
+    category: 'GYM',
+    latitude: 19.4521,
+    longitude: 72.8058,
+    address: 'Agashi Road, Virar West',
+  },
+  {
+    id: 'nalasopara-powerhouse',
+    name: 'PowerHouse Gym Nalasopara',
+    category: 'GYM',
+    latitude: 19.4195,
+    longitude: 72.8142,
+    address: 'Nalasopara West Market Road',
+  },
+  // —— Football ——
+  {
+    id: 'virar-global-city-turf',
+    name: 'Global City Turf',
+    category: 'FOOTBALL',
+    latitude: 19.4612,
+    longitude: 72.8015,
+    address: 'Global City Complex, Virar West',
+  },
+  {
+    id: 'virar-viva-ground',
+    name: 'Viva Ground',
+    category: 'FOOTBALL',
+    latitude: 19.4486,
+    longitude: 72.8168,
+    address: 'Viva College Rd, Virar West',
+  },
+  {
+    id: 'nalasopara-astro-turf',
+    name: 'Nalasopara Astro Turf',
+    category: 'FOOTBALL',
+    latitude: 19.4238,
+    longitude: 72.8211,
+    address: 'Achole Road, Nalasopara East',
+  },
+  // —— Cricket ——
+  {
+    id: 'virar-cricket-ground',
+    name: 'Virar Cricket Ground',
+    category: 'CRICKET',
+    latitude: 19.4545,
+    longitude: 72.8189,
+    address: 'Bolinj Cricket Ground, Virar West',
+  },
+  {
+    id: 'virar-nets-arena',
+    name: 'Virar Nets Arena',
+    category: 'CRICKET',
+    latitude: 19.4498,
+    longitude: 72.8095,
+    address: 'Chandansar Rd, Virar East',
+  },
+  {
+    id: 'nalasopara-turf-cricket',
+    name: 'Nalasopara Cricket Turf',
+    category: 'CRICKET',
+    latitude: 19.4272,
+    longitude: 72.8088,
+    address: 'Tulinj Road, Nalasopara East',
+  },
+  // —— Combat / MMA / Boxing ——
+  {
+    id: 'virar-mma-lab',
+    name: 'Virar MMA Lab',
+    category: 'COMBAT',
+    latitude: 19.4575,
+    longitude: 72.8044,
+    address: 'Phoolpada Road, Virar West',
+  },
+  {
+    id: 'virar-iron-fist',
+    name: 'Iron Fist Boxing Ring',
+    category: 'COMBAT',
+    latitude: 19.4512,
+    longitude: 72.8136,
+    address: 'Manvelpada, Virar East',
+  },
+  {
+    id: 'nalasopara-strike-academy',
+    name: 'Strike Academy MMA',
+    category: 'COMBAT',
+    latitude: 19.4218,
+    longitude: 72.8175,
+    address: 'Nalasopara West Main Road',
+  },
+  // —— Kabaddi / Others ——
+  {
+    id: 'virar-kabaddi-akhada',
+    name: 'Virar Kabaddi Akhada',
+    category: 'KABADDI',
+    latitude: 19.4604,
+    longitude: 72.8152,
+    address: 'Bolinj Village Ground, Virar',
+  },
+  {
+    id: 'virar-open-courts',
+    name: 'Virar Open Courts',
+    category: 'COURT KINGS',
+    latitude: 19.4469,
+    longitude: 72.8071,
+    address: 'Yashwant Viva Township Courts',
+  },
+];
+
+/** Normalize VIRAR_SPORTS_SPOTS → hub-shaped markers for the map UI. */
+export function virarSpotToHub(spot) {
+  if (!spot) return null;
+  const category = canonicalizeSport(spot.category) || String(spot.category || 'OTHERS').toUpperCase();
+  return {
+    id: spot.id,
+    name: spot.name,
+    address: spot.address,
+    sport: category,
+    category,
+    memberCount: spot.memberCount ?? 0,
+    squadCount: spot.squadCount ?? 0,
+    lockerHubId: null,
+    coordinate: {
+      latitude: Number(spot.latitude),
+      longitude: Number(spot.longitude),
+    },
+    source: 'virar-spot',
+  };
+}
+
+/**
+ * Filter Virar sports spots by category pill selection.
+ * ALL / SPORTS SPOTS → all spots; else case-insensitive category match.
+ */
+export function filterVirarSportsSpots(selectedCategory = 'ALL', spots = VIRAR_SPORTS_SPOTS) {
+  const key = String(selectedCategory || 'ALL').trim();
+  const upper = key.toUpperCase();
+  if (!key || upper === 'ALL' || upper === 'SPORTS SPOTS') {
+    return (spots || []).map(virarSpotToHub).filter(Boolean);
+  }
+  return (spots || [])
+    .filter(
+      (s) =>
+        String(s.category || '').toLowerCase() === key.toLowerCase() ||
+        canonicalizeSport(s.category) === canonicalizeSport(key)
+    )
+    .map(virarSpotToHub)
+    .filter(Boolean);
+}

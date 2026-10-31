@@ -1,16 +1,17 @@
 /**
  * Google Maps JSON style — stealth-black BAWAAL map chrome.
- * Road lines: white (#FFFFFF). Place/area labels: electric cyan (#00F0FF) + black halo.
+ * Road lines: white (#FFFFFF). Road labels: electric orange (#FF6600) + black halo.
+ * Place/area labels: electric cyan (#00F0FF) + black halo.
  * Business POIs + transit hidden so sports hubs / major roads stay prominent.
  * Applied via MapView `customMapStyle` (Google provider / Android; iOS Apple Maps ignores).
  */
 const ROAD_LINE = '#FFFFFF';
-const ROAD_LABEL_FILL = '#FFE082'; // Warm gold — street names on white geometry
+const ROAD_LABEL_FILL = '#FF6600'; // Electric orange — street names never wash out
 const PLACE_LABEL_FILL = '#00F0FF'; // Electric cyan — distinct from white roads
 const LABEL_FILL = '#FFFFFF';
 const LABEL_STROKE = '#000000';
 const LABEL_STROKE_WEIGHT = 3.0;
-const ROAD_LABEL_STROKE_WEIGHT = 2.0;
+const ROAD_LABEL_STROKE_WEIGHT = 3.0;
 
 function labelFill(color = LABEL_FILL) {
   return {
@@ -115,7 +116,7 @@ export const BAWAAL_DARK_MAP_STYLE = [
   { featureType: 'poi.sports_complex', ...labelFill() },
   { featureType: 'poi.sports_complex', ...labelStroke() },
 
-  // —— Roads: white lines; street names warm gold (#FFE082) + black halo ——
+  // —— Roads: white lines; street names electric orange (#FF6600) + black halo ——
   {
     featureType: 'road',
     elementType: 'geometry',
