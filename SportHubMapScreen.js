@@ -26,6 +26,18 @@ import {
 } from './src/data/sportHubs';
 import { canonicalizeSport } from './src/utils/sportCategory';
 
+const FILTER_ALL = 'ALL';
+const FILTER_SPORTS_SPOTS = 'SPORTS SPOTS';
+
+const CATEGORY_PILLS = [
+  { key: FILTER_ALL, label: 'ALL', color: '#FFFFFF' },
+  { key: FILTER_SPORTS_SPOTS, label: 'SPORTS SPOTS', color: '#FF3B30' },
+  ...Object.entries(HUB_SPORT_COLORS)
+    .filter(([k]) => k !== 'ALL')
+    .slice(0, 8)
+    .map(([sport, color]) => ({ key: sport, label: sport, color })),
+];
+
 let MapView = null;
 let Marker = null;
 let PROVIDER_GOOGLE = undefined;
@@ -157,6 +169,7 @@ export default function SportHubMapScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(FILTER_ALL);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [tracksPins, setTracksPins] = useState(true);
   const mapsReady = Boolean(MapView) && Platform.OS !== 'web';
@@ -166,10 +179,31 @@ export default function SportHubMapScreen({ navigation }) {
     return () => clearTimeout(t);
   }, []);
 
+  const visibleHubs = useMemo(() => {
+    // ALL + SPORTS SPOTS → every hub pin; otherwise match sport category
+    if (
+      selectedCategory === FILTER_ALL ||
+      selectedCategory === FILTER_SPORTS_SPOTS
+    ) {
+      return SPORT_HUBS;
+    }
+    return SPORT_HUBS.filter(
+      (h) => canonicalizeSport(h.sport) === selectedCategory
+    );
+  }, [selectedCategory]);
+
   const selectedHub = useMemo(
-    () => SPORT_HUBS.find((h) => h.id === selectedId) || null,
-    [selectedId]
+    () => visibleHubs.find((h) => h.id === selectedId) || null,
+    [selectedId, visibleHubs]
   );
+
+  const onSelectCategory = useCallback((category) => {
+    setSelectedCategory(category);
+    setSelectedId(null);
+    setSheetOpen(false);
+    setTracksPins(true);
+    setTimeout(() => setTracksPins(false), 600);
+  }, []);
 
   const goBack = useCallback(() => {
     if (navigation?.canGoBack?.()) navigation.goBack();
@@ -255,7 +289,7 @@ export default function SportHubMapScreen({ navigation }) {
               if (sheetOpen) closeSheet();
             }}
           >
-            {SPORT_HUBS.map((hub) => (
+            {visibleHubs.map((hub) => (
               <Marker
                 key={hub.id}
                 coordinate={hub.coordinate}
@@ -279,7 +313,7 @@ export default function SportHubMapScreen({ navigation }) {
             <Text style={styles.fallbackHint}>
               Map preview — tap a hub card (native map loads in Expo Go / dev builds).
             </Text>
-            {SPORT_HUBS.map((hub) => {
+            {visibleHubs.map((hub) => {
               const highlight = isSportsSpotHighlight(hub.sport);
               const color = highlight
                 ? sportsSpotNeon(hub.sport)
@@ -307,28 +341,49 @@ export default function SportHubMapScreen({ navigation }) {
           </ScrollView>
         )}
 
-        {/* Legend strip */}
+        {/* Category filter pills */}
         <View style={[styles.legend, { bottom: Math.max(insets.bottom, 12) + 8 }]}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.legendRow}
+            keyboardShouldPersistTaps="handled"
           >
-            <View style={[styles.legendChip, { borderColor: '#FF3B30' }]}>
-              <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
-              <Text style={[styles.legendText, { color: '#FF3B30' }]}>
-                SPORTS SPOTS
-              </Text>
-            </View>
-            {Object.entries(HUB_SPORT_COLORS)
-              .filter(([k]) => k !== 'ALL')
-              .slice(0, 8)
-              .map(([sport, color]) => (
-                <View key={sport} style={styles.legendChip}>
-                  <View style={[styles.legendDot, { backgroundColor: color }]} />
-                  <Text style={styles.legendText}>{sport}</Text>
-                </View>
-              ))}
+            {CATEGORY_PILLS.map((pill) => {
+              const active = selectedCategory === pill.key;
+              return (
+                <TouchableOpacity
+                  key={pill.key}
+                  style={[
+                    styles.legendChip,
+                    active && styles.legendChipActive,
+                    active && {
+                      borderColor: pill.color,
+                      backgroundColor: `${pill.color}33`,
+                      shadowColor: pill.color,
+                    },
+                  ]}
+                  onPress={() => onSelectCategory(pill.key)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={`Filter ${pill.label}`}
+                >
+                  <View
+                    style={[styles.legendDot, { backgroundColor: pill.color }]}
+                  />
+                  <Text
+                    style={[
+                      styles.legendText,
+                      active && styles.legendTextActive,
+                      active && { color: pill.color },
+                    ]}
+                  >
+                    {pill.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       </View>
@@ -523,9 +578,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.82)',
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  legendChipActive: {
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 8,
+    elevation: 6,
   },
   legendDot: {
     width: 8,
@@ -537,6 +599,9 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  legendTextActive: {
+    fontWeight: '900',
   },
   sheetOverlay: {
     flex: 1,

@@ -5,10 +5,12 @@
  * Applied via MapView `customMapStyle` (Google provider / Android; iOS Apple Maps ignores).
  */
 const ROAD_LINE = '#FFFFFF';
+const ROAD_LABEL_FILL = '#FFE082'; // Warm gold — street names on white geometry
 const PLACE_LABEL_FILL = '#00F0FF'; // Electric cyan — distinct from white roads
 const LABEL_FILL = '#FFFFFF';
 const LABEL_STROKE = '#000000';
 const LABEL_STROKE_WEIGHT = 3.0;
+const ROAD_LABEL_STROKE_WEIGHT = 2.0;
 
 function labelFill(color = LABEL_FILL) {
   return {
@@ -17,11 +19,19 @@ function labelFill(color = LABEL_FILL) {
   };
 }
 
-function labelStroke() {
+function labelStroke(weight = LABEL_STROKE_WEIGHT) {
   return {
     elementType: 'labels.text.stroke',
-    stylers: [{ color: LABEL_STROKE }, { weight: LABEL_STROKE_WEIGHT }],
+    stylers: [{ color: LABEL_STROKE }, { weight }],
   };
+}
+
+function roadLabelFill() {
+  return labelFill(ROAD_LABEL_FILL);
+}
+
+function roadLabelStroke() {
+  return labelStroke(ROAD_LABEL_STROKE_WEIGHT);
 }
 
 function placeLabelFill() {
@@ -105,7 +115,7 @@ export const BAWAAL_DARK_MAP_STYLE = [
   { featureType: 'poi.sports_complex', ...labelFill() },
   { featureType: 'poi.sports_complex', ...labelStroke() },
 
-  // —— Roads: white lines; street-name labels stay white + black halo ——
+  // —— Roads: white lines; street names warm gold (#FFE082) + black halo ——
   {
     featureType: 'road',
     elementType: 'geometry',
@@ -116,8 +126,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road', ...labelFill(LABEL_FILL) },
-  { featureType: 'road', ...labelStroke() },
+  { featureType: 'road', ...roadLabelFill() },
+  { featureType: 'road', ...roadLabelStroke() },
   {
     featureType: 'road.arterial',
     elementType: 'geometry',
@@ -128,8 +138,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.arterial', ...labelFill(LABEL_FILL) },
-  { featureType: 'road.arterial', ...labelStroke() },
+  { featureType: 'road.arterial', ...roadLabelFill() },
+  { featureType: 'road.arterial', ...roadLabelStroke() },
   {
     featureType: 'road.local',
     elementType: 'geometry',
@@ -140,8 +150,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.local', ...labelFill(LABEL_FILL) },
-  { featureType: 'road.local', ...labelStroke() },
+  { featureType: 'road.local', ...roadLabelFill() },
+  { featureType: 'road.local', ...roadLabelStroke() },
   {
     featureType: 'road.highway',
     elementType: 'geometry',
@@ -152,8 +162,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.highway', ...labelFill(LABEL_FILL) },
-  { featureType: 'road.highway', ...labelStroke() },
+  { featureType: 'road.highway', ...roadLabelFill() },
+  { featureType: 'road.highway', ...roadLabelStroke() },
   {
     featureType: 'road.highway.controlled_access',
     elementType: 'geometry',
@@ -164,8 +174,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.highway.controlled_access', ...labelFill(LABEL_FILL) },
-  { featureType: 'road.highway.controlled_access', ...labelStroke() },
+  { featureType: 'road.highway.controlled_access', ...roadLabelFill() },
+  { featureType: 'road.highway.controlled_access', ...roadLabelStroke() },
 
   // —— Transit: fully hidden ——
   {
