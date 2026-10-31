@@ -32,10 +32,10 @@ if (isExpoGo) {
 const ROOT_BG = '#000000';
 
 /**
- * When true, always open Entry (onboarding) and ignore AsyncStorage session.
- * Keep false so returning athletes restore Passport profile on reload.
+ * When true, always open Entry (onboarding / OTP landing) and ignore AsyncStorage session.
+ * TEMP: true for OTP testing — set false so returning athletes restore Passport on reload.
  */
-const FORCE_ONBOARDING_ENTRY = false;
+const FORCE_ONBOARDING_ENTRY = true;
 
 const Stack = createNativeStackNavigator();
 const navTheme = {

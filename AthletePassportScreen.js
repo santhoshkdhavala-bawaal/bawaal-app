@@ -3,8 +3,9 @@
  * Opened from Passport inline preview via "VIEW FULL PROFILE".
  * B&W chrome; accents only on stats/metrics + official BAWAAL "B" badge.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,6 +22,8 @@ import RoleBadge from './src/components/RoleBadge';
 import ProfileMediaTabs from './src/components/ProfileMediaTabs';
 import BackLink from './src/components/BackLink';
 import DMChatSheet from './DMChatSheet';
+import { supabase } from './src/services/supabase';
+import { clearRegisteredSession } from './sessionStore';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -33,12 +36,33 @@ const DM_BLUE = '#3B82F6';
 export default function AthletePassportScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const [dmOpen, setDmOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const athlete = useMemo(() => {
     const fromParams = route?.params?.athlete;
     if (fromParams?.id) return fromParams;
     return findAthleteById(route?.params?.athleteId) || findAthleteById('me');
   }, [route?.params?.athlete, route?.params?.athleteId]);
   const isSelf = athlete?.id === 'me';
+
+  const handleLogOut = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('[Passport] supabase.auth.signOut:', err?.message || err);
+      }
+      await clearRegisteredSession();
+      navigation?.reset?.({
+        index: 0,
+        routes: [{ name: 'Entry' }],
+      });
+    } catch (err) {
+      console.warn('[Passport] log out failed:', err?.message || err);
+      setLoggingOut(false);
+    }
+  }, [loggingOut, navigation]);
 
   const initials = String(athlete.displayName || '?')
     .split(/\s+/)
@@ -51,16 +75,35 @@ export default function AthletePassportScreen({ route, navigation }) {
 
   return (
     <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
-      <View style={styles.topBar}>
-        <BackLink
-          label="Back"
-          onPress={() => {
-            if (navigation?.canGoBack?.()) navigation.goBack();
-            else navigation?.navigate?.('Main', { tab: 'Passport' });
-          }}
-        />
-        <Text style={styles.topTitle}>ATHLETE PASSPORT</Text>
-        <View style={{ width: 72 }} />
+      <View style={styles.headerBlock}>
+        <View style={styles.brandRow}>
+          <Text style={styles.brand}>BAWAAL</Text>
+          <TouchableOpacity
+            style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
+            onPress={handleLogOut}
+            activeOpacity={0.85}
+            disabled={loggingOut}
+            accessibilityRole="button"
+            accessibilityLabel="Log out"
+          >
+            {loggingOut ? (
+              <ActivityIndicator color={DM_BLUE} size="small" />
+            ) : (
+              <Text style={styles.logOutBtnText}>LOG OUT</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        <View style={styles.topBar}>
+          <BackLink
+            label="Back"
+            onPress={() => {
+              if (navigation?.canGoBack?.()) navigation.goBack();
+              else navigation?.navigate?.('Main', { tab: 'Passport' });
+            }}
+          />
+          <Text style={styles.topTitle}>ATHLETE PASSPORT</Text>
+          <View style={{ width: 72 }} />
+        </View>
       </View>
 
       <ScrollView
@@ -206,14 +249,50 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.6,
   },
+  headerBlock: {
+    backgroundColor: BG,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: BORDER,
+    paddingBottom: 10,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  brand: {
+    color: WHITE,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 2.4,
+  },
+  logOutBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.45)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minWidth: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: BG,
+  },
+  logOutBtnBusy: {
+    opacity: 0.55,
+  },
+  logOutBtnText: {
+    color: DM_BLUE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.0,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
   },
   topTitle: {
     color: MUTED,
