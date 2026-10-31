@@ -361,6 +361,61 @@ export default function RoleSelection({ onCompleteRegistration }) {
               onBlur={() => setFocusedField(null)}
             />
 
+            <View style={styles.demoRow}>
+              <View style={styles.demoCol}>
+                <Text style={styles.fieldLabel}>GENDER</Text>
+                <View style={styles.genderPillRow}>
+                  {GENDER_OPTIONS.map((opt) => {
+                    const active = gender === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.genderPill, active && styles.genderPillActive]}
+                        onPress={() => setGender(opt.key)}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text
+                          style={[
+                            styles.genderPillText,
+                            active && styles.genderPillTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <View style={styles.demoCol}>
+                <Text style={styles.fieldLabel}>AGE</Text>
+                <View
+                  style={[
+                    styles.fieldRow,
+                    styles.ageFieldRow,
+                    focusedField === 'age' && styles.fieldRowFocused,
+                  ]}
+                >
+                  <TextInput
+                    style={styles.input}
+                    placeholder="e.g. 25"
+                    placeholderTextColor={MUTED}
+                    value={age}
+                    onChangeText={(text) =>
+                      setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
+                    }
+                    keyboardType="number-pad"
+                    onFocus={() => setFocusedField('age')}
+                    onBlur={() => setFocusedField(null)}
+                  />
+                </View>
+              </View>
+            </View>
+
             <UnderlineField
               label="EMAIL ADDRESS"
               value={email}
@@ -404,26 +459,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
               Used for regional matchmaking and scouting.
               {locationMeta.country ? ` · ${locationMeta.country}` : ''}
             </Text>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>GENDER</Text>
-              <PillRow
-                options={GENDER_OPTIONS}
-                selected={gender}
-                onSelect={setGender}
-              />
-            </View>
-
-            <UnderlineField
-              label="AGE"
-              value={age}
-              onChangeText={(text) => setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))}
-              placeholder="e.g. 25"
-              keyboardType="number-pad"
-              focused={focusedField === 'age'}
-              onFocus={() => setFocusedField('age')}
-              onBlur={() => setFocusedField(null)}
-            />
 
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>ROLE</Text>
@@ -723,6 +758,50 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: MUTED,
     lineHeight: 15,
+  },
+  demoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 18,
+    alignItems: 'flex-start',
+  },
+  demoCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  genderPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 4,
+  },
+  genderPill: {
+    flexShrink: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: LINE,
+    backgroundColor: 'transparent',
+  },
+  genderPillActive: {
+    borderColor: WHITE,
+    backgroundColor: WHITE,
+  },
+  genderPillText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  genderPillTextActive: {
+    color: BG,
+    fontWeight: '900',
+  },
+  ageFieldRow: {
+    marginTop: 2,
   },
   pillWrap: {
     flexDirection: 'row',
