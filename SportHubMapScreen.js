@@ -241,7 +241,7 @@ export default function SportHubMapScreen({ navigation }) {
             showsUserLocation={false}
             showsMyLocationButton={false}
             showsCompass={false}
-            showsPointsOfInterest={false}
+            showsPointsOfInterest
             toolbarEnabled={false}
             moveOnMarkerPress={false}
             onPress={() => {
