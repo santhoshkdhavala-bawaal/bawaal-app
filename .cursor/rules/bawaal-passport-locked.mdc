@@ -10,6 +10,8 @@ The Passport tab hub (`ProfileScreen.js`) is **production-final**. Do **not** re
 ## Locked files (do not edit)
 
 - `ProfileScreen.js` — Passport hub
+- `ProfileGatewayModal.js` — compact profile sheet (OPEN FULL PASSPORT + LOG OUT)
+- `AthletePassportScreen.js` — full Passport stack (LOG OUT preserved)
 - Related presentation: `BrandHeader`, `UserHandle`, `RoleBadge` (Athlete / Coach / Fan), `VerifiedBadge`, `BackLink`, `src/data/athleteSocial` seed wiring
 
 ## Locked visual contract
@@ -23,6 +25,12 @@ The Passport tab hub (`ProfileScreen.js`) is **production-final**. Do **not** re
 - **CONNECTED SQUADS** — Training Squads from Locker (`fetchPassportSquads`); tap → `openLockerHub` → Locker hub notice
 - Header **Locker** / preview **Hub** use `BackLink`
 - Bottom content padding must clear the tab bar / safe area
+
+## LOG OUT (LOCKED)
+
+- Compact red-bordered **LOG OUT** control sits **below** **OPEN FULL PASSPORT** on the Profile gateway sheet (and matching Passport surfaces)
+- On press: `await supabase.auth.signOut()` then return to Entry / onboarding (`onLogOut` → Entry)
+- Do not enlarge into a full-width danger banner or move above OPEN FULL PASSPORT
 
 ## App wiring
 

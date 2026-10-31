@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL sport taxonomy for forms, briefs, Arena, GAME ON, and publish pickers
+description: Locked BAWAAL sport taxonomy for forms, briefs, Arena, GAME ON, onboarding, and publish pickers
 alwaysApply: true
 ---
 
@@ -21,18 +21,20 @@ Canonical list lives in `src/constants/sports.js` as **`BAWAAL_SPORTS`** (re-exp
 10. SKY & SUMMIT  
 11. OTHERS  
 
+## UI pattern (LOCKED)
+
+Sport interest / filter chips are a **single-line horizontal** `ScrollView` of pills importing `BAWAAL_SPORTS` (or a documented re-export). Never invent local sport arrays or wrap into multi-row grids.
+
 ## Consumers (must import shared constants — no local sport arrays)
 
+- Landing Sport Interest — `RoleSelection` (`SPORT_INTERESTS = BAWAAL_SPORTS`)
 - Post Squad Brief — `BawaalPromptModal` (`SQUAD_BRIEF_SPORTS` re-export)
 - Create Battle — `CreateBattleSheet`
 - Arena publish — `PostCreationSheet` via `ARENA_SPORT_OPTIONS` (excludes ALL)
 - Upload challenge category — `UploadScreen`
 - Arena / BATTLES sport filters — `ARENA_SPORT_TABS` / `BAWAAL_SPORTS`
 - GAME ON live scores pills — `ScoresSportsPanel` / `GameOnHub` via `BAWAAL_SPORTS` only (never Tennis, Badminton, Baseball, or other fallbacks)
-
-## Onboarding exception
-
-`RoleSelection.js` sport interest pills stay as the locked landing list (no ALL / OTHERS) — see `bawaal-onboarding-locked.mdc`.
+- Sport Hub Map category pills — may add ALL / SPORTS SPOTS chrome but sport keys must match taxonomy (see `bawaal-sport-hub-map-locked.mdc`)
 
 ## Accent
 

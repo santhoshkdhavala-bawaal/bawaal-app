@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL landing/onboarding stack — RoleSelection, OTP, location flags, legal terms are finalized and untouchable
+description: Locked BAWAAL landing/onboarding — RoleSelection, 4-digit OTP, demographics, authOtp, location flags, legal terms
 alwaysApply: true
 ---
 
@@ -9,25 +9,36 @@ The **landing / onboarding / OTP / legal / location-flag** flow is **production-
 
 ## Locked files (do not edit)
 
-- `RoleSelection.js` — LandingScreen / Enter the Arena form, role + sport pills, SEND OTP, OTP modal, Terms modal
+- `RoleSelection.js` — LandingScreen / Enter the Arena form, demographics, role + sport pills, SEND OTP, OTP modal, Terms modal
+- `OTPInput.js` — 4-digit boxes only; no auto-submit
+- `OTPModal.js` — OTP shell; verify only via explicit SUBMIT / VERIFY
+- `src/services/authOtp.js` — send/verify + dev phone bypass
 - `src/utils/locationFlag.js` — location → country flag resolution
 - `src/data/worldCountries.js` — worldwide country/territory flag registry
-- `scripts/generateWorldCountries.js` — registry generator (keep in sync only if user explicitly requests a data regen)
+- `scripts/generateWorldCountries.js` — registry generator (regen only if user explicitly requests)
 
 ## Locked product surface
 
 - Borderless black-and-white form; hairline underlines only (no heavy input boxes / white CTA blocks)
 - Logos: `assets/BAWAAL_white_full.png` (header), `assets/BAWAAL_white_icon.png` (OTP)
-- Field order: Handle → Real Name → Email → Mobile → Location → Role → Sport Interest
-- Sport pills (exact): Cricket, Football, Gym, Kabaddi, Combat, THROTTLE, WAVE & BLADE, COURT KINGS, SKY & SUMMIT
+- Field order: Handle → Real Name → **Gender + Age (side-by-side)** → Email → Mobile → Location → Role → Sport Interest
+- Gender pills: Male / Female / Other; Age numeric — 50/50 row immediately under Real Name
+- Sport Interest: single-line **horizontal** scrollable pills from locked `BAWAAL_SPORTS` (see `bawaal-sport-taxonomy-locked.mdc`)
 - Location flag auto-resolves and persists via registration payload + `applyRegisteredProfile`
 - Legal modal includes Medical/Psychiatric + General Platform disclaimers
 - No Country/Language header on the landing form
 
+## OTP contract (LOCKED)
+
+- Exactly **4** digit boxes (`OTP_LENGTH = 4`) with dark navy fill `#0A192F`
+- **Manual SUBMIT only** — never auto-verify on 4th digit or digit `onChange`
+- Dev bypass (`src/services/authOtp.js`): phone `+917993992315` + OTP `1234` grants session immediately (no Supabase SMS); other phones use `verifyOtp`
+
 ## App wiring
 
 - Entry continues to mount `RoleSelection` from `App.js`. Do not replace with a new LandingScreen or parallel onboarding UI.
-- Do not strip `flag` / `country` / `location` from the registration session payload.
+- Do not strip `flag` / `country` / `location` / `gender` / `age` from the registration session payload.
+- LOG OUT from Profile gateway / Passport must `supabase.auth.signOut()` and return to Entry (see `bawaal-passport-locked.mdc`).
 
 ## Allowed work elsewhere
 

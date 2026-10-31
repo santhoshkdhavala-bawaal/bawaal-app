@@ -44,7 +44,7 @@ Live viewfinder is **untouchable** — Close/Cancel + title, Flip, spinning dott
 
 ## Onboarding stack (locked)
 
-Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaimers, and worldwide location→flag resolution (`src/utils/locationFlag.js`, `src/data/worldCountries.js`) are **production-final and untouchable**. Do not restyle, reorder fields, change sport pills, or rebuild a parallel LandingScreen. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+Landing / Enter the Arena (`RoleSelection.js`), 4-digit OTP (`OTPInput` `#0A192F`, manual SUBMIT only), `authOtp` dev bypass (`+917993992315` / `1234`), Gender+Age under Real Name, Terms/legal, and worldwide location→flag resolution are **production-final and untouchable**. Do not restyle, reorder fields, change sport pills, or rebuild a parallel LandingScreen. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
 
 ## Locker Room & Clinic (locked)
 
@@ -52,11 +52,15 @@ Landing / Enter the Arena (`RoleSelection.js`), OTP modal, Terms/legal disclaime
 
 ## Passport / Profile (locked)
 
-`ProfileScreen.js` (Passport tab) is **production-final and untouchable** — profile card (avatar, handle, sport badge, Athlete/Coach/Fan role), social + locker utility stats, Connected Squads, electric blue FOLLOWING (`#3B82F6`), electric crimson SUGGESTED ATHLETES (`#FF3366`), as shipped. Passport ↔ Locker hub nav via `openLockerHub`. Do not restyle or rebuild a parallel Passport UI. See `.cursor/rules/bawaal-passport-locked.mdc`.
+`ProfileScreen.js` (Passport tab) is **production-final and untouchable** — profile card, social + locker stats, Connected Squads, FOLLOWING (`#3B82F6`), SUGGESTED ATHLETES (`#FF3366`), as shipped. Profile gateway keeps compact red-bordered **LOG OUT** under **OPEN FULL PASSPORT** (`supabase.auth.signOut()` → Entry). See `.cursor/rules/bawaal-passport-locked.mdc`.
 
 ## Sport taxonomy (locked)
 
-Canonical list in `src/utils/sportCategory.js`: ALL, CRICKET, FOOTBALL, GYM, KABADDI, COMBAT, THROTTLE, WAVE & BLADE, COURT KINGS, SKY & SUMMIT, OTHERS. Forms/briefs must import shared constants — no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
+Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOTBALL → GYM → KABADDI → COMBAT → THROTTLE → WAVE & BLADE → COURT KINGS → SKY & SUMMIT → OTHERS. Single-line horizontal pills; no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
+
+## Sport Hub Map (locked)
+
+`SportHubMapScreen` + `darkMapStyle.js` + Virar spots are **untouchable** — white roads, orange `#FF6600` / cyan `#00F0FF` / gold `#FFE082` labels with black stroke weight 4, `selectedCategory` pills bound to `filterVirarSportsSpots` Markers. See `.cursor/rules/bawaal-sport-hub-map-locked.mdc`.
 
 ## Arena challenge architecture (locked)
 
