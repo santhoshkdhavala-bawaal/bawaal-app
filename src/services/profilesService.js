@@ -1,11 +1,125 @@
 /**
- * Passport ↔ Supabase `profiles`.
+ * Passport ↔ Supabase `profiles` (+ registration upsert).
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { CURRENT_USER, FOLLOWING, SUGGESTED } from '../data/athleteSocial';
+import { normalizePhoneE164 } from './authOtp';
 
 export const PROFILES_SETUP_HINT =
-  'Open Supabase → SQL Editor → run supabase/ENSURE_LOCKER_CLINIC_PROFILES.sql';
+  'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql (or ENSURE_LOCKER_CLINIC_PROFILES.sql)';
+
+function isSchemaCacheError(error) {
+  const msg = String(error?.message || error?.details || error?.hint || error || '');
+  return /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
+    msg
+  );
+}
+
+function normalizeHandle(raw) {
+  const h = String(raw || 'athlete').trim().replace(/^@+/, '');
+  return h ? `@${h}` : '@athlete';
+}
+
+/**
+ * Stable profiles.id for upsert — prefer auth uuid; else phone / handle text key.
+ * @param {object} userData
+ * @param {{ id?: string } | null} authUser
+ */
+export function resolveProfileId(userData = {}, authUser = null) {
+  if (authUser?.id) return String(authUser.id);
+  const phone = normalizePhoneE164(userData.phone || userData.mobile || '');
+  if (phone) return `phone:${phone}`;
+  const handle = String(userData.handle || userData.displayName || 'athlete')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+  return `local:${handle || 'athlete'}`;
+}
+
+/**
+ * SUBMIT / registration → `public.profiles` upsert.
+ * Columns: id, real_name, gender, age, mobile, location, role, sport_interests
+ * (+ soft-compat display_name / handle / sport / city / full_name).
+ *
+ * @param {object} userData — registration payload from AthleteRegistrationScreen / RoleSelection
+ * @param {{ id?: string } | null} [authUser]
+ */
+export async function upsertRegisteredProfile(userData = {}, authUser = null) {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, fromCloud: false, error: new Error('Supabase not configured') };
+  }
+
+  const id = resolveProfileId(userData, authUser);
+  const handle = normalizeHandle(userData.handle || userData.displayName);
+  const realName = String(userData.realName || userData.name || userData.full_name || '').trim();
+  const mobile = normalizePhoneE164(userData.phone || userData.mobile || '') || null;
+  const location = String(userData.location || '').trim() || null;
+  const role = String(userData.role || 'fan').toLowerCase();
+  const sport =
+    userData.sportInterest || userData.sport || userData.primarySport || 'OTHERS';
+  const interests = Array.isArray(userData.sport_interests)
+    ? userData.sport_interests.map(String)
+    : Array.isArray(userData.sportInterests)
+      ? userData.sportInterests.map(String)
+      : sport
+        ? [String(sport)]
+        : [];
+  const ageRaw = userData.age;
+  const ageNum = Number(ageRaw);
+  const age = Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
+
+  const fullRow = {
+    id,
+    real_name: realName || null,
+    gender: userData.gender || null,
+    age,
+    mobile,
+    location,
+    role,
+    sport_interests: interests,
+    display_name: String(userData.displayName || userData.handle || realName || 'Athlete').trim(),
+    handle,
+    sport: String(sport),
+    city: location,
+    full_name: realName || null,
+    primary_sport: String(sport),
+    list_bucket: 'self',
+    updated_at: new Date().toISOString(),
+  };
+
+  const slimRow = {
+    id: fullRow.id,
+    real_name: fullRow.real_name,
+    gender: fullRow.gender,
+    age: fullRow.age,
+    mobile: fullRow.mobile,
+    location: fullRow.location,
+    role: fullRow.role,
+    sport_interests: fullRow.sport_interests,
+  };
+
+  try {
+    let { data, error } = await supabase
+      .from('profiles')
+      .upsert(fullRow, { onConflict: 'id' })
+      .select('id')
+      .maybeSingle();
+
+    if (error && isSchemaCacheError(error)) {
+      ({ data, error } = await supabase
+        .from('profiles')
+        .upsert(slimRow, { onConflict: 'id' })
+        .select('id')
+        .maybeSingle());
+    }
+
+    if (error) throw error;
+    return { ok: true, fromCloud: true, id: data?.id || id, error: null };
+  } catch (error) {
+    console.warn('[profilesService] upsertRegisteredProfile:', error?.message || error);
+    return { ok: false, fromCloud: false, id, error };
+  }
+}
 
 function mapProfileRow(row) {
   if (!row) return null;

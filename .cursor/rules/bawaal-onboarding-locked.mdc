@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL landing/onboarding — RoleSelection, 4-digit OTP, demographics, authOtp, location flags, legal terms
+description: Locked BAWAAL landing/onboarding — AthleteRegistrationScreen, 4-digit OTP, demographics, profiles upsert, authOtp
 alwaysApply: true
 ---
 
@@ -9,39 +9,42 @@ The **landing / onboarding / OTP / legal / location-flag** flow is **production-
 
 ## Locked files (do not edit)
 
-- `RoleSelection.js` — LandingScreen / Enter the Arena form, demographics, role + sport pills, SEND OTP, OTP modal, Terms modal
+- `AthleteRegistrationScreen.js` — canonical Entry mount (re-exports RoleSelection)
+- `RoleSelection.js` — Enter the Arena form, demographics, role + sport pills, SEND OTP, OTP modal, Terms
 - `OTPInput.js` — 4-digit boxes only; no auto-submit
 - `OTPModal.js` — OTP shell; verify only via explicit SUBMIT / VERIFY
 - `src/services/authOtp.js` — send/verify + dev phone bypass
+- `src/services/profilesService.js` — `upsertRegisteredProfile` → `public.profiles`
 - `src/utils/locationFlag.js` — location → country flag resolution
 - `src/data/worldCountries.js` — worldwide country/territory flag registry
-- `scripts/generateWorldCountries.js` — registry generator (regen only if user explicitly requests)
 
 ## Locked product surface
 
-- Borderless black-and-white form; hairline underlines only (no heavy input boxes / white CTA blocks)
-- Logos: `assets/BAWAAL_white_full.png` (header), `assets/BAWAAL_white_icon.png` (OTP)
+- Borderless black-and-white form; hairline underlines only
 - Field order: Handle → Real Name → **Gender + Age (side-by-side)** → Email → Mobile → Location → Role → Sport Interest
-- Gender pills: Male / Female / Other; Age numeric — 50/50 row immediately under Real Name
-- Sport Interest: single-line **horizontal** scrollable pills from locked `BAWAAL_SPORTS` (see `bawaal-sport-taxonomy-locked.mdc`)
-- Location flag auto-resolves and persists via registration payload + `applyRegisteredProfile`
-- Legal modal includes Medical/Psychiatric + General Platform disclaimers
-- No Country/Language header on the landing form
+- Gender: Male / Female / Other; Age numeric — 50/50 row under Real Name
+- Sport Interest: single-line **horizontal** `BAWAAL_SPORTS` pills (11 locked categories)
+- Location flag via registration payload + `applyRegisteredProfile`
 
 ## OTP contract (LOCKED)
 
 - Exactly **4** digit boxes (`OTP_LENGTH = 4`) with dark navy fill `#0A192F`
-- **Manual SUBMIT only** — never auto-verify on 4th digit or digit `onChange`
-- Dev bypass (`src/services/authOtp.js`): phone `+917993992315` + OTP `1234` grants session immediately (no Supabase SMS); other phones use `verifyOtp`
+- **Manual SUBMIT only** — never auto-verify on 4th digit
+- Dev bypass: phone `+917993992315` + OTP `1234` → instant session (`authOtp.js`)
+
+## Profiles sync (LOCKED)
+
+- OTP **SUBMIT** calls `upsertRegisteredProfile` into `public.profiles` with:
+  `id`, `real_name`, `gender`, `age`, `mobile`, `location`, `role`, `sport_interests`
+- Schema ensure: `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql`
+- Soft-fail if offline — still complete local registration / enter Arena
 
 ## App wiring
 
-- Entry continues to mount `RoleSelection` from `App.js`. Do not replace with a new LandingScreen or parallel onboarding UI.
-- Do not strip `flag` / `country` / `location` / `gender` / `age` from the registration session payload.
-- LOG OUT from Profile gateway / Passport must `supabase.auth.signOut()` and return to Entry (see `bawaal-passport-locked.mdc`).
+- Entry mounts `AthleteRegistrationScreen` from `App.js` (not a parallel LandingScreen).
+- Do not strip `flag` / `country` / `location` / `gender` / `age` from the session payload.
 
-## Allowed work elsewhere
+## Allowed elsewhere
 
-- Build new screens, feeds, battles, camera, passport, etc. **outside** this stack.
-- Critical crash/security fixes that must touch these files: ask the user first and keep the locked visual/UX contract intact.
+- New features outside this stack. Crash/security fixes that must touch these files: ask first; preserve this contract.
 ---

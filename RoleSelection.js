@@ -28,6 +28,7 @@ import {
   sendPhoneOtp,
   verifyPhoneOtp,
 } from './src/services/authOtp';
+import { upsertRegisteredProfile } from './src/services/profilesService';
 import { BAWAAL_SPORTS } from './src/constants/sports';
 
 const ROLES = [
@@ -290,7 +291,20 @@ export default function RoleSelection({ onCompleteRegistration }) {
         ...buildRegistrationPayload(),
         authMode: result.mode,
         authPhone: result.phone,
+        sport_interests: [sportInterest].filter(Boolean),
       };
+
+      // SUBMIT → public.profiles upsert (id, real_name, gender, age, mobile, …)
+      const authUser = result.user || result.session?.user || null;
+      const synced = await upsertRegisteredProfile(userData, authUser);
+      userData.profileId = synced.id || null;
+      userData.profileSynced = Boolean(synced.ok);
+      if (!synced.ok && synced.error) {
+        console.warn(
+          '[AthleteRegistration] profiles upsert:',
+          synced.error?.message || synced.error
+        );
+      }
 
       setOtpModalVisible(false);
       if (onCompleteRegistration) {

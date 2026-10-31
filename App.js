@@ -10,7 +10,7 @@ import UniversalCamera from './UniversalCamera';
 import BattleChallengeForm from './BattleChallengeForm';
 import LeaderboardScreen from './LeaderboardScreen';
 import Live1v1BattleScreen from './ChallengerArena';
-import RoleSelection from './RoleSelection';
+import AthleteRegistrationScreen from './AthleteRegistrationScreen';
 import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
@@ -95,7 +95,7 @@ export class RootErrorBoundary extends Component {
 function EntryScreen({ navigation }) {
   return (
     <View style={styles.root}>
-      <RoleSelection
+      <AthleteRegistrationScreen
         onCompleteRegistration={async (userData) => {
           try {
             applyRegisteredProfile(userData || {});

@@ -1,42 +1,40 @@
 ---
-description: Locked BAWAAL Sport Hub Map — dark map style, label colors, Virar spots, category filter pills
+description: Locked BAWAAL Sport Hub Map — dark map style, sports_hubs fetch, Virar fallback, category pills
 alwaysApply: true
 ---
 
 # BAWAAL Sport Hub Map (LOCKED)
 
-`SportHubMapScreen` + dark map style + Virar sports spots are **production-final**. Do **not** restyle labels, reshape filter pills, or replace the spots database unless the user explicitly unlocks this rule.
+`SportHubMapScreen` + dark map style + sports hubs data are **production-final**. Do **not** restyle labels or reshape filter pills unless the user explicitly unlocks this rule.
 
 ## Locked files (do not edit)
 
-- `SportHubMapScreen.js` — map surface, Markers, footer category pills, sheet
-- `src/constants/darkMapStyle.js` — `BAWAAL_DARK_MAP_STYLE` (`customMapStyle`)
-- `src/data/sportHubs.js` — `VIRAR_SPORTS_SPOTS`, `filterVirarSportsSpots`, hub pin colors, Virar region
+- `SportHubMapScreen.js` — map, Markers, footer category pills, sheet
+- `src/constants/darkMapStyle.js` — `BAWAAL_DARK_MAP_STYLE`
+- `src/data/sportHubs.js` — Virar seed spots, pin colors, region
+- `src/services/sportsHubsService.js` — `fetchSportsHubs` → `public.sports_hubs`
+- `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` — table + seed
 
 ## Locked map chrome (`BAWAAL_DARK_MAP_STYLE`)
 
 | Element | Color / rule |
 |---|---|
-| Canvas / geometry | Pitch-black / near-black (`#0a0a0a`) |
-| Road lines | Clean white `#FFFFFF` |
+| Canvas | Pitch-black / near-black |
+| Road geometry | Pure white `#FFFFFF` |
 | Road name labels | Electric Orange `#FF6600` |
-| Administrative / locality labels | Bright Cyan `#00F0FF` |
-| POI / minor place labels | Warm Gold `#FFE082` |
-| **All** `labels.text.stroke` | Solid black `#000000`, **weight 4** (heavy halo) |
+| Area / locality names | Bright Cyan `#00F0FF` |
+| Secondary / POI labels | Warm Gold `#FFE082` |
+| **All** `labels.text.stroke` | `#000000`, **weight 4** |
 | Business POIs + transit | Hidden |
 
-Do not mute labels, drop stroke weight below 4, or recolor roads away from white / orange.
+## Live pins + filter (LOCKED)
 
-## Category filter → Markers (LOCKED)
-
-- Footer pills update `selectedCategory` (ALL, SPORTS SPOTS, GYM, FOOTBALL, CRICKET, KABADDI, COMBAT, …).
-- Markers render from `filterVirarSportsSpots(selectedCategory)` only — glowing category badges via `HubPin` / `HUB_SPORT_COLORS`.
-- Remount keys include `selectedCategory` so pins refresh on pill tap.
-- Camera snaps to `SPORT_HUB_MAP_REGION` (Virar) on filter change.
-- Do not swap Virar spots for metro hub lists or invent local sport label arrays.
+- Footer pills = locked **11** `BAWAAL_SPORTS` → `selectedCategory`
+- Markers from `fetchSportsHubs(selectedCategory)` (`public.sports_hubs`); **fallback** `filterVirarSportsSpots` when offline / empty
+- Glowing category badges via `HubPin` / `HUB_SPORT_COLORS`
+- Camera snaps to `SPORT_HUB_MAP_REGION` (Virar) on filter change
 
 ## Allowed elsewhere
 
-- New features outside this map stack
-- Critical crash/security fixes that must touch these files: ask the user first and preserve this visual/filter contract
+- Features outside this map stack. Crash/security fixes: ask first; preserve this contract.
 ---

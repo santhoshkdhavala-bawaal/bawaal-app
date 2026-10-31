@@ -44,7 +44,7 @@ Live viewfinder is **untouchable** — Close/Cancel + title, Flip, spinning dott
 
 ## Onboarding stack (locked)
 
-Landing / Enter the Arena (`RoleSelection.js`), 4-digit OTP (`OTPInput` `#0A192F`, manual SUBMIT only), `authOtp` dev bypass (`+917993992315` / `1234`), Gender+Age under Real Name, Terms/legal, and worldwide location→flag resolution are **production-final and untouchable**. Do not restyle, reorder fields, change sport pills, or rebuild a parallel LandingScreen. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+`AthleteRegistrationScreen` / `RoleSelection`, 4-digit OTP (`OTPInput` `#0A192F`, manual SUBMIT only), `authOtp` dev bypass (`+917993992315` / `1234`), Gender+Age under Real Name, `upsertRegisteredProfile` → `public.profiles`, and location→flag resolution are **production-final and untouchable**. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
 
 ## Locker Room & Clinic (locked)
 
@@ -60,7 +60,7 @@ Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOT
 
 ## Sport Hub Map (locked)
 
-`SportHubMapScreen` + `darkMapStyle.js` + Virar spots are **untouchable** — white roads, orange `#FF6600` / cyan `#00F0FF` / gold `#FFE082` labels with black stroke weight 4, `selectedCategory` pills bound to `filterVirarSportsSpots` Markers. See `.cursor/rules/bawaal-sport-hub-map-locked.mdc`.
+`SportHubMapScreen` + `darkMapStyle.js` + `sportsHubsService` are **untouchable** — white roads, orange `#FF6600` / cyan `#00F0FF` / gold `#FFE082` labels with black stroke weight 4, `BAWAAL_SPORTS` pills → `fetchSportsHubs` (`public.sports_hubs`) with Virar seed fallback. See `.cursor/rules/bawaal-sport-hub-map-locked.mdc`.
 
 ## Arena challenge architecture (locked)
 

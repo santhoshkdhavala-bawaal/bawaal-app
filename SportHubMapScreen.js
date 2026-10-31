@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './src/components/BackLink';
 import { BAWAAL_DARK_MAP_STYLE } from './src/constants/darkMapStyle';
+import { BAWAAL_SPORTS } from './src/constants/sports';
 import {
   HUB_SPORT_COLORS,
   SPORT_HUB_MAP_REGION,
@@ -23,23 +24,17 @@ import {
   hubPinColor,
   sportsSpotNeon,
 } from './src/data/sportHubs';
+import { fetchSportsHubs } from './src/services/sportsHubsService';
 import { canonicalizeSport } from './src/utils/sportCategory';
 
 const FILTER_ALL = 'ALL';
-const FILTER_SPORTS_SPOTS = 'SPORTS SPOTS';
 
-/** Footer filter pills — bound to VIRAR_SPORTS_SPOTS via selectedCategory. */
-const CATEGORY_PILLS = [
-  { key: FILTER_ALL, label: 'ALL', color: '#FFFFFF' },
-  { key: FILTER_SPORTS_SPOTS, label: 'SPORTS SPOTS', color: '#FF3B30' },
-  ...['GYM', 'FOOTBALL', 'CRICKET', 'KABADDI', 'COMBAT', 'THROTTLE', 'COURT KINGS', 'WAVE & BLADE']
-    .filter((k) => HUB_SPORT_COLORS[k])
-    .map((sport) => ({
-      key: sport,
-      label: sport,
-      color: HUB_SPORT_COLORS[sport],
-    })),
-];
+/** Locked 11 BAWAAL_SPORTS pills → selectedCategory → sports_hubs / Virar fallback. */
+const CATEGORY_PILLS = BAWAAL_SPORTS.map((sport) => ({
+  key: sport,
+  label: sport,
+  color: HUB_SPORT_COLORS[sport] || (sport === 'ALL' ? '#FFFFFF' : '#FF5500'),
+}));
 
 let MapView = null;
 let Marker = null;
@@ -161,6 +156,9 @@ export default function SportHubMapScreen({ navigation }) {
   const [selectedCategory, setSelectedCategory] = useState(FILTER_ALL);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [tracksPins, setTracksPins] = useState(true);
+  const [filteredSportsSpots, setFilteredSportsSpots] = useState(() =>
+    filterVirarSportsSpots(FILTER_ALL)
+  );
   const mapsReady = Boolean(MapView) && Platform.OS !== 'web';
 
   useEffect(() => {
@@ -168,11 +166,21 @@ export default function SportHubMapScreen({ navigation }) {
     return () => clearTimeout(t);
   }, []);
 
-  // Bind footer pills → VIRAR_SPORTS_SPOTS (ALL / SPORTS SPOTS = all; else category match)
-  const filteredSportsSpots = useMemo(
-    () => filterVirarSportsSpots(selectedCategory),
-    [selectedCategory]
-  );
+  // Live `public.sports_hubs` by selectedCategory; Virar seeds if offline / empty
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { hubs } = await fetchSportsHubs(selectedCategory);
+      if (!cancelled) {
+        setFilteredSportsSpots(Array.isArray(hubs) ? hubs : filterVirarSportsSpots(selectedCategory));
+        setTracksPins(true);
+        setTimeout(() => setTracksPins(false), 600);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCategory]);
 
   const selectedHub = useMemo(
     () => filteredSportsSpots.find((h) => h.id === selectedId) || null,
