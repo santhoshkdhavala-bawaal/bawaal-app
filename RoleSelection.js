@@ -22,6 +22,12 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { resolveLocationFlag } from './src/utils/locationFlag';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
 import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
+import {
+  DEV_OTP,
+  isDevOtpPhone,
+  sendPhoneOtp,
+  verifyPhoneOtp,
+} from './src/services/authOtp';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -133,6 +139,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const showNotice = (title, message) => setNotice({ title, message });
 
   const [otpDigits, setOtpDigits] = useState(emptyOtpDigits);
+  const [otpBusy, setOtpBusy] = useState(false);
 
   const locationMeta = useMemo(
     () => resolveLocationFlag(location),
@@ -149,7 +156,27 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
-  const handleSendOtpTrigger = () => {
+  const buildRegistrationPayload = () => {
+    const resolved = resolveLocationFlag(location);
+    return {
+      handle: handle.trim(),
+      displayName: handle.trim(),
+      name: realName.trim(),
+      realName: realName.trim(),
+      phone: phone.trim(),
+      email: email.trim(),
+      role,
+      sport: sportInterest,
+      sportInterest,
+      location: location.trim(),
+      flag: resolved.flag || '🌐',
+      country: resolved.country || null,
+      countryFlag: resolved.flag || '🌐',
+      label: resolved.country || location.trim(),
+    };
+  };
+
+  const handleSendOtpTrigger = async () => {
     if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
       showNotice('Missing Fields', 'Please complete all required fields before continuing.');
       return;
@@ -169,12 +196,27 @@ export default function RoleSelection({ onCompleteRegistration }) {
       );
       return;
     }
-    setOtpDigits(emptyOtpDigits());
-    setOtpModalVisible(true);
+
+    setOtpBusy(true);
+    try {
+      const sent = await sendPhoneOtp(phone);
+      if (!sent.ok && sent.mode === 'supabase') {
+        showNotice(
+          'OTP Send Failed',
+          sent.error?.message || 'Could not send OTP. Check phone format and try again.'
+        );
+        return;
+      }
+      setOtpDigits(emptyOtpDigits());
+      setOtpModalVisible(true);
+    } finally {
+      setOtpBusy(false);
+    }
   };
 
   /** Manual verify only — never call from OTPInput digit handlers. */
-  const handleEnterArena = () => {
+  const handleEnterArena = async () => {
+    if (otpBusy) return;
     const fullOtp = otpDigits.join('');
     if (fullOtp.length < OTP_LENGTH) {
       showNotice(
@@ -184,28 +226,31 @@ export default function RoleSelection({ onCompleteRegistration }) {
       return;
     }
 
-    const resolved = resolveLocationFlag(location);
-    const userData = {
-      handle: handle.trim(),
-      displayName: handle.trim(),
-      name: realName.trim(),
-      realName: realName.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      role,
-      sport: sportInterest,
-      sportInterest,
-      location: location.trim(),
-      flag: resolved.flag || '🌐',
-      country: resolved.country || null,
-      countryFlag: resolved.flag || '🌐',
-      label: resolved.country || location.trim(),
-    };
+    setOtpBusy(true);
+    try {
+      const result = await verifyPhoneOtp({ phone, token: fullOtp });
+      if (!result.ok) {
+        showNotice(
+          'Verification Failed',
+          result.error?.message || 'Invalid OTP. Please try again.'
+        );
+        return;
+      }
 
-    setOtpModalVisible(false);
+      const userData = {
+        ...buildRegistrationPayload(),
+        authMode: result.mode,
+        authPhone: result.phone,
+      };
 
-    if (onCompleteRegistration) {
-      onCompleteRegistration(userData);
+      setOtpModalVisible(false);
+      if (onCompleteRegistration) {
+        await onCompleteRegistration(userData);
+      }
+    } catch (err) {
+      showNotice('Verification Failed', err?.message || 'Could not verify OTP.');
+    } finally {
+      setOtpBusy(false);
     }
   };
 
@@ -340,12 +385,21 @@ export default function RoleSelection({ onCompleteRegistration }) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.ctaBtn, !agreedToTerms && styles.ctaBtnDisabled]}
+              style={[
+                styles.ctaBtn,
+                (!agreedToTerms || otpBusy) && styles.ctaBtnDisabled,
+              ]}
               onPress={handleSendOtpTrigger}
               activeOpacity={0.85}
+              disabled={otpBusy}
             >
-              <Text style={[styles.ctaBtnText, !agreedToTerms && styles.ctaBtnTextDisabled]}>
-                SEND OTP
+              <Text
+                style={[
+                  styles.ctaBtnText,
+                  (!agreedToTerms || otpBusy) && styles.ctaBtnTextDisabled,
+                ]}
+              >
+                {otpBusy && !otpModalVisible ? 'SENDING…' : 'SEND OTP'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -464,24 +518,32 @@ export default function RoleSelection({ onCompleteRegistration }) {
               <Text style={styles.otpBrand}>BAWAAL</Text>
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
-                Enter the {OTP_LENGTH}-digit code sent to {phone || 'your phone'}
+                {isDevOtpPhone(phone)
+                  ? `Dev login — enter ${DEV_OTP} then tap SUBMIT / VERIFY`
+                  : `Enter the ${OTP_LENGTH}-digit code sent to ${phone || 'your phone'}`}
               </Text>
 
               <View style={styles.otpInputContainer}>
                 <OTPInput
                   digits={otpDigits}
                   onChangeDigits={setOtpDigits}
+                  editable={!otpBusy}
                 />
               </View>
 
               <TouchableOpacity
-                style={styles.ctaBtn}
+                style={[styles.ctaBtn, otpBusy && styles.ctaBtnDisabled]}
                 onPress={handleEnterArena}
                 activeOpacity={0.85}
+                disabled={otpBusy}
                 accessibilityRole="button"
                 accessibilityLabel="Submit verify OTP"
               >
-                <Text style={styles.ctaBtnText}>SUBMIT / VERIFY</Text>
+                <Text
+                  style={[styles.ctaBtnText, otpBusy && styles.ctaBtnTextDisabled]}
+                >
+                  {otpBusy ? 'VERIFYING…' : 'SUBMIT / VERIFY'}
+                </Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>

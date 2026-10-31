@@ -76,23 +76,21 @@ export default function AthletePassportScreen({ route, navigation }) {
   return (
     <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
       <View style={styles.headerBlock}>
-        <View style={styles.brandRow}>
-          <Text style={styles.brand}>BAWAAL</Text>
-          <TouchableOpacity
-            style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
-            onPress={handleLogOut}
-            activeOpacity={0.85}
-            disabled={loggingOut}
-            accessibilityRole="button"
-            accessibilityLabel="Log out"
-          >
-            {loggingOut ? (
-              <ActivityIndicator color={DM_BLUE} size="small" />
-            ) : (
-              <Text style={styles.logOutBtnText}>LOG OUT</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.brand}>BAWAAL</Text>
+        <TouchableOpacity
+          style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
+          onPress={handleLogOut}
+          activeOpacity={0.85}
+          disabled={loggingOut}
+          accessibilityRole="button"
+          accessibilityLabel="Log out"
+        >
+          {loggingOut ? (
+            <ActivityIndicator color={WHITE} size="small" />
+          ) : (
+            <Text style={styles.logOutBtnText}>LOG OUT</Text>
+          )}
+        </TouchableOpacity>
         <View style={styles.topBar}>
           <BackLink
             label="Back"
@@ -253,46 +251,42 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER,
-    paddingBottom: 10,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 10,
+    paddingBottom: 10,
   },
   brand: {
     color: WHITE,
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 2.4,
+    marginBottom: 10,
   },
   logOutBtn: {
+    alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: 'rgba(59, 130, 246, 0.45)',
+    borderColor: BORDER,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    minWidth: 88,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 96,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: BG,
+    marginBottom: 12,
   },
   logOutBtnBusy: {
     opacity: 0.55,
   },
   logOutBtnText: {
-    color: DM_BLUE,
+    color: WHITE,
     fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 1.0,
+    letterSpacing: 1.2,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
   },
   topTitle: {
     color: MUTED,
