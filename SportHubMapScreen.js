@@ -21,7 +21,6 @@ import {
   SPORT_HUB_MAP_REGION,
   filterVirarSportsSpots,
   hubPinColor,
-  isSportsSpotHighlight,
   sportsSpotNeon,
 } from './src/data/sportHubs';
 import { canonicalizeSport } from './src/utils/sportCategory';
@@ -29,13 +28,17 @@ import { canonicalizeSport } from './src/utils/sportCategory';
 const FILTER_ALL = 'ALL';
 const FILTER_SPORTS_SPOTS = 'SPORTS SPOTS';
 
+/** Footer filter pills — bound to VIRAR_SPORTS_SPOTS via selectedCategory. */
 const CATEGORY_PILLS = [
   { key: FILTER_ALL, label: 'ALL', color: '#FFFFFF' },
   { key: FILTER_SPORTS_SPOTS, label: 'SPORTS SPOTS', color: '#FF3B30' },
-  ...Object.entries(HUB_SPORT_COLORS)
-    .filter(([k]) => k !== 'ALL')
-    .slice(0, 8)
-    .map(([sport, color]) => ({ key: sport, label: sport, color })),
+  ...['GYM', 'FOOTBALL', 'CRICKET', 'KABADDI', 'COMBAT', 'THROTTLE', 'COURT KINGS', 'WAVE & BLADE']
+    .filter((k) => HUB_SPORT_COLORS[k])
+    .map((sport) => ({
+      key: sport,
+      label: sport,
+      color: HUB_SPORT_COLORS[sport],
+    })),
 ];
 
 let MapView = null;
@@ -165,24 +168,25 @@ export default function SportHubMapScreen({ navigation }) {
     return () => clearTimeout(t);
   }, []);
 
-  // Virar / Nalasopara sports database — filter by footer category pill
-  const visibleHubs = useMemo(
+  // Bind footer pills → VIRAR_SPORTS_SPOTS (ALL / SPORTS SPOTS = all; else category match)
+  const filteredSportsSpots = useMemo(
     () => filterVirarSportsSpots(selectedCategory),
     [selectedCategory]
   );
 
   const selectedHub = useMemo(
-    () => visibleHubs.find((h) => h.id === selectedId) || null,
-    [selectedId, visibleHubs]
+    () => filteredSportsSpots.find((h) => h.id === selectedId) || null,
+    [selectedId, filteredSportsSpots]
   );
 
   const onSelectCategory = useCallback((category) => {
-    setSelectedCategory(category);
+    const next = String(category || FILTER_ALL).trim() || FILTER_ALL;
+    setSelectedCategory(next);
     setSelectedId(null);
     setSheetOpen(false);
     setTracksPins(true);
     setTimeout(() => setTracksPins(false), 600);
-    // Snap camera back to Virar cluster when filtering so new pins are visible
+    // Snap camera to Virar so filtered glowing badges appear immediately
     mapRef.current?.animateToRegion?.(SPORT_HUB_MAP_REGION, 320);
   }, []);
 
@@ -270,18 +274,21 @@ export default function SportHubMapScreen({ navigation }) {
               if (sheetOpen) closeSheet();
             }}
           >
-            {visibleHubs.map((hub) => (
+            {filteredSportsSpots.map((spot) => (
               <Marker
-                key={hub.id}
-                coordinate={hub.coordinate}
-                tracksViewChanges={tracksPins || selectedId === hub.id}
+                key={`${selectedCategory}-${spot.id}`}
+                coordinate={spot.coordinate}
+                tracksViewChanges={tracksPins || selectedId === spot.id}
                 onPress={(e) => {
                   e?.stopPropagation?.();
-                  onMarkerPress(hub);
+                  onMarkerPress(spot);
                 }}
-                accessibilityLabel={`${hub.name} ${hub.sport}`}
+                accessibilityLabel={`${spot.name} ${spot.sport || spot.category}`}
               >
-                <HubPin sport={hub.sport} selected={selectedId === hub.id} />
+                <HubPin
+                  sport={spot.sport || spot.category}
+                  selected={selectedId === spot.id}
+                />
               </Marker>
             ))}
           </MapView>
@@ -294,27 +301,26 @@ export default function SportHubMapScreen({ navigation }) {
             <Text style={styles.fallbackHint}>
               Map preview — tap a hub card (native map loads in Expo Go / dev builds).
             </Text>
-            {visibleHubs.map((hub) => {
-              const highlight = isSportsSpotHighlight(hub.sport);
-              const color = highlight
-                ? sportsSpotNeon(hub.sport)
-                : hubPinColor(hub.sport);
+            {filteredSportsSpots.map((spot) => {
+              const color = hubPinColor(spot.sport || spot.category);
               return (
                 <TouchableOpacity
-                  key={hub.id}
+                  key={spot.id}
                   style={[
                     styles.fallbackCard,
-                    selectedId === hub.id && { borderColor: color },
-                    highlight && { borderColor: color, borderWidth: 1.5 },
+                    selectedId === spot.id && { borderColor: color },
+                    { borderColor: color, borderWidth: 1.5 },
                   ]}
-                  onPress={() => onMarkerPress(hub)}
+                  onPress={() => onMarkerPress(spot)}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.fallbackName}>{hub.name}</Text>
-                  <Text style={styles.fallbackAddr}>{hub.address}</Text>
+                  <Text style={styles.fallbackName}>{spot.name}</Text>
+                  <Text style={styles.fallbackAddr}>{spot.address}</Text>
                   <Text style={[styles.fallbackSport, { color }]}>
-                    {highlight ? '★ ' : ''}
-                    {canonicalizeSport(hub.sport)} · {hub.memberCount} members
+                    ★ {canonicalizeSport(spot.sport || spot.category)}
+                    {spot.memberCount
+                      ? ` · ${spot.memberCount} members`
+                      : ''}
                   </Text>
                 </TouchableOpacity>
               );

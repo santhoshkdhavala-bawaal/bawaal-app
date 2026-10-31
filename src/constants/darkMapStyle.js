@@ -1,82 +1,71 @@
 /**
  * Google Maps JSON style — stealth-black BAWAAL map chrome.
- * Road lines: white (#FFFFFF). Road labels: electric orange (#FF6600) + black halo.
- * Place/area labels: electric cyan (#00F0FF) + black halo.
- * Business POIs + transit hidden so sports hubs / major roads stay prominent.
- * Applied via MapView `customMapStyle` (Google provider / Android; iOS Apple Maps ignores).
+ * Label readability (100%):
+ *   road names → Electric Orange #FF6600
+ *   localities → Bright Cyan #00F0FF
+ *   POI / minor places → Warm Gold #FFE082
+ * All text strokes → solid black #000000, weight 4 (heavy halo).
+ * Business POIs + transit hidden. Applied via MapView `customMapStyle`.
  */
 const ROAD_LINE = '#FFFFFF';
-const ROAD_LABEL_FILL = '#FF6600'; // Electric orange — street names never wash out
-const PLACE_LABEL_FILL = '#00F0FF'; // Electric cyan — distinct from white roads
-const LABEL_FILL = '#FFFFFF';
+const ROAD_LABEL_FILL = '#FF6600';
+const LOCALITY_LABEL_FILL = '#00F0FF';
+const POI_LABEL_FILL = '#FFE082';
 const LABEL_STROKE = '#000000';
-const LABEL_STROKE_WEIGHT = 3.0;
-const ROAD_LABEL_STROKE_WEIGHT = 3.0;
+const LABEL_STROKE_WEIGHT = 4.0;
 
-function labelFill(color = LABEL_FILL) {
+function labelFill(color) {
   return {
     elementType: 'labels.text.fill',
     stylers: [{ color }],
   };
 }
 
-function labelStroke(weight = LABEL_STROKE_WEIGHT) {
+function labelStroke() {
   return {
     elementType: 'labels.text.stroke',
-    stylers: [{ color: LABEL_STROKE }, { weight }],
+    stylers: [{ color: LABEL_STROKE }, { weight: LABEL_STROKE_WEIGHT }],
   };
-}
-
-function roadLabelFill() {
-  return labelFill(ROAD_LABEL_FILL);
-}
-
-function roadLabelStroke() {
-  return labelStroke(ROAD_LABEL_STROKE_WEIGHT);
-}
-
-function placeLabelFill() {
-  return labelFill(PLACE_LABEL_FILL);
 }
 
 export const BAWAAL_DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#0a0a0a' }] },
-  // Global label defaults
+  // Global defaults — gold fill + heavy black halo (overridden per feature below)
   {
     elementType: 'labels.text.fill',
-    stylers: [{ color: LABEL_FILL }],
+    stylers: [{ color: POI_LABEL_FILL }],
   },
   {
     elementType: 'labels.text.stroke',
     stylers: [{ color: LABEL_STROKE }, { weight: LABEL_STROKE_WEIGHT }],
   },
 
-  // —— Place / area names (Ambawadi, Yashvant Viva Twp, Virar East, …) ——
+  // —— Administrative / localities (Virar East, Ambawadi, …) → Bright Cyan ——
   {
     featureType: 'administrative',
     elementType: 'geometry',
     stylers: [{ color: '#1a1a1a' }],
   },
-  { featureType: 'administrative', ...placeLabelFill() },
+  { featureType: 'administrative', ...labelFill(LOCALITY_LABEL_FILL) },
   { featureType: 'administrative', ...labelStroke() },
-  { featureType: 'administrative.country', ...placeLabelFill() },
+  { featureType: 'administrative.country', ...labelFill(LOCALITY_LABEL_FILL) },
   { featureType: 'administrative.country', ...labelStroke() },
-  { featureType: 'administrative.province', ...placeLabelFill() },
+  { featureType: 'administrative.province', ...labelFill(LOCALITY_LABEL_FILL) },
   { featureType: 'administrative.province', ...labelStroke() },
-  { featureType: 'administrative.locality', ...placeLabelFill() },
+  { featureType: 'administrative.locality', ...labelFill(LOCALITY_LABEL_FILL) },
   { featureType: 'administrative.locality', ...labelStroke() },
-  { featureType: 'administrative.neighborhood', ...placeLabelFill() },
+  { featureType: 'administrative.neighborhood', ...labelFill(LOCALITY_LABEL_FILL) },
   { featureType: 'administrative.neighborhood', ...labelStroke() },
-  { featureType: 'administrative.land_parcel', ...placeLabelFill() },
+  { featureType: 'administrative.land_parcel', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'administrative.land_parcel', ...labelStroke() },
 
-  // —— POIs: keep sports / parks; hide business clutter ——
+  // —— POI / minor place labels → Warm Gold ——
   {
     featureType: 'poi',
     elementType: 'geometry',
     stylers: [{ color: '#1A202C' }],
   },
-  { featureType: 'poi', ...labelFill() },
+  { featureType: 'poi', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'poi', ...labelStroke() },
   {
     featureType: 'poi',
@@ -92,31 +81,37 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry',
     stylers: [{ color: '#1A202C' }],
   },
-  { featureType: 'poi.medical', ...labelFill() },
+  { featureType: 'poi.medical', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'poi.medical', ...labelStroke() },
   {
     featureType: 'poi.school',
     elementType: 'geometry',
     stylers: [{ color: '#1A202C' }],
   },
-  { featureType: 'poi.school', ...labelFill() },
+  { featureType: 'poi.school', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'poi.school', ...labelStroke() },
   {
     featureType: 'poi.park',
     elementType: 'geometry',
     stylers: [{ color: '#0f1410' }],
   },
-  { featureType: 'poi.park', ...labelFill() },
+  { featureType: 'poi.park', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'poi.park', ...labelStroke() },
   {
     featureType: 'poi.sports_complex',
     elementType: 'geometry',
     stylers: [{ color: '#122018' }],
   },
-  { featureType: 'poi.sports_complex', ...labelFill() },
+  { featureType: 'poi.sports_complex', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'poi.sports_complex', ...labelStroke() },
+  { featureType: 'poi.attraction', ...labelFill(POI_LABEL_FILL) },
+  { featureType: 'poi.attraction', ...labelStroke() },
+  { featureType: 'poi.place_of_worship', ...labelFill(POI_LABEL_FILL) },
+  { featureType: 'poi.place_of_worship', ...labelStroke() },
+  { featureType: 'poi.government', ...labelFill(POI_LABEL_FILL) },
+  { featureType: 'poi.government', ...labelStroke() },
 
-  // —— Roads: white lines; street names electric orange (#FF6600) + black halo ——
+  // —— Roads: white geometry; street names Electric Orange + heavy black halo ——
   {
     featureType: 'road',
     elementType: 'geometry',
@@ -127,8 +122,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road', ...roadLabelFill() },
-  { featureType: 'road', ...roadLabelStroke() },
+  { featureType: 'road', ...labelFill(ROAD_LABEL_FILL) },
+  { featureType: 'road', ...labelStroke() },
   {
     featureType: 'road.arterial',
     elementType: 'geometry',
@@ -139,8 +134,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.arterial', ...roadLabelFill() },
-  { featureType: 'road.arterial', ...roadLabelStroke() },
+  { featureType: 'road.arterial', ...labelFill(ROAD_LABEL_FILL) },
+  { featureType: 'road.arterial', ...labelStroke() },
   {
     featureType: 'road.local',
     elementType: 'geometry',
@@ -151,8 +146,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.local', ...roadLabelFill() },
-  { featureType: 'road.local', ...roadLabelStroke() },
+  { featureType: 'road.local', ...labelFill(ROAD_LABEL_FILL) },
+  { featureType: 'road.local', ...labelStroke() },
   {
     featureType: 'road.highway',
     elementType: 'geometry',
@@ -163,8 +158,8 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.highway', ...roadLabelFill() },
-  { featureType: 'road.highway', ...roadLabelStroke() },
+  { featureType: 'road.highway', ...labelFill(ROAD_LABEL_FILL) },
+  { featureType: 'road.highway', ...labelStroke() },
   {
     featureType: 'road.highway.controlled_access',
     elementType: 'geometry',
@@ -175,28 +170,19 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: ROAD_LINE }],
   },
-  { featureType: 'road.highway.controlled_access', ...roadLabelFill() },
-  { featureType: 'road.highway.controlled_access', ...roadLabelStroke() },
+  { featureType: 'road.highway.controlled_access', ...labelFill(ROAD_LABEL_FILL) },
+  { featureType: 'road.highway.controlled_access', ...labelStroke() },
 
   // —— Transit: fully hidden ——
-  {
-    featureType: 'transit',
-    stylers: [{ visibility: 'off' }],
-  },
-  {
-    featureType: 'transit.line',
-    stylers: [{ visibility: 'off' }],
-  },
-  {
-    featureType: 'transit.station',
-    stylers: [{ visibility: 'off' }],
-  },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit.line', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit.station', stylers: [{ visibility: 'off' }] },
 
   {
     featureType: 'water',
     elementType: 'geometry',
     stylers: [{ color: '#000000' }],
   },
-  { featureType: 'water', ...labelFill() },
+  { featureType: 'water', ...labelFill(POI_LABEL_FILL) },
   { featureType: 'water', ...labelStroke() },
 ];
