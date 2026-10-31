@@ -48,10 +48,12 @@ const BORDER = 'rgba(255,255,255,0.22)';
 const ACCENT = '#3B82F6';
 const JOIN = '#FACC15';
 
+const BADGE_TEXT = '#FFFFFF';
+
 const HubPin = memo(function HubPin({ sport, selected }) {
   const highlight = isSportsSpotHighlight(sport);
-  const neon = sportsSpotNeon(sport);
-  const color = highlight ? neon : hubPinColor(sport);
+  // Always match filter-pill category color (Combat/Gym = flame, Cricket = gold, …)
+  const color = highlight ? sportsSpotNeon(sport) : hubPinColor(sport);
   const label = canonicalizeSport(sport) || 'HUB';
   const short =
     label.length > 10 ? label.split(' ')[0].slice(0, 6) : label.slice(0, 8);
@@ -59,9 +61,14 @@ const HubPin = memo(function HubPin({ sport, selected }) {
   if (highlight) {
     return (
       <View style={[styles.glowWrap, selected && styles.pinWrapOn]}>
-        <View style={[styles.glowHalo, { borderColor: color, shadowColor: color }]} />
+        <View
+          style={[
+            styles.glowHalo,
+            { borderColor: color, shadowColor: color, backgroundColor: `${color}22` },
+          ]}
+        />
         <View style={[styles.glowBadge, { borderColor: color, shadowColor: color }]}>
-          <Text style={[styles.glowBadgeText, { color }]} numberOfLines={1}>
+          <Text style={styles.glowBadgeText} numberOfLines={1}>
             {short}
           </Text>
         </View>
@@ -72,8 +79,8 @@ const HubPin = memo(function HubPin({ sport, selected }) {
 
   return (
     <View style={[styles.pinWrap, selected && styles.pinWrapOn]}>
-      <View style={[styles.pinDot, { borderColor: color }]}>
-        <Text style={[styles.pinText, { color }]} numberOfLines={1}>
+      <View style={[styles.pinDot, { borderColor: color, shadowColor: color }]}>
+        <Text style={styles.pinText} numberOfLines={1}>
           {short}
         </Text>
       </View>
@@ -307,9 +314,9 @@ export default function SportHubMapScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.legendRow}
           >
-            <View style={[styles.legendChip, { borderColor: '#00F0FF' }]}>
-              <View style={[styles.legendDot, { backgroundColor: '#00F0FF' }]} />
-              <Text style={[styles.legendText, { color: '#00F0FF' }]}>
+            <View style={[styles.legendChip, { borderColor: '#FF3B30' }]}>
+              <View style={[styles.legendDot, { backgroundColor: '#FF3B30' }]} />
+              <Text style={[styles.legendText, { color: '#FF3B30' }]}>
                 SPORTS SPOTS
               </Text>
             </View>
@@ -433,14 +440,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1.5,
+    borderWidth: 2,
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: 'rgba(0,0,0,0.94)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.85,
+    shadowRadius: 6,
+    elevation: 8,
   },
   pinText: {
+    color: BADGE_TEXT,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.4,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   glowWrap: {
     alignItems: 'center',
@@ -449,34 +464,37 @@ const styles = StyleSheet.create({
   glowHalo: {
     position: 'absolute',
     top: -4,
-    width: 68,
-    height: 36,
+    width: 70,
+    height: 38,
     borderRadius: 12,
-    borderWidth: 2,
-    backgroundColor: 'rgba(0,240,255,0.12)',
-    opacity: 0.85,
+    borderWidth: 2.5,
+    opacity: 0.9,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.95,
-    shadowRadius: 10,
-    elevation: 8,
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 10,
   },
   glowBadge: {
     minWidth: 58,
     paddingHorizontal: 9,
     paddingVertical: 7,
     borderRadius: 10,
-    borderWidth: 2,
+    borderWidth: 2.5,
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.94)',
+    backgroundColor: 'rgba(0,0,0,0.96)',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 12,
   },
   glowBadgeText: {
-    fontSize: 9,
+    color: BADGE_TEXT,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    textShadowColor: 'rgba(0,0,0,0.95)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   pinStem: {
     width: 0,

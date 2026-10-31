@@ -12,22 +12,25 @@ export const SPORT_HUB_MAP_REGION = {
   longitudeDelta: 0.05,
 };
 
-/** Pin accent by sport taxonomy key. */
+/**
+ * Pin / filter-pill accents — match map legend & Game On category chips.
+ * Cricket yellow · Football volt green · Gym/Combat flame orange-red.
+ */
 export const HUB_SPORT_COLORS = {
-  CRICKET: '#FACC15',
-  FOOTBALL: '#39FF14',
+  CRICKET: '#FFD700',
+  FOOTBALL: '#00FF66',
   GYM: '#FF5500',
-  KABADDI: '#EF4444',
-  COMBAT: '#FF3366',
+  KABADDI: '#FF3B30',
+  COMBAT: '#FF3B30',
   THROTTLE: '#A855F7',
   'WAVE & BLADE': '#00E5FF',
   'COURT KINGS': '#3B82F6',
-  'SKY & SUMMIT': '#4ADE80',
+  'SKY & SUMMIT': '#39FF14',
   OTHERS: '#E8ECE9',
   ALL: '#FFFFFF',
 };
 
-/** Gyms / MMA / cricket turfs / kabaddi courts — neon glow pins. */
+/** Gyms / MMA / cricket turfs / kabaddi courts — high-visibility glow pins. */
 export const HIGHLIGHT_SPORT_SPOTS = Object.freeze([
   'GYM',
   'COMBAT',
@@ -35,7 +38,8 @@ export const HIGHLIGHT_SPORT_SPOTS = Object.freeze([
   'KABADDI',
 ]);
 
-export const SPORTS_SPOT_NEON = '#00F0FF';
+/** @deprecated Prefer hubPinColor — kept for callers expecting a neon default. */
+export const SPORTS_SPOT_NEON = '#FF3B30';
 export const SPORTS_SPOT_NEON_ALT = '#FF5500';
 
 export function hubPinColor(sport) {
@@ -49,11 +53,9 @@ export function isSportsSpotHighlight(sport) {
   return HIGHLIGHT_SPORT_SPOTS.includes(key);
 }
 
-/** Neon accent for highlighted sports spots (orange for gyms, cyan otherwise). */
+/** Category-matched accent for sports-spot glow pins (same as filter pills). */
 export function sportsSpotNeon(sport) {
-  const key = canonicalizeSport(sport) || '';
-  if (key === 'GYM') return SPORTS_SPOT_NEON_ALT;
-  return SPORTS_SPOT_NEON;
+  return hubPinColor(sport);
 }
 
 export const SPORT_HUBS = [
