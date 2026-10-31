@@ -4,11 +4,12 @@
  */
 import { canonicalizeSport } from '../utils/sportCategory';
 
+/** Fallback camera — Virar / Mumbai metro (renders without live GPS). */
 export const SPORT_HUB_MAP_REGION = {
-  latitude: 19.1485,
-  longitude: 72.8312,
-  latitudeDelta: 0.28,
-  longitudeDelta: 0.18,
+  latitude: 19.4559,
+  longitude: 72.8094,
+  latitudeDelta: 0.05,
+  longitudeDelta: 0.05,
 };
 
 /** Pin accent by sport taxonomy key. */

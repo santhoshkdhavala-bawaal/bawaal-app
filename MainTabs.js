@@ -404,6 +404,12 @@ export default function MainTabs({ navigation, route }) {
             setProfileOpen(false);
             navigation?.navigate?.('SportHubMap');
           }}
+          onLogOut={() => {
+            navigation?.reset?.({
+              index: 0,
+              routes: [{ name: 'Entry' }],
+            });
+          }}
         />
         <ChallengeAlertModal
           visible={challengeModalOpen}

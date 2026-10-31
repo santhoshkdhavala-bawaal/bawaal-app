@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   View,
   Text,
@@ -10,6 +11,8 @@ import {
   TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from './src/services/supabase';
+import { clearRegisteredSession } from './sessionStore';
 
 const BG = '#000000';
 const CARD = '#121212';
@@ -17,6 +20,7 @@ const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 const ACCENT = '#FF5722';
 const OFF_WHITE = '#E8ECE9';
+const LOGOUT_RED = '#EF4444';
 
 const DEFAULT_USER = {
   displayName: 'Rohit Kumar',
@@ -39,10 +43,12 @@ export default function ProfileGatewayModal({
   onClose,
   onOpenPassport,
   onOpenSportHubMap,
+  onLogOut,
   user = DEFAULT_USER,
 }) {
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [profile, setProfile] = useState(user);
   const [form, setForm] = useState({
     fullName: user.displayName || '',
@@ -54,6 +60,7 @@ export default function ProfileGatewayModal({
   useEffect(() => {
     if (!visible) {
       setEditing(false);
+      setLoggingOut(false);
       return;
     }
     setProfile(user);
@@ -77,6 +84,26 @@ export default function ProfileGatewayModal({
     }));
     setEditing(false);
   };
+
+  const handleLogOut = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.warn('[ProfileGateway] signOut:', err?.message || err);
+      }
+      await clearRegisteredSession();
+      onClose?.();
+      if (onLogOut) {
+        await onLogOut();
+      }
+    } catch (err) {
+      console.warn('[ProfileGateway] log out failed:', err?.message || err);
+      setLoggingOut(false);
+    }
+  }, [loggingOut, onClose, onLogOut]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -204,6 +231,21 @@ export default function ProfileGatewayModal({
                     <Text style={styles.settingChevron}>›</Text>
                   </TouchableOpacity>
                 ))}
+
+                <TouchableOpacity
+                  style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
+                  onPress={handleLogOut}
+                  activeOpacity={0.85}
+                  disabled={loggingOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Log out"
+                >
+                  {loggingOut ? (
+                    <ActivityIndicator color={LOGOUT_RED} size="small" />
+                  ) : (
+                    <Text style={styles.logOutBtnText}>LOG OUT</Text>
+                  )}
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.mapBtn}
@@ -406,6 +448,27 @@ const styles = StyleSheet.create({
   },
   settingText: { color: WHITE, fontSize: 14, fontWeight: '600' },
   settingChevron: { color: MUTED, fontSize: 20, fontWeight: '300' },
+  logOutBtn: {
+    marginTop: 10,
+    marginBottom: 4,
+    backgroundColor: BG,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: LOGOUT_RED,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  logOutBtnBusy: {
+    opacity: 0.55,
+  },
+  logOutBtnText: {
+    color: LOGOUT_RED,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
   mapBtn: {
     marginTop: 16,
     backgroundColor: 'rgba(59, 130, 246, 0.14)',

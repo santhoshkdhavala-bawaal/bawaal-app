@@ -214,7 +214,7 @@ export default function SportHubMapScreen({ navigation }) {
         {mapsReady ? (
           <MapView
             ref={mapRef}
-            style={styles.map}
+            style={{ flex: 1, width: '100%', height: '100%' }}
             provider={mapProvider}
             initialRegion={SPORT_HUB_MAP_REGION}
             customMapStyle={BAWAAL_DARK_MAP_STYLE}
@@ -343,10 +343,14 @@ const styles = StyleSheet.create({
   },
   mapStage: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: BG,
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   fallbackList: {
     flex: 1,
