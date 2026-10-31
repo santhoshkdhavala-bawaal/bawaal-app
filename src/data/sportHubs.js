@@ -27,9 +27,33 @@ export const HUB_SPORT_COLORS = {
   ALL: '#FFFFFF',
 };
 
+/** Gyms / MMA / cricket turfs / kabaddi courts — neon glow pins. */
+export const HIGHLIGHT_SPORT_SPOTS = Object.freeze([
+  'GYM',
+  'COMBAT',
+  'CRICKET',
+  'KABADDI',
+]);
+
+export const SPORTS_SPOT_NEON = '#00F0FF';
+export const SPORTS_SPOT_NEON_ALT = '#FF5500';
+
 export function hubPinColor(sport) {
   const key = canonicalizeSport(sport) || 'OTHERS';
   return HUB_SPORT_COLORS[key] || HUB_SPORT_COLORS.OTHERS;
+}
+
+/** True for gyms, MMA/combat clubs, cricket turfs, kabaddi courts. */
+export function isSportsSpotHighlight(sport) {
+  const key = canonicalizeSport(sport) || '';
+  return HIGHLIGHT_SPORT_SPOTS.includes(key);
+}
+
+/** Neon accent for highlighted sports spots (orange for gyms, cyan otherwise). */
+export function sportsSpotNeon(sport) {
+  const key = canonicalizeSport(sport) || '';
+  if (key === 'GYM') return SPORTS_SPOT_NEON_ALT;
+  return SPORTS_SPOT_NEON;
 }
 
 export const SPORT_HUBS = [
@@ -118,4 +142,8 @@ export const SPORT_HUBS = [
 export function findSportHubById(id) {
   if (!id) return null;
   return SPORT_HUBS.find((h) => h.id === id) || null;
+}
+
+export function filterSportsSpotHubs(hubs = SPORT_HUBS) {
+  return (hubs || []).filter((h) => isSportsSpotHighlight(h?.sport));
 }

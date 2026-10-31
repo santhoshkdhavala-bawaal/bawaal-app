@@ -1,31 +1,147 @@
 /**
  * Google Maps JSON style — stealth-black BAWAAL map chrome.
- * Roads / highways / routes: high-contrast white–silver against black ground.
+ * Admin + road labels: high-contrast slate (#E2E8F0) on black stroke.
+ * Non-essential POIs muted / simplified to cut visual noise.
  * Applied via MapView `customMapStyle` (Google provider / Android; iOS Apple Maps ignores).
  */
 export const BAWAAL_DARK_MAP_STYLE = [
   { elementType: 'geometry', stylers: [{ color: '#0a0a0a' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8a8a8a' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#E2E8F0' }] },
   { elementType: 'labels.text.stroke', stylers: [{ color: '#000000' }] },
+
+  // —— Administrative labels ——
   {
     featureType: 'administrative',
     elementType: 'geometry',
     stylers: [{ color: '#1a1a1a' }],
   },
   {
+    featureType: 'administrative',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+  {
     featureType: 'administrative.country',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#a0a0a0' }],
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative.country',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+  {
+    featureType: 'administrative.province',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative.province',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
   },
   {
     featureType: 'administrative.locality',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#c8c8c8' }],
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative.locality',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+  {
+    featureType: 'administrative.neighborhood',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative.neighborhood',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'administrative.land_parcel',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+
+  // —— Non-essential POIs: mute / simplify ——
+  {
+    featureType: 'poi',
+    elementType: 'geometry',
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels',
+    stylers: [{ visibility: 'simplified' }],
   },
   {
     featureType: 'poi',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#6a6a6a' }],
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi',
+    elementType: 'labels.icon',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'poi.business',
+    stylers: [{ visibility: 'simplified' }, { color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.medical',
+    elementType: 'geometry',
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.medical',
+    elementType: 'labels',
+    stylers: [{ visibility: 'simplified' }],
+  },
+  {
+    featureType: 'poi.medical',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.school',
+    elementType: 'geometry',
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.school',
+    elementType: 'labels',
+    stylers: [{ visibility: 'simplified' }],
+  },
+  {
+    featureType: 'poi.school',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.place_of_worship',
+    stylers: [{ visibility: 'simplified' }, { color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.attraction',
+    stylers: [{ visibility: 'simplified' }, { color: '#1A202C' }],
+  },
+  {
+    featureType: 'poi.government',
+    stylers: [{ visibility: 'simplified' }, { color: '#1A202C' }],
   },
   {
     featureType: 'poi.park',
@@ -37,7 +153,23 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'labels.text.fill',
     stylers: [{ color: '#4ade80' }],
   },
-  // —— Roads: vivid white / light silver on stealth black ——
+  {
+    featureType: 'poi.sports_complex',
+    elementType: 'geometry',
+    stylers: [{ color: '#122018' }],
+  },
+  {
+    featureType: 'poi.sports_complex',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'poi.sports_complex',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+
+  // —— Roads: vivid white / silver + high-contrast labels ——
   {
     featureType: 'road',
     elementType: 'geometry',
@@ -51,7 +183,7 @@ export const BAWAAL_DARK_MAP_STYLE = [
   {
     featureType: 'road',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#FFFFFF' }],
+    stylers: [{ color: '#E2E8F0' }],
   },
   {
     featureType: 'road',
@@ -69,6 +201,16 @@ export const BAWAAL_DARK_MAP_STYLE = [
     stylers: [{ color: '#FFFFFF' }],
   },
   {
+    featureType: 'road.arterial',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'road.arterial',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+  {
     featureType: 'road.local',
     elementType: 'geometry',
     stylers: [{ color: '#D0D0D0' }],
@@ -77,6 +219,16 @@ export const BAWAAL_DARK_MAP_STYLE = [
     featureType: 'road.local',
     elementType: 'geometry.stroke',
     stylers: [{ color: '#E0E0E0' }],
+  },
+  {
+    featureType: 'road.local',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'road.local',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
   },
   {
     featureType: 'road.highway',
@@ -91,7 +243,12 @@ export const BAWAAL_DARK_MAP_STYLE = [
   {
     featureType: 'road.highway',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#FFFFFF' }],
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'road.highway',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
   },
   {
     featureType: 'road.highway.controlled_access',
@@ -103,6 +260,17 @@ export const BAWAAL_DARK_MAP_STYLE = [
     elementType: 'geometry.stroke',
     stylers: [{ color: '#E0E0E0' }],
   },
+  {
+    featureType: 'road.highway.controlled_access',
+    elementType: 'labels.text.fill',
+    stylers: [{ color: '#E2E8F0' }],
+  },
+  {
+    featureType: 'road.highway.controlled_access',
+    elementType: 'labels.text.stroke',
+    stylers: [{ color: '#000000' }],
+  },
+
   {
     featureType: 'transit',
     elementType: 'geometry',

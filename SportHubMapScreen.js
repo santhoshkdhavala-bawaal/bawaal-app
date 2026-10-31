@@ -21,6 +21,8 @@ import {
   SPORT_HUB_MAP_REGION,
   SPORT_HUBS,
   hubPinColor,
+  isSportsSpotHighlight,
+  sportsSpotNeon,
 } from './src/data/sportHubs';
 import { canonicalizeSport } from './src/utils/sportCategory';
 
@@ -47,10 +49,27 @@ const ACCENT = '#3B82F6';
 const JOIN = '#FACC15';
 
 const HubPin = memo(function HubPin({ sport, selected }) {
-  const color = hubPinColor(sport);
+  const highlight = isSportsSpotHighlight(sport);
+  const neon = sportsSpotNeon(sport);
+  const color = highlight ? neon : hubPinColor(sport);
   const label = canonicalizeSport(sport) || 'HUB';
   const short =
     label.length > 10 ? label.split(' ')[0].slice(0, 6) : label.slice(0, 8);
+
+  if (highlight) {
+    return (
+      <View style={[styles.glowWrap, selected && styles.pinWrapOn]}>
+        <View style={[styles.glowHalo, { borderColor: color, shadowColor: color }]} />
+        <View style={[styles.glowBadge, { borderColor: color, shadowColor: color }]}>
+          <Text style={[styles.glowBadgeText, { color }]} numberOfLines={1}>
+            {short}
+          </Text>
+        </View>
+        <View style={[styles.pinStem, { borderTopColor: color }]} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.pinWrap, selected && styles.pinWrapOn]}>
       <View style={[styles.pinDot, { borderColor: color }]}>
@@ -254,13 +273,17 @@ export default function SportHubMapScreen({ navigation }) {
               Map preview — tap a hub card (native map loads in Expo Go / dev builds).
             </Text>
             {SPORT_HUBS.map((hub) => {
-              const color = hubPinColor(hub.sport);
+              const highlight = isSportsSpotHighlight(hub.sport);
+              const color = highlight
+                ? sportsSpotNeon(hub.sport)
+                : hubPinColor(hub.sport);
               return (
                 <TouchableOpacity
                   key={hub.id}
                   style={[
                     styles.fallbackCard,
                     selectedId === hub.id && { borderColor: color },
+                    highlight && { borderColor: color, borderWidth: 1.5 },
                   ]}
                   onPress={() => onMarkerPress(hub)}
                   activeOpacity={0.85}
@@ -268,6 +291,7 @@ export default function SportHubMapScreen({ navigation }) {
                   <Text style={styles.fallbackName}>{hub.name}</Text>
                   <Text style={styles.fallbackAddr}>{hub.address}</Text>
                   <Text style={[styles.fallbackSport, { color }]}>
+                    {highlight ? '★ ' : ''}
                     {canonicalizeSport(hub.sport)} · {hub.memberCount} members
                   </Text>
                 </TouchableOpacity>
@@ -283,6 +307,12 @@ export default function SportHubMapScreen({ navigation }) {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.legendRow}
           >
+            <View style={[styles.legendChip, { borderColor: '#00F0FF' }]}>
+              <View style={[styles.legendDot, { backgroundColor: '#00F0FF' }]} />
+              <Text style={[styles.legendText, { color: '#00F0FF' }]}>
+                SPORTS SPOTS
+              </Text>
+            </View>
             {Object.entries(HUB_SPORT_COLORS)
               .filter(([k]) => k !== 'ALL')
               .slice(0, 8)
@@ -411,6 +441,42 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.4,
+  },
+  glowWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glowHalo: {
+    position: 'absolute',
+    top: -4,
+    width: 68,
+    height: 36,
+    borderRadius: 12,
+    borderWidth: 2,
+    backgroundColor: 'rgba(0,240,255,0.12)',
+    opacity: 0.85,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.95,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  glowBadge: {
+    minWidth: 58,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.94)',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  glowBadgeText: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   pinStem: {
     width: 0,
