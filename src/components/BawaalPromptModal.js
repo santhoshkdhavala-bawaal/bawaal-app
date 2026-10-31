@@ -260,7 +260,14 @@ export default function BawaalPromptModal({
                   </View>
 
                   <Text style={styles.fieldLabel}>SPORT TAG</Text>
-                  <View style={styles.sportRow}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    style={styles.sportScroll}
+                    contentContainerStyle={styles.sportRow}
+                  >
                     {SQUAD_BRIEF_SPORTS.map((sport) => {
                       const on = sport === sportTag;
                       return (
@@ -271,18 +278,22 @@ export default function BawaalPromptModal({
                             Keyboard.dismiss();
                             setSportTag(sport);
                           }}
-                          activeOpacity={0.75}
+                          activeOpacity={0.85}
                           disabled={busy}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: on }}
+                          accessibilityLabel={`Sport tag ${sport}`}
                         >
                           <Text
                             style={[styles.sportPillText, on && styles.sportPillTextOn]}
+                            numberOfLines={1}
                           >
                             {sport}
                           </Text>
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
 
                   <View
                     onLayout={(e) => {
@@ -463,19 +474,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingTop: 12,
   },
-  sportRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  sportScroll: {
+    flexGrow: 0,
     marginBottom: 16,
   },
+  sportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
   sportPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    marginRight: 8,
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'transparent',
-    borderRadius: 6,
+    borderColor: HAIRLINE,
+    borderRadius: 999,
   },
   sportPillOn: {
     backgroundColor: 'rgba(168,85,247,0.22)',
@@ -483,9 +498,9 @@ const styles = StyleSheet.create({
   },
   sportPillText: {
     color: MUTED,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 1.1,
+    letterSpacing: 0.5,
   },
   sportPillTextOn: {
     color: BRIEF_PURPLE,
