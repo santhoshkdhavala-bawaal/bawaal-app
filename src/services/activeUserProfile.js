@@ -58,6 +58,11 @@ export function applyRegisteredProfile(userData = {}) {
   ACTIVE_USER.email = userData.email || ACTIVE_USER.email || null;
   ACTIVE_USER.phone = userData.phone || null;
   ACTIVE_USER.role = role;
+  ACTIVE_USER.gender = userData.gender || ACTIVE_USER.gender || null;
+  ACTIVE_USER.age =
+    userData.age != null && Number.isFinite(Number(userData.age))
+      ? Number(userData.age)
+      : ACTIVE_USER.age || null;
   ACTIVE_USER.sportInterest = sportInterest;
   ACTIVE_USER.sport = sportInterest;
   ACTIVE_USER.location = location;
@@ -73,6 +78,8 @@ export function applyRegisteredProfile(userData = {}) {
   CURRENT_USER.username = handle.replace(/^@/, '');
   CURRENT_USER.displayName = displayName;
   CURRENT_USER.role = role || CURRENT_USER.role;
+  CURRENT_USER.gender = ACTIVE_USER.gender || CURRENT_USER.gender || null;
+  CURRENT_USER.age = ACTIVE_USER.age ?? CURRENT_USER.age ?? null;
   CURRENT_USER.location = location || CURRENT_USER.location;
   CURRENT_USER.city = location || CURRENT_USER.city;
   if (sportInterest) {

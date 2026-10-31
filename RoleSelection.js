@@ -28,6 +28,7 @@ import {
   sendPhoneOtp,
   verifyPhoneOtp,
 } from './src/services/authOtp';
+import { BAWAAL_SPORTS } from './src/constants/sports';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -35,17 +36,13 @@ const ROLES = [
   { key: 'scout', label: 'Scout' },
 ];
 
-/** Exact platform sport categories. */
-const SPORT_INTERESTS = [
-  'Cricket',
-  'Football',
-  'Gym',
-  'Kabaddi',
-  'Combat',
-  'THROTTLE',
-  'WAVE & BLADE',
-  'COURT KINGS',
-  'SKY & SUMMIT',
+/** Locked BAWAAL sport taxonomy — single source, no local rename/reorder. */
+const SPORT_INTERESTS = BAWAAL_SPORTS;
+
+const GENDER_OPTIONS = [
+  { key: 'male', label: 'Male' },
+  { key: 'female', label: 'Female' },
+  { key: 'other', label: 'Other' },
 ];
 
 const BG = '#000000';
@@ -78,6 +75,44 @@ function PillRow({ options, selected, onSelect }) {
         );
       })}
     </View>
+  );
+}
+
+/** Single-line horizontal sport / filter pills (Game On style). */
+function HorizontalPillScroll({ options, selected, onSelect }) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
+      style={styles.sportScroll}
+      contentContainerStyle={styles.sportScrollContent}
+    >
+      {options.map((opt) => {
+        const key = typeof opt === 'string' ? opt : opt.key;
+        const label = typeof opt === 'string' ? opt : opt.label;
+        const active = selected === key;
+        return (
+          <TouchableOpacity
+            key={key}
+            style={[styles.chipPill, active && styles.chipPillActive]}
+            onPress={() => onSelect(key)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={`Sport ${label}`}
+          >
+            <Text
+              style={[styles.chipPillText, active && styles.chipPillTextActive]}
+              numberOfLines={1}
+            >
+              {label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -129,6 +164,8 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [location, setLocation] = useState('');
+  const [gender, setGender] = useState(null);
+  const [age, setAge] = useState('');
   const [role, setRole] = useState('fan');
   const [sportInterest, setSportInterest] = useState(SPORT_INTERESTS[0]);
   const [focusedField, setFocusedField] = useState(null);
@@ -158,6 +195,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const buildRegistrationPayload = () => {
     const resolved = resolveLocationFlag(location);
+    const ageNum = Number(String(age).trim());
     return {
       handle: handle.trim(),
       displayName: handle.trim(),
@@ -165,6 +203,8 @@ export default function RoleSelection({ onCompleteRegistration }) {
       realName: realName.trim(),
       phone: phone.trim(),
       email: email.trim(),
+      gender,
+      age: Number.isFinite(ageNum) && ageNum > 0 ? ageNum : null,
       role,
       sport: sportInterest,
       sportInterest,
@@ -179,6 +219,15 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const handleSendOtpTrigger = async () => {
     if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
       showNotice('Missing Fields', 'Please complete all required fields before continuing.');
+      return;
+    }
+    if (!gender) {
+      showNotice('Gender', 'Select Male, Female, or Other to continue.');
+      return;
+    }
+    const ageNum = Number(String(age).trim());
+    if (!String(age).trim() || !Number.isFinite(ageNum) || ageNum < 13 || ageNum > 120) {
+      showNotice('Age', 'Enter a valid age (13+) to continue.');
       return;
     }
     if (!role) {
@@ -357,13 +406,33 @@ export default function RoleSelection({ onCompleteRegistration }) {
             </Text>
 
             <View style={styles.formGroup}>
+              <Text style={styles.fieldLabel}>GENDER</Text>
+              <PillRow
+                options={GENDER_OPTIONS}
+                selected={gender}
+                onSelect={setGender}
+              />
+            </View>
+
+            <UnderlineField
+              label="AGE"
+              value={age}
+              onChangeText={(text) => setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))}
+              placeholder="e.g. 25"
+              keyboardType="number-pad"
+              focused={focusedField === 'age'}
+              onFocus={() => setFocusedField('age')}
+              onBlur={() => setFocusedField(null)}
+            />
+
+            <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>ROLE</Text>
               <PillRow options={ROLES} selected={role} onSelect={setRole} />
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>SPORT INTEREST</Text>
-              <PillRow
+              <HorizontalPillScroll
                 options={SPORT_INTERESTS}
                 selected={sportInterest}
                 onSelect={setSportInterest}
@@ -679,6 +748,37 @@ const styles = StyleSheet.create({
   pillTextActive: {
     color: '#FFFFFF',
     fontWeight: '800',
+  },
+  sportScroll: {
+    flexGrow: 0,
+    marginTop: 2,
+  },
+  sportScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  chipPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: LINE,
+    marginRight: 8,
+  },
+  chipPillActive: {
+    backgroundColor: WHITE,
+    borderColor: WHITE,
+  },
+  chipPillText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  chipPillTextActive: {
+    color: BG,
   },
   termsContainer: {
     flexDirection: 'row',
