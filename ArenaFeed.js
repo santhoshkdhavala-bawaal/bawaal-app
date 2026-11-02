@@ -44,6 +44,7 @@ import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
+import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -996,6 +997,12 @@ export default function ArenaFeed({ navigation, route }) {
   const ingestedIds = useRef(new Set());
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
+
+  // Re-assert AV session when Arena mounts (camera/record may have changed it)
+  useEffect(() => {
+    void configureGlobalAudioSession();
+  }, []);
+
   const onViewableItemsChanged = useCallback(({ viewableItems }) => {
     const next = new Set();
     for (const entry of viewableItems || []) {

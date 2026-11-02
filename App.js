@@ -19,6 +19,7 @@ import { COLORS } from './theme';
 import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
+import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 
 enableScreens(true);
 
@@ -133,6 +134,21 @@ function AppBoot() {
   const [bootReady, setBootReady] = useState(false);
   const [initialRoute, setInitialRoute] = useState('Entry');
   const [bootError, setBootError] = useState(null);
+
+  // Global AV session — unlocks Arena / publish video under iOS silent switch
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!cancelled) await configureGlobalAudioSession();
+      } catch (err) {
+        console.warn('[App] audio session init failed:', err?.message || err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
