@@ -9,19 +9,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
-
-const PRESETS = [
-  '🔥 100 Pushups Challenge',
-  '⚽ Best Turf Goal',
-  '🥊 Heavy Bag Combo',
-  '🏏 Longest Six Challenge',
-  '💪 Max Bench Press',
-];
+const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
 
 export default function VideoPublishModal({ visible, videoUri, userId, onClose, onSuccess }) {
   const [selectedCategory, setSelectedCategory] = useState(
@@ -65,21 +60,30 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={styles.container}>
+        <View style={styles.brandRow}>
+          <Image
+            source={BAWAAL_LOGO}
+            style={styles.brandLogo}
+            resizeMode="contain"
+            accessibilityLabel="BAWAAL"
+          />
+        </View>
         <Text style={styles.headerTitle}>TAG YOUR CHALLENGE</Text>
 
-        {/* Quick Presets */}
-        <Text style={styles.sectionLabel}>QUICK CHALLENGE PRESETS</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetContainer}>
-          {PRESETS.map((preset) => (
-            <TouchableOpacity
-              key={preset}
-              style={styles.presetChip}
-              onPress={() => setCaption(preset)}
-            >
-              <Text style={styles.presetText}>{preset}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {videoUri ? (
+          <View style={styles.previewShell}>
+            <Video
+              key={videoUri}
+              source={{ uri: videoUri }}
+              style={styles.previewVideo}
+              shouldPlay={visible}
+              isLooping
+              isMuted={false}
+              resizeMode={ResizeMode.COVER}
+              useNativeControls={false}
+            />
+          </View>
+        ) : null}
 
         {/* Caption Input */}
         <Text style={styles.sectionLabel}>CAPTION / DESCRIPTION</Text>
@@ -94,7 +98,11 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
 
         {/* Category Picker */}
         <Text style={styles.sectionLabel}>SELECT SPORTS CATEGORY</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryContainer}
+        >
           {CATEGORIES.map((cat) => (
             <TouchableOpacity
               key={cat}
@@ -122,7 +130,11 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.publishBtn} onPress={handleUpload} disabled={uploading}>
+          <TouchableOpacity
+            style={styles.publishBtn}
+            onPress={handleUpload}
+            disabled={uploading || !videoUri}
+          >
             {uploading ? (
               <ActivityIndicator color="#FFF" />
             ) : (
@@ -136,21 +148,87 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0E14', padding: 20, justifyContent: 'center' },
-  headerTitle: { color: '#FFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginBottom: 24, letterSpacing: 1 },
-  sectionLabel: { color: '#888', fontSize: 12, fontWeight: '700', marginTop: 16, marginBottom: 8, letterSpacing: 1 },
-  presetContainer: { maxHeight: 44, marginBottom: 12 },
-  presetChip: { backgroundColor: '#1E2530', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, marginRight: 8 },
-  presetText: { color: '#FF5722', fontWeight: '600', fontSize: 13 },
-  input: { backgroundColor: '#141A23', color: '#FFF', padding: 14, borderRadius: 10, fontSize: 15, height: 80, textAlignVertical: 'top' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0B0E14',
+    padding: 20,
+    justifyContent: 'center',
+  },
+  brandRow: {
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  brandLogo: {
+    width: 160,
+    height: 36,
+  },
+  headerTitle: {
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 18,
+    letterSpacing: 1,
+  },
+  previewShell: {
+    width: '100%',
+    height: 220,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  previewVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  sectionLabel: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+    letterSpacing: 1,
+  },
+  input: {
+    backgroundColor: '#141A23',
+    color: '#FFF',
+    padding: 14,
+    borderRadius: 10,
+    fontSize: 15,
+    height: 80,
+    textAlignVertical: 'top',
+  },
   categoryContainer: { maxHeight: 48, marginBottom: 30 },
-  categoryChip: { backgroundColor: '#141A23', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, marginRight: 8, borderWidth: 1, borderColor: '#222' },
+  categoryChip: {
+    backgroundColor: '#141A23',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
   categoryChipSelected: { backgroundColor: '#FF5722', borderColor: '#FF5722' },
   categoryText: { color: '#AAA', fontWeight: '700', fontSize: 13 },
   categoryTextSelected: { color: '#FFF' },
   actions: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  cancelBtn: { flex: 1, padding: 16, borderRadius: 10, backgroundColor: '#1E2530', alignItems: 'center' },
+  cancelBtn: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: '#1E2530',
+    alignItems: 'center',
+  },
   cancelText: { color: '#888', fontWeight: '700' },
-  publishBtn: { flex: 2, padding: 16, borderRadius: 10, backgroundColor: '#FF5722', alignItems: 'center' },
+  publishBtn: {
+    flex: 2,
+    padding: 16,
+    borderRadius: 10,
+    backgroundColor: '#FF5722',
+    alignItems: 'center',
+  },
   publishText: { color: '#FFF', fontWeight: '900', letterSpacing: 1 },
 });
