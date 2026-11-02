@@ -52,7 +52,18 @@ const navTheme = {
   },
 };
 
-/** Surfaces render crashes instead of a blank black screen. */
+async function safeHideSplash(reason) {
+  try {
+    await SplashScreen.hideAsync();
+  } catch (err) {
+    console.warn(
+      `SplashScreen.hideAsync failed (${reason || 'boot'}):`,
+      err?.message || err
+    );
+  }
+}
+
+/** Surfaces render crashes instead of a blank / white freeze. */
 export class RootErrorBoundary extends Component {
   state = { error: null, info: null };
 
@@ -61,8 +72,14 @@ export class RootErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    console.warn('Root render error:', error?.message || error, info?.componentStack);
+    console.warn(
+      'Root render error:',
+      error?.message || error,
+      info?.componentStack
+    );
     this.setState({ info });
+    // Never leave the native splash covering a crashed tree
+    void safeHideSplash('error-boundary');
   }
 
   render() {
@@ -110,7 +127,7 @@ function EntryScreen({ navigation }) {
   );
 }
 
-export default function App() {
+function AppBoot() {
   // Wait for AsyncStorage session restore before choosing Entry vs Main
   const [showSplash, setShowSplash] = useState(true);
   const [bootReady, setBootReady] = useState(false);
@@ -122,15 +139,14 @@ export default function App() {
     let finished = false;
 
     const dismissSplash = async () => {
-      if (cancelled || finished) return;
+      if (finished) return;
       finished = true;
-      setBootReady(true);
-      setShowSplash(false);
-      try {
-        await SplashScreen.hideAsync();
-      } catch (err) {
-        console.warn('SplashScreen.hideAsync failed:', err?.message || err);
+      if (!cancelled) {
+        setBootReady(true);
+        setShowSplash(false);
       }
+      // Always hide native splash — even if this effect already cleaned up
+      await safeHideSplash('boot-dismiss');
     };
 
     (async () => {
@@ -140,33 +156,60 @@ export default function App() {
         } else {
           // AsyncStorage session restore — short race so Expo Go never hangs
           const bootTimeoutMs = isExpoGo ? 900 : 3500;
-          const session = await Promise.race([
-            getRegisteredSession(),
-            new Promise((resolve) => setTimeout(() => resolve(null), bootTimeoutMs)),
-          ]);
+          let session = null;
+          try {
+            session = await Promise.race([
+              getRegisteredSession(),
+              new Promise((resolve) =>
+                setTimeout(() => resolve(null), bootTimeoutMs)
+              ),
+            ]);
+          } catch (sessionErr) {
+            // Parsing / storage failure → empty session, continue to Entry
+            console.warn(
+              'Session hydrate failed — defaulting to Entry:',
+              sessionErr?.message || sessionErr
+            );
+            session = null;
+          }
           if (!cancelled && session?.registered) {
-            applyRegisteredProfile(session);
-            setInitialRoute('Main');
+            try {
+              applyRegisteredProfile(session);
+              setInitialRoute('Main');
+            } catch (profileErr) {
+              console.warn(
+                'Profile apply failed — defaulting to Entry:',
+                profileErr?.message || profileErr
+              );
+              if (!cancelled) setInitialRoute('Entry');
+            }
           } else if (!cancelled) {
             setInitialRoute('Entry');
           }
         }
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
+        // Soft-fail — never crash the UI thread; land on Entry with empty state
+        if (!cancelled) {
+          setInitialRoute('Entry');
+          setBootError(null);
+        }
       } finally {
         await dismissSplash();
       }
     })();
 
-    // Hard failsafe: never stay on splash
-    const failsafeMs = isExpoGo ? 1200 : 5000;
+    // Hard failsafe: never stay on splash / white logo screen
+    const failsafeMs = isExpoGo ? 1200 : 4500;
     const failsafe = setTimeout(() => {
-      dismissSplash();
+      void dismissSplash();
     }, failsafeMs);
 
     return () => {
       cancelled = true;
       clearTimeout(failsafe);
+      // Cleanup still tries hide — covers fast unmount / Fast Refresh
+      void safeHideSplash('boot-cleanup');
     };
   }, []);
 
@@ -175,7 +218,21 @@ export default function App() {
       <View style={styles.errorRoot}>
         <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
         <Text style={styles.errorTitle}>Boot error</Text>
-        <Text style={styles.errorBody}>{String(bootError?.message || bootError)}</Text>
+        <Text style={styles.errorBody}>
+          {String(bootError?.message || bootError)}
+        </Text>
+        <Text
+          style={styles.errorRetry}
+          onPress={() => {
+            setBootError(null);
+            setInitialRoute('Entry');
+            setBootReady(true);
+            setShowSplash(false);
+            void safeHideSplash('boot-error-retry');
+          }}
+        >
+          TAP TO CONTINUE
+        </Text>
       </View>
     );
   }
@@ -200,88 +257,116 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
-      <RootErrorBoundary>
-        <SafeAreaProvider style={styles.root}>
-          <NavigationContainer theme={navTheme}>
-            <Stack.Navigator
-              initialRouteName={initialRoute}
-              screenOptions={{
-                headerShown: false,
+      <SafeAreaProvider style={styles.root}>
+        <NavigationContainer theme={navTheme}>
+          <Stack.Navigator
+            initialRouteName={initialRoute}
+            screenOptions={{
+              headerShown: false,
+              animation: 'fade',
+              contentStyle: styles.root,
+              freezeOnBlur: true,
+            }}
+          >
+            <Stack.Screen name="Entry" component={EntryScreen} />
+            <Stack.Screen name="Main" component={MainTabs} />
+            {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
+            <Stack.Screen
+              name="UniversalCamera"
+              component={CameraPublishHost}
+              options={{
                 animation: 'fade',
-                contentStyle: styles.root,
-                freezeOnBlur: true,
+                presentation: 'fullScreenModal',
+                animationDuration: 150,
               }}
-            >
-              <Stack.Screen name="Entry" component={EntryScreen} />
-              <Stack.Screen name="Main" component={MainTabs} />
-              {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
-              <Stack.Screen
-                name="UniversalCamera"
-                component={CameraPublishHost}
-                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
-              />
-              {/* Legacy "Challenge" route name → same camera + publish host */}
-              <Stack.Screen
-                name="Challenge"
-                component={CameraPublishHost}
-                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
-              />
-              {/* Arena / Battles RESPOND → locked viewfinder + VideoPublishModal */}
-              <Stack.Screen
-                name="ChallengeCam"
-                component={CameraPublishHost}
-                options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
-              />
-              <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
-              <Stack.Screen
-                name="Live1v1Battle"
-                component={Live1v1BattleScreen}
-                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
-              />
-              {/* Alias used by UniversalCamera / BattleChallengeForm */}
-              <Stack.Screen
-                name="ChallengerArena"
-                component={Live1v1BattleScreen}
-                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
-              />
-              {/* ⚔️ BATTLE BAWAAL → challenge setup (title / reps / timer) before live arena */}
-              <Stack.Screen
-                name="BattleChallengeForm"
-                component={BattleChallengeForm}
-                options={{ animation: 'slide_from_bottom', presentation: 'fullScreenModal' }}
-              />
-              <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
-              <Stack.Screen
-                name="AthletePassport"
-                component={AthletePassportScreen}
-                options={{ animation: 'slide_from_right' }}
-              />
-              <Stack.Screen
-                name="Clinic"
-                component={ClinicScreen}
-                options={{ animation: 'slide_from_right' }}
-              />
-              <Stack.Screen
-                name="SportHubMap"
-                component={SportHubMapScreen}
-                options={{ animation: 'slide_from_right' }}
-              />
-              {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
-              <Stack.Screen
-                name="Arena"
-                component={MainTabs}
-                initialParams={{ tab: 'Arena' }}
-              />
-              <Stack.Screen
-                name="Profile"
-                component={MainTabs}
-                initialParams={{ tab: 'Passport' }}
-              />
-            </Stack.Navigator>
-          </NavigationContainer>
-        </SafeAreaProvider>
-      </RootErrorBoundary>
+            />
+            {/* Legacy "Challenge" route name → same camera + publish host */}
+            <Stack.Screen
+              name="Challenge"
+              component={CameraPublishHost}
+              options={{
+                animation: 'fade',
+                presentation: 'fullScreenModal',
+                animationDuration: 150,
+              }}
+            />
+            {/* Arena / Battles RESPOND → locked viewfinder + VideoPublishModal */}
+            <Stack.Screen
+              name="ChallengeCam"
+              component={CameraPublishHost}
+              options={{
+                animation: 'fade',
+                presentation: 'fullScreenModal',
+                animationDuration: 150,
+              }}
+            />
+            <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+            <Stack.Screen
+              name="Live1v1Battle"
+              component={Live1v1BattleScreen}
+              options={{
+                animation: 'slide_from_bottom',
+                presentation: 'fullScreenModal',
+              }}
+            />
+            {/* Alias used by UniversalCamera / BattleChallengeForm */}
+            <Stack.Screen
+              name="ChallengerArena"
+              component={Live1v1BattleScreen}
+              options={{
+                animation: 'slide_from_bottom',
+                presentation: 'fullScreenModal',
+              }}
+            />
+            {/* ⚔️ BATTLE BAWAAL → challenge setup (title / reps / timer) before live arena */}
+            <Stack.Screen
+              name="BattleChallengeForm"
+              component={BattleChallengeForm}
+              options={{
+                animation: 'slide_from_bottom',
+                presentation: 'fullScreenModal',
+              }}
+            />
+            <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
+            <Stack.Screen
+              name="AthletePassport"
+              component={AthletePassportScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="Clinic"
+              component={ClinicScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="SportHubMap"
+              component={SportHubMapScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
+            <Stack.Screen
+              name="Arena"
+              component={MainTabs}
+              initialParams={{ tab: 'Arena' }}
+            />
+            <Stack.Screen
+              name="Profile"
+              component={MainTabs}
+              initialParams={{ tab: 'Passport' }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
     </View>
+  );
+}
+
+/** Outer boundary catches boot + navigation tree crashes. */
+export default function App() {
+  return (
+    <RootErrorBoundary>
+      <AppBoot />
+    </RootErrorBoundary>
   );
 }
 

@@ -9,6 +9,11 @@ if (Constants.appOwnership === 'expo') {
   SplashScreen.hideAsync().catch(() => {});
 }
 
+// Absolute failsafe — never leave the white/native splash covering a hung boot.
+setTimeout(() => {
+  SplashScreen.hideAsync().catch(() => {});
+}, 6000);
+
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App).
 // It also ensures the environment is set up appropriately whether in Expo Go or a native build.
 registerRootComponent(App);

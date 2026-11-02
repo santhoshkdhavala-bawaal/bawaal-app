@@ -65,7 +65,22 @@ export default function MainTabs({ navigation, route }) {
 
   // Warm Arena `videos` + local cache as soon as tabs mount (cuts reload flash)
   useEffect(() => {
-    startArenaFeedWarmup();
+    try {
+      const warm = startArenaFeedWarmup();
+      if (warm && typeof warm.catch === 'function') {
+        warm.catch((err) => {
+          console.warn(
+            '[MainTabs] Arena feed warmup failed (continuing empty):',
+            err?.message || err
+          );
+        });
+      }
+    } catch (err) {
+      console.warn(
+        '[MainTabs] Arena feed warmup threw (continuing empty):',
+        err?.message || err
+      );
+    }
   }, []);
 
   useEffect(() => {
