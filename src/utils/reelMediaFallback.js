@@ -29,15 +29,17 @@ export function isUsablePlaybackUri(uri) {
 }
 
 /**
- * expo-av / expo-video source: real URI object, or bundled sample asset.
+ * expo-av / expo-video source for feed players: URI object only.
+ * Returns null when the URI is unusable — callers must show a black shell
+ * instead of sync-swapping to the bundled sample (freezes the JS thread).
  * @param {string|null|undefined} uri
- * @returns {{ uri: string } | number}
+ * @returns {{ uri: string } | null}
  */
 export function resolveVideoSource(uri) {
   if (isUsablePlaybackUri(uri)) {
     return { uri: String(uri).trim() };
   }
-  return BAWAAL_FALLBACK_MP4;
+  return null;
 }
 
 /**

@@ -2,6 +2,9 @@
  * Native-only feed video (expo-av).
  * Never import this file from Expo Go boot paths — SafeFeedVideo lazy-requires
  * it only when `canUseNativeVideo` is true.
+ *
+ * Declarative source / shouldPlay only — no blocking setStatusAsync loops
+ * and no mid-playback sync swap to bundled mp4 (avoids black-screen freezes).
  */
 import React, {
   Component,
@@ -22,8 +25,8 @@ import SportsFeedPlaceholder from './SportsFeedPlaceholder';
 import {
   isUsablePlaybackUri,
   resolvePosterSource,
-  resolveVideoSource,
 } from '../utils/reelMediaFallback';
+import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
 
 function isPlayableFeedUri(uri) {
   return isUsablePlaybackUri(uri);
@@ -110,18 +113,16 @@ function NativeFeedVideo({
 }) {
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
-  const [useFallbackAsset, setUseFallbackAsset] = useState(!playable);
   const [loading, setLoading] = useState(true);
   const [hasFrame, setHasFrame] = useState(false);
   const videoRef = useRef(null);
   const readyFallback = useRef(null);
 
+  // URI-only — never sync-swap to bundled sample_challenge.mp4
   const videoSource = useMemo(() => {
-    if (failed || useFallbackAsset || !playable) {
-      return resolveVideoSource(null);
-    }
-    return resolveVideoSource(resolved);
-  }, [failed, playable, resolved, useFallbackAsset]);
+    if (!playable || failed) return null;
+    return { uri: String(resolved).trim() };
+  }, [failed, playable, resolved]);
 
   const posterSource = useMemo(
     () => resolvePosterSource(posterUri),
@@ -131,8 +132,7 @@ function NativeFeedVideo({
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     setFailed(false);
-    setUseFallbackAsset(!isPlayableFeedUri(resolved));
-    setLoading(true);
+    setLoading(!!playable);
     setHasFrame(false);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (readyFallback.current) clearTimeout(readyFallback.current);
@@ -142,56 +142,13 @@ function NativeFeedVideo({
     return () => {
       if (readyFallback.current) clearTimeout(readyFallback.current);
     };
-  }, [resolved]);
+  }, [playable, resolved]);
 
-  useEffect(() => {
-    const node = videoRef.current;
-    if (!node || failed || !Video) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        await node.setStatusAsync({
-          shouldPlay: !!autoPlay && !paused,
-          isLooping: loop !== false,
-          isMuted: !!muted,
-          volume: muted ? 0 : 1,
-          progressUpdateIntervalMillis: 800,
-        });
-      } catch (err) {
-        if (!cancelled) {
-          console.log('Video Player Error:', err?.message || err);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [autoPlay, paused, muted, loop, failed, videoSource]);
-
+  // Soft unload on URI change / unmount — fire-and-forget, never await on render
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      if (!node) return;
-      try {
-        node.setStatusAsync?.({ shouldPlay: false }).catch?.(() => {});
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        node.pauseAsync?.().catch?.(() => {});
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        node.stopAsync?.().catch?.(() => {});
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        node.unloadAsync?.().catch?.(() => {});
-      } catch (_) {
-        /* ignore */
-      }
+      void safeUnloadExpoAvVideo(node);
     };
   }, [videoSource]);
 
@@ -205,6 +162,24 @@ function NativeFeedVideo({
           seed={hashSeed(resolved || label)}
           showExpoBadge={false}
         />
+      </View>
+    );
+  }
+
+  if (!videoSource) {
+    return (
+      <View style={[styles.shell, style]}>
+        <View style={styles.blackUnderlay} />
+        {posterSource ? (
+          <Image
+            source={posterSource}
+            style={styles.poster}
+            resizeMode="cover"
+          />
+        ) : null}
+        <Text style={styles.placeholderText}>
+          {label || 'CLIP UNAVAILABLE'}
+        </Text>
       </View>
     );
   }
@@ -246,7 +221,7 @@ function NativeFeedVideo({
 
         <Video
           ref={videoRef}
-          style={styles.video}
+          style={styles.videoPlayer}
           source={videoSource}
           resizeMode={mapContentFit(contentFit)}
           shouldPlay={!!autoPlay && !paused}
@@ -257,13 +232,20 @@ function NativeFeedVideo({
           usePoster={!!posterSource}
           posterSource={posterSource || undefined}
           posterStyle={styles.poster}
-          progressUpdateIntervalMillis={800}
+          progressUpdateIntervalMillis={1000}
           onLoadStart={() => {
             setLoading(true);
+            console.log(
+              'Video load started:',
+              typeof resolved === 'string' ? resolved.slice(0, 80) : resolved
+            );
           }}
           onLoad={() => {
             setLoading(false);
-            console.log('VIDEO LOADED SUCCESSFULLY:', resolved);
+            console.log(
+              'Video loaded successfully:',
+              typeof resolved === 'string' ? resolved.slice(0, 120) : resolved
+            );
           }}
           onReadyForDisplay={() => {
             setHasFrame(true);
@@ -272,19 +254,11 @@ function NativeFeedVideo({
           onError={(err) => {
             try {
               console.log(
-                'VIDEO PLAYBACK ERROR:',
+                'Video render error:',
                 JSON.stringify(err?.error || err)
               );
             } catch (_) {
-              console.log('VIDEO PLAYBACK ERROR:', err?.error || err);
-            }
-            // Invalid / delayed cloud URL → bundled sample once; then surface failure
-            if (!useFallbackAsset) {
-              setUseFallbackAsset(true);
-              setFailed(false);
-              setLoading(true);
-              setHasFrame(false);
-              return;
+              console.log('Video render error:', err?.error || err);
             }
             setFailed(true);
             setLoading(false);
@@ -337,6 +311,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
+  videoPlayer: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: 450,
+    backgroundColor: 'transparent',
+  },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -357,6 +337,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
+    textAlign: 'center',
+    alignSelf: 'center',
+    marginTop: 'auto',
+    marginBottom: 'auto',
   },
   cornerTag: {
     position: 'absolute',
