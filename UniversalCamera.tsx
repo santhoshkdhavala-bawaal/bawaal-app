@@ -1820,6 +1820,20 @@ export default function UniversalCamera({
         : 'RESPOND'
       : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
 
+  /** Unmount live lens while preview / publish hold so it cannot auto-restart. */
+  const freezeLiveLens =
+    publishHold ||
+    showPreview ||
+    showPostSheet ||
+    (!!recordedVideoUri && !isRecording && !isFinalizingClip && !isProcessing);
+
+  // MUST stay above any early return — conditional hooks crash React render order
+  useEffect(() => {
+    if (freezeLiveLens) {
+      setIsCameraReady(false);
+    }
+  }, [freezeLiveLens]);
+
   if (permissionsPending) {
     return (
       <View style={styles.permissionContainer}>
@@ -1849,20 +1863,6 @@ export default function UniversalCamera({
       </View>
     );
   }
-
-  /** Unmount live lens while preview / publish hold so it cannot auto-restart. */
-  const freezeLiveLens =
-    publishHold ||
-    showPreview ||
-    showPostSheet ||
-    (!!recordedVideoUri && !isRecording && !isFinalizingClip && !isProcessing);
-
-  // When lens unmounts for freeze, mark not-ready so remount cannot race a new recordAsync
-  useEffect(() => {
-    if (freezeLiveLens) {
-      setIsCameraReady(false);
-    }
-  }, [freezeLiveLens]);
 
   return (
     <GestureHandlerRootView style={styles.container}>
