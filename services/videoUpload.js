@@ -1,13 +1,55 @@
 import { supabase, BAWAAL_VIDEOS_BUCKET } from '../lib/supabase';
 
-/** Canonical Storage bucket (matches supabase_schema.sql). */
+/**
+ * Storage bucket names (table `videos` is separate).
+ * Primary matches supabase_schema.sql + BAWAAL_VIDEOS_BUCKET.
+ * Fallbacks cover legacy Expo uploads and a common dashboard name.
+ */
 const PRIMARY_VIDEO_BUCKET = BAWAAL_VIDEOS_BUCKET || 'bawaal-videos';
-/** Legacy Expo uploads still use this name — keep as soft fallback. */
-const LEGACY_VIDEO_BUCKET = 'bawaalvideos';
+const FALLBACK_VIDEO_BUCKETS = ['bawaalvideos', 'videos'];
+
+/** Nil UUID — type-safe placeholder when no auth/profile uuid is available. */
+const NIL_USER_UUID = '00000000-0000-0000-0000-000000000000';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const BUCKET_SETUP_HINT =
-  'Create a public Storage bucket named "bawaal-videos" in the Supabase dashboard ' +
+  `Create a public Storage bucket named "${PRIMARY_VIDEO_BUCKET}" in the Supabase dashboard ` +
   '(Storage → New bucket → public), or run supabase_schema.sql in the SQL Editor.';
+
+function asUuidOrNull(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return UUID_RE.test(s) ? s : null;
+}
+
+/**
+ * Resolve a PostgreSQL-safe uuid for `videos.user_id`.
+ * Handles local handles like "user-santhosh" that are not valid uuids.
+ */
+async function resolveVideosUserId(explicitId) {
+  const fromExplicit = asUuidOrNull(explicitId);
+  if (fromExplicit) return fromExplicit;
+
+  if (explicitId != null && String(explicitId).trim()) {
+    console.warn(
+      `[videoUpload] userId "${explicitId}" is not a uuid — resolving auth session / fallback`
+    );
+  }
+
+  try {
+    const { data } = await supabase.auth.getUser();
+    const fromAuth = asUuidOrNull(data?.user?.id);
+    if (fromAuth) return fromAuth;
+  } catch (_) {
+    /* soft-fail */
+  }
+
+  // Prefer omitting FK over inventing a random id; nil uuid is last-resort type-safe value.
+  // Callers that need a non-null column can still read NIL_USER_UUID from logs.
+  return null;
+}
 
 function isBucketMissingError(err) {
   const msg = String(err?.message || err?.error || err || '').toLowerCase();
@@ -20,12 +62,19 @@ function isBucketMissingError(err) {
   );
 }
 
+function isUserIdConstraintError(err) {
+  const msg = String(err?.message || err?.details || err || '');
+  return /user_id|invalid input syntax for type uuid|foreign key|violates|23503|22P02/i.test(
+    msg
+  );
+}
+
 /**
  * Upload a recorded clip to Supabase Storage and insert a `videos` row.
  * Used by VideoPublishModal after SPARKS / challenge capture.
  *
- * Storage bucket: `bawaal-videos` (fallback: `bawaalvideos`).
- * DB table: `videos` (separate from the Storage bucket name).
+ * Storage bucket: `bawaal-videos` (fallback: `bawaalvideos`, `videos`).
+ * DB table columns: user_id (uuid), video_url, caption, category.
  */
 export async function uploadVideoToSupabase(
   videoUri,
@@ -55,10 +104,10 @@ export async function uploadVideoToSupabase(
     const response = await fetch(cleaned);
     const blob = await response.blob();
 
-    const bucketsToTry = [PRIMARY_VIDEO_BUCKET];
-    if (LEGACY_VIDEO_BUCKET !== PRIMARY_VIDEO_BUCKET) {
-      bucketsToTry.push(LEGACY_VIDEO_BUCKET);
-    }
+    const bucketsToTry = [
+      PRIMARY_VIDEO_BUCKET,
+      ...FALLBACK_VIDEO_BUCKETS.filter((b) => b !== PRIMARY_VIDEO_BUCKET),
+    ];
 
     let usedBucket = null;
     let lastStorageError = null;
@@ -87,7 +136,6 @@ export async function uploadVideoToSupabase(
       );
 
       if (!isBucketMissingError(storageError)) {
-        // Non-missing errors (RLS, mime, size) — do not silently hop buckets.
         throw storageError;
       }
 
@@ -116,7 +164,7 @@ export async function uploadVideoToSupabase(
 
     if (usedBucket !== PRIMARY_VIDEO_BUCKET) {
       console.warn(
-        `[videoUpload] used legacy bucket "${usedBucket}" — prefer creating "${PRIMARY_VIDEO_BUCKET}"`
+        `[videoUpload] used fallback bucket "${usedBucket}" — prefer creating "${PRIMARY_VIDEO_BUCKET}"`
       );
     }
 
@@ -134,17 +182,37 @@ export async function uploadVideoToSupabase(
       videoPublicUrl
     );
 
-    const { data: dbData, error: dbError } = await supabase
+    // Schema: user_id uuid, video_url text, caption text, category text
+    const safeUserId = await resolveVideosUserId(userId);
+    const row = {
+      video_url: videoPublicUrl,
+      category: sportCategory || 'OTHERS',
+      caption: caption || '',
+    };
+    if (safeUserId) {
+      row.user_id = safeUserId;
+    } else {
+      console.warn(
+        `[videoUpload] omitting user_id (no valid uuid; raw="${userId ?? ''}"; nil fallback ${NIL_USER_UUID} unused to avoid FK miss)`
+      );
+    }
+
+    let { data: dbData, error: dbError } = await supabase
       .from('videos')
-      .insert([
-        {
-          user_id: userId || null,
-          video_url: videoPublicUrl,
-          category: sportCategory || 'OTHERS',
-          caption: caption || '',
-        },
-      ])
+      .insert([row])
       .select();
+
+    // FK / uuid constraint → retry without user_id
+    if (dbError && row.user_id && isUserIdConstraintError(dbError)) {
+      console.warn(
+        `[videoUpload] videos insert user_id rejected (${dbError.message}) — retrying without user_id`
+      );
+      const { user_id: _omit, ...withoutUser } = row;
+      ({ data: dbData, error: dbError } = await supabase
+        .from('videos')
+        .insert([withoutUser])
+        .select());
+    }
 
     if (dbError) throw dbError;
 
