@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -76,16 +76,49 @@ function PlayPauseOverlay({ isPlaying, onToggle }) {
   );
 }
 
-function ExpoAvPreview({ uri, visible, isPlaying, onTogglePlay, onReady, onError }) {
+function ExpoAvPreview({
+  uri,
+  visible,
+  isPlaying,
+  onTogglePlay,
+  onReady,
+  onError,
+  videoRef,
+}) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
   }, [uri]);
 
+  // Keep native player in sync when overlay toggles play/pause
+  useEffect(() => {
+    const node = videoRef?.current;
+    if (!node) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!visible) {
+          await node.pauseAsync?.();
+          return;
+        }
+        if (isPlaying) await node.playAsync?.();
+        else await node.pauseAsync?.();
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('[VideoPublishModal] play/pause failed:', err?.message || err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isPlaying, uri, videoRef, visible]);
+
   return (
     <View style={styles.previewShell}>
       <AvVideo
+        ref={videoRef}
         key={uri}
         source={{ uri }}
         style={styles.previewVideo}
@@ -97,6 +130,7 @@ function ExpoAvPreview({ uri, visible, isPlaying, onTogglePlay, onReady, onError
         onLoadStart={() => setLoading(true)}
         onLoad={() => {
           setLoading(false);
+          console.log('VIDEO LOADED SUCCESSFULLY: publish-preview');
           onReady?.();
         }}
         onReadyForDisplay={() => {
@@ -104,6 +138,7 @@ function ExpoAvPreview({ uri, visible, isPlaying, onTogglePlay, onReady, onError
           onReady?.();
         }}
         onError={(e) => {
+          console.log('VIDEO PLAYBACK ERROR:', e?.error || e);
           setLoading(false);
           onError?.(e);
         }}
@@ -185,6 +220,7 @@ function PublishClipPreview({
   visible,
   isPlaying,
   onTogglePlay,
+  videoRef,
 }) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
   if (!uri) {
@@ -203,6 +239,7 @@ function PublishClipPreview({
         visible={visible}
         isPlaying={isPlaying}
         onTogglePlay={onTogglePlay}
+        videoRef={videoRef}
       />
     );
   }
@@ -231,6 +268,7 @@ export default function VideoPublishModal({
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     if (!visible) {
@@ -245,7 +283,21 @@ export default function VideoPublishModal({
     }
   }, [visible]);
 
-  const togglePlay = () => setIsPlaying((p) => !p);
+  const togglePlayPause = async () => {
+    const node = videoRef.current;
+    try {
+      if (node) {
+        if (isPlaying) await node.pauseAsync?.();
+        else await node.playAsync?.();
+      }
+    } catch (err) {
+      console.warn(
+        '[VideoPublishModal] togglePlayPause failed:',
+        err?.message || err
+      );
+    }
+    setIsPlaying((p) => !p);
+  };
 
   const finishSuccess = (payload) => {
     // Pause preview before parent tears down the camera route
@@ -316,7 +368,8 @@ export default function VideoPublishModal({
           videoUri={videoUri}
           visible={visible}
           isPlaying={isPlaying}
-          onTogglePlay={togglePlay}
+          onTogglePlay={togglePlayPause}
+          videoRef={videoRef}
         />
 
         {/* Caption Input */}

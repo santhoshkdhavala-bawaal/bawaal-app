@@ -190,7 +190,11 @@ function ExpoAvClipPlayer({
 
   const onLoad = useCallback(() => {
     setLoading(false);
-  }, []);
+    console.log(
+      'VIDEO LOADED SUCCESSFULLY:',
+      typeof resolved === 'string' ? resolved.slice(0, 80) : resolved
+    );
+  }, [resolved]);
 
   const onReadyForDisplay = useCallback(() => {
     setLoading(false);
@@ -226,7 +230,7 @@ function ExpoAvClipPlayer({
         onLoad={onLoad}
         onReadyForDisplay={onReadyForDisplay}
         onError={(e) => {
-          console.warn('[ArenaClipPlayer] av error:', e?.error || e);
+          console.log('VIDEO PLAYBACK ERROR:', e?.error || e);
           if (!useFallbackAsset) {
             setUseFallbackAsset(true);
             setLoading(true);
@@ -482,7 +486,7 @@ const styles = StyleSheet.create({
   shell: {
     width: '100%',
     height: '100%',
-    minHeight: 420,
+    minHeight: 450,
     backgroundColor: '#0A0A0A',
     overflow: 'hidden',
     position: 'relative',
@@ -491,25 +495,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#0A0A0A',
   },
   poster: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    minHeight: 420,
     backgroundColor: '#0A0A0A',
   },
   video: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    minHeight: 420,
     backgroundColor: 'transparent',
   },
   loading: {
