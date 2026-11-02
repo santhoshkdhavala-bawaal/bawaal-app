@@ -18,37 +18,15 @@ const BUCKET_SETUP_HINT =
   `Create a public Storage bucket named "${PRIMARY_VIDEO_BUCKET}" in the Supabase dashboard ` +
   '(Storage → New bucket → public), or run supabase_schema.sql in the SQL Editor.';
 
+const RLS_SETUP_HINT =
+  'RLS blocked the insert. In Supabase SQL Editor run the videos_insert_anon policy from ' +
+  'supabase_schema.sql (insert to anon, authenticated with check (true)), or enable ' +
+  'Anonymous sign-ins under Authentication → Providers.';
+
 function asUuidOrNull(value) {
   if (value == null) return null;
   const s = String(value).trim();
   return UUID_RE.test(s) ? s : null;
-}
-
-/**
- * Resolve a PostgreSQL-safe uuid for `videos.user_id`.
- * Handles local handles like "user-santhosh" that are not valid uuids.
- */
-async function resolveVideosUserId(explicitId) {
-  const fromExplicit = asUuidOrNull(explicitId);
-  if (fromExplicit) return fromExplicit;
-
-  if (explicitId != null && String(explicitId).trim()) {
-    console.warn(
-      `[videoUpload] userId "${explicitId}" is not a uuid — resolving auth session / fallback`
-    );
-  }
-
-  try {
-    const { data } = await supabase.auth.getUser();
-    const fromAuth = asUuidOrNull(data?.user?.id);
-    if (fromAuth) return fromAuth;
-  } catch (_) {
-    /* soft-fail */
-  }
-
-  // Prefer omitting FK over inventing a random id; nil uuid is last-resort type-safe value.
-  // Callers that need a non-null column can still read NIL_USER_UUID from logs.
-  return null;
 }
 
 function isBucketMissingError(err) {
@@ -67,6 +45,96 @@ function isUserIdConstraintError(err) {
   return /user_id|invalid input syntax for type uuid|foreign key|violates|23503|22P02/i.test(
     msg
   );
+}
+
+function isRlsError(err) {
+  const msg = String(err?.message || err?.details || err?.code || err || '');
+  return /row-level security|rls|42501|permission denied|new row violates/i.test(
+    msg
+  );
+}
+
+/**
+ * Ensure the Supabase client has a session so RLS policies that require
+ * `authenticated` / `auth.uid()` can succeed. Soft-falls back to anon role.
+ */
+async function ensureAuthSession() {
+  try {
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+    if (sessionError) {
+      console.warn(
+        '[videoUpload] getSession failed:',
+        sessionError.message || sessionError
+      );
+    }
+    if (sessionData?.session?.user?.id) {
+      console.log(
+        `[videoUpload] active session user=${sessionData.session.user.id}`
+      );
+      return sessionData.session;
+    }
+  } catch (err) {
+    console.warn('[videoUpload] getSession threw:', err?.message || err);
+  }
+
+  console.warn(
+    '[videoUpload] no active session — attempting anonymous sign-in for RLS'
+  );
+  try {
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) {
+      console.warn(
+        '[videoUpload] anonymous sign-in failed:',
+        error.message || error
+      );
+      return null;
+    }
+    if (data?.session?.user?.id) {
+      console.log(
+        `[videoUpload] anonymous session ready user=${data.session.user.id}`
+      );
+      return data.session;
+    }
+  } catch (err) {
+    console.warn(
+      '[videoUpload] anonymous sign-in threw:',
+      err?.message || err
+    );
+  }
+  return null;
+}
+
+/**
+ * Resolve a PostgreSQL-safe uuid for `videos.user_id`.
+ * Prefer explicit uuid → session/auth uuid. Never pass handles like "user-santhosh".
+ */
+async function resolveVideosUserId(explicitId, session) {
+  const fromExplicit = asUuidOrNull(explicitId);
+  if (fromExplicit) return fromExplicit;
+
+  if (explicitId != null && String(explicitId).trim()) {
+    console.warn(
+      `[videoUpload] userId "${explicitId}" is not a uuid — using session / auth`
+    );
+  }
+
+  const fromSession = asUuidOrNull(session?.user?.id);
+  if (fromSession) return fromSession;
+
+  try {
+    const { data } = await supabase.auth.getUser();
+    const fromAuth = asUuidOrNull(data?.user?.id);
+    if (fromAuth) return fromAuth;
+  } catch (_) {
+    /* soft-fail */
+  }
+
+  return null;
+}
+
+async function insertVideosRow(row) {
+  return supabase.from('videos').insert([row]).select();
 }
 
 /**
@@ -96,6 +164,9 @@ export async function uploadVideoToSupabase(
     const fileName = `${safeUser}_${Date.now()}.${fileExt}`;
     const filePath = `battles/${fileName}`;
     const contentType = `video/${fileExt === 'mov' ? 'quicktime' : fileExt}`;
+
+    // Auth first — Storage + videos RLS often require authenticated / auth.uid()
+    const session = await ensureAuthSession();
 
     console.log(
       `[videoUpload] targeting Storage bucket "${PRIMARY_VIDEO_BUCKET}" → ${filePath}`
@@ -183,38 +254,83 @@ export async function uploadVideoToSupabase(
     );
 
     // Schema: user_id uuid, video_url text, caption text, category text
-    const safeUserId = await resolveVideosUserId(userId);
-    const row = {
+    let safeUserId = await resolveVideosUserId(userId, session);
+    // RLS policies that require auth.uid() = user_id need the session uuid.
+    if (
+      session?.user?.id &&
+      safeUserId &&
+      safeUserId !== session.user.id &&
+      !asUuidOrNull(userId)
+    ) {
+      safeUserId = session.user.id;
+    }
+
+    const baseRow = {
       video_url: videoPublicUrl,
       category: sportCategory || 'OTHERS',
       caption: caption || '',
     };
+
+    const attempts = [];
     if (safeUserId) {
-      row.user_id = safeUserId;
-    } else {
-      console.warn(
-        `[videoUpload] omitting user_id (no valid uuid; raw="${userId ?? ''}"; nil fallback ${NIL_USER_UUID} unused to avoid FK miss)`
-      );
+      attempts.push({ ...baseRow, user_id: safeUserId });
+    }
+    // Match owner-scoped RLS: force auth.uid() when we have a session
+    if (session?.user?.id && session.user.id !== safeUserId) {
+      attempts.push({ ...baseRow, user_id: session.user.id });
+    }
+    // Open anon policy / nullable user_id
+    attempts.push({ ...baseRow });
+    // Last-resort type-safe dummy (only if open policies allow any uuid)
+    if (!safeUserId && !session?.user?.id) {
+      attempts.push({ ...baseRow, user_id: NIL_USER_UUID });
     }
 
-    let { data: dbData, error: dbError } = await supabase
-      .from('videos')
-      .insert([row])
-      .select();
+    // Deduplicate by JSON shape
+    const seen = new Set();
+    const uniqueAttempts = attempts.filter((row) => {
+      const key = JSON.stringify(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
-    // FK / uuid constraint → retry without user_id
-    if (dbError && row.user_id && isUserIdConstraintError(dbError)) {
-      console.warn(
-        `[videoUpload] videos insert user_id rejected (${dbError.message}) — retrying without user_id`
+    let dbData = null;
+    let dbError = null;
+
+    for (let i = 0; i < uniqueAttempts.length; i += 1) {
+      const row = uniqueAttempts[i];
+      console.log(
+        `[videoUpload] videos insert attempt ${i + 1}/${uniqueAttempts.length}`,
+        row.user_id ? `user_id=${row.user_id}` : 'user_id=omitted'
       );
-      const { user_id: _omit, ...withoutUser } = row;
-      ({ data: dbData, error: dbError } = await supabase
-        .from('videos')
-        .insert([withoutUser])
-        .select());
+      const result = await insertVideosRow(row);
+      dbData = result.data;
+      dbError = result.error;
+      if (!dbError) break;
+
+      const retryable =
+        isRlsError(dbError) ||
+        isUserIdConstraintError(dbError) ||
+        /42501|23503|22P02/i.test(String(dbError.code || ''));
+      console.warn(
+        `[videoUpload] videos insert failed:`,
+        dbError.message || dbError.code || dbError
+      );
+      if (!retryable || i === uniqueAttempts.length - 1) break;
+      console.warn('[videoUpload] retrying videos insert with alternate payload…');
     }
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      if (isRlsError(dbError)) {
+        console.error(`[videoUpload] ${RLS_SETUP_HINT}`);
+        return {
+          success: false,
+          error: `${dbError.message || 'RLS policy blocked insert'}. ${RLS_SETUP_HINT}`,
+        };
+      }
+      throw dbError;
+    }
 
     return {
       success: true,
@@ -229,6 +345,10 @@ export async function uploadVideoToSupabase(
       }):`,
       error?.message || error
     );
-    return { success: false, error: error?.message || String(error) };
+    const msg = error?.message || String(error);
+    if (isRlsError(error)) {
+      return { success: false, error: `${msg}. ${RLS_SETUP_HINT}` };
+    }
+    return { success: false, error: msg };
   }
 }
