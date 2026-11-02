@@ -308,7 +308,7 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  /** When false, skip decoder entirely (far cells). Neighbors pass active=true to warm. */
+  /** When false, unmount decoder (poster only). Neighbors pass active=true to warm. */
   active = true,
 }) {
   const playSource = source || {
@@ -320,25 +320,23 @@ const ClipSurface = memo(function ClipSurface({
   // Prefer cloud `video_url` (Supabase videos row) then local capture URIs
   const playUri =
     resolveFeedVideoUri(playSource) ||
-    uri ||
     playSource.video_url ||
     playSource.videoUri ||
+    uri ||
     playSource.uri ||
     playSource.localVideoUri ||
     null;
 
-  // Empty / offscreen — labeled shell (never a silent black void)
-  if (!playUri || !active) {
+  if (!playUri) {
     return (
       <View style={[styles.clipShell, style, styles.clipPlaceholder]}>
-        <Text style={styles.clipPlaceholderText}>
-          {!active ? '…' : label || 'NO CLIP'}
-        </Text>
+        <Text style={styles.clipPlaceholderText}>{label || 'NO CLIP'}</Text>
       </View>
     );
   }
 
-  // Keep player keyed by URI so FlatList recycle never shows the wrong clip
+  // Keep player keyed by URI so FlatList recycle never shows the wrong clip.
+  // `active={false}` → ArenaClipPlayer shows poster only (no native decoder).
   return (
     <View style={[styles.clipShell, style]}>
       <ArenaClipPlayer
@@ -354,7 +352,7 @@ const ClipSurface = memo(function ClipSurface({
         style={styles.clipVideoFill}
         muted={muted}
         loop
-        autoPlay
+        autoPlay={!!active}
         active={active}
       />
     </View>
@@ -1004,6 +1002,7 @@ export default function ArenaFeed({ navigation, route }) {
       if (!entry?.isViewable) continue;
       const idx = typeof entry.index === 'number' ? entry.index : -1;
       if (idx < 0) continue;
+      // Only viewport ±1 mount decoders — recycle everything else
       next.add(idx - 1);
       next.add(idx);
       next.add(idx + 1);
@@ -1012,7 +1011,19 @@ export default function ArenaFeed({ navigation, route }) {
       next.add(0);
       next.add(1);
     }
-    setWarmIndices(next);
+    setWarmIndices((prev) => {
+      if (prev.size === next.size) {
+        let same = true;
+        for (const i of next) {
+          if (!prev.has(i)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
   }, []);
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
   const absorbedUriById = useRef(new Map());
@@ -1380,7 +1391,7 @@ export default function ArenaFeed({ navigation, route }) {
           />
         );
       }
-      // Warm viewport + ±1 neighbor for instant playback while scrolling
+      // Warm viewport + ±1 neighbor only — off-screen cells unmount Video
       const active =
         warmIndices.size === 0 ? index < 2 : warmIndices.has(index);
       if (item.type === 'reel') {
@@ -1474,11 +1485,11 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        // Android scroll budget — tight window kills reel stutter
+        // Scroll budget — recycle off-screen cells; keep decode window small
         removeClippedSubviews={true}
-        initialNumToRender={1}
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
         updateCellsBatchingPeriod={50}
         onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
@@ -1578,7 +1589,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
   },
   reelCard: {
-    height: 520,
+    height: 540,
     marginHorizontal: 0,
     marginBottom: 12,
     backgroundColor: DARK_BG,
@@ -1590,14 +1601,14 @@ const styles = StyleSheet.create({
   clipShell: {
     width: '100%',
     height: '100%',
-    minHeight: 400,
+    minHeight: 420,
     backgroundColor: '#000',
     overflow: 'hidden',
   },
   clipVideoFill: {
     width: '100%',
     height: '100%',
-    minHeight: 400,
+    minHeight: 420,
     backgroundColor: '#000',
   },
   reelFullBleed: {
@@ -1606,7 +1617,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     width: '100%',
-    height: 400,
+    height: 420,
   },
   reelMuteBtn: {
     position: 'absolute',

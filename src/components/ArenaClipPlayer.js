@@ -184,12 +184,25 @@ function ExpoAvClipPlayer({
     setPaused((p) => !p);
   }, []);
 
+  const onLoadStart = useCallback(() => {
+    setLoading(true);
+  }, []);
+
+  const onLoad = useCallback(() => {
+    setLoading(false);
+  }, []);
+
+  const onReadyForDisplay = useCallback(() => {
+    setLoading(false);
+  }, []);
+
   return (
     <ClipShell
       style={style}
       onPress={togglePlay}
       accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
     >
+      {/* Poster underlay until Supabase stream paints first frame */}
       <Image
         source={posterSource}
         style={styles.poster}
@@ -209,9 +222,9 @@ function ExpoAvClipPlayer({
         usePoster
         posterSource={posterSource}
         posterStyle={styles.poster}
-        onLoadStart={() => setLoading(true)}
-        onLoad={() => setLoading(false)}
-        onReadyForDisplay={() => setLoading(false)}
+        onLoadStart={onLoadStart}
+        onLoad={onLoad}
+        onReadyForDisplay={onReadyForDisplay}
         onError={(e) => {
           console.warn('[ArenaClipPlayer] av error:', e?.error || e);
           if (!useFallbackAsset) {
@@ -358,13 +371,19 @@ function ArenaClipPlayer({
   autoPlay = true,
   active = true,
 }) {
-  const resolved = useMemo(
-    () => resolveClipUri(uriProp, source),
-    [uriProp, source]
-  );
+  const resolved = useMemo(() => {
+    // Prefer Supabase `video_url` then local / mapped URIs
+    const fromUrl =
+      source && typeof source === 'object'
+        ? sanitizePlayableFeedUri(source.video_url || source.videoUrl)
+        : null;
+    if (fromUrl && isUsablePlaybackUri(fromUrl)) return fromUrl;
+    return resolveClipUri(uriProp, source);
+  }, [uriProp, source]);
 
   const posterUri = resolveClipPoster(source);
 
+  // Off-screen recycle: poster only — never keep a native decoder alive
   if (!active) {
     return (
       <View style={[styles.shell, style, styles.idle]}>
@@ -421,6 +440,7 @@ function ArenaClipPlayer({
             style={styles.poster}
             resizeMode="cover"
           />
+          <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 8 }} />
           <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
           <Text style={styles.fallbackSub}>Loading clip…</Text>
         </View>
@@ -462,7 +482,7 @@ const styles = StyleSheet.create({
   shell: {
     width: '100%',
     height: '100%',
-    minHeight: 400,
+    minHeight: 420,
     backgroundColor: '#0A0A0A',
     overflow: 'hidden',
     position: 'relative',
@@ -478,7 +498,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
-    minHeight: 400,
+    minHeight: 420,
     backgroundColor: '#0A0A0A',
   },
   video: {
@@ -489,7 +509,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
-    minHeight: 400,
+    minHeight: 420,
     backgroundColor: 'transparent',
   },
   loading: {
