@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Pressable,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { uploadVideoToSupabase } from '../services/videoUpload';
@@ -61,18 +60,48 @@ function normalizePreviewUri(raw) {
   return cleaned;
 }
 
-function PlayPauseOverlay({ isPlaying, onToggle }) {
+function PreviewControlsOverlay({
+  isPlaying,
+  playbackRate,
+  onTogglePlay,
+  onToggleSlowMo,
+}) {
   return (
-    <Pressable
-      style={styles.playPauseHit}
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityLabel={isPlaying ? 'Pause preview' : 'Play preview'}
-    >
-      <View style={styles.playPauseBadge}>
-        <Text style={styles.playPauseIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-      </View>
-    </Pressable>
+    <View style={styles.controlsLayer} pointerEvents="box-none">
+      <TouchableOpacity
+        style={styles.playPauseHit}
+        onPress={onTogglePlay}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause preview' : 'Play preview'}
+      >
+        <View style={styles.playPauseBadge}>
+          <Text style={styles.playPauseIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.slowMoBtn,
+          playbackRate < 1 ? styles.slowMoBtnActive : null,
+        ]}
+        onPress={onToggleSlowMo}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={
+          playbackRate < 1 ? 'Disable slow motion' : 'Enable slow motion'
+        }
+      >
+        <Text
+          style={[
+            styles.slowMoText,
+            playbackRate < 1 ? styles.slowMoTextActive : null,
+          ]}
+        >
+          {playbackRate < 1 ? '0.5× SLOW' : '1× SPEED'}
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -80,7 +109,9 @@ function ExpoAvPreview({
   uri,
   visible,
   isPlaying,
+  playbackRate,
   onTogglePlay,
+  onToggleSlowMo,
   onReady,
   onError,
   videoRef,
@@ -91,10 +122,10 @@ function ExpoAvPreview({
     setLoading(true);
   }, [uri]);
 
-  // Keep native player in sync when overlay toggles play/pause
+  // Keep native player in sync for play/pause + rate
   useEffect(() => {
     const node = videoRef?.current;
-    if (!node) return;
+    if (!node) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -102,18 +133,22 @@ function ExpoAvPreview({
           await node.pauseAsync?.();
           return;
         }
+        await node.setRateAsync?.(playbackRate, true);
         if (isPlaying) await node.playAsync?.();
         else await node.pauseAsync?.();
       } catch (err) {
         if (!cancelled) {
-          console.warn('[VideoPublishModal] play/pause failed:', err?.message || err);
+          console.warn(
+            '[VideoPublishModal] av sync failed:',
+            err?.message || err
+          );
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [isPlaying, uri, videoRef, visible]);
+  }, [isPlaying, playbackRate, uri, videoRef, visible]);
 
   return (
     <View style={styles.previewShell}>
@@ -123,6 +158,7 @@ function ExpoAvPreview({
         source={{ uri }}
         style={styles.previewVideo}
         shouldPlay={!!visible && !!isPlaying}
+        rate={playbackRate}
         isLooping
         isMuted={false}
         resizeMode={AvResizeMode?.COVER || 'cover'}
@@ -148,7 +184,12 @@ function ExpoAvPreview({
           <ActivityIndicator color="#FFFFFF" />
         </View>
       ) : null}
-      <PlayPauseOverlay isPlaying={isPlaying} onToggle={onTogglePlay} />
+      <PreviewControlsOverlay
+        isPlaying={isPlaying}
+        playbackRate={playbackRate}
+        onTogglePlay={onTogglePlay}
+        onToggleSlowMo={onToggleSlowMo}
+      />
     </View>
   );
 }
@@ -157,7 +198,9 @@ function ExpoVideoPreview({
   uri,
   visible,
   isPlaying,
+  playbackRate,
   onTogglePlay,
+  onToggleSlowMo,
   onReady,
   onError,
 }) {
@@ -166,6 +209,7 @@ function ExpoVideoPreview({
     try {
       p.loop = true;
       p.muted = false;
+      p.playbackRate = playbackRate;
       if (visible && isPlaying) p.play();
       else p.pause();
     } catch {
@@ -182,6 +226,7 @@ function ExpoVideoPreview({
       try {
         player.loop = true;
         player.muted = false;
+        player.playbackRate = playbackRate;
         if (visible && isPlaying) player.play();
         else player.pause();
         setLoading(false);
@@ -195,7 +240,7 @@ function ExpoVideoPreview({
       cancelled = true;
       clearTimeout(t);
     };
-  }, [isPlaying, onError, onReady, player, uri, visible]);
+  }, [isPlaying, onError, onReady, playbackRate, player, uri, visible]);
 
   return (
     <View style={styles.previewShell}>
@@ -210,7 +255,12 @@ function ExpoVideoPreview({
           <ActivityIndicator color="#FFFFFF" />
         </View>
       ) : null}
-      <PlayPauseOverlay isPlaying={isPlaying} onToggle={onTogglePlay} />
+      <PreviewControlsOverlay
+        isPlaying={isPlaying}
+        playbackRate={playbackRate}
+        onTogglePlay={onTogglePlay}
+        onToggleSlowMo={onToggleSlowMo}
+      />
     </View>
   );
 }
@@ -219,7 +269,9 @@ function PublishClipPreview({
   videoUri,
   visible,
   isPlaying,
+  playbackRate,
   onTogglePlay,
+  onToggleSlowMo,
   videoRef,
 }) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
@@ -238,7 +290,9 @@ function PublishClipPreview({
         uri={uri}
         visible={visible}
         isPlaying={isPlaying}
+        playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
+        onToggleSlowMo={onToggleSlowMo}
         videoRef={videoRef}
       />
     );
@@ -250,7 +304,9 @@ function PublishClipPreview({
       uri={uri}
       visible={visible}
       isPlaying={isPlaying}
+      playbackRate={playbackRate}
       onTogglePlay={onTogglePlay}
+      onToggleSlowMo={onToggleSlowMo}
     />
   );
 }
@@ -268,6 +324,7 @@ export default function VideoPublishModal({
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
+  const [playbackRate, setPlaybackRate] = useState(1.0);
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -275,11 +332,13 @@ export default function VideoPublishModal({
       setCaption('');
       setUploading(false);
       setIsPlaying(true);
+      setPlaybackRate(1.0);
       setSelectedCategory(
         CATEGORIES.includes('COMBAT') ? 'COMBAT' : CATEGORIES[0]
       );
     } else {
       setIsPlaying(true);
+      setPlaybackRate(1.0);
     }
   }, [visible]);
 
@@ -297,6 +356,22 @@ export default function VideoPublishModal({
       );
     }
     setIsPlaying((p) => !p);
+  };
+
+  const toggleSlowMo = async () => {
+    const newRate = playbackRate === 1.0 ? 0.5 : 1.0;
+    const node = videoRef.current;
+    try {
+      if (node?.setRateAsync) {
+        await node.setRateAsync(newRate, true);
+      }
+    } catch (err) {
+      console.warn(
+        '[VideoPublishModal] toggleSlowMo failed:',
+        err?.message || err
+      );
+    }
+    setPlaybackRate(newRate);
   };
 
   const finishSuccess = (payload) => {
@@ -368,7 +443,9 @@ export default function VideoPublishModal({
           videoUri={videoUri}
           visible={visible}
           isPlaying={isPlaying}
+          playbackRate={playbackRate}
           onTogglePlay={togglePlayPause}
+          onToggleSlowMo={toggleSlowMo}
           videoRef={videoRef}
         />
 
@@ -470,6 +547,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: '#222',
+    position: 'relative',
   },
   previewVideo: {
     width: '100%',
@@ -482,6 +560,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  controlsLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
   playPauseHit: {
     ...StyleSheet.absoluteFillObject,
@@ -503,6 +584,30 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     marginLeft: 2,
+  },
+  slowMoBtn: {
+    position: 'absolute',
+    right: 10,
+    bottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  slowMoBtnActive: {
+    borderColor: '#FF5722',
+    backgroundColor: 'rgba(255,87,34,0.25)',
+  },
+  slowMoText: {
+    color: '#DDD',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  slowMoTextActive: {
+    color: '#FF5722',
   },
   previewEmpty: {
     alignItems: 'center',
