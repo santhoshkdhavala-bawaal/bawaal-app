@@ -1011,6 +1011,8 @@ export default function UniversalCamera({
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hidePillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigatingRef = useRef(false);
+  /** Sync ref so success/cancel can navigate after setIsPublishModalOpen(false). */
+  const isPublishModalOpenRef = useRef(false);
 
   const ceiling = useMemo(
     () => modeCeiling(mode, joshUnlocked3m),
@@ -1176,6 +1178,7 @@ export default function UniversalCamera({
       setShowPostSheet(false);
       // Keep ClipPreview closed while publish + looping Video overlay are up
       setShowPreview(false);
+      isPublishModalOpenRef.current = true;
       setIsPublishModalOpen(true);
       setIsFinalizingClip(false);
       setIsProcessing(false);
@@ -1293,6 +1296,7 @@ export default function UniversalCamera({
       recordingHandoffDoneRef.current = false;
       setShowPreview(false);
       setShowPostSheet(false);
+      isPublishModalOpenRef.current = false;
       setIsPublishModalOpen(false);
       setHubOpen(false);
       setRecordedVideoUri(null);
@@ -1331,10 +1335,11 @@ export default function UniversalCamera({
    */
   const returnToLiveCamera = useCallback(() => {
     // Block remount while parent VideoPublishModal holds the frozen clip
-    if (publishHold || isPublishModalOpen) return;
+    if (publishHold || isPublishModalOpenRef.current || isPublishModalOpen) return;
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
     setShowPostSheet(false);
+    isPublishModalOpenRef.current = false;
     setIsPublishModalOpen(false);
     setRecordedVideoUri(null);
     setGalleryAssetId(null);
@@ -1360,14 +1365,25 @@ export default function UniversalCamera({
   ]);
 
   const safeNavigateHome = useCallback(
-    (params: Record<string, unknown>) => {
+    (params: Record<string, unknown>, opts?: { force?: boolean }) => {
       // Parent VideoPublishModal owns leave timing — never pop underneath it
-      if (publishHold || isPublishModalOpen || navigatingRef.current) return;
+      // `force` is used after Success/Cancel already closed the modal.
+      if (
+        !opts?.force &&
+        (publishHold || isPublishModalOpenRef.current || navigatingRef.current)
+      ) {
+        return;
+      }
       navigatingRef.current = true;
       // Drop preview / player first so unmount does not race native AV
+      isPublishModalOpenRef.current = false;
+      setIsPublishModalOpen(false);
       setShowPreview(false);
       setShowPostSheet(false);
+      setRecordedVideoUri(null);
       pendingPreviewUriRef.current = null;
+      setIsFinalizingClip(false);
+      setIsProcessing(false);
       // Screen is unmounting — skip remount (that was paying double camera init cost)
       resetCreationSession({ remountCamera: false });
       setHubOpen(false);
@@ -1379,6 +1395,7 @@ export default function UniversalCamera({
           console.warn('[UniversalCamera] navigate failed:', err);
           try {
             if (navigation?.canGoBack?.()) navigation.goBack?.();
+            else navigation?.navigate?.('Main', { tab: 'Arena' });
           } catch {
             /* ignore */
           }
@@ -1387,7 +1404,7 @@ export default function UniversalCamera({
         }
       }, 300);
     },
-    [navigation, resetCreationSession, publishHold, isPublishModalOpen]
+    [navigation, resetCreationSession, publishHold]
   );
 
   const openBattleChallengeForm = useCallback(() => {
@@ -1891,7 +1908,8 @@ export default function UniversalCamera({
       : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
 
   const handlePublishModalCancel = useCallback(() => {
-    // Cancel — leave after explicit dismiss
+    // Cancel — fully clear modal/camera hold then leave (no orphan black layers)
+    isPublishModalOpenRef.current = false;
     setIsPublishModalOpen(false);
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
@@ -1902,11 +1920,8 @@ export default function UniversalCamera({
     stoppingRef.current = false;
     setIsFinalizingClip(false);
     setIsProcessing(false);
-    requestAnimationFrame(() => {
-      if (navigation?.canGoBack?.()) navigation.goBack?.();
-      else navigation?.navigate?.('Main', { tab: 'Arena' });
-    });
-  }, [navigation]);
+    safeNavigateHome({ tab: 'Arena' }, { force: true });
+  }, [safeNavigateHome]);
 
   const handlePublishModalSuccess = useCallback(
     (data: Record<string, unknown> | null | undefined) => {
@@ -1951,18 +1966,25 @@ export default function UniversalCamera({
       } catch {
         /* ignore */
       }
+      // Close modal + clear capture hold BEFORE navigate (fixes black screen)
+      isPublishModalOpenRef.current = false;
       setIsPublishModalOpen(false);
       setShowPreview(false);
       setShowPostSheet(false);
       pendingPreviewUriRef.current = null;
       setRecordedVideoUri(null);
       recordingHandoffDoneRef.current = false;
-      requestAnimationFrame(() => {
-        safeNavigateHome({
+      recordingLockRef.current = false;
+      stoppingRef.current = false;
+      setIsFinalizingClip(false);
+      setIsProcessing(false);
+      safeNavigateHome(
+        {
           tab: 'Arena',
           newArenaPost: post,
-        });
-      });
+        },
+        { force: true }
+      );
     },
     [
       recordedVideoUri,

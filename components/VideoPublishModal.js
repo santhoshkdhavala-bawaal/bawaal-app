@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Pressable,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { uploadVideoToSupabase } from '../services/videoUpload';
@@ -60,7 +61,22 @@ function normalizePreviewUri(raw) {
   return cleaned;
 }
 
-function ExpoAvPreview({ uri, visible, onReady, onError }) {
+function PlayPauseOverlay({ isPlaying, onToggle }) {
+  return (
+    <Pressable
+      style={styles.playPauseHit}
+      onPress={onToggle}
+      accessibilityRole="button"
+      accessibilityLabel={isPlaying ? 'Pause preview' : 'Play preview'}
+    >
+      <View style={styles.playPauseBadge}>
+        <Text style={styles.playPauseIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function ExpoAvPreview({ uri, visible, isPlaying, onTogglePlay, onReady, onError }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -73,7 +89,7 @@ function ExpoAvPreview({ uri, visible, onReady, onError }) {
         key={uri}
         source={{ uri }}
         style={styles.previewVideo}
-        shouldPlay={!!visible}
+        shouldPlay={!!visible && !!isPlaying}
         isLooping
         isMuted={false}
         resizeMode={AvResizeMode?.COVER || 'cover'}
@@ -97,17 +113,26 @@ function ExpoAvPreview({ uri, visible, onReady, onError }) {
           <ActivityIndicator color="#FFFFFF" />
         </View>
       ) : null}
+      <PlayPauseOverlay isPlaying={isPlaying} onToggle={onTogglePlay} />
     </View>
   );
 }
 
-function ExpoVideoPreview({ uri, visible, onReady, onError }) {
+function ExpoVideoPreview({
+  uri,
+  visible,
+  isPlaying,
+  onTogglePlay,
+  onReady,
+  onError,
+}) {
   const [loading, setLoading] = useState(true);
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
     try {
       p.loop = true;
       p.muted = false;
-      if (visible) p.play();
+      if (visible && isPlaying) p.play();
+      else p.pause();
     } catch {
       /* ignore */
     }
@@ -122,7 +147,7 @@ function ExpoVideoPreview({ uri, visible, onReady, onError }) {
       try {
         player.loop = true;
         player.muted = false;
-        if (visible) player.play();
+        if (visible && isPlaying) player.play();
         else player.pause();
         setLoading(false);
         onReady?.();
@@ -135,7 +160,7 @@ function ExpoVideoPreview({ uri, visible, onReady, onError }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [onError, onReady, player, uri, visible]);
+  }, [isPlaying, onError, onReady, player, uri, visible]);
 
   return (
     <View style={styles.previewShell}>
@@ -150,11 +175,17 @@ function ExpoVideoPreview({ uri, visible, onReady, onError }) {
           <ActivityIndicator color="#FFFFFF" />
         </View>
       ) : null}
+      <PlayPauseOverlay isPlaying={isPlaying} onToggle={onTogglePlay} />
     </View>
   );
 }
 
-function PublishClipPreview({ videoUri, visible }) {
+function PublishClipPreview({
+  videoUri,
+  visible,
+  isPlaying,
+  onTogglePlay,
+}) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
   if (!uri) {
     return (
@@ -166,11 +197,25 @@ function PublishClipPreview({ videoUri, visible }) {
 
   // Prefer real expo-av; never mount the Metro stub ("Dev client required…")
   if (AvVideo) {
-    return <ExpoAvPreview uri={uri} visible={visible} />;
+    return (
+      <ExpoAvPreview
+        uri={uri}
+        visible={visible}
+        isPlaying={isPlaying}
+        onTogglePlay={onTogglePlay}
+      />
+    );
   }
 
   // expo-video plays local file:// + https when expo-av is stubbed
-  return <ExpoVideoPreview uri={uri} visible={visible} />;
+  return (
+    <ExpoVideoPreview
+      uri={uri}
+      visible={visible}
+      isPlaying={isPlaying}
+      onTogglePlay={onTogglePlay}
+    />
+  );
 }
 
 export default function VideoPublishModal({
@@ -185,22 +230,36 @@ export default function VideoPublishModal({
   );
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
 
   useEffect(() => {
     if (!visible) {
       setCaption('');
       setUploading(false);
+      setIsPlaying(true);
       setSelectedCategory(
         CATEGORIES.includes('COMBAT') ? 'COMBAT' : CATEGORIES[0]
       );
+    } else {
+      setIsPlaying(true);
     }
   }, [visible]);
+
+  const togglePlay = () => setIsPlaying((p) => !p);
+
+  const finishSuccess = (payload) => {
+    // Pause preview before parent tears down the camera route
+    setIsPlaying(false);
+    if (onSuccess) onSuccess(payload);
+    else if (onClose) onClose();
+  };
 
   const handleUpload = async () => {
     const playable = normalizePreviewUri(videoUri);
     if (!playable) return;
 
     setUploading(true);
+    setIsPlaying(false);
     const result = await uploadVideoToSupabase(
       playable,
       userId,
@@ -217,17 +276,31 @@ export default function VideoPublishModal({
         category: selectedCategory,
         caption: caption || '',
       };
-      // Parent owns dismiss + navigation — do NOT call onClose here (avoids double goBack).
-      if (onSuccess) onSuccess(payload);
-      else if (onClose) onClose();
-      Alert.alert('Success!', 'Your video challenge is live on BAWAAL!');
+      // Wait for OK so parent can close modal + navigate without orphan layers
+      Alert.alert('Success!', 'Your video challenge is live on BAWAAL!', [
+        {
+          text: 'OK',
+          onPress: () => finishSuccess(payload),
+        },
+      ]);
     } else {
+      setIsPlaying(true);
       Alert.alert('Upload Failed', result.error || 'Something went wrong.');
     }
   };
 
+  const handleCancel = () => {
+    setIsPlaying(false);
+    if (onClose) onClose();
+  };
+
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={handleCancel}
+    >
       <View style={styles.container}>
         <View style={styles.brandRow}>
           <Image
@@ -239,7 +312,12 @@ export default function VideoPublishModal({
         </View>
         <Text style={styles.headerTitle}>TAG YOUR CHALLENGE</Text>
 
-        <PublishClipPreview videoUri={videoUri} visible={visible} />
+        <PublishClipPreview
+          videoUri={videoUri}
+          visible={visible}
+          isPlaying={isPlaying}
+          onTogglePlay={togglePlay}
+        />
 
         {/* Caption Input */}
         <Text style={styles.sectionLabel}>CAPTION / DESCRIPTION</Text>
@@ -284,7 +362,7 @@ export default function VideoPublishModal({
         <View style={styles.actions}>
           <TouchableOpacity
             style={styles.cancelBtn}
-            onPress={onClose}
+            onPress={handleCancel}
             disabled={uploading}
           >
             <Text style={styles.cancelText}>Cancel</Text>
@@ -351,6 +429,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  playPauseHit: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playPauseBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playPauseIcon: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    marginLeft: 2,
   },
   previewEmpty: {
     alignItems: 'center',
