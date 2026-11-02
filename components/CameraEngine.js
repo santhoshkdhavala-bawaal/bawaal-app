@@ -16,7 +16,12 @@ import {
   resolveSafeRecordingFallbackUri,
 } from '../src/utils/safeRecordingFallback';
 
-export default function CameraEngine({ onVideoRecorded, userId }) {
+export default function CameraEngine({
+  onVideoRecorded,
+  userId,
+  /** When false / when parent passes onVideoRecorded, parent owns VideoPublishModal. */
+  embedPublishModal,
+}) {
   const [type, setType] = useState(CameraType.back);
   const [hasPermission, setHasPermission] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -24,6 +29,8 @@ export default function CameraEngine({ onVideoRecorded, userId }) {
   const [recordingTime, setRecordingTime] = useState(0);
   const [videoUri, setVideoUri] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const shouldEmbedPublish =
+    embedPublishModal === true || (embedPublishModal !== false && !onVideoRecorded);
   const cameraRef = useRef(null);
   const timerRef = useRef(null);
   const recordAsyncWaitRef = useRef(null);
@@ -57,10 +64,15 @@ export default function CameraEngine({ onVideoRecorded, userId }) {
       setIsRecording(false);
       setIsSaving(false);
       setVideoUri(uri);
-      setShowPublishModal(true);
-      if (onVideoRecorded) onVideoRecorded(uri);
+      // Prefer parent callback (CameraPublishHost / Arena) — do not navigate away
+      if (typeof onVideoRecorded === 'function') {
+        onVideoRecorded(uri);
+      }
+      if (shouldEmbedPublish) {
+        setShowPublishModal(true);
+      }
     },
-    [clearTimer, onVideoRecorded]
+    [clearTimer, onVideoRecorded, shouldEmbedPublish]
   );
 
   const startRecording = useCallback(async () => {
@@ -250,17 +262,19 @@ export default function CameraEngine({ onVideoRecorded, userId }) {
         </Camera>
       ) : null}
 
-      <VideoPublishModal
-        visible={showPublishModal && !!videoUri}
-        videoUri={videoUri}
-        userId={userId}
-        onClose={() => setShowPublishModal(false)}
-        onSuccess={() => {
-          setShowPublishModal(false);
-          setVideoUri(null);
-          handoffDoneRef.current = false;
-        }}
-      />
+      {shouldEmbedPublish ? (
+        <VideoPublishModal
+          visible={showPublishModal && !!videoUri}
+          videoUri={videoUri}
+          userId={userId}
+          onClose={() => setShowPublishModal(false)}
+          onSuccess={() => {
+            setShowPublishModal(false);
+            setVideoUri(null);
+            handoffDoneRef.current = false;
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
 import * as SplashScreen from 'expo-splash-screen';
 import MainTabs from './MainTabs';
-import UniversalCamera from './UniversalCamera';
+import CameraPublishHost from './CameraPublishHost';
 import BattleChallengeForm from './BattleChallengeForm';
 import LeaderboardScreen from './LeaderboardScreen';
 import Live1v1BattleScreen from './ChallengerArena';
@@ -214,22 +214,22 @@ export default function App() {
             >
               <Stack.Screen name="Entry" component={EntryScreen} />
               <Stack.Screen name="Main" component={MainTabs} />
-              {/* Central "+" create → UniversalCamera (SPARKS / JOSH / REWIND / BAWAAL) */}
+              {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
               <Stack.Screen
                 name="UniversalCamera"
-                component={UniversalCamera}
+                component={CameraPublishHost}
                 options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
-              {/* Legacy "Challenge" route name → same Universal Creation Engine */}
+              {/* Legacy "Challenge" route name → same camera + publish host */}
               <Stack.Screen
                 name="Challenge"
-                component={UniversalCamera}
+                component={CameraPublishHost}
                 options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
-              {/* Arena / Battles RESPOND → locked UniversalCamera viewfinder (no legacy recorder) */}
+              {/* Arena / Battles RESPOND → locked viewfinder + VideoPublishModal */}
               <Stack.Screen
                 name="ChallengeCam"
-                component={UniversalCamera}
+                component={CameraPublishHost}
                 options={{ animation: 'fade', presentation: 'fullScreenModal', animationDuration: 150 }}
               />
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />

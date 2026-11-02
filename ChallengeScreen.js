@@ -1,9 +1,10 @@
 /**
- * ChallengeCam pipeline host — Step 1 recorder → Storage upload → Arena persist.
+ * ChallengeCam pipeline host — Step 1 recorder → VideoPublishModal → Arena persist.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { View, StyleSheet, Text, ActivityIndicator } from 'react-native';
 import ChallengeCamRecorder from './ChallengeCamRecorder';
+import VideoPublishModal from './components/VideoPublishModal';
 import { setLatestBattleClip } from './battleClipStore';
 import {
   pushArenaPost,
@@ -34,6 +35,9 @@ export default function ChallengeScreen({ route, navigation }) {
   const reel = route?.params?.reel;
   const [recorderKey, setRecorderKey] = useState(0);
   const [statusNote, setStatusNote] = useState(null);
+  const [capturedVideoUri, setCapturedVideoUri] = useState(null);
+  const [publishModalVisible, setPublishModalVisible] = useState(false);
+  const pendingMetaRef = useRef(null);
 
   const handleClose = useCallback(() => {
     try {
@@ -160,9 +164,9 @@ export default function ChallengeScreen({ route, navigation }) {
   );
 
   /**
-   * Continue → hand recorded URI into Arena immediately, then cloud upload in background.
+   * After VideoPublishModal success (or direct continue) → Arena hand-off + optional background upload.
    */
-  const handleContinue = useCallback(
+  const continueToArena = useCallback(
     async (uri, meta = {}) => {
       const challengeId =
         route?.params?.battleId || reel?.battleId || reel?.id || undefined;
@@ -177,6 +181,10 @@ export default function ChallengeScreen({ route, navigation }) {
       }
       const playableLocal = localUri || resolveSafeRecordingFallbackUri();
       const active = getActiveUser?.() || {};
+      const preUploaded =
+        (typeof meta.video_url === 'string' && meta.video_url) ||
+        (typeof meta.publicCloudUrl === 'string' && meta.publicCloudUrl) ||
+        null;
       const sport =
         meta.sport_category ||
         meta.category ||
@@ -198,26 +206,28 @@ export default function ChallengeScreen({ route, navigation }) {
         ? { challengeId, battleId: challengeId }
         : { isBattle: true };
 
-      // 1) Instant Arena hand-off — post.videoUri = recorded file:// (or https later)
+      const seedUri = preUploaded || playableLocal;
+
+      // 1) Instant Arena hand-off — post.videoUri = recorded file:// (or https from publish modal)
       const optimistic =
         mapChallengeClipToFeedPost(
-          buildArenaPost(playableLocal, { ...meta, caption, category: sport, sport }, {
+          buildArenaPost(seedUri, { ...meta, caption, category: sport, sport }, {
             localVideoUri: playableLocal,
-            videoUri: playableLocal,
-            uri: playableLocal,
-            publicCloudUrl: null,
-            cloudUploaded: false,
-            _skipPersist: true,
+            videoUri: seedUri,
+            uri: seedUri,
+            publicCloudUrl: preUploaded,
+            cloudUploaded: !!preUploaded,
+            _skipPersist: !preUploaded,
             ...battleIds,
           })
         ) ||
-        buildArenaPost(playableLocal, { ...meta, caption, category: sport, sport }, {
+        buildArenaPost(seedUri, { ...meta, caption, category: sport, sport }, {
           localVideoUri: playableLocal,
-          videoUri: playableLocal,
-          uri: playableLocal,
-          publicCloudUrl: null,
-          cloudUploaded: false,
-          _skipPersist: true,
+          videoUri: seedUri,
+          uri: seedUri,
+          publicCloudUrl: preUploaded,
+          cloudUploaded: !!preUploaded,
+          _skipPersist: !preUploaded,
           ...battleIds,
         });
       console.log('[ChallengeScreen] Arena hand-off videoUri ->', optimistic.videoUri);
@@ -225,7 +235,20 @@ export default function ChallengeScreen({ route, navigation }) {
       pushArenaPost(optimistic);
       goArenaWithPost(optimistic);
 
-      // 2) Background: Storage upload → public https → videos row (user_id/category/caption/video_url)
+      // Already published via VideoPublishModal — skip duplicate Storage upload
+      if (preUploaded && isRemoteHttpsUri(preUploaded)) {
+        setStatusNote(null);
+        postBattleResponseToSupabase(preUploaded, {
+          battleId: challengeId,
+          caption,
+          sport_category: sport,
+          category: sport,
+          user_id: meta.user_id || meta.userId || active.userId || active.id,
+        }).catch(() => {});
+        return;
+      }
+
+      // 2) Background: Storage upload → public https → videos row
       setStatusNote(null);
       void (async () => {
         let publicUrl = null;
@@ -317,8 +340,41 @@ export default function ChallengeScreen({ route, navigation }) {
     ]
   );
 
+  /** Preview Continue → open VideoPublishModal (do not pop to landing yet). */
+  const handleContinue = useCallback((uri, meta = {}) => {
+    const next = typeof uri === 'string' ? uri.trim() : '';
+    if (!next) return;
+    pendingMetaRef.current = meta;
+    setCapturedVideoUri(next);
+    setPublishModalVisible(true);
+  }, []);
+
+  const handlePublishSuccess = useCallback(
+    (data) => {
+      const localUri = capturedVideoUri;
+      const meta = {
+        ...(pendingMetaRef.current || {}),
+        caption:
+          (typeof data?.caption === 'string' && data.caption.trim()) ||
+          pendingMetaRef.current?.caption,
+        category: data?.category || pendingMetaRef.current?.category,
+        sport: data?.category || pendingMetaRef.current?.sport,
+        sport_category:
+          data?.category || pendingMetaRef.current?.sport_category,
+        video_url: data?.video_url || data?.url || null,
+        publicCloudUrl: data?.video_url || data?.url || null,
+      };
+      setPublishModalVisible(false);
+      setCapturedVideoUri(null);
+      pendingMetaRef.current = null;
+      void continueToArena(localUri, meta);
+    },
+    [capturedVideoUri, continueToArena]
+  );
+
   const challengeLabel =
     reel?.statSticker || route?.params?.target || 'BATTLE RESPONSE';
+  const activeUser = getActiveUser?.() || {};
 
   return (
     <View style={styles.root}>
@@ -333,6 +389,13 @@ export default function ChallengeScreen({ route, navigation }) {
           30
         }
         challengeLabel={challengeLabel}
+      />
+      <VideoPublishModal
+        visible={publishModalVisible && !!capturedVideoUri}
+        videoUri={capturedVideoUri}
+        userId={activeUser.userId || activeUser.id}
+        onClose={() => setPublishModalVisible(false)}
+        onSuccess={handlePublishSuccess}
       />
       {statusNote ? (
         <View style={styles.statusBanner} pointerEvents="none">

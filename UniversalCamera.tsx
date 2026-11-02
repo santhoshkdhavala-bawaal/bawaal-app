@@ -98,6 +98,8 @@ export type UniversalCameraProps = {
   route?: { params?: { initialMode?: CreationMode } & Record<string, unknown> };
   initialMode?: CreationMode;
   onPublished?: (payload: PostCreationPayload) => void;
+  /** SPARKS / JOSH / challenge — parent opens VideoPublishModal with this URI. */
+  onVideoRecorded?: (videoUri: string) => void;
 };
 
 type HubMode = {
@@ -915,6 +917,7 @@ export default function UniversalCamera({
   route,
   initialMode,
   onPublished,
+  onVideoRecorded,
 }: UniversalCameraProps) {
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -1192,6 +1195,14 @@ export default function UniversalCamera({
       if (openPreview) {
         setShowPreview(true);
         setShowPostSheet(false);
+      } else if (
+        onVideoRecorded &&
+        (mode === 'SPARKS' || mode === 'JOSH' || isChallengeResponse)
+      ) {
+        // No preview path — hand URI straight to VideoPublishModal host
+        setShowPreview(false);
+        setShowPostSheet(false);
+        onVideoRecorded(uri);
       } else {
         setShowPreview(false);
         setShowPostSheet(true);
@@ -1199,7 +1210,7 @@ export default function UniversalCamera({
       setIsFinalizingClip(false);
       setIsProcessing(false);
     },
-    [clearElapsedTimer]
+    [clearElapsedTimer, onVideoRecorded, mode, isChallengeResponse]
   );
 
   // Camera / recorder lifecycle — stop recording + clear timers / player refs on unmount
@@ -2037,6 +2048,19 @@ export default function UniversalCamera({
                   },
                 });
               });
+              return;
+            }
+            // SPARKS / JOSH / challenge response → parent VideoPublishModal
+            if (
+              onVideoRecorded &&
+              recordedVideoUri &&
+              (mode === 'SPARKS' ||
+                mode === 'JOSH' ||
+                isChallengeResponse)
+            ) {
+              setShowPreview(false);
+              setShowPostSheet(false);
+              onVideoRecorded(recordedVideoUri);
               return;
             }
             // Keep recordedVideoUri — only dismiss preview, open post sheet
