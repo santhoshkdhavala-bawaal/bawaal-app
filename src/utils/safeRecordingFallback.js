@@ -6,8 +6,15 @@ import { Image } from 'react-native';
 import { BAWAAL_FALLBACK_MP4 } from './reelMediaFallback';
 import { validateRecordedVideoUri } from './recordedVideoUri';
 
-/** Max wait for native stopRecording / recordAsync flush before sample fallback. */
-export const STOP_SAVE_TIMEOUT_MS = 2000;
+/**
+ * Max wait for native stopRecording / recordAsync flush before sample fallback.
+ * Keep tight so "Saving clip…" cannot hang the UI.
+ */
+export const STOP_RECORDING_SETTLE_MS = 500;
+/** @deprecated Prefer STOP_RECORDING_SETTLE_MS — kept as alias for call-site compat. */
+export const STOP_SAVE_TIMEOUT_MS = STOP_RECORDING_SETTLE_MS;
+/** Persist / lockLocalRecording budget (separate from stop settle). */
+export const PERSIST_SAVE_TIMEOUT_MS = 2000;
 
 /**
  * Race a promise against a hard timeout. Never leaves callers hanging on
@@ -20,10 +27,10 @@ export const STOP_SAVE_TIMEOUT_MS = 2000;
  */
 export function raceWithTimeout(
   promise,
-  ms = STOP_SAVE_TIMEOUT_MS,
+  ms = STOP_RECORDING_SETTLE_MS,
   label = 'operation'
 ) {
-  const limit = Math.max(250, Number(ms) || STOP_SAVE_TIMEOUT_MS);
+  const limit = Math.max(250, Number(ms) || STOP_RECORDING_SETTLE_MS);
   return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
@@ -60,7 +67,7 @@ export function raceWithTimeout(
  * @returns {Promise<{ uri: string, usedFallback: boolean, timedOut?: boolean, error?: string }>}
  */
 export async function settleStopRecording(opts = {}) {
-  const timeoutMs = opts.timeoutMs ?? STOP_SAVE_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? STOP_RECORDING_SETTLE_MS;
   let stopError = null;
 
   try {
@@ -188,7 +195,7 @@ export async function ensurePlayableRecordingUri(uri, opts = {}) {
   const persist = typeof opts.persist === 'function' ? opts.persist : null;
   if (!persist) return first;
 
-  const timeoutMs = opts.timeoutMs ?? STOP_SAVE_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? PERSIST_SAVE_TIMEOUT_MS;
   try {
     const stable = await raceWithTimeout(
       Promise.resolve().then(() => persist(first.uri)),
