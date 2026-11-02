@@ -61,6 +61,9 @@ import {
   settleStopRecording,
   STOP_SAVE_TIMEOUT_MS,
 } from './src/utils/safeRecordingFallback';
+import VideoPublishModal from './components/VideoPublishModal';
+import { getActiveUser } from './src/services/activeUserProfile';
+import { pushArenaPost } from './arenaFeedStore';
 export type { CreationMode, PostCreationPayload };
 
 /** Minimalist Black & White */
@@ -980,8 +983,8 @@ export default function UniversalCamera({
   const [showDeviceGallery, setShowDeviceGallery] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [showPostSheet, setShowPostSheet] = useState(false);
-  /** Local publish hold — true after capture handoff until parent Success/Cancel unmounts us. */
-  const [isPublishModalVisible, setIsPublishModalVisible] = useState(false);
+  /** Opens VideoPublishModal after a successful capture (until Success/Cancel). */
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   /** True while awaiting recordAsync settle + HW release before preview. */
   const [isFinalizingClip, setIsFinalizingClip] = useState(false);
   /** True during stop → compress/save — blocks UI / unmount races. */
@@ -1162,9 +1165,29 @@ export default function UniversalCamera({
     clearElapsedTimer();
   }, [clearElapsedTimer]);
 
+  /** Open in-camera VideoPublishModal over a frozen preview — no navigation. */
+  const openPublishModal = useCallback(
+    (uri: string) => {
+      if (!uri || isOpenerCapture) return;
+      setRecordedVideoUri(uri);
+      setShowPreview(true);
+      setShowPostSheet(false);
+      setIsPublishModalOpen(true);
+      try {
+        onVideoRecorded?.(uri);
+      } catch (err) {
+        console.warn(
+          '[UniversalCamera] onVideoRecorded failed:',
+          (err as Error)?.message || err
+        );
+      }
+    },
+    [isOpenerCapture, onVideoRecorded]
+  );
+
   /**
-   * Safe preview handshake: persist URI immediately, freeze lens, then open
-   * preview and/or parent VideoPublishModal. Never navigate or null the URI here.
+   * Safe preview handshake: persist URI immediately, freeze lens, open
+   * VideoPublishModal. Never navigate or null the URI here.
    */
   const handoffRecordedClip = useCallback(
     async (uri: string, opts?: { openPreview?: boolean }) => {
@@ -1195,17 +1218,14 @@ export default function UniversalCamera({
         return;
       }
 
-      // Keep clip on screen — never flip preview off while URI is held
+      // Keep clip on screen under publish modal — prevents black camera container
       setShowPreview(true);
       setShowPostSheet(false);
 
-      if (openPreview) {
-        // SPARKS/JOSH: freeze on ClipPreview (speed/slow-mo). Publish opens on Next.
-      } else if (onVideoRecorded && !isOpenerCapture) {
-        // No preview path — open parent VideoPublishModal; do not navigate
-        setIsPublishModalVisible(true);
-        onVideoRecorded(uri);
-      } else {
+      if (!isOpenerCapture) {
+        // Successful capture → VideoPublishModal (preview stays mounted underneath)
+        openPublishModal(uri);
+      } else if (!openPreview) {
         setShowPreview(false);
         setShowPostSheet(true);
       }
@@ -1213,7 +1233,7 @@ export default function UniversalCamera({
       setIsFinalizingClip(false);
       setIsProcessing(false);
     },
-    [clearElapsedTimer, onVideoRecorded, isOpenerCapture]
+    [clearElapsedTimer, isOpenerCapture, openPublishModal]
   );
 
   // Camera / recorder lifecycle — stop recording + clear timers / player refs on unmount
@@ -1256,7 +1276,7 @@ export default function UniversalCamera({
       // Never wipe a frozen capture while publish/preview hold is active
       if (
         opts?.remountCamera !== true &&
-        (publishHold || isPublishModalVisible || pendingPreviewUriRef.current)
+        (publishHold || isPublishModalOpen || pendingPreviewUriRef.current)
       ) {
         // Soft unlock recorder flags only — keep recordedVideoUri mounted
         recordingLockRef.current = false;
@@ -1274,7 +1294,7 @@ export default function UniversalCamera({
       recordingHandoffDoneRef.current = false;
       setShowPreview(false);
       setShowPostSheet(false);
-      setIsPublishModalVisible(false);
+      setIsPublishModalOpen(false);
       setHubOpen(false);
       setRecordedVideoUri(null);
       setGalleryAssetId(null);
@@ -1302,7 +1322,7 @@ export default function UniversalCamera({
       releaseCameraRecorder,
       clearHidePillTimer,
       publishHold,
-      isPublishModalVisible,
+      isPublishModalOpen,
     ]
   );
 
@@ -1312,11 +1332,11 @@ export default function UniversalCamera({
    */
   const returnToLiveCamera = useCallback(() => {
     // Block remount while parent VideoPublishModal holds the frozen clip
-    if (publishHold || isPublishModalVisible) return;
+    if (publishHold || isPublishModalOpen) return;
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
     setShowPostSheet(false);
-    setIsPublishModalVisible(false);
+    setIsPublishModalOpen(false);
     setRecordedVideoUri(null);
     setGalleryAssetId(null);
     setSlowMoEnabled(false);
@@ -1337,13 +1357,13 @@ export default function UniversalCamera({
     recordLimit,
     revealTimePill,
     publishHold,
-    isPublishModalVisible,
+    isPublishModalOpen,
   ]);
 
   const safeNavigateHome = useCallback(
     (params: Record<string, unknown>) => {
       // Parent VideoPublishModal owns leave timing — never pop underneath it
-      if (publishHold || isPublishModalVisible || navigatingRef.current) return;
+      if (publishHold || isPublishModalOpen || navigatingRef.current) return;
       navigatingRef.current = true;
       // Drop preview / player first so unmount does not race native AV
       setShowPreview(false);
@@ -1368,7 +1388,7 @@ export default function UniversalCamera({
         }
       }, 300);
     },
-    [navigation, resetCreationSession, publishHold, isPublishModalVisible]
+    [navigation, resetCreationSession, publishHold, isPublishModalOpen]
   );
 
   const openBattleChallengeForm = useCallback(() => {
@@ -1419,7 +1439,7 @@ export default function UniversalCamera({
       !isCameraReady ||
       isRecording ||
       publishHold ||
-      isPublishModalVisible ||
+      isPublishModalOpen ||
       showPreview ||
       showPostSheet ||
       !!recordedVideoUri ||
@@ -1579,7 +1599,7 @@ export default function UniversalCamera({
     isCameraReady,
     isRecording,
     publishHold,
-    isPublishModalVisible,
+    isPublishModalOpen,
     showPreview,
     showPostSheet,
     recordedVideoUri,
@@ -1623,9 +1643,8 @@ export default function UniversalCamera({
         recordingHandoffDoneRef.current = true;
         setRecordedVideoUri(staged);
         setShowPreview(true);
-        if (onVideoRecorded && !isOpenerCapture && !openPreview) {
-          setIsPublishModalVisible(true);
-          onVideoRecorded(staged);
+        if (!isOpenerCapture) {
+          openPublishModal(staged);
         }
       }
     }, Math.max(500, STOP_SAVE_TIMEOUT_MS));
@@ -1693,9 +1712,9 @@ export default function UniversalCamera({
     isRecording,
     mode,
     isOpenerCapture,
-    onVideoRecorded,
     clearElapsedTimer,
     handoffRecordedClip,
+    openPublishModal,
   ]);
 
   const handleShutter = useCallback(() => {
@@ -1706,7 +1725,7 @@ export default function UniversalCamera({
     // Frozen / publishing — never start a new take under the modal
     if (
       publishHold ||
-      isPublishModalVisible ||
+      isPublishModalOpen ||
       showPreview ||
       showPostSheet ||
       !!recordedVideoUri ||
@@ -1721,7 +1740,7 @@ export default function UniversalCamera({
     mode,
     isRecording,
     publishHold,
-    isPublishModalVisible,
+    isPublishModalOpen,
     showPreview,
     showPostSheet,
     recordedVideoUri,
@@ -1734,7 +1753,7 @@ export default function UniversalCamera({
 
   const handleClose = useCallback(() => {
     // Stay on camera while VideoPublishModal is up — Cancel/Success own navigation
-    if (publishHold || isPublishModalVisible) return;
+    if (publishHold || isPublishModalOpen) return;
     void (async () => {
       if (isRecording || recordingLockRef.current) {
         try {
@@ -1758,7 +1777,7 @@ export default function UniversalCamera({
     isRecording,
     navigation,
     publishHold,
-    isPublishModalVisible,
+    isPublishModalOpen,
     resetCreationSession,
     stopRecording,
   ]);
@@ -1864,13 +1883,98 @@ export default function UniversalCamera({
         : 'RESPOND'
       : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
 
+  const handlePublishModalCancel = useCallback(() => {
+    // Cancel — leave after explicit dismiss
+    setIsPublishModalOpen(false);
+    pendingPreviewUriRef.current = null;
+    setShowPreview(false);
+    setShowPostSheet(false);
+    setRecordedVideoUri(null);
+    recordingHandoffDoneRef.current = false;
+    recordingLockRef.current = false;
+    stoppingRef.current = false;
+    setIsFinalizingClip(false);
+    setIsProcessing(false);
+    requestAnimationFrame(() => {
+      if (navigation?.canGoBack?.()) navigation.goBack?.();
+      else navigation?.navigate?.('Main', { tab: 'Arena' });
+    });
+  }, [navigation]);
+
+  const handlePublishModalSuccess = useCallback(
+    (data: Record<string, unknown> | null | undefined) => {
+      const cloudUrl =
+        (typeof data?.video_url === 'string' && data.video_url) ||
+        (typeof data?.url === 'string' && data.url) ||
+        null;
+      const playUri = cloudUrl || recordedVideoUri;
+      const category =
+        (typeof data?.category === 'string' && data.category) || 'COMBAT';
+      const caption =
+        (typeof data?.caption === 'string' && data.caption.trim()) ||
+        challengeTitle ||
+        'BAWAAL Drop';
+      const post = {
+        id: (typeof data?.id === 'string' && data.id) || `publish-${Date.now()}`,
+        mode,
+        videoUri: playUri,
+        uri: playUri,
+        publicCloudUrl: cloudUrl,
+        remoteVideoUri: cloudUrl,
+        localVideoUri: recordedVideoUri,
+        title: caption,
+        caption,
+        category,
+        sport: category,
+        timestamp: Date.now(),
+        createdAt: Date.now(),
+        feedTarget: 'ARENA' as const,
+        _freshPublish: true,
+      };
+      try {
+        pushArenaPost(post);
+      } catch (err) {
+        console.warn(
+          '[UniversalCamera] pushArenaPost failed:',
+          (err as Error)?.message || err
+        );
+      }
+      try {
+        onPublished?.(post as unknown as PostCreationPayload);
+      } catch {
+        /* ignore */
+      }
+      setIsPublishModalOpen(false);
+      setShowPreview(false);
+      setShowPostSheet(false);
+      pendingPreviewUriRef.current = null;
+      setRecordedVideoUri(null);
+      recordingHandoffDoneRef.current = false;
+      requestAnimationFrame(() => {
+        safeNavigateHome({
+          tab: 'Arena',
+          newArenaPost: post,
+        });
+      });
+    },
+    [
+      recordedVideoUri,
+      mode,
+      challengeTitle,
+      onPublished,
+      safeNavigateHome,
+    ]
+  );
+
+  const activePublishUser = getActiveUser?.() || {};
+
   /**
    * Unmount live lens whenever a clip is held / publish is open / finalizing.
    * Any recordedVideoUri freezes the lens until explicit Retake or parent leave.
    */
   const freezeLiveLens =
     publishHold ||
-    isPublishModalVisible ||
+    isPublishModalOpen ||
     showPreview ||
     showPostSheet ||
     !!recordedVideoUri ||
@@ -2144,12 +2248,9 @@ export default function UniversalCamera({
               });
               return;
             }
-            // Parent owns VideoPublishModal — keep preview frozen (do not clear URI / remount lens)
-            if (onVideoRecorded && recordedVideoUri) {
-              setShowPostSheet(false);
-              setIsPublishModalVisible(true);
-              // Keep showPreview true so ClipPreview stays under the publish modal
-              onVideoRecorded(recordedVideoUri);
+            // Re-open / confirm publish over frozen preview (no navigate)
+            if (recordedVideoUri) {
+              openPublishModal(recordedVideoUri);
               return;
             }
             // Keep recordedVideoUri — only dismiss preview, open post sheet
@@ -2188,12 +2289,10 @@ export default function UniversalCamera({
             releaseCameraRecorder();
           }}
           onSuccess={(payload) => {
-            // When parent hosts VideoPublishModal, never auto-navigate from this sheet
-            if (onVideoRecorded && recordedVideoUri) {
+            // Prefer in-camera VideoPublishModal over CreationPostSheet navigate
+            if (recordedVideoUri) {
               setShowPostSheet(false);
-              setShowPreview(true);
-              setIsPublishModalVisible(true);
-              onVideoRecorded(recordedVideoUri);
+              openPublishModal(recordedVideoUri);
               return;
             }
             if (payload) onPublished?.(payload);
@@ -2275,6 +2374,15 @@ export default function UniversalCamera({
           }}
         />
       </Modal>
+
+      {/* Stable frozen preview stays mounted underneath — prevents black camera flash */}
+      <VideoPublishModal
+        visible={isPublishModalOpen && !!recordedVideoUri}
+        videoUri={recordedVideoUri}
+        userId={activePublishUser.userId || activePublishUser.id}
+        onClose={handlePublishModalCancel}
+        onSuccess={handlePublishModalSuccess}
+      />
     </GestureHandlerRootView>
   );
 }
