@@ -407,7 +407,6 @@ export async function fetchArenaPostsFromSupabase() {
     const mapped = (data || []).map(mapDbRowToArenaPost).filter(Boolean);
 
     if (mapped.length > 0) {
-      console.log('[arenaPosts] loaded', mapped.length, 'rows from', TABLE);
       // Merge storage-only clips that aren't already in the table (no duplicates)
       const extras = await fetchArenaPostsFromStorageFallback();
       return dedupePostsByVideo([...mapped, ...extras]);
@@ -469,7 +468,6 @@ async function fetchArenaPostsFromStorageFallback() {
       })
       .filter(Boolean);
 
-    console.log('[arenaPosts] storage fallback loaded', posts.length, 'clips');
     return posts;
   } catch (err) {
     console.warn('[arenaPosts] storage fallback crashed:', err?.message || err);
@@ -503,7 +501,6 @@ async function persistArenaPostMetaToStorage(row) {
     );
     return { ok: false, error: error.message || String(error) };
   }
-  console.log('[arenaPosts] stored meta JSON fallback:', objectPath);
   return { ok: true, reason: 'storage-meta-fallback' };
 }
 
@@ -532,9 +529,6 @@ async function fetchArenaPostsFromMetaJson() {
       } catch (_) {
         /* skip bad meta files */
       }
-    }
-    if (posts.length) {
-      console.log('[arenaPosts] loaded', posts.length, 'posts from storage JSON');
     }
     return posts;
   } catch (err) {
@@ -675,12 +669,6 @@ export async function persistArenaPostToSupabase(post) {
     }
 
     if (attempt.ok) {
-      console.log(
-        '[arenaPosts] videos',
-        attempt.via,
-        videosRow.video_url,
-        attempt.id || videosRow.id
-      );
       return { ok: true, id: attempt.id || videosRow.id };
     }
 

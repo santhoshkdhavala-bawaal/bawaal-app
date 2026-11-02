@@ -64,4 +64,27 @@ All forms, GAME ON score pills, BATTLES filters, Arena publish pickers, and brie
 - Publish: opener → Supabase Storage + `arena_challenges`; prepend to Arena (`pushOpenChallenge`); BATTLES Open Callouts + Arena shelves surface new open cards.
 
 ## 6. Cursor Re-hydration Prompt
-"Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + shelf at index 2+), GAME ON (scores + BAWAAL_SPORTS pills only), and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js is the immutable taxonomy — never invent local sport arrays. Arena feed indices 0–1 are always video; shelves inject at index 2+. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay."
+"Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + shelf at index 2+), GAME ON (scores + BAWAAL_SPORTS pills only), and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js is the immutable taxonomy — never invent local sport arrays. Arena feed indices 0–1 are always video; shelves inject at index 2+. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay. Arena clips use declarative expo-av source={{uri}} + shouldPlay (no setStatusAsync loops); videos upsert onConflict id; arenaFeedStore hydrate never throws."
+
+## 7. Stable client baseline — Arena video & publish (LOCKED)
+
+Checkpoint of the camera → Storage → `public.videos` → Arena feed path.
+
+### Playback (non-blocking)
+
+| Surface | Contract |
+|---|---|
+| `ArenaFeed.js` | `clipShell` / `clipVideoFill`: `width: '100%'`, `height: 450`, `position: 'relative'`; viewport±1 recycle via `ArenaClipPlayer` `active` |
+| `ArenaClipPlayer.js` / `NativeFeedVideo.js` | Declarative `source={{ uri }}`, `shouldPlay`, `isLooping`; try/catch on load/error handlers; black underlay (no logo blink) |
+| `reelMediaFallback.js` | Feed `resolveVideoSource` → `{ uri }` or `null` — **no** sync bundled-mp4 swap on the feed hot path |
+| Publish preview | `VideoPublishModal` play/pause + slow-mo on preview only (never live lens) |
+
+### Persistence & hydrate
+
+- Upload → Supabase Storage (`bawaal-videos` / battles path) → UUID row `.upsert(..., { onConflict: 'id' })` into `public.videos`.
+- `arenaFeedStore.js`: local AsyncStorage hydrate first, then remote; shared in-flight `hydratePromise`; local/remote/warmup paths catch all rejections and always return a post array.
+- Missing table / RLS / offline → Storage meta JSON + device cache soft-fail; never Alert-block the publish UX.
+
+### Agent lock
+
+See `.cursor/rules/bawaal-arena-video-playback-locked.mdc`. Do not regress declarative loading, 450px shells, upsert-on-id, or throw-safe hydrate.

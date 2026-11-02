@@ -192,28 +192,34 @@ function ExpoAvClipPlayer({
         posterStyle={styles.poster}
         progressUpdateIntervalMillis={1000}
         onLoadStart={() => {
-          setLoading(true);
-          console.log(
-            'Video load started:',
-            typeof resolved === 'string' ? resolved.slice(0, 80) : resolved
-          );
+          try {
+            setLoading(true);
+          } catch (_) {
+            /* ignore */
+          }
         }}
         onLoad={() => {
-          setLoading(false);
-          console.log(
-            'Video loaded successfully:',
-            typeof resolved === 'string' ? resolved.slice(0, 120) : resolved
-          );
+          try {
+            setLoading(false);
+          } catch (_) {
+            /* ignore */
+          }
         }}
-        onReadyForDisplay={() => setLoading(false)}
+        onReadyForDisplay={() => {
+          try {
+            setLoading(false);
+          } catch (_) {
+            /* ignore */
+          }
+        }}
         onError={(e) => {
           try {
-            console.log('Video render error:', JSON.stringify(e?.error || e));
+            console.warn('[ArenaClipPlayer] render error:', e?.error || e);
+            setFailed(true);
+            setLoading(false);
           } catch (_) {
-            console.log('Video render error:', e?.error || e);
+            /* never crash the native render path */
           }
-          setFailed(true);
-          setLoading(false);
         }}
       />
       {loading ? (
@@ -461,7 +467,7 @@ class ExpoVideoErrorBoundary extends React.Component {
 const styles = StyleSheet.create({
   shell: {
     width: '100%',
-    height: '100%',
+    height: 450,
     minHeight: 450,
     backgroundColor: '#000000',
     overflow: 'hidden',

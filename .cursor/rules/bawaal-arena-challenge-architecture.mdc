@@ -42,4 +42,5 @@ Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + she
 - Sport labels: `bawaal-sport-taxonomy-locked.mdc`
 - UI baseline: `bawaal-ui-baseline.mdc`
 - Camera: `bawaal-challengecam-locked.mdc`
+- Feed video + hydrate: `bawaal-arena-video-playback-locked.mdc`
 ---

@@ -163,20 +163,37 @@ function ExpoAvPreview({
         isMuted={false}
         resizeMode={AvResizeMode?.COVER || 'cover'}
         useNativeControls={false}
-        onLoadStart={() => setLoading(true)}
+        onLoadStart={() => {
+          try {
+            setLoading(true);
+          } catch (_) {
+            /* ignore */
+          }
+        }}
         onLoad={() => {
-          setLoading(false);
-          console.log('VIDEO LOADED SUCCESSFULLY: publish-preview');
-          onReady?.();
+          try {
+            setLoading(false);
+            onReady?.();
+          } catch (_) {
+            /* ignore */
+          }
         }}
         onReadyForDisplay={() => {
-          setLoading(false);
-          onReady?.();
+          try {
+            setLoading(false);
+            onReady?.();
+          } catch (_) {
+            /* ignore */
+          }
         }}
         onError={(e) => {
-          console.log('VIDEO PLAYBACK ERROR:', e?.error || e);
-          setLoading(false);
-          onError?.(e);
+          try {
+            console.warn('[VideoPublishModal] preview error:', e?.error || e);
+            setLoading(false);
+            onError?.(e);
+          } catch (_) {
+            /* never crash preview render */
+          }
         }}
       />
       {loading ? (

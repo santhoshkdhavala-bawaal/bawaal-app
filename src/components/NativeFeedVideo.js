@@ -74,7 +74,11 @@ class VideoErrorBoundary extends Component {
   }
 
   componentDidCatch(error) {
-    console.log('Video Player Error:', error?.message || error);
+    try {
+      console.warn('[NativeFeedVideo] boundary:', error?.message || error);
+    } catch (_) {
+      /* ignore */
+    }
   }
 
   componentDidUpdate(prevProps) {
@@ -234,38 +238,35 @@ function NativeFeedVideo({
           posterStyle={styles.poster}
           progressUpdateIntervalMillis={1000}
           onLoadStart={() => {
-            setLoading(true);
-            console.log(
-              'Video load started:',
-              typeof resolved === 'string' ? resolved.slice(0, 80) : resolved
-            );
+            try {
+              setLoading(true);
+            } catch (_) {
+              /* ignore */
+            }
           }}
           onLoad={() => {
-            setLoading(false);
-            console.log(
-              'Video loaded successfully:',
-              typeof resolved === 'string' ? resolved.slice(0, 120) : resolved
-            );
+            try {
+              setLoading(false);
+            } catch (_) {
+              /* ignore */
+            }
           }}
           onReadyForDisplay={() => {
-            setHasFrame(true);
-            setLoading(false);
+            try {
+              setHasFrame(true);
+              setLoading(false);
+            } catch (_) {
+              /* ignore */
+            }
           }}
           onError={(err) => {
             try {
-              console.log(
-                'Video render error:',
-                JSON.stringify(err?.error || err)
-              );
-            } catch (_) {
-              console.log('Video render error:', err?.error || err);
-            }
-            setFailed(true);
-            setLoading(false);
-            try {
+              console.warn('[NativeFeedVideo] render error:', err?.error || err);
+              setFailed(true);
+              setLoading(false);
               onPlaybackError?.(err);
             } catch (_) {
-              /* ignore */
+              /* never crash the native render path */
             }
           }}
         />
@@ -291,7 +292,7 @@ export default memo(NativeFeedVideo);
 const styles = StyleSheet.create({
   shell: {
     width: '100%',
-    height: '100%',
+    height: 450,
     minHeight: 450,
     backgroundColor: '#000000',
     overflow: 'hidden',

@@ -66,6 +66,10 @@ Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOT
 
 Hubs: **ARENA** (cinematic feed; shelf at index 2+), **GAME ON** (scores + locked `BAWAAL_SPORTS` pills), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Taxonomy source: `src/constants/sports.js`. **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc` and `bawaal-sport-taxonomy-locked.mdc`.
 
+## Arena video playback & hydrate (locked)
+
+Feed players (`ArenaClipPlayer` / `NativeFeedVideo` / `ArenaFeed` shells) use **declarative** `source={{ uri }}` + `shouldPlay` only — no render-path `setStatusAsync` loops, no sync bundled-mp4 feed fallback. Shells keep `width: '100%'`, `height: 450`, `position: 'relative'`. Load/error handlers are try/catch-wrapped. Cloud rows use `.upsert(..., { onConflict: 'id' })`; `arenaFeedStore` hydrate/warmup never throw. See `.cursor/rules/bawaal-arena-video-playback-locked.mdc` and `BAWAAL_MASTER_BLUEPRINT.md` §7.
+
 ## Back controls (locked)
 
 Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.

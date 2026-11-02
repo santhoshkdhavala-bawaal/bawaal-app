@@ -1,0 +1,50 @@
+---
+description: BAWAAL Arena feed video playback + hydrate (LOCKED baseline)
+alwaysApply: true
+---
+
+# BAWAAL Arena video playback & hydrate (LOCKED)
+
+Stable baseline as of the camera→publish→Arena hardening pass. Do **not** reintroduce blocking video status loops, sync bundled-mp4 swaps on the feed path, or unguarded hydrate rejections.
+
+## Locked player stack
+
+| File | Role |
+|---|---|
+| `ArenaFeed.js` | Cinematic feed; `clipShell` / `clipVideoFill` use `width: '100%'`, `height: 450`, `position: 'relative'` |
+| `src/components/ArenaClipPlayer.js` | Primary reel player (expo-av → expo-video fallback) |
+| `src/components/NativeFeedVideo.js` | Native expo-av path via `SafeFeedVideo` |
+| `src/components/SafeFeedVideo.js` | Expo Go placeholder gate; lazy-require native |
+| `ArenaReelViewer.js` | Full-screen reel surface via `SafeFeedVideo` |
+| `src/utils/reelMediaFallback.js` | URI validation; `resolveVideoSource` returns `{ uri }` or `null` (no feed sync-fallback mp4) |
+
+## Declarative playback contract (LOCKED)
+
+- Load with `source={{ uri }}` only — never mid-playback `require(sample_challenge.mp4)` swaps.
+- Drive play with declarative props: `shouldPlay`, `isLooping`, `isMuted` — **no** render-path `setStatusAsync` status loops.
+- Soft unload via `safeUnloadExpoAvVideo` / `safeReleaseExpoVideoPlayer` (fire-and-forget).
+- Shell / player styles must keep explicit dimensions: `width: '100%'`, `height: 450`, `position: 'relative'` (or absoluteFill + height 450).
+- Black underlay while buffering — **never** BAWAAL logo poster blink on recycle.
+- Off-viewport recycle: `active={false}` → black shell, no native decoder.
+- `onLoad` / `onLoadStart` / `onError` / `onReadyForDisplay` wrapped in try/catch so handler throws never crash the native tree.
+
+## Persistence & hydrate (LOCKED)
+
+- Cloud write: `public.videos` via `.upsert(payload, { onConflict: 'id' })` with UUID `id` (`arenaPostsService.persistArenaPostToSupabase`).
+- Store: `arenaFeedStore.js` — `hydrateLocal` / `hydrateRemote` / `hydrateArenaPostsFromSupabase` / `startArenaFeedWarmup` never throw; shared `hydratePromise` awaiters always resolve to a post array.
+- Fire-and-forget persist / cache paths must `.catch` (no unhandled rejections).
+- Soft-fail offline: device AsyncStorage + Storage meta fallbacks; UI never stuck on schema/RLS noise.
+
+## Do not re-add
+
+- Imperative `setStatusAsync({ shouldPlay })` loops synced to every prop change
+- Sync bundled MP4 as feed error recovery
+- Verbose `VIDEO LOADED` / playback URL `console.log` spam on the hot path
+- BAWAAL logo as default feed poster
+
+## Related
+
+- UI baseline: `bawaal-ui-baseline.mdc`
+- Arena hubs: `bawaal-arena-challenge-architecture.mdc`
+- Blueprint §7: `BAWAAL_MASTER_BLUEPRINT.md`
+---

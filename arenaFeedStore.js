@@ -257,17 +257,18 @@ export function pushArenaPost(post) {
       return null;
     }
 
-    console.log(
-      '[arenaFeedStore] prepend post',
-      normalized.id,
-      'videoUri ->',
-      normalized.videoUri
-    );
     mergeIntoStore(normalized, { emitEvent: true });
 
     // Device cache for local file:// + https so cards survive reload
     if (!post?._fromRemote) {
-      void cacheLocalArenaPost(normalized);
+      try {
+        void cacheLocalArenaPost(normalized);
+      } catch (cacheErr) {
+        console.warn(
+          '[arenaFeedStore] local cache failed:',
+          cacheErr?.message || cacheErr
+        );
+      }
     }
 
     // Only cloud-persist when we have a verified public HTTPS video_url
@@ -275,13 +276,18 @@ export function pushArenaPost(post) {
       isRemoteHttpsUri(normalized.publicCloudUrl) ||
       isRemoteHttpsUri(normalized.videoUri);
     if (!post?._fromRemote && !post?._skipPersist && httpsReady) {
-      void persistArenaPostToSupabase(normalized).then((res) => {
-        if (!res?.ok && !res?.skipped) {
-          console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
-        } else if (res?.ok) {
-          console.log('[arenaFeedStore] row persisted to videos');
-        }
-      });
+      void persistArenaPostToSupabase(normalized)
+        .then((res) => {
+          if (!res?.ok && !res?.skipped) {
+            console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
+          }
+        })
+        .catch((persistErr) => {
+          console.warn(
+            '[arenaFeedStore] cloud persist rejected:',
+            persistErr?.message || persistErr
+          );
+        });
     } else if (!post?._fromRemote && !post?._skipPersist && !httpsReady) {
       console.warn(
         '[arenaFeedStore] defer cloud persist — local URI cached for feed playback'
@@ -560,14 +566,6 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
         }
       }
 
-      console.log(
-        '[arenaFeedStore] hydrated',
-        'local=',
-        localIncoming.length,
-        'remote=',
-        remoteIncoming.length,
-        silent ? '(silent)' : ''
-      );
       return arenaPosts.slice();
     } catch (err) {
       console.warn(

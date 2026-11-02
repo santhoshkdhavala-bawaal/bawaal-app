@@ -92,11 +92,8 @@ export default function ArenaReelViewer({
       toPublicFeedVideoUrl(reel?.remoteVideoUri) ||
       toPublicFeedVideoUrl(reel?.localVideoUri) ||
       null;
-    if (raw && isUsablePlaybackUri(raw)) {
-      console.log('[ArenaReelViewer] public playback URL:', raw);
-      return raw;
-    }
-    // Mock / invalid / delayed URL → keep player mounted with bundled sample
+    if (raw && isUsablePlaybackUri(raw)) return raw;
+    // Mock / invalid / delayed URL → black shell (no sync bundled-mp4 swap)
     return null;
   }, [reel]);
 
@@ -530,7 +527,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     width: '100%',
-    height: '100%',
+    height: 450,
+    minHeight: 450,
     backgroundColor: 'transparent',
     zIndex: 1,
   },
