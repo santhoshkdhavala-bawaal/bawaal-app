@@ -462,6 +462,7 @@ const styles = StyleSheet.create({
   shell: {
     width: '100%',
     height: '100%',
+    minHeight: 400,
     backgroundColor: '#0A0A0A',
     overflow: 'hidden',
     position: 'relative',
@@ -477,6 +478,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
+    minHeight: 400,
     backgroundColor: '#0A0A0A',
   },
   video: {
@@ -487,6 +489,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
+    minHeight: 400,
     backgroundColor: 'transparent',
   },
   loading: {

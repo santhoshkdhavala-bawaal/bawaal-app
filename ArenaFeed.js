@@ -317,10 +317,12 @@ const ClipSurface = memo(function ClipSurface({
     uri,
     localVideoUri: uri,
   };
+  // Prefer cloud `video_url` (Supabase videos row) then local capture URIs
   const playUri =
+    resolveFeedVideoUri(playSource) ||
     uri ||
-    playSource.videoUri ||
     playSource.video_url ||
+    playSource.videoUri ||
     playSource.uri ||
     playSource.localVideoUri ||
     null;
@@ -342,7 +344,12 @@ const ClipSurface = memo(function ClipSurface({
       <ArenaClipPlayer
         key={playUri}
         uri={playUri}
-        source={playSource}
+        source={{
+          ...playSource,
+          video_url: playSource.video_url || playUri,
+          videoUri: playSource.videoUri || playUri,
+          uri: playSource.uri || playUri,
+        }}
         label={label}
         style={styles.clipVideoFill}
         muted={muted}
@@ -659,14 +666,22 @@ const GeneralReelCard = memo(function GeneralReelCard({
       {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
       <ClipSurface
         key={`clip-${item.id}`}
-        uri={item.videoUri || item.video_url || item.uri || item.localVideoUri}
+        uri={
+          item.video_url ||
+          item.videoUri ||
+          item.uri ||
+          item.localVideoUri ||
+          item.publicCloudUrl
+        }
         source={{
           videoUri: item.videoUri,
-          video_url: item.video_url,
+          video_url: item.video_url || item.videoUrl,
           uri: item.uri,
           localVideoUri: item.localVideoUri,
           publicCloudUrl: item.publicCloudUrl,
           remoteVideoUri: item.remoteVideoUri,
+          thumbnail_url: item.thumbnail_url || item.thumbnailUrl,
+          thumbnailUrl: item.thumbnailUrl || item.thumbnail_url,
         }}
         label={null}
         style={styles.reelFullBleed}
@@ -1575,16 +1590,23 @@ const styles = StyleSheet.create({
   clipShell: {
     width: '100%',
     height: '100%',
+    minHeight: 400,
     backgroundColor: '#000',
     overflow: 'hidden',
   },
   clipVideoFill: {
     width: '100%',
     height: '100%',
+    minHeight: 400,
     backgroundColor: '#000',
   },
   reelFullBleed: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    width: '100%',
+    height: 400,
   },
   reelMuteBtn: {
     position: 'absolute',

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,14 +11,175 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
+import { sanitizePlayableFeedUri } from '../src/services/uploadService';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
 const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
 
-export default function VideoPublishModal({ visible, videoUri, userId, onClose, onSuccess }) {
+function isRealVideoComponent(VideoComp) {
+  if (!VideoComp) return false;
+  const name = String(VideoComp.displayName || VideoComp.name || '');
+  return !/stub|mock/i.test(name);
+}
+
+function loadRealExpoAv() {
+  try {
+    // eslint-disable-next-line global-require
+    const { loadExpoAv } = require('../src/native/safeNative');
+    const mod = typeof loadExpoAv === 'function' ? loadExpoAv() : null;
+    if (mod?.Video && isRealVideoComponent(mod.Video)) {
+      return mod;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    // eslint-disable-next-line global-require
+    const mod = require('expo-av');
+    if (mod?.Video && isRealVideoComponent(mod.Video)) {
+      return { Video: mod.Video, ResizeMode: mod.ResizeMode };
+    }
+  } catch {
+    /* Expo Go Metro stub / missing native */
+  }
+  return null;
+}
+
+const RealAv = loadRealExpoAv();
+const AvVideo = RealAv?.Video || null;
+const AvResizeMode = RealAv?.ResizeMode || null;
+
+/** Normalize camera capture URI (file:// / content:// / https). */
+function normalizePreviewUri(raw) {
+  if (raw == null) return null;
+  const cleaned = sanitizePlayableFeedUri(raw) || String(raw).trim();
+  if (!cleaned || cleaned === 'null' || cleaned === 'undefined') return null;
+  return cleaned;
+}
+
+function ExpoAvPreview({ uri, visible, onReady, onError }) {
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+  }, [uri]);
+
+  return (
+    <View style={styles.previewShell}>
+      <AvVideo
+        key={uri}
+        source={{ uri }}
+        style={styles.previewVideo}
+        shouldPlay={!!visible}
+        isLooping
+        isMuted={false}
+        resizeMode={AvResizeMode?.COVER || 'cover'}
+        useNativeControls={false}
+        onLoadStart={() => setLoading(true)}
+        onLoad={() => {
+          setLoading(false);
+          onReady?.();
+        }}
+        onReadyForDisplay={() => {
+          setLoading(false);
+          onReady?.();
+        }}
+        onError={(e) => {
+          setLoading(false);
+          onError?.(e);
+        }}
+      />
+      {loading ? (
+        <View style={styles.previewLoading} pointerEvents="none">
+          <ActivityIndicator color="#FFFFFF" />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function ExpoVideoPreview({ uri, visible, onReady, onError }) {
+  const [loading, setLoading] = useState(true);
+  const player = useVideoPlayer(uri ? { uri } : null, (p) => {
+    try {
+      p.loop = true;
+      p.muted = false;
+      if (visible) p.play();
+    } catch {
+      /* ignore */
+    }
+  });
+
+  useEffect(() => {
+    setLoading(true);
+    if (!player || !uri) return undefined;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      if (cancelled) return;
+      try {
+        player.loop = true;
+        player.muted = false;
+        if (visible) player.play();
+        else player.pause();
+        setLoading(false);
+        onReady?.();
+      } catch (err) {
+        setLoading(false);
+        onError?.(err);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [onError, onReady, player, uri, visible]);
+
+  return (
+    <View style={styles.previewShell}>
+      <VideoView
+        style={styles.previewVideo}
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+      />
+      {loading ? (
+        <View style={styles.previewLoading} pointerEvents="none">
+          <ActivityIndicator color="#FFFFFF" />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PublishClipPreview({ videoUri, visible }) {
+  const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
+  if (!uri) {
+    return (
+      <View style={[styles.previewShell, styles.previewEmpty]}>
+        <Text style={styles.previewEmptyText}>No clip to preview</Text>
+      </View>
+    );
+  }
+
+  // Prefer real expo-av; never mount the Metro stub ("Dev client required…")
+  if (AvVideo) {
+    return <ExpoAvPreview uri={uri} visible={visible} />;
+  }
+
+  // expo-video plays local file:// + https when expo-av is stubbed
+  return <ExpoVideoPreview uri={uri} visible={visible} />;
+}
+
+export default function VideoPublishModal({
+  visible,
+  videoUri,
+  userId,
+  onClose,
+  onSuccess,
+}) {
   const [selectedCategory, setSelectedCategory] = useState(
     CATEGORIES.includes('COMBAT') ? 'COMBAT' : CATEGORIES[0]
   );
@@ -29,15 +190,23 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
     if (!visible) {
       setCaption('');
       setUploading(false);
-      setSelectedCategory(CATEGORIES.includes('COMBAT') ? 'COMBAT' : CATEGORIES[0]);
+      setSelectedCategory(
+        CATEGORIES.includes('COMBAT') ? 'COMBAT' : CATEGORIES[0]
+      );
     }
   }, [visible]);
 
   const handleUpload = async () => {
-    if (!videoUri) return;
+    const playable = normalizePreviewUri(videoUri);
+    if (!playable) return;
 
     setUploading(true);
-    const result = await uploadVideoToSupabase(videoUri, userId, selectedCategory, caption);
+    const result = await uploadVideoToSupabase(
+      playable,
+      userId,
+      selectedCategory,
+      caption
+    );
     setUploading(false);
 
     if (result.success) {
@@ -70,20 +239,7 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
         </View>
         <Text style={styles.headerTitle}>TAG YOUR CHALLENGE</Text>
 
-        {videoUri ? (
-          <View style={styles.previewShell}>
-            <Video
-              key={videoUri}
-              source={{ uri: videoUri }}
-              style={styles.previewVideo}
-              shouldPlay={visible}
-              isLooping
-              isMuted={false}
-              resizeMode={ResizeMode.COVER}
-              useNativeControls={false}
-            />
-          </View>
-        ) : null}
+        <PublishClipPreview videoUri={videoUri} visible={visible} />
 
         {/* Caption Input */}
         <Text style={styles.sectionLabel}>CAPTION / DESCRIPTION</Text>
@@ -126,14 +282,18 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={uploading}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={onClose}
+            disabled={uploading}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.publishBtn}
             onPress={handleUpload}
-            disabled={uploading || !videoUri}
+            disabled={uploading || !normalizePreviewUri(videoUri)}
           >
             {uploading ? (
               <ActivityIndicator color="#FFF" />
@@ -172,8 +332,8 @@ const styles = StyleSheet.create({
   },
   previewShell: {
     width: '100%',
-    height: 220,
-    borderRadius: 14,
+    height: 200,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#000',
     marginBottom: 8,
@@ -182,7 +342,24 @@ const styles = StyleSheet.create({
   },
   previewVideo: {
     width: '100%',
-    height: '100%',
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#000',
+  },
+  previewLoading: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  previewEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewEmptyText: {
+    color: '#888',
+    fontSize: 13,
+    fontWeight: '700',
   },
   sectionLabel: {
     color: '#888',
