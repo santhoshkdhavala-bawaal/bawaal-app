@@ -42,10 +42,11 @@ export default function CameraPublishHost({ navigation, route }) {
     [navigation]
   );
 
-  /** Recording finished — stay on camera route, open publish modal only. */
+  /** Recording finished — freeze URI + open publish; do not clear until Success/Cancel. */
   const handleVideoRecorded = useCallback((uri) => {
     const next = typeof uri === 'string' ? uri.trim() : '';
     if (!next) return;
+    // Keep prior URI if same clip re-notifies; never null on stop
     setCapturedVideoUri(next);
     setIsPublishing(true);
     setPublishModalVisible(true);

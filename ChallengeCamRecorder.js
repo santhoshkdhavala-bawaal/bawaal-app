@@ -232,6 +232,7 @@ export default function ChallengeCamRecorder({
       recordingLockRef.current = false;
       stoppingRef.current = false;
       recordAsyncWaitRef.current = null;
+      // Persist URI into preview — never null the clip on stop (unmounts CameraView via phase)
       const { uri: safeUri, usedFallback } = coalesceRecordingUri(
         rawUri,
         validateRecordedVideoUri
@@ -332,10 +333,13 @@ export default function ChallengeCamRecorder({
   }, [clearTimer, maxSec, stopAndSettleRecording]);
 
   const beginRecording = useCallback(async () => {
+    // Block auto-restart while a frozen preview / publish handoff is active
     if (
       phase !== 'camera' ||
+      recordedUri ||
       isRecording ||
       recordingLockRef.current ||
+      busy ||
       !cameraReady ||
       !cameraRef.current?.recordAsync
     ) {
@@ -385,24 +389,35 @@ export default function ChallengeCamRecorder({
       });
     }
   }, [
+    busy,
     cameraReady,
     finishRecordingToPreview,
     isRecording,
     maxSec,
     phase,
+    recordedUri,
     startTimer,
   ]);
 
   const toggleRecord = useCallback(() => {
-    if (phase !== 'camera' || busy) return;
+    if (phase !== 'camera' || busy || recordedUri) return;
     if (isRecording) {
       void stopAndSettleRecording();
       return;
     }
     void beginRecording();
-  }, [beginRecording, busy, isRecording, phase, stopAndSettleRecording]);
+  }, [
+    beginRecording,
+    busy,
+    isRecording,
+    phase,
+    recordedUri,
+    stopAndSettleRecording,
+  ]);
 
   const handleRetake = useCallback(async () => {
+    // Explicit user retake only — never clear URI from stopRecording / publish open
+    if (busy) return;
     setBusy(true);
     recordingCompleteRef.current = false;
     stoppingRef.current = false;
@@ -412,9 +427,10 @@ export default function ChallengeCamRecorder({
     setElapsedSec(0);
     setError(null);
     setSpeedRate(1);
+    setCameraReady(false);
     setPhase('camera');
     setBusy(false);
-  }, []);
+  }, [busy]);
 
   const handleContinue = useCallback(
     async (payload) => {

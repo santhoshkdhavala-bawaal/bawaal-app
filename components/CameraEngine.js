@@ -31,7 +31,8 @@ export default function CameraEngine({
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [videoUri, setVideoUri] = useState(null);
+  /** Frozen clip URI — never cleared on stop; only on Success / explicit Retake / leave Cancel. */
+  const [capturedVideoUri, setCapturedVideoUri] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const shouldEmbedPublish =
     embedPublishModal === true || (embedPublishModal !== false && !onVideoRecorded);
@@ -40,6 +41,10 @@ export default function CameraEngine({
   const recordAsyncWaitRef = useRef(null);
   const stoppingRef = useRef(false);
   const handoffDoneRef = useRef(false);
+
+  /** Live lens must stay down while a clip is frozen or publish is open. */
+  const freezeLiveCamera =
+    !!capturedVideoUri || showPublishModal || isPublishing || isPreviewing;
 
   useEffect(() => {
     (async () => {
@@ -58,6 +63,14 @@ export default function CameraEngine({
     }
   }, []);
 
+  const clearCapturedClip = useCallback(() => {
+    setCapturedVideoUri(null);
+    setShowPublishModal(false);
+    setIsPreviewing(false);
+    setIsPublishing(false);
+    handoffDoneRef.current = false;
+  }, []);
+
   const commitRecordedUri = useCallback(
     (recordedUri) => {
       const uri = recordedUri || resolveSafeRecordingFallbackUri();
@@ -67,18 +80,17 @@ export default function CameraEngine({
       clearTimer();
       setIsRecording(false);
       setIsSaving(false);
-      setVideoUri(uri);
+      // Freeze — do NOT null the URI on stop
+      setCapturedVideoUri(uri);
       setIsPreviewing(true);
       setIsPublishing(true);
-      // Never navigate here — parent / VideoPublishModal owns goBack after Success/Cancel
+      setShowPublishModal(true);
+      // Parent may own the modal UI; still notify with persistent URI
       if (typeof onVideoRecorded === 'function') {
         onVideoRecorded(uri);
       }
-      if (shouldEmbedPublish) {
-        setShowPublishModal(true);
-      }
     },
-    [clearTimer, onVideoRecorded, shouldEmbedPublish]
+    [clearTimer, onVideoRecorded]
   );
 
   const startRecording = useCallback(async () => {
@@ -86,7 +98,7 @@ export default function CameraEngine({
       !cameraRef.current ||
       isRecording ||
       isSaving ||
-      isPublishing ||
+      freezeLiveCamera ||
       stoppingRef.current
     ) {
       return;
@@ -97,10 +109,7 @@ export default function CameraEngine({
       stoppingRef.current = false;
       setIsRecording(true);
       setIsSaving(false);
-      setIsPreviewing(false);
-      setIsPublishing(false);
       setRecordingTime(0);
-      setShowPublishModal(false);
       timerRef.current = setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
@@ -142,7 +151,7 @@ export default function CameraEngine({
     } finally {
       recordAsyncWaitRef.current = null;
     }
-  }, [isRecording, isSaving, isPublishing, clearTimer, commitRecordedUri]);
+  }, [isRecording, isSaving, freezeLiveCamera, clearTimer, commitRecordedUri]);
 
   const stopRecording = useCallback(async () => {
     if ((!isRecording && !recordAsyncWaitRef.current) || stoppingRef.current) {
@@ -153,7 +162,6 @@ export default function CameraEngine({
     setIsRecording(false);
     clearTimer();
 
-    // Force-clear spinner if native stop hangs past the settle budget
     const savingWatchdog = setTimeout(() => {
       setIsSaving(false);
     }, STOP_RECORDING_SETTLE_MS);
@@ -170,9 +178,7 @@ export default function CameraEngine({
         return;
       }
 
-      const recordedUri =
-        settled.uri || resolveSafeRecordingFallbackUri();
-      // Clear saving immediately once URI is captured, then open publish
+      const recordedUri = settled.uri || resolveSafeRecordingFallbackUri();
       setIsSaving(false);
       commitRecordedUri(recordedUri);
     } catch (error) {
@@ -190,75 +196,70 @@ export default function CameraEngine({
     }
   }, [isRecording, clearTimer, commitRecordedUri]);
 
+  const handleEmbedPublishClose = useCallback(() => {
+    // Cancel — clear only after explicit dismiss; notify parent (may navigate)
+    const uri = capturedVideoUri;
+    clearCapturedClip();
+    if (typeof onPublishCancel === 'function') onPublishCancel(uri);
+  }, [onPublishCancel, capturedVideoUri, clearCapturedClip]);
+
+  const handleEmbedPublishSuccess = useCallback(
+    (data) => {
+      const uri = capturedVideoUri;
+      clearCapturedClip();
+      if (typeof onPublishSuccess === 'function') onPublishSuccess(data, uri);
+    },
+    [onPublishSuccess, capturedVideoUri, clearCapturedClip]
+  );
+
   if (hasPermission === null) return <View style={styles.container} />;
   if (hasPermission === false) {
     return <Text style={styles.text}>No access to camera/mic</Text>;
   }
 
-  const handleEmbedPublishClose = useCallback(() => {
-    setShowPublishModal(false);
-    setIsPublishing(false);
-    setIsPreviewing(!!videoUri);
-    if (typeof onPublishCancel === 'function') onPublishCancel(videoUri);
-  }, [onPublishCancel, videoUri]);
-
-  const handleEmbedPublishSuccess = useCallback(
-    (data) => {
-      setShowPublishModal(false);
-      setIsPublishing(false);
-      setIsPreviewing(false);
-      const uri = videoUri;
-      setVideoUri(null);
-      handoffDoneRef.current = false;
-      if (typeof onPublishSuccess === 'function') onPublishSuccess(data, uri);
-    },
-    [onPublishSuccess, videoUri]
-  );
-
   return (
     <SafeAreaView style={styles.container}>
-      {videoUri && !showPublishModal && isPreviewing ? (
-        <View style={styles.previewContainer}>
+      {/* Frozen recorded clip — stays mounted under VideoPublishModal */}
+      {capturedVideoUri ? (
+        <View style={styles.previewContainer} pointerEvents="box-none">
           <Video
-            source={{ uri: videoUri }}
+            source={{ uri: capturedVideoUri }}
             style={styles.preview}
-            useNativeControls
+            useNativeControls={!showPublishModal}
             resizeMode="cover"
             isLooping
-            shouldPlay
+            shouldPlay={!showPublishModal}
+            isMuted={!!showPublishModal}
           />
-          <TouchableOpacity
-            style={styles.retakeBtn}
-            onPress={() => {
-              setVideoUri(null);
-              setShowPublishModal(false);
-              setIsPreviewing(false);
-              setIsPublishing(false);
-              handoffDoneRef.current = false;
-            }}
-          >
-            <Text style={styles.btnText}>Retake Video</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.publishBtn}
-            onPress={() => {
-              setIsPublishing(true);
-              setShowPublishModal(true);
-            }}
-          >
-            <Text style={styles.btnText}>Publish</Text>
-          </TouchableOpacity>
+          {!showPublishModal ? (
+            <>
+              <TouchableOpacity
+                style={styles.retakeBtn}
+                onPress={clearCapturedClip}
+              >
+                <Text style={styles.btnText}>Retake Video</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.publishBtn}
+                onPress={() => {
+                  setIsPublishing(true);
+                  setShowPublishModal(true);
+                }}
+              >
+                <Text style={styles.btnText}>Publish</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
         </View>
-      ) : !showPublishModal ? (
+      ) : (
+        /* Live lens only when no frozen clip — prevents auto re-init under publish */
         <Camera style={styles.camera} type={type} ref={cameraRef}>
           <View style={styles.overlay}>
             <View style={styles.header}>
               <Text style={styles.timerText}>
                 {isRecording
                   ? `00:${recordingTime < 10 ? '0' : ''}${recordingTime}`
-                  : isPublishing
-                    ? 'PUBLISH'
-                    : 'REC'}
+                  : 'REC'}
               </Text>
             </View>
 
@@ -270,7 +271,7 @@ export default function CameraEngine({
                     type === CameraType.back ? CameraType.front : CameraType.back
                   );
                 }}
-                disabled={isRecording || isSaving || isPublishing}
+                disabled={isRecording || isSaving}
               >
                 <Text style={styles.btnText}>Flip</Text>
               </TouchableOpacity>
@@ -278,11 +279,11 @@ export default function CameraEngine({
               <TouchableOpacity
                 style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
                 onPress={() => {
-                  if (isSaving || isPublishing) return;
+                  if (isSaving) return;
                   if (isRecording) void stopRecording();
                   else void startRecording();
                 }}
-                disabled={isSaving || isPublishing}
+                disabled={isSaving}
               >
                 <View
                   style={[
@@ -301,17 +302,20 @@ export default function CameraEngine({
             </View>
           ) : null}
         </Camera>
-      ) : null}
+      )}
 
       {shouldEmbedPublish ? (
         <VideoPublishModal
-          visible={showPublishModal && !!videoUri}
-          videoUri={videoUri}
+          visible={showPublishModal && !!capturedVideoUri}
+          videoUri={capturedVideoUri}
           userId={userId}
           onClose={handleEmbedPublishClose}
           onSuccess={handleEmbedPublishSuccess}
         />
-      ) : null}
+      ) : (
+        /* Parent-owned modal still needs local freeze flags while URI is held */
+        null
+      )}
     </SafeAreaView>
   );
 }
@@ -356,7 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#FF0000',
   },
-  previewContainer: { flex: 1, justifyContent: 'center' },
+  previewContainer: { flex: 1, justifyContent: 'center', backgroundColor: '#000' },
   preview: { flex: 1 },
   retakeBtn: {
     position: 'absolute',

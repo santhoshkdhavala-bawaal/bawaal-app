@@ -1196,11 +1196,12 @@ export default function UniversalCamera({
       }
 
       if (openPreview) {
+        // Freeze on recorded clip — keep CameraView from re-arming
         setShowPreview(true);
         setShowPostSheet(false);
       } else if (onVideoRecorded) {
-        // Stay on this route — parent opens VideoPublishModal (no goBack yet)
-        setShowPreview(false);
+        // Freeze preview under VideoPublishModal — do NOT clear URI / remount lens
+        setShowPreview(true);
         setShowPostSheet(false);
         onVideoRecorded(uri);
       } else {
@@ -1292,6 +1293,8 @@ export default function UniversalCamera({
    * Must not remount <CameraView/> or flip isCameraReady (Android black viewfinder).
    */
   const returnToLiveCamera = useCallback(() => {
+    // Block remount while parent VideoPublishModal holds the frozen clip
+    if (publishHold) return;
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
     setShowPostSheet(false);
@@ -1310,7 +1313,7 @@ export default function UniversalCamera({
     setIsProcessing(false);
     // Keep cameraSessionKey + isCameraReady untouched so the live feed stays attached
     revealTimePill();
-  }, [selectedDuration, recordLimit, revealTimePill]);
+  }, [selectedDuration, recordLimit, revealTimePill, publishHold]);
 
   const safeNavigateHome = useCallback(
     (params: Record<string, unknown>) => {
@@ -1390,6 +1393,10 @@ export default function UniversalCamera({
     if (
       !isCameraReady ||
       isRecording ||
+      publishHold ||
+      showPreview ||
+      showPostSheet ||
+      !!recordedVideoUri ||
       isFinalizingClip ||
       isProcessing ||
       recordingLockRef.current ||
@@ -1545,6 +1552,10 @@ export default function UniversalCamera({
     mode,
     isCameraReady,
     isRecording,
+    publishHold,
+    showPreview,
+    showPostSheet,
+    recordedVideoUri,
     isFinalizingClip,
     isProcessing,
     isOpenerCapture,
@@ -1659,12 +1670,24 @@ export default function UniversalCamera({
       openBattleChallengeForm();
       return;
     }
-    if (isFinalizingClip || isProcessing) return;
+    // Frozen / publishing — never start a new take under the modal
+    if (
+      publishHold ||
+      showPreview ||
+      showPostSheet ||
+      isFinalizingClip ||
+      isProcessing
+    ) {
+      return;
+    }
     if (isRecording) void stopRecording();
     else void startRecording();
   }, [
     mode,
     isRecording,
+    publishHold,
+    showPreview,
+    showPostSheet,
     isFinalizingClip,
     isProcessing,
     openBattleChallengeForm,
@@ -1827,51 +1850,69 @@ export default function UniversalCamera({
     );
   }
 
+  /** Unmount live lens while preview / publish hold so it cannot auto-restart. */
+  const freezeLiveLens =
+    publishHold ||
+    showPreview ||
+    showPostSheet ||
+    (!!recordedVideoUri && !isRecording && !isFinalizingClip && !isProcessing);
+
+  // When lens unmounts for freeze, mark not-ready so remount cannot race a new recordAsync
+  useEffect(() => {
+    if (freezeLiveLens) {
+      setIsCameraReady(false);
+    }
+  }, [freezeLiveLens]);
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      <PinchGestureHandler
-        enabled={mode !== 'BATTLE_BAWAAL'}
-        onGestureEvent={onPinchGestureEvent}
-        onHandlerStateChange={onPinchHandlerStateChange}
-        minPointers={2}
-        avgTouches
-      >
-        <View style={styles.cameraGestureHost} collapsable={false}>
-          <CameraView
-            key={`bawaal-cam-${cameraSessionKey}`}
-            ref={cameraRef}
-            style={styles.camera}
-            facing={facing}
-            mode="video"
-            mute={false}
-            videoQuality="720p"
-            zoom={zoom}
-            enableTorch={false}
-            onCameraReady={() => {
-              setIsCameraReady(true);
-              setCameraError('');
-            }}
-            onMountError={(err) => {
-              recordingLockRef.current = false;
-              setIsRecording(false);
-              setIsCameraReady(false);
-              setCameraError(err?.message || 'Could not start camera.');
-            }}
-          />
+      {!freezeLiveLens ? (
+        <PinchGestureHandler
+          enabled={mode !== 'BATTLE_BAWAAL'}
+          onGestureEvent={onPinchGestureEvent}
+          onHandlerStateChange={onPinchHandlerStateChange}
+          minPointers={2}
+          avgTouches
+        >
+          <View style={styles.cameraGestureHost} collapsable={false}>
+            <CameraView
+              key={`bawaal-cam-${cameraSessionKey}`}
+              ref={cameraRef}
+              style={styles.camera}
+              facing={facing}
+              mode="video"
+              mute={false}
+              videoQuality="720p"
+              zoom={zoom}
+              enableTorch={false}
+              onCameraReady={() => {
+                setIsCameraReady(true);
+                setCameraError('');
+              }}
+              onMountError={(err) => {
+                recordingLockRef.current = false;
+                setIsRecording(false);
+                setIsCameraReady(false);
+                setCameraError(err?.message || 'Could not start camera.');
+              }}
+            />
 
-          {/* Single-tap only when idle — never blocks two-finger pinch while recording */}
-          <Pressable
-            style={styles.viewfinderTap}
-            onPress={revealTimePill}
-            disabled={isRecording || mode === 'BATTLE_BAWAAL'}
-            pointerEvents={
-              isRecording || mode === 'BATTLE_BAWAAL' ? 'none' : 'auto'
-            }
-          />
-        </View>
-      </PinchGestureHandler>
+            {/* Single-tap only when idle — never blocks two-finger pinch while recording */}
+            <Pressable
+              style={styles.viewfinderTap}
+              onPress={revealTimePill}
+              disabled={isRecording || mode === 'BATTLE_BAWAAL'}
+              pointerEvents={
+                isRecording || mode === 'BATTLE_BAWAAL' ? 'none' : 'auto'
+              }
+            />
+          </View>
+        </PinchGestureHandler>
+      ) : (
+        <View style={[styles.cameraGestureHost, styles.frozenLensPlaceholder]} />
+      )}
 
       <View
         pointerEvents="box-none"
@@ -2053,10 +2094,10 @@ export default function UniversalCamera({
               });
               return;
             }
-            // Parent owns VideoPublishModal — do not navigate or open post sheet yet
+            // Parent owns VideoPublishModal — keep preview frozen (do not clear URI / remount lens)
             if (onVideoRecorded && recordedVideoUri) {
-              setShowPreview(false);
               setShowPostSheet(false);
+              // Keep showPreview true so ClipPreview stays under the publish modal
               onVideoRecorded(recordedVideoUri);
               return;
             }
@@ -2191,6 +2232,9 @@ const styles = StyleSheet.create({
   absoluteFill: { ...ABSOLUTE_FILL },
   cameraGestureHost: {
     ...ABSOLUTE_FILL,
+  },
+  frozenLensPlaceholder: {
+    backgroundColor: '#000000',
   },
   camera: { ...ABSOLUTE_FILL },
   viewfinderTap: {
