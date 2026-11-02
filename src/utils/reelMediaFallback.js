@@ -41,14 +41,17 @@ export function resolveVideoSource(uri) {
 }
 
 /**
- * Poster image source from thumbnail URL or brand icon.
+ * Poster image source from a real thumbnail URL only.
+ * Returns null when missing — callers must use a solid black underlay
+ * (never the BAWAAL logo, which blinks during feed recycle / buffer).
  * @param {string|null|undefined} thumbnailUrl
+ * @returns {{ uri: string } | null}
  */
 export function resolvePosterSource(thumbnailUrl) {
   if (isUsablePlaybackUri(thumbnailUrl) && /^https?:\/\//i.test(thumbnailUrl)) {
     return { uri: String(thumbnailUrl).trim() };
   }
-  return BAWAAL_REEL_POSTER;
+  return null;
 }
 
 /** Prefetch brand poster once so first open is never blank. */

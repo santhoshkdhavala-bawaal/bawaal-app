@@ -337,7 +337,8 @@ const ClipSurface = memo(function ClipSurface({
   }
 
   // Keep player keyed by URI so FlatList recycle never shows the wrong clip.
-  // `active={false}` → ArenaClipPlayer shows poster only (no native decoder).
+  // Container is always 450×100% black — Video uses absoluteFill (no zero-height collapse).
+  // `active={false}` → ArenaClipPlayer shows black underlay only (no native decoder).
   return (
     <View style={[styles.clipShell, style]}>
       <ArenaClipPlayer
@@ -345,8 +346,8 @@ const ClipSurface = memo(function ClipSurface({
         uri={playUri}
         source={{
           ...playSource,
-          video_url: playSource.video_url || playUri,
-          videoUri: playSource.videoUri || playUri,
+          video_url: playSource.video_url || playSource.videoUri || playUri,
+          videoUri: playSource.videoUri || playSource.video_url || playUri,
           uri: playSource.uri || playUri,
         }}
         label={label}

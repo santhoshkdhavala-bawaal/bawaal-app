@@ -192,7 +192,7 @@ function ExpoAvClipPlayer({
     setLoading(false);
     console.log(
       'VIDEO LOADED SUCCESSFULLY:',
-      typeof resolved === 'string' ? resolved.slice(0, 80) : resolved
+      typeof resolved === 'string' ? resolved.slice(0, 120) : resolved
     );
   }, [resolved]);
 
@@ -206,13 +206,16 @@ function ExpoAvClipPlayer({
       onPress={togglePlay}
       accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
     >
-      {/* Poster underlay until Supabase stream paints first frame */}
-      <Image
-        source={posterSource}
-        style={styles.poster}
-        resizeMode="cover"
-        pointerEvents="none"
-      />
+      {/* Solid black underlay — never BAWAAL logo (avoids blink on recycle) */}
+      <View style={styles.blackUnderlay} pointerEvents="none" />
+      {posterSource ? (
+        <Image
+          source={posterSource}
+          style={styles.poster}
+          resizeMode="cover"
+          pointerEvents="none"
+        />
+      ) : null}
       <AvVideo
         ref={videoRef}
         style={styles.video}
@@ -223,14 +226,18 @@ function ExpoAvClipPlayer({
         isMuted={!!muted}
         volume={muted ? 0 : 1}
         useNativeControls={false}
-        usePoster
-        posterSource={posterSource}
+        usePoster={!!posterSource}
+        posterSource={posterSource || undefined}
         posterStyle={styles.poster}
         onLoadStart={onLoadStart}
         onLoad={onLoad}
         onReadyForDisplay={onReadyForDisplay}
         onError={(e) => {
-          console.log('VIDEO PLAYBACK ERROR:', e?.error || e);
+          try {
+            console.log('VIDEO PLAYBACK ERROR:', JSON.stringify(e?.error || e));
+          } catch (_) {
+            console.log('VIDEO PLAYBACK ERROR:', e?.error || e);
+          }
           if (!useFallbackAsset) {
             setUseFallbackAsset(true);
             setLoading(true);
@@ -387,15 +394,19 @@ function ArenaClipPlayer({
 
   const posterUri = resolveClipPoster(source);
 
-  // Off-screen recycle: poster only — never keep a native decoder alive
+  // Off-screen recycle: solid black (+ optional real thumbnail) — no decoder, no logo blink
   if (!active) {
+    const idlePoster = resolvePosterSource(posterUri);
     return (
       <View style={[styles.shell, style, styles.idle]}>
-        <Image
-          source={resolvePosterSource(posterUri)}
-          style={styles.poster}
-          resizeMode="cover"
-        />
+        <View style={styles.blackUnderlay} />
+        {idlePoster ? (
+          <Image
+            source={idlePoster}
+            style={styles.poster}
+            resizeMode="cover"
+          />
+        ) : null}
       </View>
     );
   }
@@ -439,11 +450,7 @@ function ArenaClipPlayer({
         />
       ) : (
         <View style={[styles.shell, style, styles.fallback]}>
-          <Image
-            source={resolvePosterSource(posterUri)}
-            style={styles.poster}
-            resizeMode="cover"
-          />
+          <View style={styles.blackUnderlay} />
           <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 8 }} />
           <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
           <Text style={styles.fallbackSub}>Loading clip…</Text>
@@ -487,23 +494,25 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     minHeight: 450,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#000000',
     overflow: 'hidden',
     position: 'relative',
   },
   idle: {
-    backgroundColor: '#0A0A0A',
+    backgroundColor: '#000000',
+  },
+  blackUnderlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
   },
   poster: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: 'transparent',
   },
   video: {
     ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
     backgroundColor: 'transparent',
   },
   loading: {

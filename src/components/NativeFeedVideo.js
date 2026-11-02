@@ -215,11 +215,14 @@ function NativeFeedVideo({
       style={style}
       fallback={
         <View style={[styles.shell, style]}>
-          <Image
-            source={posterSource}
-            style={styles.poster}
-            resizeMode="contain"
-          />
+          <View style={styles.blackUnderlay} />
+          {posterSource ? (
+            <Image
+              source={posterSource}
+              style={styles.poster}
+              resizeMode="contain"
+            />
+          ) : null}
           <SportsFeedPlaceholder
             style={StyleSheet.absoluteFill}
             label="CLIP UNAVAILABLE"
@@ -230,13 +233,16 @@ function NativeFeedVideo({
       }
     >
       <View style={[styles.shell, style]} pointerEvents="box-none">
-        {/* Poster underlay — never a dead black frame while URL buffers */}
-        <Image
-          source={posterSource}
-          style={styles.poster}
-          resizeMode="cover"
-          pointerEvents="none"
-        />
+        {/* Solid black underlay — avoid BAWAAL logo blink while buffering */}
+        <View style={styles.blackUnderlay} pointerEvents="none" />
+        {posterSource ? (
+          <Image
+            source={posterSource}
+            style={styles.poster}
+            resizeMode="cover"
+            pointerEvents="none"
+          />
+        ) : null}
 
         <Video
           ref={videoRef}
@@ -248,8 +254,8 @@ function NativeFeedVideo({
           isMuted={!!muted}
           volume={muted ? 0 : 1}
           useNativeControls={!!nativeControls}
-          usePoster
-          posterSource={posterSource}
+          usePoster={!!posterSource}
+          posterSource={posterSource || undefined}
           posterStyle={styles.poster}
           progressUpdateIntervalMillis={800}
           onLoadStart={() => {
@@ -257,13 +263,21 @@ function NativeFeedVideo({
           }}
           onLoad={() => {
             setLoading(false);
+            console.log('VIDEO LOADED SUCCESSFULLY:', resolved);
           }}
           onReadyForDisplay={() => {
             setHasFrame(true);
             setLoading(false);
           }}
           onError={(err) => {
-            console.log('Video Player Error:', err?.error || err);
+            try {
+              console.log(
+                'VIDEO PLAYBACK ERROR:',
+                JSON.stringify(err?.error || err)
+              );
+            } catch (_) {
+              console.log('VIDEO PLAYBACK ERROR:', err?.error || err);
+            }
             // Invalid / delayed cloud URL → bundled sample once; then surface failure
             if (!useFallbackAsset) {
               setUseFallbackAsset(true);
@@ -304,28 +318,23 @@ const styles = StyleSheet.create({
   shell: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#0A0A0A',
+    minHeight: 450,
+    backgroundColor: '#000000',
     overflow: 'hidden',
     position: 'relative',
   },
+  blackUnderlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+  },
   poster: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: '#0A0A0A',
+    backgroundColor: 'transparent',
   },
   video: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
   loadingOverlay: {

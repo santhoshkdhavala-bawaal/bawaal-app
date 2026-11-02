@@ -196,11 +196,14 @@ export default function ArenaReelViewer({
         <View style={styles.videoShell} pointerEvents="box-none">
           {showPosterCard ? (
             <View style={styles.posterCard} pointerEvents="none">
-              <Image
-                source={posterSource}
-                style={styles.posterCardImage}
-                resizeMode="cover"
-              />
+              <View style={[styles.posterCardImage, { backgroundColor: BG }]} />
+              {posterSource ? (
+                <Image
+                  source={posterSource}
+                  style={styles.posterCardImage}
+                  resizeMode="cover"
+                />
+              ) : null}
               <View style={styles.posterCardScrim} />
               <View style={styles.posterCardBody}>
                 <Text style={styles.posterCardEyebrow}>ARENA REEL</Text>
@@ -229,12 +232,18 @@ export default function ArenaReelViewer({
             </View>
           ) : (
             <>
-              <Image
-                source={posterSource}
-                style={styles.posterFill}
-                resizeMode="cover"
+              <View
+                style={[styles.posterFill, { backgroundColor: BG }]}
                 pointerEvents="none"
               />
+              {posterSource ? (
+                <Image
+                  source={posterSource}
+                  style={styles.posterFill}
+                  resizeMode="cover"
+                  pointerEvents="none"
+                />
+              ) : null}
               <SafeFeedVideo
                 uri={uri}
                 source={reel}
