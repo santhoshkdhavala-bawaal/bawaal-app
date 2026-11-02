@@ -18,6 +18,8 @@ import {
 
 export default function CameraEngine({
   onVideoRecorded,
+  onPublishSuccess,
+  onPublishCancel,
   userId,
   /** When false / when parent passes onVideoRecorded, parent owns VideoPublishModal. */
   embedPublishModal,
@@ -26,6 +28,8 @@ export default function CameraEngine({
   const [hasPermission, setHasPermission] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [videoUri, setVideoUri] = useState(null);
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -64,7 +68,9 @@ export default function CameraEngine({
       setIsRecording(false);
       setIsSaving(false);
       setVideoUri(uri);
-      // Prefer parent callback (CameraPublishHost / Arena) — do not navigate away
+      setIsPreviewing(true);
+      setIsPublishing(true);
+      // Never navigate here — parent / VideoPublishModal owns goBack after Success/Cancel
       if (typeof onVideoRecorded === 'function') {
         onVideoRecorded(uri);
       }
@@ -76,7 +82,13 @@ export default function CameraEngine({
   );
 
   const startRecording = useCallback(async () => {
-    if (!cameraRef.current || isRecording || isSaving || stoppingRef.current) {
+    if (
+      !cameraRef.current ||
+      isRecording ||
+      isSaving ||
+      isPublishing ||
+      stoppingRef.current
+    ) {
       return;
     }
 
@@ -85,6 +97,8 @@ export default function CameraEngine({
       stoppingRef.current = false;
       setIsRecording(true);
       setIsSaving(false);
+      setIsPreviewing(false);
+      setIsPublishing(false);
       setRecordingTime(0);
       setShowPublishModal(false);
       timerRef.current = setInterval(() => {
@@ -128,7 +142,7 @@ export default function CameraEngine({
     } finally {
       recordAsyncWaitRef.current = null;
     }
-  }, [isRecording, isSaving, clearTimer, commitRecordedUri]);
+  }, [isRecording, isSaving, isPublishing, clearTimer, commitRecordedUri]);
 
   const stopRecording = useCallback(async () => {
     if ((!isRecording && !recordAsyncWaitRef.current) || stoppingRef.current) {
@@ -181,9 +195,29 @@ export default function CameraEngine({
     return <Text style={styles.text}>No access to camera/mic</Text>;
   }
 
+  const handleEmbedPublishClose = useCallback(() => {
+    setShowPublishModal(false);
+    setIsPublishing(false);
+    setIsPreviewing(!!videoUri);
+    if (typeof onPublishCancel === 'function') onPublishCancel(videoUri);
+  }, [onPublishCancel, videoUri]);
+
+  const handleEmbedPublishSuccess = useCallback(
+    (data) => {
+      setShowPublishModal(false);
+      setIsPublishing(false);
+      setIsPreviewing(false);
+      const uri = videoUri;
+      setVideoUri(null);
+      handoffDoneRef.current = false;
+      if (typeof onPublishSuccess === 'function') onPublishSuccess(data, uri);
+    },
+    [onPublishSuccess, videoUri]
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      {videoUri && !showPublishModal ? (
+      {videoUri && !showPublishModal && isPreviewing ? (
         <View style={styles.previewContainer}>
           <Video
             source={{ uri: videoUri }}
@@ -198,6 +232,8 @@ export default function CameraEngine({
             onPress={() => {
               setVideoUri(null);
               setShowPublishModal(false);
+              setIsPreviewing(false);
+              setIsPublishing(false);
               handoffDoneRef.current = false;
             }}
           >
@@ -205,7 +241,10 @@ export default function CameraEngine({
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.publishBtn}
-            onPress={() => setShowPublishModal(true)}
+            onPress={() => {
+              setIsPublishing(true);
+              setShowPublishModal(true);
+            }}
           >
             <Text style={styles.btnText}>Publish</Text>
           </TouchableOpacity>
@@ -217,7 +256,9 @@ export default function CameraEngine({
               <Text style={styles.timerText}>
                 {isRecording
                   ? `00:${recordingTime < 10 ? '0' : ''}${recordingTime}`
-                  : 'REC'}
+                  : isPublishing
+                    ? 'PUBLISH'
+                    : 'REC'}
               </Text>
             </View>
 
@@ -229,7 +270,7 @@ export default function CameraEngine({
                     type === CameraType.back ? CameraType.front : CameraType.back
                   );
                 }}
-                disabled={isRecording || isSaving}
+                disabled={isRecording || isSaving || isPublishing}
               >
                 <Text style={styles.btnText}>Flip</Text>
               </TouchableOpacity>
@@ -237,11 +278,11 @@ export default function CameraEngine({
               <TouchableOpacity
                 style={[styles.recordBtn, isRecording && styles.recordingBtnActive]}
                 onPress={() => {
-                  if (isSaving) return;
+                  if (isSaving || isPublishing) return;
                   if (isRecording) void stopRecording();
                   else void startRecording();
                 }}
-                disabled={isSaving}
+                disabled={isSaving || isPublishing}
               >
                 <View
                   style={[
@@ -267,12 +308,8 @@ export default function CameraEngine({
           visible={showPublishModal && !!videoUri}
           videoUri={videoUri}
           userId={userId}
-          onClose={() => setShowPublishModal(false)}
-          onSuccess={() => {
-            setShowPublishModal(false);
-            setVideoUri(null);
-            handoffDoneRef.current = false;
-          }}
+          onClose={handleEmbedPublishClose}
+          onSuccess={handleEmbedPublishSuccess}
         />
       ) : null}
     </SafeAreaView>

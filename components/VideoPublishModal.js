@@ -46,7 +46,6 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
     setUploading(false);
 
     if (result.success) {
-      Alert.alert('Success!', 'Your video challenge is live on BAWAAL!');
       const payload = {
         ...(result.data || {}),
         url: result.url || result.data?.video_url,
@@ -54,8 +53,10 @@ export default function VideoPublishModal({ visible, videoUri, userId, onClose, 
         category: selectedCategory,
         caption: caption || '',
       };
+      // Parent owns dismiss + navigation — do NOT call onClose here (avoids double goBack).
       if (onSuccess) onSuccess(payload);
-      if (onClose) onClose();
+      else if (onClose) onClose();
+      Alert.alert('Success!', 'Your video challenge is live on BAWAAL!');
     } else {
       Alert.alert('Upload Failed', result.error || 'Something went wrong.');
     }

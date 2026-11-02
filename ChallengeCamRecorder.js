@@ -130,6 +130,8 @@ const ringStyles = StyleSheet.create({
  * @param {() => void} [props.onClose]
  * @param {(uri: string, meta?: object) => void} [props.onContinue]
  * @param {(uri: string, meta?: { usedFallback?: boolean }) => void} [props.onRecordingComplete]
+ *   Notify only — must NOT call navigation.goBack / navigate('Arena'). Parent opens
+ *   VideoPublishModal, then navigates on Success/Cancel.
  * @param {number} [props.maxDurationSec]
  * @param {string} [props.challengeLabel]
  */

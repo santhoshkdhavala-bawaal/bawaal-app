@@ -25,6 +25,8 @@ import {
   settleStopRecording,
   STOP_SAVE_TIMEOUT_MS,
 } from './src/utils/safeRecordingFallback';
+import VideoPublishModal from './components/VideoPublishModal';
+import { getActiveUser } from './src/services/activeUserProfile';
 
 const DURATION_OPTIONS = [5, 15, 30, 60];
 const DEFAULT_DURATION = 30;
@@ -722,6 +724,9 @@ export default function ChallengeCam({
   const [slowMoEndSec, setSlowMoEndSec] = useState(initialDuration);
   const [slowMoRate, setSlowMoRate] = useState(0.5);
   const [isPosting, setIsPosting] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishModalVisible, setPublishModalVisible] = useState(false);
+  const pendingPublishPayloadRef = useRef(null);
   /** Live playhead seconds — ref only (avoids re-render thrash on every tick). */
   const reviewPlayheadRef = useRef(0);
   /** expo-video player instance for review clip (pause/unload on unmount). */
@@ -1361,14 +1366,17 @@ export default function ChallengeCam({
     ]
   );
 
-  /** KEEP & REVIEW / POST BATTLE — local Arena first, cloud in background */
+  /**
+   * KEEP & REVIEW / POST BATTLE — open VideoPublishModal over camera.
+   * Do NOT navigate to Arena until publish Success or Cancel.
+   */
   const handleKeepReview = async () => {
-    if (isPosting) return;
+    if (isPosting || isPublishing) return;
     if (!recordedUri && !frozen) return;
     const uri = recordedUri || `emulator-mock://${Date.now()}.mp4`;
     const payload = buildCapturePayload(uri);
 
-    // ChallengeScreen owns the confirm modal — defer Supabase upload until "POST TO ARENA"
+    // Parent owns publish (ChallengeScreen) — hand URI up, still no navigation here
     if (onVideoCaptured) {
       onVideoCaptured(uri, {
         ...payload,
@@ -1380,65 +1388,114 @@ export default function ChallengeCam({
       return;
     }
 
-    const isFullScreenCreate =
-      route?.params?.mode === 'FULL_SCREEN' || route?.params?.cameraMode === 'FULL_SCREEN';
-    const challengeId = isFullScreenCreate
-      ? undefined
-      : route?.params?.battleId ||
-        route?.params?.reel?.battleId ||
-        route?.params?.reel?.id;
-    // Instant local handoff — never block on Storage / JWS
-    const cloudUrl = uri;
-    // Fire-and-forget cloud; Arena already has file://
-    handlePostToArena(uri, {
-      slowMoStartSec: payload.slowMoStartSec,
-      slowMoEndSec: payload.slowMoEndSec,
-      slowMoRate: payload.slowMoEnabled ? payload.slowMoRate : 1,
-    }).catch(() => {});
-
-    const newArenaPost = {
-      ...payload,
-      id: `local-${payload.timestamp}`,
-      creator: 'You',
-      author: '@you',
-      type: isFullScreenCreate ? 'reel' : 'battle_thread',
-      caption: payload.target || route?.params?.target || 'Arena drop',
-      ...(challengeId ? { challengeId, battleId: challengeId } : { isBattle: false }),
-      category: route?.params?.reel?.category || 'GYM',
-      challengeOf: isFullScreenCreate
-        ? undefined
-        : route?.params?.reel?.creator || 'Yuki_Lift',
-      uri: cloudUrl,
-      videoUri: cloudUrl,
-      recordedVideoUri: cloudUrl,
-      localVideoUri: uri,
-      cloudUploaded: false,
-    };
-    pushArenaPost(newArenaPost);
-    setLatestBattleClip(newArenaPost);
-    try {
-      if (navigation?.navigate) {
-        navigation.navigate('Main', {
-          tab: 'Arena',
-          newArenaPost,
-          videoUri: cloudUrl,
-          recordedVideoUri: cloudUrl,
-        });
-        resetRecordingSession();
-        return;
-      }
-      handleClose();
-    } catch (error) {
-      console.warn('Keep & review dispatch failed:', error?.message || error);
-      handleClose();
-    }
+    pendingPublishPayloadRef.current = { uri, payload };
+    setIsPublishing(true);
+    setPublishModalVisible(true);
   };
 
+  const leaveChallengeCam = useCallback(
+    (params) => {
+      setPublishModalVisible(false);
+      setIsPublishing(false);
+      pendingPublishPayloadRef.current = null;
+      try {
+        if (params?.newArenaPost && navigation?.navigate) {
+          navigation.navigate('Main', {
+            tab: 'Arena',
+            ...params,
+          });
+          resetRecordingSession();
+          return;
+        }
+        if (navigation?.canGoBack?.()) {
+          navigation.goBack();
+          return;
+        }
+        if (onClose) {
+          onClose();
+          return;
+        }
+        navigation?.navigate?.('Main', { tab: 'Arena' });
+      } catch (error) {
+        console.warn('ChallengeCam leave failed:', error?.message || error);
+        handleClose();
+      }
+    },
+    // handleClose / resetRecordingSession are stable enough for leave
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [navigation, onClose]
+  );
+
+  const handlePublishModalSuccess = useCallback(
+    (data) => {
+      const pending = pendingPublishPayloadRef.current || {};
+      const uri = pending.uri || recordedUri;
+      const payload = pending.payload || buildCapturePayload(uri);
+      const cloudUrl =
+        (typeof data?.video_url === 'string' && data.video_url) ||
+        (typeof data?.url === 'string' && data.url) ||
+        uri;
+
+      const isFullScreen =
+        route?.params?.mode === 'FULL_SCREEN' ||
+        route?.params?.cameraMode === 'FULL_SCREEN';
+      const challengeId = isFullScreen
+        ? undefined
+        : route?.params?.battleId ||
+          route?.params?.reel?.battleId ||
+          route?.params?.reel?.id;
+
+      handlePostToArena(uri, {
+        slowMoStartSec: payload.slowMoStartSec,
+        slowMoEndSec: payload.slowMoEndSec,
+        slowMoRate: payload.slowMoEnabled ? payload.slowMoRate : 1,
+      }).catch(() => {});
+
+      const newArenaPost = {
+        ...payload,
+        id: data?.id || `local-${payload.timestamp || Date.now()}`,
+        creator: 'You',
+        author: '@you',
+        type: isFullScreen ? 'reel' : 'battle_thread',
+        caption:
+          (typeof data?.caption === 'string' && data.caption.trim()) ||
+          payload.target ||
+          route?.params?.target ||
+          'Arena drop',
+        ...(challengeId ? { challengeId, battleId: challengeId } : { isBattle: false }),
+        category:
+          data?.category ||
+          route?.params?.reel?.category ||
+          'GYM',
+        challengeOf: isFullScreen
+          ? undefined
+          : route?.params?.reel?.creator || 'Yuki_Lift',
+        uri: cloudUrl,
+        videoUri: cloudUrl,
+        recordedVideoUri: cloudUrl,
+        localVideoUri: uri,
+        publicCloudUrl: cloudUrl !== uri ? cloudUrl : null,
+        cloudUploaded: cloudUrl !== uri,
+      };
+      pushArenaPost(newArenaPost);
+      setLatestBattleClip(newArenaPost);
+      leaveChallengeCam({
+        newArenaPost,
+        videoUri: cloudUrl,
+        recordedVideoUri: cloudUrl,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [leaveChallengeCam, recordedUri, route?.params]
+  );
+
   const handlePostBattle = () => {
-    if (isPosting) return;
+    if (isPosting || isPublishing) return;
     if (!canPost && !recordedUri) return;
     handleKeepReview();
   };
+
+  const activePublishUser = getActiveUser?.() || {};
 
   const requestAllPermissions = async () => {
     try {
@@ -1868,18 +1925,21 @@ export default function ChallengeCam({
               <TouchableOpacity
                 style={styles.retakeBtn}
                 onPress={handleRetake}
-                disabled={isPosting}
+                disabled={isPosting || isPublishing}
                 activeOpacity={0.8}
               >
                 <Text style={styles.retakeBtnText}>RETAKE</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.keepBtn, isPosting && styles.postBattleBtnDisabled]}
+                style={[
+                  styles.keepBtn,
+                  (isPosting || isPublishing) && styles.postBattleBtnDisabled,
+                ]}
                 onPress={handleKeepReview}
-                disabled={isPosting}
+                disabled={isPosting || isPublishing}
                 activeOpacity={0.85}
               >
-                {isPosting ? (
+                {isPosting || isPublishing ? (
                   <ActivityIndicator color={OBSIDIAN} />
                 ) : (
                   <Text style={styles.keepBtnText}>KEEP & REVIEW</Text>
@@ -1888,6 +1948,14 @@ export default function ChallengeCam({
             </View>
         </View>
       </View>
+
+      <VideoPublishModal
+        visible={publishModalVisible && !!recordedUri}
+        videoUri={recordedUri}
+        userId={activePublishUser.userId || activePublishUser.id}
+        onClose={() => leaveChallengeCam()}
+        onSuccess={handlePublishModalSuccess}
+      />
     </View>
   );
 }

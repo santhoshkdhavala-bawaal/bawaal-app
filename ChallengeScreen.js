@@ -394,7 +394,13 @@ export default function ChallengeScreen({ route, navigation }) {
         visible={publishModalVisible && !!capturedVideoUri}
         videoUri={capturedVideoUri}
         userId={activeUser.userId || activeUser.id}
-        onClose={() => setPublishModalVisible(false)}
+        onClose={() => {
+          // Cancel — leave camera only after explicit dismiss (no early goBack on record)
+          setPublishModalVisible(false);
+          setCapturedVideoUri(null);
+          pendingMetaRef.current = null;
+          handleClose();
+        }}
         onSuccess={handlePublishSuccess}
       />
       {statusNote ? (

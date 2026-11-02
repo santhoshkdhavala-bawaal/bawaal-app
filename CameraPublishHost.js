@@ -1,6 +1,6 @@
 /**
  * Camera + VideoPublishModal host for SPARKS / ChallengeCam stack routes.
- * Captures onVideoRecorded → opens publish modal over the camera (no early pop-to-landing).
+ * Recording only sets URI + opens publish modal — navigation waits for Success or Cancel.
  */
 import React, { useCallback, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
@@ -12,18 +12,51 @@ import { pushArenaPost } from './arenaFeedStore';
 export default function CameraPublishHost({ navigation, route }) {
   const [capturedVideoUri, setCapturedVideoUri] = useState(null);
   const [publishModalVisible, setPublishModalVisible] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
+  const leaveToArena = useCallback(
+    (params = {}) => {
+      setPublishModalVisible(false);
+      setIsPublishing(false);
+      setCapturedVideoUri(null);
+      try {
+        if (params && (params.newArenaPost || params.tab)) {
+          navigation?.navigate?.('Main', {
+            tab: 'Arena',
+            ...params,
+          });
+          return;
+        }
+        if (navigation?.canGoBack?.()) {
+          navigation.goBack();
+          return;
+        }
+        navigation?.navigate?.('Main', { tab: 'Arena' });
+      } catch (err) {
+        console.warn(
+          '[CameraPublishHost] leaveToArena failed:',
+          err?.message || err
+        );
+      }
+    },
+    [navigation]
+  );
+
+  /** Recording finished — stay on camera route, open publish modal only. */
   const handleVideoRecorded = useCallback((uri) => {
     const next = typeof uri === 'string' ? uri.trim() : '';
     if (!next) return;
     setCapturedVideoUri(next);
+    setIsPublishing(true);
     setPublishModalVisible(true);
   }, []);
 
+  /** Cancel — leave camera after explicitly dismissing publish. */
   const handlePublishClose = useCallback(() => {
-    setPublishModalVisible(false);
-  }, []);
+    leaveToArena();
+  }, [leaveToArena]);
 
+  /** Upload finished — then navigate / refresh Arena. */
   const handlePublishSuccess = useCallback(
     (data) => {
       const cloudUrl =
@@ -67,15 +100,9 @@ export default function CameraPublishHost({ navigation, route }) {
         );
       }
 
-      setCapturedVideoUri(null);
-      setPublishModalVisible(false);
-
-      navigation?.navigate?.('Main', {
-        tab: 'Arena',
-        newArenaPost: post,
-      });
+      leaveToArena({ newArenaPost: post });
     },
-    [capturedVideoUri, navigation, route?.params]
+    [capturedVideoUri, leaveToArena, route?.params]
   );
 
   const active = getActiveUser?.() || {};
@@ -86,6 +113,7 @@ export default function CameraPublishHost({ navigation, route }) {
         navigation={navigation}
         route={route}
         onVideoRecorded={handleVideoRecorded}
+        publishHold={isPublishing || publishModalVisible}
       />
       <VideoPublishModal
         visible={publishModalVisible && !!capturedVideoUri}

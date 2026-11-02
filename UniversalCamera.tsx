@@ -100,6 +100,8 @@ export type UniversalCameraProps = {
   onPublished?: (payload: PostCreationPayload) => void;
   /** SPARKS / JOSH / challenge — parent opens VideoPublishModal with this URI. */
   onVideoRecorded?: (videoUri: string) => void;
+  /** Parent VideoPublishModal is open — block goBack / safeNavigateHome until Success/Cancel. */
+  publishHold?: boolean;
 };
 
 type HubMode = {
@@ -918,6 +920,7 @@ export default function UniversalCamera({
   initialMode,
   onPublished,
   onVideoRecorded,
+  publishHold = false,
 }: UniversalCameraProps) {
   const insets = useSafeAreaInsets();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -1195,11 +1198,8 @@ export default function UniversalCamera({
       if (openPreview) {
         setShowPreview(true);
         setShowPostSheet(false);
-      } else if (
-        onVideoRecorded &&
-        (mode === 'SPARKS' || mode === 'JOSH' || isChallengeResponse)
-      ) {
-        // No preview path — hand URI straight to VideoPublishModal host
+      } else if (onVideoRecorded) {
+        // Stay on this route — parent opens VideoPublishModal (no goBack yet)
         setShowPreview(false);
         setShowPostSheet(false);
         onVideoRecorded(uri);
@@ -1210,7 +1210,7 @@ export default function UniversalCamera({
       setIsFinalizingClip(false);
       setIsProcessing(false);
     },
-    [clearElapsedTimer, onVideoRecorded, mode, isChallengeResponse]
+    [clearElapsedTimer, onVideoRecorded]
   );
 
   // Camera / recorder lifecycle — stop recording + clear timers / player refs on unmount
@@ -1314,7 +1314,8 @@ export default function UniversalCamera({
 
   const safeNavigateHome = useCallback(
     (params: Record<string, unknown>) => {
-      if (navigatingRef.current) return;
+      // Parent VideoPublishModal owns leave timing — never pop underneath it
+      if (publishHold || navigatingRef.current) return;
       navigatingRef.current = true;
       // Drop preview / player first so unmount does not race native AV
       setShowPreview(false);
@@ -1339,7 +1340,7 @@ export default function UniversalCamera({
         }
       }, 300);
     },
-    [navigation, resetCreationSession]
+    [navigation, resetCreationSession, publishHold]
   );
 
   const openBattleChallengeForm = useCallback(() => {
@@ -1672,6 +1673,8 @@ export default function UniversalCamera({
   ]);
 
   const handleClose = useCallback(() => {
+    // Stay on camera while VideoPublishModal is up — Cancel/Success own navigation
+    if (publishHold) return;
     void (async () => {
       if (isRecording || recordingLockRef.current) {
         try {
@@ -1691,7 +1694,7 @@ export default function UniversalCamera({
         else navigation?.navigate?.('Main', { tab: 'Arena' });
       }, 80);
     })();
-  }, [isRecording, navigation, resetCreationSession, stopRecording]);
+  }, [isRecording, navigation, publishHold, resetCreationSession, stopRecording]);
 
   const flipCamera = useCallback(() => {
     if (isRecording || isFinalizingClip || isProcessing) return;
@@ -2050,14 +2053,8 @@ export default function UniversalCamera({
               });
               return;
             }
-            // SPARKS / JOSH / challenge response → parent VideoPublishModal
-            if (
-              onVideoRecorded &&
-              recordedVideoUri &&
-              (mode === 'SPARKS' ||
-                mode === 'JOSH' ||
-                isChallengeResponse)
-            ) {
+            // Parent owns VideoPublishModal — do not navigate or open post sheet yet
+            if (onVideoRecorded && recordedVideoUri) {
               setShowPreview(false);
               setShowPostSheet(false);
               onVideoRecorded(recordedVideoUri);
@@ -2099,6 +2096,13 @@ export default function UniversalCamera({
             releaseCameraRecorder();
           }}
           onSuccess={(payload) => {
+            // When parent hosts VideoPublishModal, never auto-navigate from this sheet
+            if (onVideoRecorded && recordedVideoUri) {
+              setShowPostSheet(false);
+              setShowPreview(false);
+              onVideoRecorded(recordedVideoUri);
+              return;
+            }
             if (payload) onPublished?.(payload);
             const battleId =
               (typeof respondParams.battleId === 'string' && respondParams.battleId) ||
