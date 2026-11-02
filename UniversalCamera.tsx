@@ -33,6 +33,7 @@ import {
   type CameraType,
 } from 'expo-camera';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import { Video as ExpoAvVideo, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   GestureHandlerRootView,
@@ -1165,14 +1166,19 @@ export default function UniversalCamera({
     clearElapsedTimer();
   }, [clearElapsedTimer]);
 
-  /** Open in-camera VideoPublishModal over a frozen preview — no navigation. */
+  /** Open VideoPublishModal over looping clip overlay — camera stays mounted. */
   const openPublishModal = useCallback(
     (uri: string) => {
       if (!uri || isOpenerCapture) return;
+      console.log('[UniversalCamera] Recorded video URI:', uri);
       setRecordedVideoUri(uri);
-      setShowPreview(true);
+      pendingPreviewUriRef.current = uri;
       setShowPostSheet(false);
+      // Keep ClipPreview closed while publish + looping Video overlay are up
+      setShowPreview(false);
       setIsPublishModalOpen(true);
+      setIsFinalizingClip(false);
+      setIsProcessing(false);
       try {
         onVideoRecorded?.(uri);
       } catch (err) {
@@ -1186,14 +1192,13 @@ export default function UniversalCamera({
   );
 
   /**
-   * Safe preview handshake: persist URI immediately, freeze lens, open
-   * VideoPublishModal. Never navigate or null the URI here.
+   * Post-record handoff: persist URI, keep CameraView mounted, open publish
+   * (or opener ClipPreview). Never navigate / null URI here.
    */
   const handoffRecordedClip = useCallback(
     async (uri: string, opts?: { openPreview?: boolean }) => {
       const openPreview = opts?.openPreview !== false;
       pendingPreviewUriRef.current = uri;
-      // Persist URI synchronously — freezeLiveLens keys off this (no idle remount)
       setRecordedVideoUri(uri);
       setIsProcessing(true);
       setIsFinalizingClip(true);
@@ -1203,33 +1208,27 @@ export default function UniversalCamera({
       setShowPostSheet(false);
       clearElapsedTimer();
 
-      // Let expo-camera fully release the capture lock before any decoder mounts
+      // Brief HW release — do NOT unmount CameraView
       await waitMs(RECORDING_TEARDOWN_MS);
-      await new Promise<void>((resolve) => {
-        InteractionManager.runAfterInteractions(() => resolve());
-      });
-
-      await waitMs(PREVIEW_HANDSHAKE_MS);
 
       if (pendingPreviewUriRef.current !== uri) {
-        // A newer take / retake superseded this handoff
         setIsFinalizingClip(false);
         setIsProcessing(false);
         return;
       }
 
-      // Keep clip on screen under publish modal — prevents black camera container
-      setShowPreview(true);
-      setShowPostSheet(false);
-
       if (!isOpenerCapture) {
-        // Successful capture → VideoPublishModal (preview stays mounted underneath)
         openPublishModal(uri);
-      } else if (!openPreview) {
+        return;
+      }
+
+      // Opener capture — ClipPreview only (no publish modal)
+      if (openPreview) {
+        setShowPreview(true);
+      } else {
         setShowPreview(false);
         setShowPostSheet(true);
       }
-
       setIsFinalizingClip(false);
       setIsProcessing(false);
     },
@@ -1617,8 +1616,8 @@ export default function UniversalCamera({
   ]);
 
   /**
-   * Stop capture with a strict 500ms settle. Always clears Saving clip… and
-   * hands the resolved URI (or sample fallback) straight to preview / post sheet.
+   * Stop capture → persist URI → open VideoPublishModal.
+   * CameraView stays mounted; looping Video overlay covers the lens.
    */
   const stopRecording = useCallback(async () => {
     if ((!isRecording && !recordingLockRef.current) || stoppingRef.current) {
@@ -1629,22 +1628,21 @@ export default function UniversalCamera({
     setIsFinalizingClip(true);
     setIsRecording(false);
     clearElapsedTimer();
-    // Do NOT resetCreationSession / navigate / clear URI on stop
+    // Do NOT unmount camera / resetCreationSession / navigate on stop
 
     const openPreview =
       mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
 
-    // Hard UI unlock — never leave "Saving clip…" past settle + handoff budget
     const savingWatchdog = setTimeout(() => {
       setIsFinalizingClip(false);
       setIsProcessing(false);
       const staged = pendingPreviewUriRef.current;
       if (staged && !recordingHandoffDoneRef.current) {
         recordingHandoffDoneRef.current = true;
-        setRecordedVideoUri(staged);
-        setShowPreview(true);
-        if (!isOpenerCapture) {
-          openPublishModal(staged);
+        if (!isOpenerCapture) openPublishModal(staged);
+        else {
+          setRecordedVideoUri(staged);
+          setShowPreview(true);
         }
       }
     }, Math.max(500, STOP_SAVE_TIMEOUT_MS));
@@ -1667,6 +1665,7 @@ export default function UniversalCamera({
 
       const recordedUri =
         settled.uri || resolveSafeRecordingFallbackUri();
+      console.log('[UniversalCamera] Recorded video URI:', recordedUri);
 
       if (settled.usedFallback || settled.timedOut) {
         console.warn(
@@ -1675,7 +1674,6 @@ export default function UniversalCamera({
         );
       }
 
-      // Persist URI immediately — freeze lens before async handoff settles
       recordingHandoffDoneRef.current = true;
       recordingLockRef.current = false;
       stoppingRef.current = false;
@@ -1683,7 +1681,12 @@ export default function UniversalCamera({
       setCameraError('');
       setRecordedVideoUri(recordedUri);
       pendingPreviewUriRef.current = recordedUri;
-      await handoffRecordedClip(recordedUri, { openPreview });
+
+      if (!isOpenerCapture) {
+        openPublishModal(recordedUri);
+      } else {
+        await handoffRecordedClip(recordedUri, { openPreview });
+      }
     } catch (err) {
       if (recordingHandoffDoneRef.current) {
         setIsFinalizingClip(false);
@@ -1702,7 +1705,11 @@ export default function UniversalCamera({
       const fallbackUri = resolveSafeRecordingFallbackUri();
       setRecordedVideoUri(fallbackUri);
       pendingPreviewUriRef.current = fallbackUri;
-      await handoffRecordedClip(fallbackUri, { openPreview });
+      if (!isOpenerCapture) {
+        openPublishModal(fallbackUri);
+      } else {
+        await handoffRecordedClip(fallbackUri, { openPreview });
+      }
     } finally {
       clearTimeout(savingWatchdog);
       setIsFinalizingClip(false);
@@ -1968,11 +1975,8 @@ export default function UniversalCamera({
 
   const activePublishUser = getActiveUser?.() || {};
 
-  /**
-   * Unmount live lens whenever a clip is held / publish is open / finalizing.
-   * Any recordedVideoUri freezes the lens until explicit Retake or parent leave.
-   */
-  const freezeLiveLens =
+  /** Block new takes while a clip / publish modal is held — do NOT unmount CameraView. */
+  const captureHold =
     publishHold ||
     isPublishModalOpen ||
     showPreview ||
@@ -1980,13 +1984,6 @@ export default function UniversalCamera({
     !!recordedVideoUri ||
     isFinalizingClip ||
     isProcessing;
-
-  // MUST stay above any early return — conditional hooks crash React render order
-  useEffect(() => {
-    if (freezeLiveLens) {
-      setIsCameraReady(false);
-    }
-  }, [freezeLiveLens]);
 
   if (permissionsPending) {
     return (
@@ -2022,51 +2019,68 @@ export default function UniversalCamera({
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {!freezeLiveLens ? (
-        <PinchGestureHandler
-          enabled={mode !== 'BATTLE_BAWAAL'}
-          onGestureEvent={onPinchGestureEvent}
-          onHandlerStateChange={onPinchHandlerStateChange}
-          minPointers={2}
-          avgTouches
-        >
-          <View style={styles.cameraGestureHost} collapsable={false}>
-            <CameraView
-              key={`bawaal-cam-${cameraSessionKey}`}
-              ref={cameraRef}
-              style={styles.camera}
-              facing={facing}
-              mode="video"
-              mute={false}
-              videoQuality="720p"
-              zoom={zoom}
-              enableTorch={false}
-              onCameraReady={() => {
-                setIsCameraReady(true);
-                setCameraError('');
-              }}
-              onMountError={(err) => {
-                recordingLockRef.current = false;
-                setIsRecording(false);
-                setIsCameraReady(false);
-                setCameraError(err?.message || 'Could not start camera.');
-              }}
-            />
+      {/* Camera stays mounted after stop — prevents black flash under publish modal */}
+      <PinchGestureHandler
+        enabled={mode !== 'BATTLE_BAWAAL' && !captureHold}
+        onGestureEvent={onPinchGestureEvent}
+        onHandlerStateChange={onPinchHandlerStateChange}
+        minPointers={2}
+        avgTouches
+      >
+        <View style={styles.cameraGestureHost} collapsable={false}>
+          <CameraView
+            key={`bawaal-cam-${cameraSessionKey}`}
+            ref={cameraRef}
+            style={styles.camera}
+            facing={facing}
+            mode="video"
+            mute={false}
+            videoQuality="720p"
+            zoom={zoom}
+            enableTorch={false}
+            onCameraReady={() => {
+              setIsCameraReady(true);
+              setCameraError('');
+            }}
+            onMountError={(err) => {
+              recordingLockRef.current = false;
+              setIsRecording(false);
+              setIsCameraReady(false);
+              setCameraError(err?.message || 'Could not start camera.');
+            }}
+          />
 
-            {/* Single-tap only when idle — never blocks two-finger pinch while recording */}
-            <Pressable
-              style={styles.viewfinderTap}
-              onPress={revealTimePill}
-              disabled={isRecording || mode === 'BATTLE_BAWAAL'}
-              pointerEvents={
-                isRecording || mode === 'BATTLE_BAWAAL' ? 'none' : 'auto'
-              }
-            />
-          </View>
-        </PinchGestureHandler>
-      ) : (
-        <View style={[styles.cameraGestureHost, styles.frozenLensPlaceholder]} />
-      )}
+          {/* Single-tap only when idle — never blocks two-finger pinch while recording */}
+          <Pressable
+            style={styles.viewfinderTap}
+            onPress={revealTimePill}
+            disabled={isRecording || captureHold || mode === 'BATTLE_BAWAAL'}
+            pointerEvents={
+              isRecording || captureHold || mode === 'BATTLE_BAWAAL'
+                ? 'none'
+                : 'auto'
+            }
+          />
+        </View>
+      </PinchGestureHandler>
+
+      {/* Looping clip overlay while publish modal is up — covers live lens */}
+      {recordedVideoUri ? (
+        <View
+          style={styles.capturedVideoOverlay}
+          pointerEvents={isPublishModalOpen ? 'none' : 'box-none'}
+        >
+          <ExpoAvVideo
+            source={{ uri: recordedVideoUri }}
+            style={StyleSheet.absoluteFill}
+            shouldPlay
+            isLooping
+            isMuted={!!isPublishModalOpen}
+            resizeMode={ResizeMode.COVER}
+            useNativeControls={false}
+          />
+        </View>
+      ) : null}
 
       <View
         pointerEvents="box-none"
@@ -2203,8 +2217,12 @@ export default function UniversalCamera({
         </View>
       ) : null}
 
-      {/* Mount preview only after handoff commits URI + teardown delay (no mid-flush decode) */}
-      {showPreview && recordedVideoUri && !isFinalizingClip && !isProcessing ? (
+      {/* Opener / explicit preview only — publish path uses looping Video overlay */}
+      {showPreview &&
+      recordedVideoUri &&
+      !isPublishModalOpen &&
+      !isFinalizingClip &&
+      !isProcessing ? (
         <ClipPreviewModal
           key={recordedVideoUri}
           visible
@@ -2248,12 +2266,10 @@ export default function UniversalCamera({
               });
               return;
             }
-            // Re-open / confirm publish over frozen preview (no navigate)
             if (recordedVideoUri) {
               openPublishModal(recordedVideoUri);
               return;
             }
-            // Keep recordedVideoUri — only dismiss preview, open post sheet
             setShowPreview(false);
             setTimeout(() => setShowPostSheet(true), 60);
           }}
@@ -2375,14 +2391,16 @@ export default function UniversalCamera({
         />
       </Modal>
 
-      {/* Stable frozen preview stays mounted underneath — prevents black camera flash */}
-      <VideoPublishModal
-        visible={isPublishModalOpen && !!recordedVideoUri}
-        videoUri={recordedVideoUri}
-        userId={activePublishUser.userId || activePublishUser.id}
-        onClose={handlePublishModalCancel}
-        onSuccess={handlePublishModalSuccess}
-      />
+      {/* Root-level publish modal — always last child so it paints above camera/video */}
+      <View style={styles.publishModalHost} pointerEvents="box-none">
+        <VideoPublishModal
+          visible={isPublishModalOpen && !!recordedVideoUri}
+          videoUri={recordedVideoUri}
+          userId={activePublishUser.userId || activePublishUser.id}
+          onClose={handlePublishModalCancel}
+          onSuccess={handlePublishModalSuccess}
+        />
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -2393,8 +2411,16 @@ const styles = StyleSheet.create({
   cameraGestureHost: {
     ...ABSOLUTE_FILL,
   },
-  frozenLensPlaceholder: {
+  capturedVideoOverlay: {
+    ...ABSOLUTE_FILL,
+    zIndex: 50,
+    elevation: 50,
     backgroundColor: '#000000',
+  },
+  publishModalHost: {
+    ...ABSOLUTE_FILL,
+    zIndex: 9999,
+    elevation: 9999,
   },
   camera: { ...ABSOLUTE_FILL },
   viewfinderTap: {
