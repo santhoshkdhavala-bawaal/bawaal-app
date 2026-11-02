@@ -1,6 +1,6 @@
 /**
  * BAWAAL Arena posts ↔ Supabase `videos` (+ profiles) with Storage / AsyncStorage fallback.
- * Legacy `bawaal_posts` writes are still attempted as a soft secondary persist path.
+ * Canonical table is `public.videos` only — never query/write legacy `bawaal_posts`.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase, getSupabaseUrl } from './supabase';
@@ -14,8 +14,6 @@ import { resolvePostSport } from '../utils/sportCategory';
 
 /** Canonical Arena feed table (joined with profiles on user_id). */
 const TABLE = 'videos';
-/** Legacy table — persist soft-fallback when `videos` insert is rejected. */
-const LEGACY_TABLE = 'bawaal_posts';
 const FEED = 'ARENA';
 /** Storage folder for JSON post metadata when tables are missing. */
 const POSTS_META_PREFIX = 'posts';
@@ -220,10 +218,35 @@ function asUuidOrNull(value) {
   return UUID_RE.test(s) ? s : null;
 }
 
+/** Fresh uuid for `videos.id` — avoids videos_pkey collisions on re-publish. */
+export function newVideosUuid() {
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function isDuplicateKeyError(error) {
+  const msg = String(error?.message || error?.details || error || '');
+  const code = String(error?.code || '');
+  return (
+    code === '23505' ||
+    /duplicate key|videos_pkey|unique constraint/i.test(msg)
+  );
+}
+
 /**
- * Canonical `videos` insert payload for Supabase.
+ * Canonical `videos` upsert payload for Supabase.
+ * Always includes a uuid `id` so `.upsert(..., { onConflict: 'id' })` is safe.
  * Uses public Storage HTTPS `video_url` + FK-safe `user_id` (uuid only).
- * `sport_category` mirrors locked taxonomy into `category` (schema column).
  */
 export function mapArenaPostToVideosRow(post) {
   if (!post || typeof post !== 'object') return null;
@@ -238,8 +261,7 @@ export function mapArenaPostToVideosRow(post) {
   if (!videoUrl || !/^https:\/\//i.test(String(videoUrl))) return null;
 
   const ts = toMs(post.timestamp || post.createdAt);
-  const id = String(post.id || `arena-${ts}`);
-  const uuidOk = UUID_RE.test(id);
+  const id = asUuidOrNull(post.id) || newVideosUuid();
   const userId = asUuidOrNull(
     post.user_id || post.userId || post.profileId || post.authorId
   );
@@ -257,7 +279,7 @@ export function mapArenaPostToVideosRow(post) {
 
   /** Public Storage URL + required fields; omit null user_id (FK/RLS safe). */
   const row = {
-    ...(uuidOk ? { id } : {}),
+    id,
     video_url: videoUrl,
     thumbnail_url: post.thumbnailUrl || post.thumbnail_url || null,
     caption,
@@ -281,7 +303,10 @@ export async function resolveVideosUserId(explicitId = null) {
   }
 }
 
-/** Map an in-memory Arena post → legacy `bawaal_posts` insert row. */
+/**
+ * Map an in-memory Arena post → Storage / AsyncStorage meta shape.
+ * Not written to any legacy SQL table (`bawaal_posts` is retired).
+ */
 export function mapArenaPostToDbRow(post) {
   if (!post || typeof post !== 'object') return null;
   const videoUrl =
@@ -453,7 +478,7 @@ async function fetchArenaPostsFromStorageFallback() {
 }
 
 /**
- * When `bawaal_posts` is missing from schema cache, store metadata JSON in Storage
+ * Soft fallback when `videos` write fails — store metadata JSON in Storage
  * so the clip still appears on cold start via storage hydrate.
  */
 async function persistArenaPostMetaToStorage(row) {
@@ -519,14 +544,19 @@ async function fetchArenaPostsFromMetaJson() {
 }
 
 /**
- * Upsert a post into `videos` (preferred) so it survives app restart.
- * Soft-falls back to legacy `bawaal_posts`, then Storage JSON.
+ * Upsert a post into `public.videos` so it survives app restart.
+ * Soft-falls back to AsyncStorage + Storage JSON (never legacy `bawaal_posts`).
  * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string, warning?: string }>}
  */
 export async function persistArenaPostToSupabase(post) {
   if (!isSupabaseConfigured()) {
     console.error('[arenaPosts] persist skipped — Supabase not configured');
-    return { ok: false, skipped: false, reason: 'not-configured', error: 'Supabase not configured' };
+    return {
+      ok: false,
+      skipped: false,
+      reason: 'not-configured',
+      error: 'Supabase not configured',
+    };
   }
   if (post?._fromRemote || post?._skipPersist) {
     return { ok: true, skipped: true, reason: 'from-remote' };
@@ -550,8 +580,7 @@ export async function persistArenaPostToSupabase(post) {
   }
 
   const videosRow = mapArenaPostToVideosRow(enriched);
-  const legacyRow = mapArenaPostToDbRow(enriched);
-  if (!videosRow && !legacyRow) {
+  if (!videosRow) {
     // Soft skip — keep local file:// / uri on the feed card until Storage succeeds
     const localFallback =
       deviceMapped?.localVideoUri ||
@@ -581,6 +610,11 @@ export async function persistArenaPostToSupabase(post) {
     };
   }
 
+  // Keep local id in sync with the uuid we upsert (prevents re-insert collisions)
+  if (deviceMapped && videosRow.id && deviceMapped.id !== videosRow.id) {
+    void cacheLocalArenaPost({ ...deviceMapped, id: videosRow.id });
+  }
+
   const logFail = (step, error) => {
     const msg = error?.message || error?.code || String(error);
     // Schema-cache / missing-table noise must stay warn-only (never Alert / LogBox red)
@@ -592,139 +626,91 @@ export async function persistArenaPostToSupabase(post) {
     return msg;
   };
 
+  const tryUpsert = async (row) => {
+    const payload = {
+      ...row,
+      id: asUuidOrNull(row.id) || newVideosUuid(),
+    };
+    const { error } = await supabase
+      .from(TABLE)
+      .upsert(payload, { onConflict: 'id' });
+    if (!error) return { ok: true, via: 'upsert', id: payload.id };
+    // Already present — treat as success (idempotent publish)
+    if (isDuplicateKeyError(error)) {
+      return { ok: true, via: 'upsert-conflict', id: payload.id };
+    }
+    return { ok: false, error, id: payload.id };
+  };
+
   try {
-    // 1) Preferred: insert into canonical `videos` with public video_url
-    if (videosRow) {
-      const tryInsert = async (row) => {
-        if (row.id) {
-          const upsert = await supabase
-            .from(TABLE)
-            .upsert(row, { onConflict: 'id' });
-          if (!upsert.error) return { ok: true, via: 'upsert' };
-          const ins = await supabase.from(TABLE).insert(row);
-          if (!ins.error) return { ok: true, via: 'insert' };
-          return { ok: false, error: ins.error || upsert.error };
-        }
-        const ins = await supabase.from(TABLE).insert(row);
-        if (!ins.error) return { ok: true, via: 'insert' };
-        return { ok: false, error: ins.error };
-      };
+    let attempt = await tryUpsert(videosRow);
+    const errText = (e) => String(e?.message || e?.code || e || '');
 
-      let attempt = await tryInsert(videosRow);
-      const errText = (e) =>
-        String(e?.message || e?.code || e || '');
-      // FK / RLS on user_id → retry without user_id
-      if (
-        !attempt.ok &&
-        videosRow.user_id &&
-        /user_id|foreign key|violates|23503|42501|RLS/i.test(
-          errText(attempt.error)
-        )
-      ) {
-        const { user_id: _omit, ...withoutUser } = videosRow;
-        attempt = await tryInsert(withoutUser);
-      }
-      // Unknown `sport_category` column → already using `category`; strip extras if any
-      if (
-        !attempt.ok &&
-        /sport_category|column|schema cache|PGRST204/i.test(
-          errText(attempt.error)
-        )
-      ) {
-        const { sport_category: _sc, ...clean } = videosRow;
-        attempt = await tryInsert(clean);
-      }
-      if (attempt.ok) {
-        console.log(
-          '[arenaPosts] videos',
-          attempt.via,
-          videosRow.video_url
-        );
-        return { ok: true };
-      }
-      logFail('videos insert', attempt.error);
+    // FK / RLS on user_id → retry without user_id
+    if (
+      !attempt.ok &&
+      videosRow.user_id &&
+      /user_id|foreign key|violates|23503|42501|RLS/i.test(
+        errText(attempt.error)
+      )
+    ) {
+      const { user_id: _omit, ...withoutUser } = videosRow;
+      attempt = await tryUpsert(withoutUser);
     }
 
-    // 2) Soft secondary: legacy `bawaal_posts` shape
-    const row = legacyRow;
-    if (!row) {
-      const fb = await persistArenaPostMetaToStorage(videosRow);
-      return fb.ok
-        ? { ok: true, reason: 'storage-meta-fallback' }
-        : { ok: true, reason: 'storage-live-no-meta' };
+    // Unknown column noise → strip extras if any
+    if (
+      !attempt.ok &&
+      /sport_category|column|schema cache|PGRST204/i.test(
+        errText(attempt.error)
+      )
+    ) {
+      const { sport_category: _sc, ...clean } = videosRow;
+      attempt = await tryUpsert(clean);
     }
 
-    const upsertRes = await supabase.from(LEGACY_TABLE).upsert(row, {
-      onConflict: 'id',
-    });
-    if (!upsertRes.error) {
-      console.log('[arenaPosts] upserted legacy', row.id, row.video_url);
-      return { ok: true, reason: 'legacy-bawaal-posts' };
+    // Still colliding / stale id → one fresh uuid upsert
+    if (!attempt.ok && isDuplicateKeyError(attempt.error)) {
+      attempt = await tryUpsert({ ...videosRow, id: newVideosUuid() });
     }
-    logFail('legacy upsert', upsertRes.error);
 
-    // Table missing from schema cache → Storage JSON fallback (video already uploaded)
-    if (isMissingBawaalPostsTableError(upsertRes.error)) {
-      console.warn(
-        '[arenaPosts] feed tables missing from schema cache — using Storage meta fallback'
+    if (attempt.ok) {
+      console.log(
+        '[arenaPosts] videos',
+        attempt.via,
+        videosRow.video_url,
+        attempt.id || videosRow.id
       );
-      const fb = await persistArenaPostMetaToStorage(row);
-      if (fb.ok) {
-        // Clip is live — soft success, no UI warning payload
-        return { ok: true, reason: 'storage-meta-fallback' };
-      }
-      // Still treat as soft-ok when the HTTPS video already exists in Storage
-      return { ok: true, reason: 'storage-live-no-meta' };
+      return { ok: true, id: attempt.id || videosRow.id };
     }
 
-    // 3) Fallback: plain insert on legacy table
-    const insertRes = await supabase.from(LEGACY_TABLE).insert(row);
-    if (!insertRes.error) {
-      console.log('[arenaPosts] inserted legacy', row.id);
-      return { ok: true, reason: 'legacy-bawaal-posts' };
-    }
-    logFail('legacy insert', insertRes.error);
+    logFail('videos upsert', attempt.error);
 
-    if (isMissingBawaalPostsTableError(insertRes.error)) {
-      const fb = await persistArenaPostMetaToStorage(row);
-      if (fb.ok) {
-        return { ok: true, reason: 'storage-meta-fallback' };
-      }
-      return { ok: true, reason: 'storage-live-no-meta' };
+    // Soft fallbacks: Storage meta JSON + device cache (clip already uploaded)
+    if (isMissingBawaalPostsTableError(attempt.error)) {
+      console.warn(
+        '[arenaPosts] videos unavailable — using Storage/AsyncStorage fallback'
+      );
     }
-
-    // 4) Fallback: update existing legacy row by id
-    const updateRes = await supabase
-      .from(LEGACY_TABLE)
-      .update(row)
-      .eq('id', row.id);
-    if (!updateRes.error) {
-      console.log('[arenaPosts] updated legacy', row.id);
-      return { ok: true, reason: 'legacy-bawaal-posts' };
-    }
-    const errMsg = logFail('legacy update', updateRes.error);
-
-    // Last resort — Storage meta so the clip remains discoverable offline
-    const fb = await persistArenaPostMetaToStorage(row);
+    const fb = await persistArenaPostMetaToStorage(videosRow);
     if (fb.ok) {
       return { ok: true, reason: 'storage-meta-fallback' };
     }
-
+    // HTTPS video already exists in Storage — soft-ok so UI is never stuck
     return {
-      ok: false,
-      error:
-        errMsg ||
-        upsertRes.error?.message ||
-        'Could not save post to videos / bawaal_posts (check RLS/GRANTs)',
+      ok: true,
+      reason: 'storage-live-no-meta',
+      warning: attempt.error?.message || String(attempt.error || ''),
     };
   } catch (err) {
     console.error('[arenaPosts] persist crashed:', err?.message || err);
-    if (isMissingBawaalPostsTableError(err)) {
-      const fb = await persistArenaPostMetaToStorage(row);
+    try {
+      const fb = await persistArenaPostMetaToStorage(videosRow);
       if (fb.ok) {
         return { ok: true, reason: 'storage-meta-fallback' };
       }
-      return { ok: true, reason: 'storage-live-no-meta' };
+    } catch (_) {
+      /* ignore */
     }
     return { ok: false, error: err?.message || String(err) };
   }

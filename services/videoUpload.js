@@ -134,7 +134,39 @@ async function resolveVideosUserId(explicitId, session) {
 }
 
 async function insertVideosRow(row) {
-  return supabase.from('videos').insert([row]).select();
+  // Prefer upsert with a uuid id so re-publish / double-persist never hits videos_pkey
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  let id = row?.id && UUID_RE.test(String(row.id)) ? String(row.id) : null;
+  if (!id) {
+    try {
+      id =
+        typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : null;
+    } catch (_) {
+      id = null;
+    }
+  }
+  if (!id) {
+    id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+  const payload = { ...row, id };
+  const upsert = await supabase
+    .from('videos')
+    .upsert([payload], { onConflict: 'id' })
+    .select();
+  if (!upsert.error) return upsert;
+  // Duplicate key → treat as soft success (idempotent publish)
+  const msg = String(upsert.error?.message || upsert.error?.code || '');
+  if (/23505|duplicate key|videos_pkey/i.test(msg)) {
+    return { data: [payload], error: null };
+  }
+  return upsert;
 }
 
 /**

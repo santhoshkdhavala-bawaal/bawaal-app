@@ -279,7 +279,7 @@ export function pushArenaPost(post) {
         if (!res?.ok && !res?.skipped) {
           console.warn('[arenaFeedStore] cloud persist missed:', res?.error);
         } else if (res?.ok) {
-          console.log('[arenaFeedStore] row persisted to bawaal_posts');
+          console.log('[arenaFeedStore] row persisted to videos');
         }
       });
     } else if (!post?._fromRemote && !post?._skipPersist && !httpsReady) {
@@ -301,7 +301,7 @@ export function addPost(post) {
 }
 
 /**
- * Prepend to local feed AND await Supabase `bawaal_posts` upsert.
+ * Prepend to local feed AND await Supabase `videos` upsert.
  * Use from PostCreationSheet so DB write finishes before success UI.
  */
 export async function pushArenaPostAndPersist(post) {
@@ -432,6 +432,67 @@ function notifyLocalReady() {
   });
 }
 
+/** Device AsyncStorage hydrate — never throws; empty array on failure. */
+async function hydrateLocal() {
+  try {
+    const localCached = await loadLocalArenaPosts();
+    const incoming = [];
+    for (const row of localCached || []) {
+      try {
+        const normalized = normalizeArenaPost({
+          ...row,
+          _fromRemote: false,
+          _skipPersist: true,
+        });
+        if (!normalized?.videoUri) continue;
+        mergeIntoStore(normalized, { emitEvent: false });
+        incoming.push(normalized);
+      } catch (rowErr) {
+        console.warn(
+          '[arenaFeedStore] hydrateLocal row skipped:',
+          rowErr?.message || rowErr
+        );
+      }
+    }
+    return incoming;
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] hydrateLocal failed:',
+      err?.message || err
+    );
+    return [];
+  }
+}
+
+/** Cloud `videos` hydrate — never throws; empty array on failure. */
+async function hydrateRemote() {
+  try {
+    const remote = await fetchArenaPostsFromSupabase();
+    if (!Array.isArray(remote) || remote.length === 0) return [];
+    const incoming = [];
+    for (const row of remote) {
+      try {
+        const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
+        if (!normalized?.videoUri) continue;
+        mergeIntoStore(normalized, { emitEvent: false });
+        incoming.push(normalized);
+      } catch (rowErr) {
+        console.warn(
+          '[arenaFeedStore] hydrateRemote row skipped:',
+          rowErr?.message || rowErr
+        );
+      }
+    }
+    return incoming;
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] hydrateRemote failed:',
+      err?.message || err
+    );
+    return [];
+  }
+}
+
 export async function hydrateArenaPostsFromSupabase(opts = {}) {
   const silent = !!opts.silent;
   const onLocalReady =
@@ -452,6 +513,12 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
   if (hydratePromise) {
     try {
       return await hydratePromise;
+    } catch (err) {
+      console.warn(
+        '[arenaFeedStore] shared hydrate failed:',
+        err?.message || err
+      );
+      return arenaPosts.slice();
     } finally {
       if (onLocalReady) localReadyListeners.delete(onLocalReady);
     }
@@ -462,48 +529,43 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
   hydratePromise = (async () => {
     try {
       // 1) Device cache first — ChallengeCam local URIs play immediately
-      const localCached = await loadLocalArenaPosts();
-      const incoming = [];
-      for (const row of localCached) {
-        const normalized = normalizeArenaPost({
-          ...row,
-          _fromRemote: false,
-          _skipPersist: true,
-        });
-        if (!normalized?.videoUri) continue;
-        mergeIntoStore(normalized, { emitEvent: false });
-        incoming.push(normalized);
+      const localIncoming = await hydrateLocal();
+
+      // Paint local reels ASAP before network (never block splash on remote)
+      try {
+        notifyLocalReady();
+      } catch (notifyErr) {
+        console.warn(
+          '[arenaFeedStore] notifyLocalReady failed:',
+          notifyErr?.message || notifyErr
+        );
+        localPhaseDone = true;
       }
-
-      // Paint local reels ASAP (unified with challenge shells) before network
-      notifyLocalReady();
-      if (!silent && incoming.length) emitBatch(incoming);
-
-      // 2) Cloud `videos` rows (https) merge on top without wiping local-only clips
-      const remote = await fetchArenaPostsFromSupabase();
-      if (Array.isArray(remote) && remote.length > 0) {
-        for (const row of remote) {
-          const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
-          if (!normalized?.videoUri) continue;
-          mergeIntoStore(normalized, { emitEvent: false });
-          incoming.push(normalized);
+      if (!silent && localIncoming.length) {
+        try {
+          emitBatch(localIncoming);
+        } catch (_) {
+          /* ignore */
         }
       }
 
-      if (!silent && Array.isArray(remote) && remote.length) {
-        emitBatch(
-          remote
-            .map((row) => normalizeArenaPost({ ...row, _fromRemote: true }))
-            .filter((p) => p?.videoUri)
-        );
+      // 2) Cloud `videos` rows merge on top without wiping local-only clips
+      const remoteIncoming = await hydrateRemote();
+
+      if (!silent && remoteIncoming.length) {
+        try {
+          emitBatch(remoteIncoming);
+        } catch (_) {
+          /* ignore */
+        }
       }
 
       console.log(
         '[arenaFeedStore] hydrated',
         'local=',
-        localCached.length,
+        localIncoming.length,
         'remote=',
-        Array.isArray(remote) ? remote.length : 0,
+        remoteIncoming.length,
         silent ? '(silent)' : ''
       );
       return arenaPosts.slice();
@@ -512,8 +574,14 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
         '[arenaFeedStore] hydrate failed:',
         err?.message || err
       );
-      // Still unblock first paint listeners
-      if (!localPhaseDone) notifyLocalReady();
+      // Still unblock first paint listeners — never lock splash / blank screen
+      if (!localPhaseDone) {
+        try {
+          notifyLocalReady();
+        } catch (_) {
+          localPhaseDone = true;
+        }
+      }
       return arenaPosts.slice();
     } finally {
       // Allow a later refresh (e.g. pull-to-refresh) to fetch again
@@ -523,6 +591,12 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
 
   try {
     return await hydratePromise;
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] hydrate await failed:',
+      err?.message || err
+    );
+    return arenaPosts.slice();
   } finally {
     if (onLocalReady) localReadyListeners.delete(onLocalReady);
   }
@@ -533,16 +607,35 @@ export async function hydrateArenaPostsFromSupabase(opts = {}) {
  * before the first Arena paint (cuts reload flash).
  */
 export function startArenaFeedWarmup() {
-  if (hydratePromise) return hydratePromise;
-  return hydrateArenaPostsFromSupabase({ silent: true });
+  try {
+    if (hydratePromise) return hydratePromise;
+    return hydrateArenaPostsFromSupabase({ silent: true }).catch((err) => {
+      console.warn(
+        '[arenaFeedStore] warmup failed:',
+        err?.message || err
+      );
+      return arenaPosts.slice();
+    });
+  } catch (err) {
+    console.warn('[arenaFeedStore] warmup threw:', err?.message || err);
+    return Promise.resolve(arenaPosts.slice());
+  }
 }
 
 /**
  * Force a fresh fetch (e.g. on Arena focus after a long background).
  */
 export async function refreshArenaPostsFromSupabase() {
-  hydratePromise = null;
-  return hydrateArenaPostsFromSupabase();
+  try {
+    hydratePromise = null;
+    return await hydrateArenaPostsFromSupabase();
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] refresh failed:',
+      err?.message || err
+    );
+    return arenaPosts.slice();
+  }
 }
 
 const arenaFeedStore = {
