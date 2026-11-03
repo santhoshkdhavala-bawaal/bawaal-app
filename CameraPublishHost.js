@@ -1,6 +1,8 @@
 /**
- * Camera stack host for SPARKS / ChallengeCam routes.
- * VideoPublishModal lives inside UniversalCamera (opens on successful capture).
+ * Camera stack host for SPARKS / ChallengeCam routes (ChallengePublishHost).
+ * Pre-publish review controls (play / pause / speed) live ONLY in VideoPublishModal
+ * — never on ArenaFeed.
+ * VideoPublishModal opens from UniversalCamera after a successful capture.
  */
 import React from 'react';
 import { View, StyleSheet } from 'react-native';

@@ -309,26 +309,38 @@ const FEED_VIDEO_SHELL = {
   width: '100%',
   height: 450,
   minHeight: 450,
-  backgroundColor: '#000',
+  backgroundColor: '#000000',
   position: 'relative',
   overflow: 'hidden',
 };
 
-/** Empty / invalid URI — keep 450 shell so FlatList never collapses. */
-function FeedVideoPlaceholder({ style, label }) {
+/**
+ * Sleek BAWAAL dark banner — used while URI is missing / uploading / off-screen.
+ * Never a blank black box or "Clip Unavailable" crash state.
+ */
+function FeedVideoPlaceholder({ style, label, subtitle }) {
   return (
-    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style, styles.clipPlaceholder]}>
-      <Text style={styles.clipPlaceholderText}>{label || 'CLIP UNAVAILABLE'}</Text>
-      <Text style={styles.clipPlaceholderSub}>Waiting for playable video…</Text>
+    <View
+      style={[FEED_VIDEO_SHELL, styles.clipShell, style, styles.clipPlaceholder]}
+    >
+      <View style={styles.processingBadge}>
+        <View style={styles.processingDot} />
+        <Text style={styles.clipPlaceholderText}>
+          {label || 'BAWAAL ARENA HD'}
+        </Text>
+      </View>
+      <Text style={styles.clipPlaceholderSub}>
+        {subtitle || 'Processing…'}
+      </Text>
     </View>
   );
 }
 
 /**
- * Active expo-video instance for one feed clip.
- * Clean stream only — play/pause/speed live exclusively on recorder preview.
+ * Active expo-video instance — mounted ONLY while the row is viewable.
+ * Zero review chrome (play/pause/slow-mo live exclusively on publish preview).
  */
-function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null }) {
+function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
   const [failed, setFailed] = useState(false);
   const source = useMemo(
     () => (isUsablePlaybackUri(uri) ? { uri: String(uri).trim() } : null),
@@ -371,7 +383,10 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
       sub = player.addListener?.('statusChange', ({ status, error }) => {
         try {
           if (status === 'error' || error) {
-            console.warn('[FeedVideoPlayer] status error:', error?.message || error);
+            console.warn(
+              '[FeedVideoPlayer] status error:',
+              error?.message || error
+            );
             setFailed(true);
           }
         } catch (_) {
@@ -390,14 +405,26 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
     };
   }, [player]);
 
+  // Instant teardown when scrolled away / URI recycled
   useEffect(() => {
     return () => {
+      try {
+        player?.pause?.();
+      } catch (_) {
+        /* ignore */
+      }
       safeReleaseExpoVideoPlayer(player);
     };
   }, [player]);
 
   if (!source || failed) {
-    return <FeedVideoPlaceholder style={style} label={label || 'CLIP UNAVAILABLE'} />;
+    return (
+      <FeedVideoPlaceholder
+        style={style}
+        label="BAWAAL ARENA HD"
+        subtitle="Processing…"
+      />
+    );
   }
 
   return (
@@ -417,14 +444,14 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
 }
 
 /**
- * Memoized feed video item — one native player per visible URI.
- * Null/invalid URI → labeled placeholder (never a collapsed black box).
- * `active={false}` → solid 450 black shell only (no decoder).
+ * Memoized Arena feed video item.
+ * `active={false}` → unmounts expo-video instantly (placeholder only, no decoder).
+ * Missing / empty URI → branded Processing banner (never blank black).
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
   muted = false,
-  /** When false, unmount decoder. Neighbors pass active=true to warm. */
+  /** When false, unmount decoder immediately. */
   active = true,
   loop = true,
   style,
@@ -433,11 +460,24 @@ const FeedVideoItem = memo(function FeedVideoItem({
   const playUri = isUsablePlaybackUri(uri) ? String(uri).trim() : null;
 
   if (!playUri) {
-    return <FeedVideoPlaceholder style={style} label={label || 'NO CLIP'} />;
+    return (
+      <FeedVideoPlaceholder
+        style={style}
+        label={label || 'BAWAAL ARENA HD'}
+        subtitle="Processing…"
+      />
+    );
   }
 
+  // Off-viewport: do not keep a native player alive
   if (!active) {
-    return <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]} />;
+    return (
+      <FeedVideoPlaceholder
+        style={style}
+        label="BAWAAL ARENA HD"
+        subtitle="Ready when in view"
+      />
+    );
   }
 
   return (
@@ -447,7 +487,6 @@ const FeedVideoItem = memo(function FeedVideoItem({
       muted={muted}
       loop={loop}
       style={style}
-      label={label}
     />
   );
 });
@@ -1969,22 +2008,42 @@ const styles = StyleSheet.create({
   },
   clipPlaceholder: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 16,
+  },
+  processingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,69,0,0.45)',
+    backgroundColor: 'rgba(255,69,0,0.08)',
+  },
+  processingDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#FF4500',
   },
   clipPlaceholderSub: {
     color: MUTED,
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: 12,
+    textTransform: 'uppercase',
   },
   clipPlaceholderText: {
-    color: PLATINUM,
-    fontSize: 11,
-    fontWeight: '800',
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.6,
     textAlign: 'center',
     letterSpacing: 0.6,
   },
