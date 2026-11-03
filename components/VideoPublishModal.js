@@ -219,7 +219,7 @@ function ExpoVideoPreview({
     try {
       p.loop = true;
       p.muted = false;
-      p.playbackRate = playbackRate;
+      p.playbackRate = Number(playbackRate) || 1;
       if (visible && isPlaying) p.play();
       else p.pause();
     } catch {
@@ -236,7 +236,7 @@ function ExpoVideoPreview({
       try {
         player.loop = true;
         player.muted = false;
-        player.playbackRate = playbackRate;
+        player.playbackRate = Number(playbackRate) || 1;
         if (visible && isPlaying) player.play();
         else player.pause();
         setLoading(false);
@@ -251,6 +251,37 @@ function ExpoVideoPreview({
       clearTimeout(t);
     };
   }, [isPlaying, onError, onReady, playbackRate, player, uri, visible]);
+
+  const togglePlayPause = () => {
+    try {
+      if (!player) {
+        onTogglePlay?.();
+        return;
+      }
+      if (player.playing) player.pause();
+      else player.play();
+    } catch (err) {
+      console.warn(
+        '[VideoPublishModal] expo-video toggle failed:',
+        err?.message || err
+      );
+    }
+    onTogglePlay?.();
+  };
+
+  const setSpeed = (rate) => {
+    const next = Number(rate);
+    if (!Number.isFinite(next) || next <= 0) return;
+    try {
+      if (player) player.playbackRate = next;
+    } catch (err) {
+      console.warn(
+        '[VideoPublishModal] expo-video rate failed:',
+        err?.message || err
+      );
+    }
+    onSelectRate?.(next);
+  };
 
   return (
     <View style={styles.previewShell}>
@@ -268,8 +299,8 @@ function ExpoVideoPreview({
       <PreviewControlsOverlay
         isPlaying={isPlaying}
         playbackRate={playbackRate}
-        onTogglePlay={onTogglePlay}
-        onSelectRate={onSelectRate}
+        onTogglePlay={togglePlayPause}
+        onSelectRate={setSpeed}
       />
     </View>
   );
@@ -284,7 +315,13 @@ function PublishClipPreview({
   onSelectRate,
   videoRef,
 }) {
+  const [useAvFallback, setUseAvFallback] = useState(false);
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
+
+  useEffect(() => {
+    setUseAvFallback(false);
+  }, [uri]);
+
   if (!uri) {
     return (
       <View style={[styles.previewShell, styles.previewEmpty]}>
@@ -293,30 +330,32 @@ function PublishClipPreview({
     );
   }
 
-  // Prefer real expo-av; never mount the Metro stub ("Dev client required…")
-  if (AvVideo) {
+  // Prefer expo-video so center play + speed bar drive player.playbackRate
+  if (!useAvFallback || !AvVideo) {
     return (
-      <ExpoAvPreview
+      <ExpoVideoPreview
         uri={uri}
         visible={visible}
         isPlaying={isPlaying}
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
         onSelectRate={onSelectRate}
-        videoRef={videoRef}
+        onError={() => {
+          if (AvVideo) setUseAvFallback(true);
+        }}
       />
     );
   }
 
-  // expo-video plays local file:// + https when expo-av is stubbed
   return (
-    <ExpoVideoPreview
+    <ExpoAvPreview
       uri={uri}
       visible={visible}
       isPlaying={isPlaying}
       playbackRate={playbackRate}
       onTogglePlay={onTogglePlay}
       onSelectRate={onSelectRate}
+      videoRef={videoRef}
     />
   );
 }
@@ -407,17 +446,32 @@ export default function VideoPublishModal({
     setUploading(false);
 
     if (result.success) {
+      const publicUrl =
+        result.url ||
+        result.data?.video_url ||
+        result.data?.url ||
+        null;
+      const localUri = playable;
       const payload = {
         ...(result.data || {}),
-        url: result.url || result.data?.video_url,
-        video_url: result.url || result.data?.video_url,
+        id: result.data?.id || `publish-${Date.now()}`,
+        url: publicUrl,
+        video_url: publicUrl,
+        videoUri: publicUrl || localUri,
+        uri: publicUrl || localUri,
+        publicCloudUrl: publicUrl,
+        remoteVideoUri: publicUrl,
+        localVideoUri: localUri,
         category: selectedCategory,
         caption: caption || '',
+        _freshPublish: true,
       };
       // Branded B-logo popup — wait for OK so parent can close + navigate cleanly
       showBawaalAlert({
         title: 'Success!',
-        message: 'Your video challenge is live on BAWAAL!',
+        message: result.dbWarning
+          ? 'Clip uploaded. Feed will show your local/cloud URL while DB sync finishes.'
+          : 'Your video challenge is live on BAWAAL!',
         confirmLabel: 'OK',
         onConfirm: () => finishSuccess(payload),
       });

@@ -45,6 +45,7 @@ function pickPublicVideoUri(post) {
     post.remoteVideoUri,
     post.videoUrl,
     post.video_url,
+    post.url,
     post.videoUri,
     post.recordedVideoUri,
     post.uri,

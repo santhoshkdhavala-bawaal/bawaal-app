@@ -1926,10 +1926,20 @@ export default function UniversalCamera({
   const handlePublishModalSuccess = useCallback(
     (data: Record<string, unknown> | null | undefined) => {
       const cloudUrl =
+        (typeof data?.publicCloudUrl === 'string' && data.publicCloudUrl) ||
         (typeof data?.video_url === 'string' && data.video_url) ||
         (typeof data?.url === 'string' && data.url) ||
+        (typeof data?.remoteVideoUri === 'string' && data.remoteVideoUri) ||
         null;
-      const playUri = cloudUrl || recordedVideoUri;
+      const localUri =
+        (typeof data?.localVideoUri === 'string' && data.localVideoUri) ||
+        recordedVideoUri ||
+        null;
+      const playUri =
+        (typeof data?.videoUri === 'string' && data.videoUri) ||
+        cloudUrl ||
+        localUri ||
+        recordedVideoUri;
       const category =
         (typeof data?.category === 'string' && data.category) || 'COMBAT';
       const caption =
@@ -1941,9 +1951,10 @@ export default function UniversalCamera({
         mode,
         videoUri: playUri,
         uri: playUri,
+        video_url: cloudUrl,
         publicCloudUrl: cloudUrl,
         remoteVideoUri: cloudUrl,
-        localVideoUri: recordedVideoUri,
+        localVideoUri: localUri,
         title: caption,
         caption,
         category,
@@ -1952,7 +1963,9 @@ export default function UniversalCamera({
         createdAt: Date.now(),
         feedTarget: 'ARENA' as const,
         _freshPublish: true,
+        cloudUploaded: !!cloudUrl,
       };
+      // Immediate local prepend so Arena never flashes "Clip Unavailable"
       try {
         pushArenaPost(post);
       } catch (err) {

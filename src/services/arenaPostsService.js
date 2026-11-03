@@ -35,10 +35,13 @@ export function mapChallengeClipToFeedPost(post = {}) {
   );
   const cloud =
     sanitizePlayableFeedUri(post.publicCloudUrl) ||
+    sanitizePlayableFeedUri(post.video_url) ||
+    sanitizePlayableFeedUri(post.remoteVideoUri) ||
     (isRemoteHttpsUri(post.videoUri)
       ? sanitizePlayableFeedUri(post.videoUri)
       : null) ||
-    (isRemoteHttpsUri(post.uri) ? sanitizePlayableFeedUri(post.uri) : null);
+    (isRemoteHttpsUri(post.uri) ? sanitizePlayableFeedUri(post.uri) : null) ||
+    (isRemoteHttpsUri(post.url) ? sanitizePlayableFeedUri(post.url) : null);
   const playUri =
     cloud ||
     local ||

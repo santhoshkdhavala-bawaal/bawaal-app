@@ -150,7 +150,7 @@ export function ensurePublicBawaalVideoUrl(raw) {
     return uri;
   }
 
-  // Insert /public/ when Storage object URL omits it
+  // Insert /public/ when Storage object URL omits it (legacy + hyphen buckets)
   if (uri.includes('/storage/v1/object/') && uri.includes('bawaalvideos')) {
     uri = uri
       .replace(
@@ -166,16 +166,40 @@ export function ensurePublicBawaalVideoUrl(raw) {
         '/storage/v1/object/public/bawaalvideos/'
       );
   }
+  if (uri.includes('/storage/v1/object/') && uri.includes('bawaal-videos')) {
+    uri = uri
+      .replace(
+        '/storage/v1/object/bawaal-videos/',
+        '/storage/v1/object/public/bawaal-videos/'
+      )
+      .replace(
+        '/storage/v1/object/sign/bawaal-videos/',
+        '/storage/v1/object/public/bawaal-videos/'
+      )
+      .replace(
+        '/storage/v1/object/authenticated/bawaal-videos/',
+        '/storage/v1/object/public/bawaal-videos/'
+      );
+  }
 
   // Absolute http(s) → canonical public form
   if (/^https?:\/\//i.test(uri)) {
-    const rebuilt = uri.match(
+    const rebuiltLegacy = uri.match(
       /^(https?:\/\/[^/?#]+)\/storage\/v1\/object\/(?:public\/)?bawaalvideos\/(.+?)(?:\?.*)?$/i
     );
-    if (rebuilt) {
-      const filePath = rebuilt[2].replace(/^\/+/, '').replace(/\/+/g, '/');
+    if (rebuiltLegacy) {
+      const filePath = rebuiltLegacy[2].replace(/^\/+/, '').replace(/\/+/g, '/');
       return cleanStorageUrl(
-        `${rebuilt[1]}/storage/v1/object/public/bawaalvideos/${filePath}`
+        `${rebuiltLegacy[1]}/storage/v1/object/public/bawaalvideos/${filePath}`
+      );
+    }
+    const rebuiltPrimary = uri.match(
+      /^(https?:\/\/[^/?#]+)\/storage\/v1\/object\/(?:public\/)?bawaal-videos\/(.+?)(?:\?.*)?$/i
+    );
+    if (rebuiltPrimary) {
+      const filePath = rebuiltPrimary[2].replace(/^\/+/, '').replace(/\/+/g, '/');
+      return cleanStorageUrl(
+        `${rebuiltPrimary[1]}/storage/v1/object/public/bawaal-videos/${filePath}`
       );
     }
     return cleanStorageUrl(uri);
