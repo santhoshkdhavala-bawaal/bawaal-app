@@ -65,7 +65,7 @@ const GOLD = FLAME_ORANGE;
 
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
-  itemVisiblePercentThreshold: 55,
+  itemVisiblePercentThreshold: 50,
   minimumViewTime: 80,
 };
 
@@ -1072,20 +1072,18 @@ export default function ArenaFeed({ navigation, route }) {
     void configureGlobalAudioSession();
   }, []);
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
+  // FlatList requires a stable ref — pause/unmount hidden players, play visible only
+  const onViewableItemsChanged = useRef(({ viewableItems }) => {
     const next = new Set();
     for (const entry of viewableItems || []) {
       if (!entry?.isViewable) continue;
       const idx = typeof entry.index === 'number' ? entry.index : -1;
       if (idx < 0) continue;
-      // Only viewport ±1 mount decoders — recycle everything else
-      next.add(idx - 1);
+      // Only truly visible rows mount SafeVideoPlayer (hidden → unmount/pause)
       next.add(idx);
-      next.add(idx + 1);
     }
     if (next.size === 0) {
       next.add(0);
-      next.add(1);
     }
     setWarmIndices((prev) => {
       if (prev.size === next.size) {
@@ -1100,7 +1098,7 @@ export default function ArenaFeed({ navigation, route }) {
       }
       return next;
     });
-  }, []);
+  }).current;
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
   const absorbedUriById = useRef(new Map());
 
