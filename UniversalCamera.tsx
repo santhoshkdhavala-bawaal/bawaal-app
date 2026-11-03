@@ -64,7 +64,8 @@ import {
 } from './src/utils/safeRecordingFallback';
 import VideoPublishModal from './components/VideoPublishModal';
 import { getActiveUser } from './src/services/activeUserProfile';
-import { pushArenaPost } from './arenaFeedStore';
+import { addNewPostToArenaFeed } from './arenaFeedStore';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 export type { CreationMode, PostCreationPayload };
 
 /** Minimalist Black & White */
@@ -1935,11 +1936,17 @@ export default function UniversalCamera({
         (typeof data?.localVideoUri === 'string' && data.localVideoUri) ||
         recordedVideoUri ||
         null;
-      const playUri =
-        (typeof data?.videoUri === 'string' && data.videoUri) ||
-        cloudUrl ||
-        localUri ||
-        recordedVideoUri;
+
+      // Feed prepend ONLY after complete upload success (public HTTPS URL)
+      if (!cloudUrl || !/^https:\/\//i.test(cloudUrl)) {
+        showBawaalAlert({
+          title: 'UPLOAD FAILED',
+          message:
+            'Cloud upload did not return a public URL. Your clip was not added to Arena.',
+        });
+        return;
+      }
+
       const category =
         (typeof data?.category === 'string' && data.category) || 'COMBAT';
       const caption =
@@ -1949,30 +1956,39 @@ export default function UniversalCamera({
       const post = {
         id: (typeof data?.id === 'string' && data.id) || `publish-${Date.now()}`,
         mode,
-        videoUri: playUri,
-        uri: playUri,
+        videoUri: cloudUrl,
+        uri: cloudUrl,
         video_url: cloudUrl,
         publicCloudUrl: cloudUrl,
         remoteVideoUri: cloudUrl,
         localVideoUri: localUri,
         title: caption,
         caption,
+        athlete: '@you',
+        author: '@you',
         category,
         sport: category,
         timestamp: Date.now(),
         createdAt: Date.now(),
         feedTarget: 'ARENA' as const,
         _freshPublish: true,
-        cloudUploaded: !!cloudUrl,
+        cloudUploaded: true,
       };
-      // Immediate local prepend so Arena never flashes "Clip Unavailable"
+
       try {
-        pushArenaPost(post);
+        addNewPostToArenaFeed(post);
       } catch (err) {
         console.warn(
-          '[UniversalCamera] pushArenaPost failed:',
+          '[UniversalCamera] addNewPostToArenaFeed failed:',
           (err as Error)?.message || err
         );
+        showBawaalAlert({
+          title: 'UPLOAD FAILED',
+          message:
+            (err as Error)?.message ||
+            'Could not append the clip to Arena feed.',
+        });
+        return;
       }
       try {
         onPublished?.(post as unknown as PostCreationPayload);

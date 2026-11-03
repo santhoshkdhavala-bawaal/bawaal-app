@@ -308,6 +308,47 @@ export function addPost(post) {
 }
 
 /**
+ * Publish-complete helper — only prepends after a real public HTTPS URL exists.
+ * Use from ChallengePublishHost / VideoPublishModal success path.
+ */
+export function addNewPostToArenaFeed(post = {}) {
+  const publicUrl =
+    (typeof post.video_url === 'string' && post.video_url.trim()) ||
+    (typeof post.publicCloudUrl === 'string' && post.publicCloudUrl.trim()) ||
+    (typeof post.url === 'string' && post.url.trim()) ||
+    (typeof post.videoUri === 'string' && post.videoUri.trim()) ||
+    null;
+
+  if (!isRemoteHttpsUri(publicUrl)) {
+    console.warn(
+      '[arenaFeedStore] addNewPostToArenaFeed skipped — need public HTTPS video_url'
+    );
+    return null;
+  }
+
+  const author =
+    post.athlete ||
+    post.author ||
+    (post.creator === 'You' || post.creator === 'YOU'
+      ? '@you'
+      : post.creator
+        ? `@${String(post.creator).replace(/^@/, '')}`
+        : '@you');
+
+  return pushArenaPost({
+    ...post,
+    author,
+    video_url: publicUrl,
+    videoUri: publicUrl,
+    uri: publicUrl,
+    publicCloudUrl: publicUrl,
+    remoteVideoUri: publicUrl,
+    cloudUploaded: true,
+    _freshPublish: true,
+  });
+}
+
+/**
  * Prepend to local feed AND await Supabase `videos` upsert.
  * Use from PostCreationSheet so DB write finishes before success UI.
  */
@@ -642,6 +683,7 @@ const arenaFeedStore = {
   pushArenaPostAndPersist,
   pushOpenChallenge,
   addPost,
+  addNewPostToArenaFeed,
   getArenaPosts,
   subscribeArenaPosts,
   drainPendingArenaPosts,
