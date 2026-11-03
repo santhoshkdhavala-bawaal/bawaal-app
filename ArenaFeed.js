@@ -32,8 +32,8 @@ import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
-import ArenaClipPlayer from './src/components/ArenaClipPlayer';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
@@ -45,6 +45,7 @@ import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
+import { safeReleaseExpoVideoPlayer } from './src/utils/safeUnloadVideo';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -303,13 +304,101 @@ function ingestPostsBatch(prev, posts) {
   return next;
 }
 
+/**
+ * Active expo-video instance for one feed clip.
+ * Mounted only while the row is viewable — FlatList recycle stays butter-smooth.
+ */
+function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
+  const player = useVideoPlayer(uri ? { uri } : null, (p) => {
+    try {
+      p.loop = loop !== false;
+      p.muted = !!muted;
+      p.play();
+    } catch {
+      /* ignore setup races */
+    }
+  });
+
+  useEffect(() => {
+    if (!player) return undefined;
+    try {
+      player.muted = !!muted;
+      player.loop = loop !== false;
+      player.play();
+    } catch {
+      /* ignore */
+    }
+    return undefined;
+  }, [player, muted, loop]);
+
+  useEffect(() => {
+    return () => {
+      safeReleaseExpoVideoPlayer(player);
+    };
+  }, [player]);
+
+  return (
+    <View style={[styles.clipShell, style]}>
+      {/* Black underlay while buffering — never BAWAAL logo blink */}
+      <View style={styles.feedVideoUnderlay} pointerEvents="none" />
+      <VideoView
+        style={styles.clipVideoFill}
+        player={player}
+        contentFit="cover"
+        nativeControls={false}
+        fullscreenOptions={{ enable: false }}
+        pointerEvents="none"
+      />
+    </View>
+  );
+}
+
+/**
+ * Memoized feed video item — one native player per visible URI.
+ * `active={false}` → solid black shell only (no decoder).
+ */
+const FeedVideoItem = memo(function FeedVideoItem({
+  uri,
+  muted = false,
+  /** When false, unmount decoder. Neighbors pass active=true to warm. */
+  active = true,
+  loop = true,
+  style,
+  label = null,
+}) {
+  const playUri =
+    typeof uri === 'string' && uri.trim() ? String(uri).trim() : null;
+
+  if (!playUri) {
+    return (
+      <View style={[styles.clipShell, style, styles.clipPlaceholder]}>
+        <Text style={styles.clipPlaceholderText}>{label || 'NO CLIP'}</Text>
+      </View>
+    );
+  }
+
+  if (!active) {
+    return <View style={[styles.clipShell, style]} />;
+  }
+
+  return (
+    <FeedVideoPlayer
+      key={playUri}
+      uri={playUri}
+      muted={muted}
+      loop={loop}
+      style={style}
+    />
+  );
+});
+
+/** Resolve cloud/local URI then hand off to expo-video FeedVideoItem. */
 const ClipSurface = memo(function ClipSurface({
   uri,
   source,
   label,
   style,
   muted = true,
-  /** When false, unmount decoder (poster only). Neighbors pass active=true to warm. */
   active = true,
 }) {
   const playSource = source || {
@@ -328,36 +417,15 @@ const ClipSurface = memo(function ClipSurface({
     playSource.localVideoUri ||
     null;
 
-  if (!playUri) {
-    return (
-      <View style={[styles.clipShell, style, styles.clipPlaceholder]}>
-        <Text style={styles.clipPlaceholderText}>{label || 'NO CLIP'}</Text>
-      </View>
-    );
-  }
-
-  // Keep player keyed by URI so FlatList recycle never shows the wrong clip.
-  // Container is always 450×100% black — Video uses absoluteFill (no zero-height collapse).
-  // `active={false}` → ArenaClipPlayer shows black underlay only (no native decoder).
   return (
-    <View style={[styles.clipShell, style]}>
-      <ArenaClipPlayer
-        key={playUri}
-        uri={playUri}
-        source={{
-          ...playSource,
-          video_url: playSource.video_url || playSource.videoUri || playUri,
-          videoUri: playSource.videoUri || playSource.video_url || playUri,
-          uri: playSource.uri || playUri,
-        }}
-        label={label}
-        style={styles.clipVideoFill}
-        muted={muted}
-        loop
-        autoPlay={!!active}
-        active={active}
-      />
-    </View>
+    <FeedVideoItem
+      uri={playUri}
+      muted={muted}
+      active={active}
+      loop
+      style={style}
+      label={label}
+    />
   );
 });
 
@@ -1613,6 +1681,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
     overflow: 'hidden',
     position: 'relative',
+  },
+  feedVideoUnderlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
   },
   clipVideoFill: {
     ...StyleSheet.absoluteFillObject,
