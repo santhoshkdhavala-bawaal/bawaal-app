@@ -15,7 +15,9 @@ import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
 import { sanitizePlayableFeedUri } from '../src/services/uploadService';
 import { showBawaalAlert } from '../src/components/BawaalAlert';
-import BawaalVideoControls from '../src/components/BawaalVideoControls';
+import BawaalVideoControls, {
+  PREVIEW_SPEED_RATES,
+} from '../src/components/BawaalVideoControls';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
 const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
@@ -53,11 +55,29 @@ const RealAv = loadRealExpoAv();
 const AvVideo = RealAv?.Video || null;
 const AvResizeMode = RealAv?.ResizeMode || null;
 
-/** Normalize camera capture URI (file:// / content:// / https). */
+/**
+ * Normalize camera capture URI for the preview decoder.
+ * Accepts file://, content://, https, and bare absolute paths from the recorder.
+ */
 function normalizePreviewUri(raw) {
   if (raw == null) return null;
-  const cleaned = sanitizePlayableFeedUri(raw) || String(raw).trim();
-  if (!cleaned || cleaned === 'null' || cleaned === 'undefined') return null;
+  let cleaned = sanitizePlayableFeedUri(raw);
+  if (!cleaned) {
+    const fallback = String(raw).trim();
+    if (!fallback || fallback === 'null' || fallback === 'undefined') return null;
+    if (fallback.startsWith('/')) cleaned = `file://${fallback}`;
+    else if (
+      fallback.startsWith('file://') ||
+      fallback.startsWith('content://') ||
+      fallback.startsWith('ph://') ||
+      fallback.startsWith('assets-library://') ||
+      /^https?:\/\//i.test(fallback)
+    ) {
+      cleaned = fallback;
+    } else {
+      return null;
+    }
+  }
   return cleaned;
 }
 
@@ -65,19 +85,15 @@ function PreviewControlsOverlay({
   isPlaying,
   playbackRate,
   onTogglePlay,
-  onToggleSlowMo,
-  onStop,
+  onSelectRate,
 }) {
   return (
     <BawaalVideoControls
       isPlaying={isPlaying}
-      isSlowMo={playbackRate < 1}
+      playbackRate={playbackRate}
       onTogglePlay={onTogglePlay}
-      onToggleSlowMo={onToggleSlowMo}
-      onStop={onStop}
-      statusLabel="BAWAAL HD"
-      compact
-      bottomOffset={10}
+      onSelectRate={onSelectRate}
+      rates={PREVIEW_SPEED_RATES}
     />
   );
 }
@@ -88,8 +104,7 @@ function ExpoAvPreview({
   isPlaying,
   playbackRate,
   onTogglePlay,
-  onToggleSlowMo,
-  onStop,
+  onSelectRate,
   onReady,
   onError,
   videoRef,
@@ -183,8 +198,7 @@ function ExpoAvPreview({
         isPlaying={isPlaying}
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
-        onToggleSlowMo={onToggleSlowMo}
-        onStop={onStop}
+        onSelectRate={onSelectRate}
       />
     </View>
   );
@@ -196,8 +210,7 @@ function ExpoVideoPreview({
   isPlaying,
   playbackRate,
   onTogglePlay,
-  onToggleSlowMo,
-  onStop,
+  onSelectRate,
   onReady,
   onError,
 }) {
@@ -239,16 +252,6 @@ function ExpoVideoPreview({
     };
   }, [isPlaying, onError, onReady, playbackRate, player, uri, visible]);
 
-  const handleStop = () => {
-    try {
-      player?.pause?.();
-      if (player) player.currentTime = 0;
-    } catch {
-      /* ignore */
-    }
-    onStop?.();
-  };
-
   return (
     <View style={styles.previewShell}>
       <VideoView
@@ -266,8 +269,7 @@ function ExpoVideoPreview({
         isPlaying={isPlaying}
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
-        onToggleSlowMo={onToggleSlowMo}
-        onStop={handleStop}
+        onSelectRate={onSelectRate}
       />
     </View>
   );
@@ -279,8 +281,7 @@ function PublishClipPreview({
   isPlaying,
   playbackRate,
   onTogglePlay,
-  onToggleSlowMo,
-  onStop,
+  onSelectRate,
   videoRef,
 }) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
@@ -301,8 +302,7 @@ function PublishClipPreview({
         isPlaying={isPlaying}
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
-        onToggleSlowMo={onToggleSlowMo}
-        onStop={onStop}
+        onSelectRate={onSelectRate}
         videoRef={videoRef}
       />
     );
@@ -316,8 +316,7 @@ function PublishClipPreview({
       isPlaying={isPlaying}
       playbackRate={playbackRate}
       onTogglePlay={onTogglePlay}
-      onToggleSlowMo={onToggleSlowMo}
-      onStop={onStop}
+      onSelectRate={onSelectRate}
     />
   );
 }
@@ -369,36 +368,21 @@ export default function VideoPublishModal({
     setIsPlaying((p) => !p);
   };
 
-  const toggleSlowMo = async () => {
-    const newRate = playbackRate === 1.0 ? 0.5 : 1.0;
+  const selectPlaybackRate = async (rate) => {
+    const next = Number(rate);
+    if (!Number.isFinite(next) || next <= 0) return;
     const node = videoRef.current;
     try {
       if (node?.setRateAsync) {
-        await node.setRateAsync(newRate, true);
+        await node.setRateAsync(next, true);
       }
     } catch (err) {
       console.warn(
-        '[VideoPublishModal] toggleSlowMo failed:',
+        '[VideoPublishModal] selectPlaybackRate failed:',
         err?.message || err
       );
     }
-    setPlaybackRate(newRate);
-  };
-
-  const stopPlayback = async () => {
-    const node = videoRef.current;
-    try {
-      if (node) {
-        await node.pauseAsync?.();
-        await node.setPositionAsync?.(0);
-      }
-    } catch (err) {
-      console.warn(
-        '[VideoPublishModal] stopPlayback failed:',
-        err?.message || err
-      );
-    }
-    setIsPlaying(false);
+    setPlaybackRate(next);
   };
 
   const finishSuccess = (payload) => {
@@ -475,8 +459,7 @@ export default function VideoPublishModal({
           isPlaying={isPlaying}
           playbackRate={playbackRate}
           onTogglePlay={togglePlayPause}
-          onToggleSlowMo={toggleSlowMo}
-          onStop={stopPlayback}
+          onSelectRate={selectPlaybackRate}
           videoRef={videoRef}
         />
 
@@ -571,7 +554,7 @@ const styles = StyleSheet.create({
   },
   previewShell: {
     width: '100%',
-    height: 200,
+    height: 240,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#000',
@@ -582,7 +565,7 @@ const styles = StyleSheet.create({
   },
   previewVideo: {
     width: '100%',
-    height: 200,
+    height: 240,
     borderRadius: 12,
     backgroundColor: '#000',
   },
@@ -591,54 +574,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  controlsLayer: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  playPauseHit: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playPauseBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playPauseIcon: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '900',
-    marginLeft: 2,
-  },
-  slowMoBtn: {
-    position: 'absolute',
-    right: 10,
-    bottom: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-  },
-  slowMoBtnActive: {
-    borderColor: '#FF5722',
-    backgroundColor: 'rgba(255,87,34,0.25)',
-  },
-  slowMoText: {
-    color: '#DDD',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  slowMoTextActive: {
-    color: '#FF5722',
   },
   previewEmpty: {
     alignItems: 'center',

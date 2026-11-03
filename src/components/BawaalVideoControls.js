@@ -1,83 +1,123 @@
 /**
- * Cinematic athletic overlay for expo-video players.
- * Play / Pause / Stop / Slow-Mo + BAWAAL HD status tag + edge gradients.
+ * Preview-only athletic video controls (recorder / publish review).
+ * Never mount on Arena feed — center play/pause + bottom speed scroller only.
  */
 import React, { memo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const WHITE = '#FFFFFF';
 const ORANGE = '#FF4500';
-const BAR_BG = 'rgba(0,0,0,0.72)';
-const EDGE = 'rgba(0,0,0,0.55)';
+const MUTED = 'rgba(255,255,255,0.55)';
 
+/** Athletic breakdown rates for pre-publish review. */
+export const PREVIEW_SPEED_RATES = [1, 0.75, 0.5];
+
+function formatRateLabel(rate) {
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return '1×';
+  if (Math.abs(n - 1) < 0.001) return '1×';
+  if (Math.abs(n - 0.75) < 0.001) return '0.75×';
+  if (Math.abs(n - 0.5) < 0.001) return '0.5×';
+  return `${n}×`;
+}
+
+/**
+ * @param {object} props
+ * @param {boolean} props.isPlaying
+ * @param {number} [props.playbackRate]
+ * @param {() => void} props.onTogglePlay
+ * @param {(rate: number) => void} props.onSelectRate
+ * @param {number[]} [props.rates]
+ */
 function BawaalVideoControls({
   isPlaying = true,
-  isSlowMo = false,
+  playbackRate = 1,
   onTogglePlay,
-  onStop,
-  onToggleSlowMo,
-  statusLabel = 'BAWAAL HD',
-  showStatus = true,
-  compact = false,
-  /** Lift the bar above captions / engage chrome on feed cards. */
-  bottomOffset = 14,
+  onSelectRate,
+  rates = PREVIEW_SPEED_RATES,
 }) {
+  const activeRate = Number(playbackRate) || 1;
+
   return (
     <View style={styles.root} pointerEvents="box-none">
-      {/* Cinematic edge frames — keep text/controls readable on any clip */}
-      <View style={styles.edgeTop} pointerEvents="none" />
-      <View style={styles.edgeBottom} pointerEvents="none" />
-      <View style={styles.edgeLeft} pointerEvents="none" />
-      <View style={styles.edgeRight} pointerEvents="none" />
+      {/* Soft vignette so the center control pops on bright clips */}
+      <View style={styles.vignette} pointerEvents="none" />
 
-      {showStatus ? (
-        <View style={styles.statusTag} pointerEvents="none">
-          <View style={styles.statusGlow} />
-          <View style={styles.statusDot} />
-          <Text style={styles.statusText}>{statusLabel}</Text>
-        </View>
-      ) : null}
-
-      <View
-        style={[
-          styles.bar,
-          compact && styles.barCompact,
-          { bottom: bottomOffset },
-        ]}
+      <TouchableOpacity
+        style={styles.centerHit}
+        onPress={onTogglePlay}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause preview' : 'Play preview'}
       >
-        <TouchableOpacity
-          style={styles.btn}
-          onPress={onTogglePlay}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-        >
-          <Text style={styles.btnIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-          <Text style={styles.btnLabel}>{isPlaying ? 'PAUSE' : 'PLAY'}</Text>
-        </TouchableOpacity>
+        <View style={styles.playCircle}>
+          <View style={styles.playRing} />
+          <Text style={styles.playIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
+        </View>
+      </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.btn}
-          onPress={onStop}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Stop and reset"
+      <View style={styles.speedDock} pointerEvents="box-none">
+        <Text style={styles.speedHint}>SPEED · SLOW-MO</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.speedRow}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.btnIcon}>■</Text>
-          <Text style={styles.btnLabel}>STOP</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.btn, styles.slowBtn, isSlowMo && styles.slowBtnActive]}
-          onPress={onToggleSlowMo}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={isSlowMo ? 'Disable slow motion' : 'Enable slow motion'}
-        >
-          <Text style={[styles.btnLabel, isSlowMo && styles.slowLabelActive]}>
-            {isSlowMo ? '0.5× SLOW' : '1× SPEED'}
-          </Text>
-        </TouchableOpacity>
+          {(rates || PREVIEW_SPEED_RATES).map((rate) => {
+            const active = Math.abs(activeRate - rate) < 0.001;
+            const isSlow = rate < 1;
+            return (
+              <TouchableOpacity
+                key={`rate-${rate}`}
+                style={[
+                  styles.speedChip,
+                  active && styles.speedChipActive,
+                  active && isSlow && styles.speedChipSlow,
+                ]}
+                onPress={() => onSelectRate?.(rate)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                accessibilityLabel={`${formatRateLabel(rate)} playback`}
+              >
+                <Text
+                  style={[
+                    styles.speedText,
+                    active && styles.speedTextActive,
+                  ]}
+                >
+                  {formatRateLabel(rate)}
+                </Text>
+                {isSlow ? (
+                  <Text
+                    style={[
+                      styles.speedSub,
+                      active && styles.speedSubActive,
+                    ]}
+                  >
+                    SLOW
+                  </Text>
+                ) : (
+                  <Text
+                    style={[
+                      styles.speedSub,
+                      active && styles.speedSubActive,
+                    ]}
+                  >
+                    NORMAL
+                  </Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );
@@ -88,126 +128,94 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 8,
   },
-  edgeTop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 72,
-    backgroundColor: EDGE,
-  },
-  edgeBottom: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 110,
-    backgroundColor: 'rgba(0,0,0,0.62)',
-  },
-  edgeLeft: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: 10,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  edgeRight: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: 0,
-    width: 10,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  statusTag: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,69,0,0.55)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    overflow: 'hidden',
-  },
-  statusGlow: {
+  vignette: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,69,0,0.12)',
+    backgroundColor: 'rgba(0,0,0,0.18)',
   },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: ORANGE,
-    shadowColor: ORANGE,
-    shadowOpacity: 0.95,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-  },
-  statusText: {
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-  },
-  bar: {
-    position: 'absolute',
-    left: 12,
-    right: 56,
-    bottom: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    backgroundColor: BAR_BG,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  barCompact: {
-    right: 12,
-    bottom: 10,
-    paddingVertical: 6,
-  },
-  btn: {
-    flex: 1,
-    minHeight: 40,
+  centerHit: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingBottom: 36,
   },
-  btnIcon: {
+  playCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
+  playRing: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 36,
+    borderWidth: 2,
+    borderColor: 'rgba(255,69,0,0.35)',
+  },
+  playIcon: {
     color: WHITE,
-    fontSize: 12,
+    fontSize: 22,
     fontWeight: '900',
-    marginBottom: 2,
+    marginLeft: 2,
   },
-  btnLabel: {
-    color: WHITE,
+  speedDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 10,
+    paddingHorizontal: 12,
+  },
+  speedHint: {
+    color: MUTED,
     fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    marginBottom: 8,
+    marginLeft: 4,
   },
-  slowBtn: {
+  speedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+  },
+  speedChip: {
+    minWidth: 78,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.72)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
   },
-  slowBtnActive: {
-    backgroundColor: ORANGE,
+  speedChipActive: {
+    borderColor: WHITE,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  speedChipSlow: {
     borderColor: ORANGE,
+    backgroundColor: 'rgba(255,69,0,0.22)',
   },
-  slowLabelActive: {
+  speedText: {
+    color: MUTED,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  speedTextActive: {
+    color: WHITE,
+  },
+  speedSub: {
+    marginTop: 2,
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  speedSubActive: {
     color: WHITE,
   },
 });
