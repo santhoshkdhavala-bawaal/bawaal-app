@@ -707,15 +707,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   const onSharePress = useCallback(async () => {
     setEngageOpen(false);
+    const postId = item?.id != null ? String(item.id) : '';
+    if (!postId) return;
     try {
       await Share.share({
-        message: `${handle} on BAWAAL Arena\n${item.caption || ''}\nhttps://bawaal.app/reel/${item.id}`,
-        title: 'Share BAWAAL Reel',
+        title: 'BAWAAL Arena Reel',
+        message: `Check out this challenge on BAWAAL: https://bawaal.app/reel/${postId}`,
       });
-    } catch (_) {
-      /* user dismissed */
+    } catch (error) {
+      console.error('[ArenaFeed] share failed:', error);
     }
-  }, [handle, item.caption, item.id]);
+  }, [item?.id]);
 
   const menuTranslateY = menuAnim.interpolate({
     inputRange: [0, 1],
