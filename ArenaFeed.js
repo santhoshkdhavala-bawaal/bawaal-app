@@ -1561,11 +1561,11 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        // Scroll budget — recycle off-screen cells; keep decode window small
+        // Scroll budget — recycle off-screen cells; keep decode window tiny
         removeClippedSubviews={true}
         initialNumToRender={2}
-        maxToRenderPerBatch={3}
-        windowSize={5}
+        maxToRenderPerBatch={2}
+        windowSize={3}
         updateCellsBatchingPeriod={50}
         onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
