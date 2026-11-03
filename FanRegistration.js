@@ -5,13 +5,13 @@ import {
   View, 
   TextInput, 
   TouchableOpacity, 
-  Alert, 
   Image, 
   ScrollView, 
   KeyboardAvoidingView, 
   Platform 
 } from 'react-native';
 import BackLink from './src/components/BackLink';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 
 export default function FanRegistration({ navigation }) {
   const [name, setName] = useState('');
@@ -28,7 +28,7 @@ export default function FanRegistration({ navigation }) {
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      showBawaalAlert('Error', 'Please fill in all fields');
       return;
     }
 
@@ -47,13 +47,16 @@ export default function FanRegistration({ navigation }) {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert('Success', 'Fan Registration Successful!');
+        showBawaalAlert('Success', 'Fan Registration Successful!');
         navigation.navigate('RoleSelection');
       } else {
-        Alert.alert('Registration Failed', data.message || 'Something went wrong.');
+        showBawaalAlert(
+          'Registration Failed',
+          data.message || 'Something went wrong.'
+        );
       }
     } catch (error) {
-      Alert.alert('Network Error', 'Unable to connect to the server.');
+      showBawaalAlert('Network Error', 'Unable to connect to the server.');
     }
   };
 

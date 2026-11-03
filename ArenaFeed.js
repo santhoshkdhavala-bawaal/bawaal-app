@@ -46,6 +46,7 @@ import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { safeReleaseExpoVideoPlayer } from './src/utils/safeUnloadVideo';
+import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -304,12 +305,37 @@ function ingestPostsBatch(prev, posts) {
   return next;
 }
 
+const FEED_VIDEO_SHELL = {
+  width: '100%',
+  height: 450,
+  minHeight: 450,
+  backgroundColor: '#000',
+  position: 'relative',
+  overflow: 'hidden',
+};
+
+/** Empty / invalid URI — keep 450 shell so FlatList never collapses. */
+function FeedVideoPlaceholder({ style, label }) {
+  return (
+    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style, styles.clipPlaceholder]}>
+      <Text style={styles.clipPlaceholderText}>{label || 'CLIP UNAVAILABLE'}</Text>
+      <Text style={styles.clipPlaceholderSub}>Waiting for playable video…</Text>
+    </View>
+  );
+}
+
 /**
  * Active expo-video instance for one feed clip.
  * Mounted only while the row is viewable — FlatList recycle stays butter-smooth.
  */
-function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
-  const player = useVideoPlayer(uri ? { uri } : null, (p) => {
+function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null }) {
+  const [failed, setFailed] = useState(false);
+  const source = useMemo(
+    () => (isUsablePlaybackUri(uri) ? { uri: String(uri).trim() } : null),
+    [uri]
+  );
+
+  const player = useVideoPlayer(source, (p) => {
     try {
       p.loop = loop !== false;
       p.muted = !!muted;
@@ -320,16 +346,47 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
   });
 
   useEffect(() => {
-    if (!player) return undefined;
+    setFailed(false);
+  }, [uri]);
+
+  useEffect(() => {
+    if (!player || !source) return undefined;
     try {
       player.muted = !!muted;
       player.loop = loop !== false;
       player.play();
-    } catch {
-      /* ignore */
+    } catch (err) {
+      console.warn('[FeedVideoPlayer] play:', err?.message || err);
+      setFailed(true);
     }
     return undefined;
-  }, [player, muted, loop]);
+  }, [player, muted, loop, source]);
+
+  useEffect(() => {
+    if (!player) return undefined;
+    let sub = null;
+    try {
+      sub = player.addListener?.('statusChange', ({ status, error }) => {
+        try {
+          if (status === 'error' || error) {
+            console.warn('[FeedVideoPlayer] status error:', error?.message || error);
+            setFailed(true);
+          }
+        } catch (_) {
+          /* never crash native path */
+        }
+      });
+    } catch (_) {
+      /* older expo-video without events */
+    }
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, [player]);
 
   useEffect(() => {
     return () => {
@@ -337,8 +394,12 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
     };
   }, [player]);
 
+  if (!source || failed) {
+    return <FeedVideoPlaceholder style={style} label={label || 'CLIP UNAVAILABLE'} />;
+  }
+
   return (
-    <View style={[styles.clipShell, style]}>
+    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
       {/* Black underlay while buffering — never BAWAAL logo blink */}
       <View style={styles.feedVideoUnderlay} pointerEvents="none" />
       <VideoView
@@ -355,7 +416,8 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
 
 /**
  * Memoized feed video item — one native player per visible URI.
- * `active={false}` → solid black shell only (no decoder).
+ * Null/invalid URI → labeled placeholder (never a collapsed black box).
+ * `active={false}` → solid 450 black shell only (no decoder).
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
@@ -366,19 +428,14 @@ const FeedVideoItem = memo(function FeedVideoItem({
   style,
   label = null,
 }) {
-  const playUri =
-    typeof uri === 'string' && uri.trim() ? String(uri).trim() : null;
+  const playUri = isUsablePlaybackUri(uri) ? String(uri).trim() : null;
 
   if (!playUri) {
-    return (
-      <View style={[styles.clipShell, style, styles.clipPlaceholder]}>
-        <Text style={styles.clipPlaceholderText}>{label || 'NO CLIP'}</Text>
-      </View>
-    );
+    return <FeedVideoPlaceholder style={style} label={label || 'NO CLIP'} />;
   }
 
   if (!active) {
-    return <View style={[styles.clipShell, style]} />;
+    return <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]} />;
   }
 
   return (
@@ -388,6 +445,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
       muted={muted}
       loop={loop}
       style={style}
+      label={label}
     />
   );
 });
@@ -1913,6 +1971,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 8,
+  },
+  clipPlaceholderSub: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 6,
   },
   clipPlaceholderText: {
     color: PLATINUM,

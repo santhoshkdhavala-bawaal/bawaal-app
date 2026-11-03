@@ -1,8 +1,9 @@
 import { Alert, Platform } from 'react-native';
+import { showBawaalAlert } from '../components/BawaalAlert';
 
 /**
  * Cross-platform one-line text prompt.
- * iOS: Alert.prompt. Android: Alert with OK using typed default (or empty cancel path).
+ * iOS: Alert.prompt. Android: branded BAWAAL confirm with default value.
  */
 export function textPrompt({
   title,
@@ -30,8 +31,8 @@ export function textPrompt({
     return;
   }
 
-  // Android has no Alert.prompt — confirm with the provided default (editable via iOS only).
-  Alert.alert(
+  // Android has no Alert.prompt — branded confirm with the provided default.
+  showBawaalAlert(
     title,
     [message, defaultValue ? `Will post: “${defaultValue}”` : null]
       .filter(Boolean)

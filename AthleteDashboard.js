@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity } from 'react-native';
 import NativeMediaSurface from './src/components/NativeMediaSurface';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 
 export default function AthleteDashboard({ route, navigation }) {
   const user = route?.params?.user || { name: 'Athlete', specializedSport: 'Boxing' };
@@ -10,7 +11,7 @@ export default function AthleteDashboard({ route, navigation }) {
 
   const handleUploadPost = async () => {
     if (!title || !videoUrl) {
-      Alert.alert('Error', 'Please provide a title and video link');
+      showBawaalAlert('Error', 'Please provide a title and video link');
       return;
     }
 
@@ -29,15 +30,15 @@ export default function AthleteDashboard({ route, navigation }) {
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert('Success', 'Highlight posted successfully!');
+        showBawaalAlert('Success', 'Highlight posted successfully!');
         setTitle('');
         setVideoUrl('');
       } else {
-        Alert.alert('Error', data.error || 'Failed to upload');
+        showBawaalAlert('Error', data.error || 'Failed to upload');
       }
     } catch (error) {
       console.error('Upload Error:', error);
-      Alert.alert('Error', 'Network error. Please try again.');
+      showBawaalAlert('Error', 'Network error. Please try again.');
     }
   };
 

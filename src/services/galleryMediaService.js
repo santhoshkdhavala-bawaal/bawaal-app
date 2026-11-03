@@ -2,7 +2,8 @@
  * Device gallery helpers for BAWAAL clips (expo-media-library).
  * READ permission is required before getAssetsAsync; WRITE for save/delete.
  */
-import { Alert, Linking, Platform } from 'react-native';
+import { Linking, Platform } from 'react-native';
+import { showBawaalAlert } from '../components/BawaalAlert';
 import {
   createAssetAsync,
   deleteAssetsAsync,
@@ -280,12 +281,12 @@ export function confirmAndDeleteSelectedGalleryAssets(assetIds) {
     ];
 
     if (ids.length === 0) {
-      Alert.alert('Nothing selected', 'Select one or more videos to delete.');
+      showBawaalAlert('Nothing selected', 'Select one or more videos to delete.');
       resolve(false);
       return;
     }
 
-    Alert.alert(
+    showBawaalAlert(
       ids.length === 1 ? 'Delete this clip?' : `Delete ${ids.length} clips?`,
       'Only the videos you checked will be removed from your phone gallery. Everything else stays untouched.',
       [
@@ -297,7 +298,7 @@ export function confirmAndDeleteSelectedGalleryAssets(assetIds) {
             void (async () => {
               const res = await deleteGalleryAssetsByIds(ids);
               if (!res.ok) {
-                Alert.alert(
+                showBawaalAlert(
                   'Delete failed',
                   res.error === 'permission-denied'
                     ? 'Gallery permission is required to delete clips.'
@@ -323,7 +324,7 @@ export function confirmAndDeleteSelectedGalleryAssets(assetIds) {
 export function confirmAndDeleteGalleryAsset(assetId) {
   const id = normalizeMediaLibraryAssetId(assetId);
   if (!id) {
-    Alert.alert(
+    showBawaalAlert(
       'Nothing to delete',
       'This clip is not linked to a single gallery asset id.'
     );

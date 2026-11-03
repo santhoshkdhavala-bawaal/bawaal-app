@@ -8,13 +8,13 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Image,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
 import { sanitizePlayableFeedUri } from '../src/services/uploadService';
+import { showBawaalAlert } from '../src/components/BawaalAlert';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
 const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
@@ -420,16 +420,19 @@ export default function VideoPublishModal({
         category: selectedCategory,
         caption: caption || '',
       };
-      // Wait for OK so parent can close modal + navigate without orphan layers
-      Alert.alert('Success!', 'Your video challenge is live on BAWAAL!', [
-        {
-          text: 'OK',
-          onPress: () => finishSuccess(payload),
-        },
-      ]);
+      // Branded B-logo popup — wait for OK so parent can close + navigate cleanly
+      showBawaalAlert({
+        title: 'Success!',
+        message: 'Your video challenge is live on BAWAAL!',
+        confirmLabel: 'OK',
+        onConfirm: () => finishSuccess(payload),
+      });
     } else {
       setIsPlaying(true);
-      Alert.alert('Upload Failed', result.error || 'Something went wrong.');
+      showBawaalAlert({
+        title: 'Upload Failed',
+        message: result.error || 'Something went wrong.',
+      });
     }
   };
 

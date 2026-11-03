@@ -1,6 +1,7 @@
 // SOSTriggerModal.jsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet } from 'react-native';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 
 export default function SOSTriggerModal({ isVisible, contacts, onCancel }) {
   const [secondsLeft, setSecondsLeft] = useState(5);
@@ -24,8 +25,8 @@ export default function SOSTriggerModal({ isVisible, contacts, onCancel }) {
   }, [isVisible]);
 
   const triggerActualSMS = () => {
-    Alert.alert(
-      '🚨 SOS ALERT SENT',
+    showBawaalAlert(
+      'SOS ALERT SENT',
       `Emergency broadcast & Live GPS link sent to:\n1. +91 ${contacts[0] || 'Primary'}\n2. +91 ${contacts[1] || 'Secondary'}\n3. +91 ${contacts[2] || 'Coach'}`
     );
     onCancel();

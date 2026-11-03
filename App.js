@@ -20,6 +20,7 @@ import { getRegisteredSession, setRegisteredSession } from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
+import { BawaalAlertProvider } from './src/components/BawaalAlert';
 
 enableScreens(true);
 
@@ -274,104 +275,106 @@ function AppBoot() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
       <SafeAreaProvider style={styles.root}>
-        <NavigationContainer theme={navTheme}>
-          <Stack.Navigator
-            initialRouteName={initialRoute}
-            screenOptions={{
-              headerShown: false,
-              animation: 'fade',
-              contentStyle: styles.root,
-              freezeOnBlur: true,
-            }}
-          >
-            <Stack.Screen name="Entry" component={EntryScreen} />
-            <Stack.Screen name="Main" component={MainTabs} />
-            {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
-            <Stack.Screen
-              name="UniversalCamera"
-              component={CameraPublishHost}
-              options={{
+        <BawaalAlertProvider>
+          <NavigationContainer theme={navTheme}>
+            <Stack.Navigator
+              initialRouteName={initialRoute}
+              screenOptions={{
+                headerShown: false,
                 animation: 'fade',
-                presentation: 'fullScreenModal',
-                animationDuration: 150,
+                contentStyle: styles.root,
+                freezeOnBlur: true,
               }}
-            />
-            {/* Legacy "Challenge" route name → same camera + publish host */}
-            <Stack.Screen
-              name="Challenge"
-              component={CameraPublishHost}
-              options={{
-                animation: 'fade',
-                presentation: 'fullScreenModal',
-                animationDuration: 150,
-              }}
-            />
-            {/* Arena / Battles RESPOND → locked viewfinder + VideoPublishModal */}
-            <Stack.Screen
-              name="ChallengeCam"
-              component={CameraPublishHost}
-              options={{
-                animation: 'fade',
-                presentation: 'fullScreenModal',
-                animationDuration: 150,
-              }}
-            />
-            <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
-            <Stack.Screen
-              name="Live1v1Battle"
-              component={Live1v1BattleScreen}
-              options={{
-                animation: 'slide_from_bottom',
-                presentation: 'fullScreenModal',
-              }}
-            />
-            {/* Alias used by UniversalCamera / BattleChallengeForm */}
-            <Stack.Screen
-              name="ChallengerArena"
-              component={Live1v1BattleScreen}
-              options={{
-                animation: 'slide_from_bottom',
-                presentation: 'fullScreenModal',
-              }}
-            />
-            {/* ⚔️ BATTLE BAWAAL → challenge setup (title / reps / timer) before live arena */}
-            <Stack.Screen
-              name="BattleChallengeForm"
-              component={BattleChallengeForm}
-              options={{
-                animation: 'slide_from_bottom',
-                presentation: 'fullScreenModal',
-              }}
-            />
-            <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
-            <Stack.Screen
-              name="AthletePassport"
-              component={AthletePassportScreen}
-              options={{ animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="Clinic"
-              component={ClinicScreen}
-              options={{ animation: 'slide_from_right' }}
-            />
-            <Stack.Screen
-              name="SportHubMap"
-              component={SportHubMapScreen}
-              options={{ animation: 'slide_from_right' }}
-            />
-            {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
-            <Stack.Screen
-              name="Arena"
-              component={MainTabs}
-              initialParams={{ tab: 'Arena' }}
-            />
-            <Stack.Screen
-              name="Profile"
-              component={MainTabs}
-              initialParams={{ tab: 'Passport' }}
-            />
-          </Stack.Navigator>
-        </NavigationContainer>
+            >
+              <Stack.Screen name="Entry" component={EntryScreen} />
+              <Stack.Screen name="Main" component={MainTabs} />
+              {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
+              <Stack.Screen
+                name="UniversalCamera"
+                component={CameraPublishHost}
+                options={{
+                  animation: 'fade',
+                  presentation: 'fullScreenModal',
+                  animationDuration: 150,
+                }}
+              />
+              {/* Legacy "Challenge" route name → same camera + publish host */}
+              <Stack.Screen
+                name="Challenge"
+                component={CameraPublishHost}
+                options={{
+                  animation: 'fade',
+                  presentation: 'fullScreenModal',
+                  animationDuration: 150,
+                }}
+              />
+              {/* Arena / Battles RESPOND → locked viewfinder + VideoPublishModal */}
+              <Stack.Screen
+                name="ChallengeCam"
+                component={CameraPublishHost}
+                options={{
+                  animation: 'fade',
+                  presentation: 'fullScreenModal',
+                  animationDuration: 150,
+                }}
+              />
+              <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+              <Stack.Screen
+                name="Live1v1Battle"
+                component={Live1v1BattleScreen}
+                options={{
+                  animation: 'slide_from_bottom',
+                  presentation: 'fullScreenModal',
+                }}
+              />
+              {/* Alias used by UniversalCamera / BattleChallengeForm */}
+              <Stack.Screen
+                name="ChallengerArena"
+                component={Live1v1BattleScreen}
+                options={{
+                  animation: 'slide_from_bottom',
+                  presentation: 'fullScreenModal',
+                }}
+              />
+              {/* ⚔️ BATTLE BAWAAL → challenge setup (title / reps / timer) before live arena */}
+              <Stack.Screen
+                name="BattleChallengeForm"
+                component={BattleChallengeForm}
+                options={{
+                  animation: 'slide_from_bottom',
+                  presentation: 'fullScreenModal',
+                }}
+              />
+              <Stack.Screen name="AthleteDashboard" component={AthleteDashboard} />
+              <Stack.Screen
+                name="AthletePassport"
+                component={AthletePassportScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="Clinic"
+                component={ClinicScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="SportHubMap"
+                component={SportHubMapScreen}
+                options={{ animation: 'slide_from_right' }}
+              />
+              {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
+              <Stack.Screen
+                name="Arena"
+                component={MainTabs}
+                initialParams={{ tab: 'Arena' }}
+              />
+              <Stack.Screen
+                name="Profile"
+                component={MainTabs}
+                initialParams={{ tab: 'Passport' }}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </BawaalAlertProvider>
       </SafeAreaProvider>
     </View>
   );

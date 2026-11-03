@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StatusBar,
   Image,
-  Alert,
   ActivityIndicator,
   TextInput,
   ScrollView,
@@ -15,6 +14,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ARENA_SPORT_OPTIONS } from './src/utils/sportCategory';
 import BackLink from './src/components/BackLink';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 
 export default function UploadScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -35,7 +35,7 @@ export default function UploadScreen({ navigation }) {
       const micPerm = await ImagePicker.requestMicrophonePermissionsAsync();
 
       if (cameraPerm.status !== 'granted' || micPerm.status !== 'granted') {
-        Alert.alert(
+        showBawaalAlert(
           'Permissions Required',
           'Please grant Camera and Microphone access in device settings.'
         );
@@ -58,7 +58,10 @@ export default function UploadScreen({ navigation }) {
       }
     } catch (error) {
       console.error('Camera Launch Error:', error);
-      Alert.alert('Camera Error', error.message || 'Could not open phone camera.');
+      showBawaalAlert(
+        'Camera Error',
+        error.message || 'Could not open phone camera.'
+      );
     }
   };
 
@@ -104,18 +107,18 @@ export default function UploadScreen({ navigation }) {
 
       await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      Alert.alert('Challenge Created! 🔥', 'Your challenge has been posted to the Arena feed!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setVideoUri(null);
-            setCaption('');
-            navigation.navigate('Arena', { newPost: newChallengePost });
-          },
+      showBawaalAlert({
+        title: 'Challenge Created!',
+        message: 'Your challenge has been posted to the Arena feed!',
+        confirmLabel: 'OK',
+        onConfirm: () => {
+          setVideoUri(null);
+          setCaption('');
+          navigation.navigate('Arena', { newPost: newChallengePost });
         },
-      ]);
+      });
     } catch (error) {
-      Alert.alert('Upload Failed', error.message);
+      showBawaalAlert('Upload Failed', error.message || 'Upload failed.');
     } finally {
       setIsUploading(false);
     }

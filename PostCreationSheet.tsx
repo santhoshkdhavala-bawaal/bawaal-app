@@ -14,10 +14,10 @@ import {
   Platform,
   Image,
   Modal,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 import {
   pushArenaPostAndPersist,
   pushArenaPost,
@@ -603,7 +603,7 @@ function PostCreationSheet({
         });
 
         if (!published.ok || !published.post) {
-          Alert.alert(
+          showBawaalAlert(
             'Upload failed',
             uploadErrorDetail
               ? `Could not upload to BAWAAL cloud storage:\n${uploadErrorDetail}`
@@ -667,7 +667,7 @@ function PostCreationSheet({
           ? ensurePublicBawaalVideoUrl(uploaded) || uploaded
           : null;
         if (!publicCloudUrl) {
-          Alert.alert(
+          showBawaalAlert(
             'Upload failed',
             uploadErrorDetail
               ? `Could not upload to BAWAAL cloud storage:\n${uploadErrorDetail}`
@@ -677,7 +677,9 @@ function PostCreationSheet({
           return;
         }
       } else if (requiresCloudVideo) {
-        Alert.alert('Missing clip', 'Record a video before posting.', [{ text: 'OK' }]);
+        showBawaalAlert('Missing clip', 'Record a video before posting.', [
+          { text: 'OK' },
+        ]);
         return;
       }
 
@@ -689,7 +691,7 @@ function PostCreationSheet({
         console.error(
           '[PostCreationSheet] aborting post — missing publicCloudUrl after upload'
         );
-        Alert.alert(
+        showBawaalAlert(
           'Upload failed',
           'Video upload did not complete. Your post was not published.',
           [{ text: 'OK' }]
@@ -705,7 +707,7 @@ function PostCreationSheet({
           '[PostCreationSheet] refusing non-public Storage URL:',
           playbackUri
         );
-        Alert.alert(
+        showBawaalAlert(
           'Upload failed',
           'Cloud video URL is missing /public/ and cannot play. Post was not published.',
           [{ text: 'OK' }]
@@ -748,7 +750,7 @@ function PostCreationSheet({
       setSuccessVisible(true);
     } catch (err) {
       console.error('[PostCreationSheet] post failed:', err);
-      Alert.alert(
+      showBawaalAlert(
         'Could not post',
         'Something went wrong while publishing. Please try again.',
         [{ text: 'OK' }]

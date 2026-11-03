@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { showBawaalAlert } from './src/components/BawaalAlert';
 
 export default function ScoutRegistration({ navigation }) {
   const [name, setName] = useState('');
@@ -11,7 +12,10 @@ export default function ScoutRegistration({ navigation }) {
 
   const handleRegister = async () => {
     if (!name || !email || !password || !selectedSport) {
-      Alert.alert('Error', 'Please fill in all fields and select a specialized sport');
+      showBawaalAlert(
+        'Error',
+        'Please fill in all fields and select a specialized sport'
+      );
       return;
     }
 
@@ -31,14 +35,17 @@ export default function ScoutRegistration({ navigation }) {
       const data = await response.json();
 
       if (data.success) {
-        Alert.alert('Success', `Scout profile created for ${selectedSport}!`);
+        showBawaalAlert(
+          'Success',
+          `Scout profile created for ${selectedSport}!`
+        );
         navigation.navigate('Arena', { user: data.user });
       } else {
-        Alert.alert('Error', data.error || 'Registration failed');
+        showBawaalAlert('Error', data.error || 'Registration failed');
       }
     } catch (error) {
       console.error('Registration Error:', error);
-      Alert.alert('Error', 'Network error. Please try again.');
+      showBawaalAlert('Error', 'Network error. Please try again.');
     }
   };
 
