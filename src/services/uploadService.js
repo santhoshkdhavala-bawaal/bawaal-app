@@ -347,69 +347,55 @@ const STORAGE_HEADERS = (anonKey) => ({
   'x-upsert': 'true',
 });
 
-/** Decode base64 → Uint8Array without external deps (Hermes / RN safe). */
-function base64ToUint8Array(base64) {
-  const cleaned = String(base64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
-  if (!cleaned) throw new Error('Empty base64 video payload');
-
-  if (typeof globalThis.Buffer === 'function') {
-    return new Uint8Array(globalThis.Buffer.from(cleaned, 'base64'));
-  }
-
-  if (typeof globalThis.atob !== 'function') {
-    throw new Error('No base64 decoder available on this runtime');
-  }
-
-  const binary = globalThis.atob(cleaned);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
 /**
- * Read local `file://` / `content://` video into Uint8Array.
- * Prefer fetch → ArrayBuffer/Blob first, then FileSystem base64 fallback.
+ * Read local `file://` / `content://` video into Uint8Array via fetch only.
+ * NEVER uses FileSystem.readAsStringAsync / base64 (OOM on large clips).
+ * Callers that need zero-heap uploads should use uploadViaFileSystemBinary.
  */
 async function readLocalVideoBytes(fileUri) {
   console.log('UPLOAD_READ_BYTES:', fileUri);
 
-  // Path A: fetch local URI → ArrayBuffer (RN / Expo often supports file://)
+  const res = await fetch(fileUri);
+  if (!res.ok) {
+    throw new Error(`Could not open local clip (HTTP ${res.status})`);
+  }
+
+  // Prefer Blob first (RN-friendly); ArrayBuffer second
   try {
-    const res = await fetch(fileUri);
-    if (res.ok) {
-      const buffer = await res.arrayBuffer();
+    const blob = await res.blob();
+    if (blob && blob.size >= MIN_VIDEO_BYTES) {
+      const buffer = await blob.arrayBuffer();
+      if (buffer && buffer.byteLength >= MIN_VIDEO_BYTES) {
+        console.log('UPLOAD_READ_BYTES: blob size=', buffer.byteLength);
+        return new Uint8Array(buffer);
+      }
+    }
+  } catch (blobErr) {
+    console.warn(
+      'UPLOAD_READ_BYTES: blob failed:',
+      blobErr?.message || blobErr
+    );
+  }
+
+  try {
+    const res2 = await fetch(fileUri);
+    if (res2.ok) {
+      const buffer = await res2.arrayBuffer();
       if (buffer && buffer.byteLength >= MIN_VIDEO_BYTES) {
         console.log('UPLOAD_READ_BYTES: arrayBuffer size=', buffer.byteLength);
         return new Uint8Array(buffer);
       }
-      console.warn(
-        'UPLOAD_READ_BYTES: arrayBuffer too small:',
-        buffer?.byteLength
-      );
     }
   } catch (fetchErr) {
     console.warn(
-      'UPLOAD_READ_BYTES: fetch/arrayBuffer failed:',
+      'UPLOAD_READ_BYTES: arrayBuffer failed:',
       fetchErr?.message || fetchErr
     );
   }
 
-  // Path B: FileSystem base64 decode
-  const encoding =
-    FileSystem.EncodingType?.Base64 ||
-    FileSystem.EncodingType?.BASE64 ||
-    'base64';
-  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding });
-  const bytes = base64ToUint8Array(base64);
-  console.log('UPLOAD_READ_BYTES: base64 size=', bytes.byteLength);
-  if (bytes.byteLength < MIN_VIDEO_BYTES) {
-    throw new Error(
-      `Decoded video too small (${bytes.byteLength} bytes) — refusing upload`
-    );
-  }
-  return bytes;
+  throw new Error(
+    'Could not read local video for upload without base64 (OOM-safe path failed)'
+  );
 }
 
 /**
@@ -448,21 +434,29 @@ async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
     throw new Error('Supabase client not configured');
   }
   if (onProgress) onProgress(12);
-  const bytes = await readLocalVideoBytes(fileUri);
+
+  // Direct stream-friendly blob — never base64 / readAsStringAsync
+  console.log('UPLOAD_SDK: fetch blob →', fileUri);
+  const response = await fetch(fileUri);
+  if (!response.ok) {
+    throw new Error(`Could not open clip for SDK upload (HTTP ${response.status})`);
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size < MIN_VIDEO_BYTES) {
+    throw new Error(`Clip too small for upload (${blob?.size || 0} bytes)`);
+  }
   if (onProgress) onProgress(40);
-  const body = bytesToUploadBody(bytes);
 
   console.log(
     'UPLOAD_SDK: path=',
     objectPath,
-    'bodyType=',
-    body?.constructor?.name,
+    'bodyType=Blob',
     'bytes=',
-    bytes.byteLength
+    blob.size
   );
   const { data, error } = await supabase.storage
     .from(BAWAAL_VIDEO_BUCKET)
-    .upload(objectPath, body, {
+    .upload(objectPath, blob, {
       contentType: 'video/mp4',
       upsert: true,
       cacheControl: '3600',
@@ -584,7 +578,8 @@ async function uploadViaFileSystemBinary(
 }
 
 /**
- * Upload bytes to Supabase Storage — SDK → Blob fetch → native FileSystem.
+ * Upload bytes to Supabase Storage — native stream → SDK blob → fetch blob.
+ * Never uses base64 / readAsStringAsync.
  */
 async function uploadVideoBytes(
   uploadUrl,
@@ -593,22 +588,20 @@ async function uploadVideoBytes(
   anonKey,
   onProgress
 ) {
-  const attempts = [
-    {
-      name: 'supabase-sdk',
-      run: () => uploadViaSupabaseSdk(objectPath, fileUri, onProgress),
-    },
-    {
-      name: 'blob-fetch',
-      run: () =>
-        uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress),
-    },
-    {
-      name: 'filesystem-binary',
-      run: () =>
-        uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey, onProgress),
-    },
-  ];
+  const nativeStream = {
+    name: 'native-binary-stream',
+    run: () =>
+      uploadViaFileSystemBinary(uploadUrl, fileUri, anonKey, onProgress),
+  };
+  const sdkBlob = {
+    name: 'supabase-sdk-blob',
+    run: () => uploadViaSupabaseSdk(objectPath, fileUri, onProgress),
+  };
+  const fetchBlob = {
+    name: 'blob-fetch',
+    run: () =>
+      uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress),
+  };
 
   // Large F1 / racing clips: stream via native FileSystem first (no full-file
   // ArrayBuffer in JS heap → fewer Android OOM crashes).
@@ -623,13 +616,11 @@ async function uploadVideoBytes(
   const preferStreaming =
     Platform.OS === 'android' && fileSize >= LARGE_CLIP_BYTES;
 
-  // Android small: SDK → Blob → FS. Android large: FS → SDK → Blob.
-  // iOS: SDK → FS → Blob.
+  // Always try native stream first for large Android clips; otherwise
+  // native → SDK blob → fetch blob (still no base64).
   const ordered = preferStreaming
-    ? [attempts[2], attempts[0], attempts[1]]
-    : Platform.OS === 'android'
-      ? [attempts[0], attempts[1], attempts[2]]
-      : [attempts[0], attempts[2], attempts[1]];
+    ? [nativeStream, sdkBlob, fetchBlob]
+    : [nativeStream, sdkBlob, fetchBlob];
 
   let lastErr = null;
   for (const step of ordered) {

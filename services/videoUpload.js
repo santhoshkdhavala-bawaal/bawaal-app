@@ -1,6 +1,11 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { supabase, BAWAAL_VIDEOS_BUCKET } from '../lib/supabase';
+import {
+  supabase,
+  BAWAAL_VIDEOS_BUCKET,
+  getSupabaseUrl,
+  getSupabaseAnonKey,
+} from '../lib/supabase';
 import {
   ensurePublicBawaalVideoUrl,
   sanitizePlayableFeedUri,
@@ -64,110 +69,15 @@ function isRlsError(err) {
   );
 }
 
-function base64ToUint8Array(base64) {
-  const cleaned = String(base64 || '').replace(/[^A-Za-z0-9+/=]/g, '');
-  if (!cleaned) throw new Error('Empty base64 video payload');
-  if (typeof globalThis.atob !== 'function') {
-    throw new Error('atob unavailable for base64 video decode');
-  }
-  const binary = globalThis.atob(cleaned);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-/**
- * Read local recorder URI → Uint8Array (fetch ArrayBuffer, then FileSystem base64).
- */
-async function readLocalVideoBytes(fileUri) {
-  console.log('[videoUpload] read bytes:', fileUri);
-
-  try {
-    const res = await fetch(fileUri);
-    if (res.ok) {
-      const buffer = await res.arrayBuffer();
-      if (buffer && buffer.byteLength >= MIN_VIDEO_BYTES) {
-        console.log('[videoUpload] arrayBuffer size=', buffer.byteLength);
-        return new Uint8Array(buffer);
-      }
-      console.warn(
-        '[videoUpload] arrayBuffer too small:',
-        buffer?.byteLength
-      );
-    }
-  } catch (fetchErr) {
-    console.warn(
-      '[videoUpload] fetch/arrayBuffer failed:',
-      fetchErr?.message || fetchErr
-    );
-  }
-
-  try {
-    const blobRes = await fetch(fileUri);
-    if (blobRes.ok) {
-      const blob = await blobRes.blob();
-      if (blob && blob.size >= MIN_VIDEO_BYTES) {
-        const buffer = await blob.arrayBuffer();
-        if (buffer?.byteLength >= MIN_VIDEO_BYTES) {
-          console.log('[videoUpload] blob→arrayBuffer size=', buffer.byteLength);
-          return new Uint8Array(buffer);
-        }
-      }
-    }
-  } catch (blobErr) {
-    console.warn(
-      '[videoUpload] blob path failed:',
-      blobErr?.message || blobErr
-    );
-  }
-
-  const encoding =
-    FileSystem.EncodingType?.Base64 ||
-    FileSystem.EncodingType?.BASE64 ||
-    'base64';
-  const base64 = await FileSystem.readAsStringAsync(fileUri, { encoding });
-  const bytes = base64ToUint8Array(base64);
-  console.log('[videoUpload] base64 size=', bytes.byteLength);
-  if (bytes.byteLength < MIN_VIDEO_BYTES) {
-    throw new Error(
-      `Decoded video too small (${bytes.byteLength} bytes) — refusing upload`
-    );
-  }
-  return bytes;
-}
-
-/** Prefer ArrayBuffer body for Supabase JS on Android; Blob as fallback. */
-function bytesToUploadBody(bytes, contentType = 'video/mp4') {
-  try {
-    if (bytes?.buffer instanceof ArrayBuffer) {
-      const start = bytes.byteOffset || 0;
-      const end = start + bytes.byteLength;
-      return bytes.buffer.slice(start, end);
-    }
-  } catch (_) {
-    /* fall through */
-  }
-  if (typeof Blob !== 'undefined') {
-    try {
-      return new Blob([bytes], { type: contentType });
-    } catch (_) {
-      try {
-        return new Blob([bytes.buffer], { type: contentType });
-      } catch (__) {
-        /* fall through */
-      }
-    }
-  }
-  return bytes;
+function isOutOfMemoryError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return /outofmemory|out of memory|oom|allocation failed|enomem/i.test(msg);
 }
 
 /** Canonical public HTTPS URL for either bawaal-videos or legacy bawaalvideos. */
 function normalizePublicVideoUrl(raw, bucket, filePath) {
   const ensured = ensurePublicBawaalVideoUrl(raw) || raw;
   if (typeof ensured === 'string' && /^https?:\/\//i.test(ensured)) {
-    // Fix missing /public/ for the hyphenated bucket too
     if (
       ensured.includes('/storage/v1/object/') &&
       ensured.includes('bawaal-videos') &&
@@ -196,9 +106,183 @@ function normalizePublicVideoUrl(raw, bucket, filePath) {
 }
 
 /**
- * Ensure the Supabase client has a session so RLS policies that require
- * `authenticated` / `auth.uid()` can succeed. Soft-falls back to anon role.
+ * Stream-friendly local URI → Blob.
+ * Never uses FileSystem.readAsStringAsync / base64 (OOM on large clips).
  */
+async function fetchLocalVideoBlob(fileUri) {
+  console.log('[videoUpload] fetch blob:', fileUri);
+  const response = await fetch(fileUri);
+  if (!response.ok) {
+    throw new Error(`Could not open recorded clip (HTTP ${response.status})`);
+  }
+  const blob = await response.blob();
+  if (!blob || typeof blob.size !== 'number' || blob.size < MIN_VIDEO_BYTES) {
+    throw new Error(
+      `Recorded clip too small (${blob?.size || 0} bytes) — refusing upload`
+    );
+  }
+  console.log('[videoUpload] blob ready size=', blob.size);
+  return blob;
+}
+
+/**
+ * Native disk→network stream (no JS heap / no base64).
+ * Used when Blob upload OOMs or fetch(blob) fails on device.
+ */
+async function uploadViaNativeBinaryStream(
+  bucket,
+  filePath,
+  fileUri,
+  contentType
+) {
+  const base = getSupabaseUrl?.() || process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+  const anon =
+    getSupabaseAnonKey?.() || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (!base || !anon) {
+    throw new Error('Missing Supabase URL / anon key for native stream upload');
+  }
+  const uploadUrl = `${String(base).replace(/\/$/, '')}/storage/v1/object/${bucket}/${filePath}`;
+  const options = {
+    httpMethod: 'POST',
+    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    headers: {
+      apikey: anon,
+      Authorization: `Bearer ${anon}`,
+      'Content-Type': contentType || 'video/mp4',
+      'x-upsert': 'true',
+    },
+  };
+
+  let result;
+  if (typeof FileSystem.createUploadTask === 'function') {
+    const task = FileSystem.createUploadTask(uploadUrl, fileUri, options);
+    result = await task.uploadAsync();
+  } else {
+    result = await FileSystem.uploadAsync(uploadUrl, fileUri, options);
+  }
+
+  if (!result || result.status < 200 || result.status >= 300) {
+    throw new Error(
+      result?.body ||
+        `Native stream upload failed with status ${result?.status || 'unknown'}`
+    );
+  }
+  console.log('[videoUpload] native stream OK status=', result.status);
+  return true;
+}
+
+/**
+ * Upload blob (or native stream fallback) to the first usable Storage bucket.
+ */
+async function uploadBlobToStorage(
+  fileUri,
+  filePath,
+  contentType,
+  attemptedBuckets
+) {
+  let blob = null;
+  try {
+    blob = await fetchLocalVideoBlob(fileUri);
+  } catch (blobErr) {
+    console.warn(
+      '[videoUpload] blob fetch failed — will try native stream:',
+      blobErr?.message || blobErr
+    );
+  }
+
+  const bucketsToTry = [
+    PRIMARY_VIDEO_BUCKET,
+    ...FALLBACK_VIDEO_BUCKETS.filter((b) => b !== PRIMARY_VIDEO_BUCKET),
+  ];
+
+  let usedBucket = null;
+  let lastStorageError = null;
+
+  for (let i = 0; i < bucketsToTry.length; i += 1) {
+    const bucket = bucketsToTry[i];
+    attemptedBuckets.push(bucket);
+    console.log(`[videoUpload] uploading to bucket "${bucket}"…`);
+
+    // 1) Prefer Blob → Supabase SDK (no base64)
+    if (blob) {
+      try {
+        const { error: storageError } = await supabase.storage
+          .from(bucket)
+          .upload(filePath, blob, {
+            contentType,
+            upsert: true,
+            cacheControl: '3600',
+          });
+
+        if (!storageError) {
+          usedBucket = bucket;
+          break;
+        }
+
+        lastStorageError = storageError;
+        console.warn(
+          `[videoUpload] blob upload failed for "${bucket}":`,
+          storageError?.message || storageError
+        );
+
+        if (isBucketMissingError(storageError)) {
+          const next = bucketsToTry[i + 1];
+          console.warn(
+            `[videoUpload] bucket "${bucket}" missing — ${
+              next ? `retrying "${next}"` : BUCKET_SETUP_HINT
+            }`
+          );
+          continue;
+        }
+
+        if (!isOutOfMemoryError(storageError)) {
+          // Non-OOM / non-missing → try native stream once on this bucket
+        }
+      } catch (err) {
+        lastStorageError = err;
+        console.warn(
+          `[videoUpload] blob upload threw for "${bucket}":`,
+          err?.message || err
+        );
+        if (isBucketMissingError(err)) continue;
+      }
+    }
+
+    // 2) Native disk→network stream (zero JS heap / no base64)
+    try {
+      await uploadViaNativeBinaryStream(
+        bucket,
+        filePath,
+        fileUri,
+        contentType
+      );
+      usedBucket = bucket;
+      break;
+    } catch (streamErr) {
+      lastStorageError = streamErr;
+      console.warn(
+        `[videoUpload] native stream failed for "${bucket}":`,
+        streamErr?.message || streamErr
+      );
+      if (isBucketMissingError(streamErr)) {
+        const next = bucketsToTry[i + 1];
+        console.warn(
+          `[videoUpload] bucket "${bucket}" missing — ${
+            next ? `retrying "${next}"` : BUCKET_SETUP_HINT
+          }`
+        );
+        continue;
+      }
+      // Keep trying other buckets only for missing; otherwise stop
+      if (!isBucketMissingError(streamErr)) {
+        break;
+      }
+    }
+  }
+
+  return { usedBucket, lastStorageError };
+}
+
 async function ensureAuthSession() {
   try {
     const { data: sessionData, error: sessionError } =
@@ -306,8 +390,9 @@ async function insertVideosRow(row) {
  * Upload a recorded clip to Supabase Storage and insert a `videos` row.
  * Used by VideoPublishModal after SPARKS / challenge capture.
  *
- * Reads local file:// via ArrayBuffer / Blob / FileSystem, then uploads
- * binary to `bawaal-videos` (fallback: `bawaalvideos`, `videos`).
+ * Memory-safe path: fetch(uri).blob() → Storage.upload(blob).
+ * Never loads the whole clip as base64 via readAsStringAsync.
+ * OOM / blob failure → native FileSystem BINARY stream (disk→network).
  */
 export async function uploadVideoToSupabase(
   videoUri,
@@ -376,10 +461,10 @@ export async function uploadVideoToSupabase(
 
     const fileExt =
       (cleaned.split('.').pop() || 'mp4').split('?')[0].toLowerCase() || 'mp4';
-    const safeUser = String(userId || 'anon').replace(/[^\w-]/g, '_');
-    const fileName = `challenge_${Date.now()}_${safeUser}.${fileExt}`;
+    const fileName = `bawaal_${Date.now()}.${fileExt === 'mov' ? 'mov' : 'mp4'}`;
+    // Keep battles/ prefix so Arena public URL helpers / identity keys stay stable
     const filePath = `battles/${fileName}`;
-    const contentType = `video/${fileExt === 'mov' ? 'quicktime' : 'mp4'}`;
+    const contentType = fileExt === 'mov' ? 'video/quicktime' : 'video/mp4';
 
     const session = await ensureAuthSession();
 
@@ -387,58 +472,12 @@ export async function uploadVideoToSupabase(
       `[videoUpload] targeting Storage bucket "${PRIMARY_VIDEO_BUCKET}" → ${filePath}`
     );
 
-    const bytes = await readLocalVideoBytes(cleaned);
-    const body = bytesToUploadBody(bytes, contentType);
-    console.log(
-      '[videoUpload] upload body type=',
-      body?.constructor?.name,
-      'bytes=',
-      bytes.byteLength
+    const { usedBucket, lastStorageError } = await uploadBlobToStorage(
+      cleaned,
+      filePath,
+      contentType,
+      attemptedBuckets
     );
-
-    const bucketsToTry = [
-      PRIMARY_VIDEO_BUCKET,
-      ...FALLBACK_VIDEO_BUCKETS.filter((b) => b !== PRIMARY_VIDEO_BUCKET),
-    ];
-
-    let usedBucket = null;
-    let lastStorageError = null;
-
-    for (let i = 0; i < bucketsToTry.length; i += 1) {
-      const bucket = bucketsToTry[i];
-      attemptedBuckets.push(bucket);
-      console.log(`[videoUpload] uploading to bucket "${bucket}"…`);
-
-      const { error: storageError } = await supabase.storage
-        .from(bucket)
-        .upload(filePath, body, {
-          contentType,
-          upsert: true,
-          cacheControl: '3600',
-        });
-
-      if (!storageError) {
-        usedBucket = bucket;
-        break;
-      }
-
-      lastStorageError = storageError;
-      console.warn(
-        `[videoUpload] upload failed for bucket "${bucket}":`,
-        storageError?.message || storageError
-      );
-
-      if (!isBucketMissingError(storageError)) {
-        throw storageError;
-      }
-
-      const next = bucketsToTry[i + 1];
-      console.warn(
-        `[videoUpload] bucket "${bucket}" missing — ${
-          next ? `retrying "${next}"` : BUCKET_SETUP_HINT
-        }`
-      );
-    }
 
     if (!usedBucket) {
       const detail = lastStorageError?.message || String(lastStorageError);
@@ -449,9 +488,9 @@ export async function uploadVideoToSupabase(
       );
       return {
         success: false,
-        error: `Storage bucket not found (tried: ${attemptedBuckets.join(
+        error: `Storage upload failed (tried: ${attemptedBuckets.join(
           ', '
-        )}). ${BUCKET_SETUP_HINT} (${detail})`,
+        )}). ${detail || BUCKET_SETUP_HINT}`,
       };
     }
 
@@ -542,7 +581,6 @@ export async function uploadVideoToSupabase(
     }
 
     if (dbError) {
-      // Storage succeeded — still return public URL so Arena can hydrate locally
       console.warn(
         '[videoUpload] DB insert missed; returning Storage public URL for local feed',
         dbError.message || dbError
@@ -577,6 +615,13 @@ export async function uploadVideoToSupabase(
       error?.message || error
     );
     const msg = error?.message || String(error);
+    if (isOutOfMemoryError(error)) {
+      return {
+        success: false,
+        error:
+          'Device ran out of memory while uploading. Try a shorter clip, or close other apps and publish again.',
+      };
+    }
     if (isRlsError(error)) {
       return { success: false, error: `${msg}. ${RLS_SETUP_HINT}` };
     }

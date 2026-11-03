@@ -433,54 +433,74 @@ export default function VideoPublishModal({
 
   const handleUpload = async () => {
     const playable = normalizePreviewUri(videoUri);
-    if (!playable) return;
+    if (!playable) {
+      showBawaalAlert({
+        title: 'Missing Clip',
+        message: 'No recorded video URI is available to publish.',
+      });
+      return;
+    }
 
     setUploading(true);
     setIsPlaying(false);
-    const result = await uploadVideoToSupabase(
-      playable,
-      userId,
-      selectedCategory,
-      caption
-    );
-    setUploading(false);
+    try {
+      const result = await uploadVideoToSupabase(
+        playable,
+        userId,
+        selectedCategory,
+        caption
+      );
 
-    if (result.success) {
-      const publicUrl =
-        result.url ||
-        result.data?.video_url ||
-        result.data?.url ||
-        null;
-      const localUri = playable;
-      const payload = {
-        ...(result.data || {}),
-        id: result.data?.id || `publish-${Date.now()}`,
-        url: publicUrl,
-        video_url: publicUrl,
-        videoUri: publicUrl || localUri,
-        uri: publicUrl || localUri,
-        publicCloudUrl: publicUrl,
-        remoteVideoUri: publicUrl,
-        localVideoUri: localUri,
-        category: selectedCategory,
-        caption: caption || '',
-        _freshPublish: true,
-      };
-      // Branded B-logo popup — wait for OK so parent can close + navigate cleanly
-      showBawaalAlert({
-        title: 'Success!',
-        message: result.dbWarning
-          ? 'Clip uploaded. Feed will show your local/cloud URL while DB sync finishes.'
-          : 'Your video challenge is live on BAWAAL!',
-        confirmLabel: 'OK',
-        onConfirm: () => finishSuccess(payload),
-      });
-    } else {
+      if (result?.success) {
+        const publicUrl =
+          result.url ||
+          result.data?.video_url ||
+          result.data?.url ||
+          null;
+        const localUri = playable;
+        const payload = {
+          ...(result.data || {}),
+          id: result.data?.id || `publish-${Date.now()}`,
+          url: publicUrl,
+          video_url: publicUrl,
+          videoUri: publicUrl || localUri,
+          uri: publicUrl || localUri,
+          publicCloudUrl: publicUrl,
+          remoteVideoUri: publicUrl,
+          localVideoUri: localUri,
+          category: selectedCategory,
+          caption: caption || '',
+          _freshPublish: true,
+        };
+        // Branded B-logo popup — wait for OK so parent can close + navigate cleanly
+        showBawaalAlert({
+          title: 'Success!',
+          message: result.dbWarning
+            ? 'Clip uploaded. Feed will show your local/cloud URL while DB sync finishes.'
+            : 'Your video challenge is live on BAWAAL!',
+          confirmLabel: 'OK',
+          onConfirm: () => finishSuccess(payload),
+        });
+      } else {
+        setIsPlaying(true);
+        showBawaalAlert({
+          title: 'Upload Failed',
+          message:
+            result?.error ||
+            'Could not upload your challenge. Check your connection and try again.',
+        });
+      }
+    } catch (err) {
+      console.warn('[VideoPublishModal] upload threw:', err?.message || err);
       setIsPlaying(true);
       showBawaalAlert({
         title: 'Upload Failed',
-        message: result.error || 'Something went wrong.',
+        message:
+          err?.message ||
+          'Network error while publishing. Your clip stays on device — try again.',
       });
+    } finally {
+      setUploading(false);
     }
   };
 
