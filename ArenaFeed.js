@@ -367,15 +367,9 @@ const FeedVideoItem = memo(function FeedVideoItem({
     );
   }
 
-  // Off-viewport: unmount SafeVideoPlayer so useEffect cleanup pauses the player
+  // Off-viewport: black shell only — no decoder (pause via SafeVideoPlayer unmount)
   if (!active) {
-    return (
-      <FeedVideoPlaceholder
-        style={style}
-        label="BAWAAL ARENA HD"
-        subtitle="Ready when in view"
-      />
-    );
+    return <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]} />;
   }
 
   return (
@@ -1061,8 +1055,8 @@ export default function ArenaFeed({ navigation, route }) {
   const [warmReel, setWarmReel] = useState(null);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  /** Viewport index ±1 — only those cells mount decoders (prefetch neighbors). */
-  const [warmIndices, setWarmIndices] = useState(() => new Set([0, 1]));
+  /** Single active feed index — only that row mounts a decoder. */
+  const [warmIndices, setWarmIndices] = useState(() => new Set([0]));
   const ingestedIds = useRef(new Set());
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
@@ -1072,31 +1066,20 @@ export default function ArenaFeed({ navigation, route }) {
     void configureGlobalAudioSession();
   }, []);
 
-  // FlatList requires a stable ref — pause/unmount hidden players, play visible only
+  // FlatList requires a stable ref — play one visible row; pause/unmount the rest
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    const next = new Set();
+    let primaryIdx = -1;
     for (const entry of viewableItems || []) {
       if (!entry?.isViewable) continue;
       const idx = typeof entry.index === 'number' ? entry.index : -1;
       if (idx < 0) continue;
-      // Only truly visible rows mount SafeVideoPlayer (hidden → unmount/pause)
-      next.add(idx);
+      // First ≥50% visible row wins (one decoder — cuts crash/lag from multi-play)
+      if (primaryIdx < 0) primaryIdx = idx;
     }
-    if (next.size === 0) {
-      next.add(0);
-    }
+    if (primaryIdx < 0) primaryIdx = 0;
     setWarmIndices((prev) => {
-      if (prev.size === next.size) {
-        let same = true;
-        for (const i of next) {
-          if (!prev.has(i)) {
-            same = false;
-            break;
-          }
-        }
-        if (same) return prev;
-      }
-      return next;
+      if (prev.size === 1 && prev.has(primaryIdx)) return prev;
+      return new Set([primaryIdx]);
     });
   }).current;
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
@@ -1465,9 +1448,9 @@ export default function ArenaFeed({ navigation, route }) {
           />
         );
       }
-      // Warm viewport + ±1 neighbor only — off-screen cells unmount Video
+      // Only the active visible row plays — off-screen cells are black shells
       const active =
-        warmIndices.size === 0 ? index < 2 : warmIndices.has(index);
+        warmIndices.size === 0 ? index === 0 : warmIndices.has(index);
       if (item.type === 'reel') {
         return (
           <GeneralReelCard
@@ -1559,7 +1542,7 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        // Scroll budget — recycle off-screen cells; keep decode window tiny
+        // Memory budget — tiny recycle window; only warmIndices row decodes
         removeClippedSubviews={true}
         initialNumToRender={2}
         maxToRenderPerBatch={2}
