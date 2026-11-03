@@ -12,7 +12,6 @@ import {
   View,
   FlatList,
   TouchableOpacity,
-  Pressable,
   Animated,
   Share,
   Easing,
@@ -339,7 +338,7 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
  * Memoized Arena feed video item.
  * Uses SafeVideoPlayer only while viewable — unmount pauses + releases decoder.
  * Missing URI / off-screen → BAWAAL Processing banner (never blank black).
- * Zero review chrome (play/pause/slow-mo live on publish preview only).
+ * Tap play/pause on the card; speed / slow-mo stay on publish preview only.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
@@ -349,6 +348,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
   loop = true,
   style,
   label = null,
+  onLongPress = null,
 }) {
   const [failed, setFailed] = useState(false);
   const playUri = isUsablePlaybackUri(uri) ? String(uri).trim() : null;
@@ -379,8 +379,10 @@ const FeedVideoItem = memo(function FeedVideoItem({
         uri={playUri}
         muted={muted}
         loop={loop}
+        tapToToggle
         style={styles.clipVideoFill}
         onError={() => setFailed(true)}
+        onLongPress={onLongPress || undefined}
       />
     </View>
   );
@@ -394,6 +396,7 @@ const ClipSurface = memo(function ClipSurface({
   style,
   muted = true,
   active = true,
+  onLongPress = null,
 }) {
   const playSource = source || {
     videoUri: uri,
@@ -419,6 +422,7 @@ const ClipSurface = memo(function ClipSurface({
       loop
       style={style}
       label={label}
+      onLongPress={onLongPress}
     />
   );
 });
@@ -725,7 +729,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   return (
     <View style={styles.reelCard}>
-      {/* Video is pointerEvents=none — all taps handled by JS Pressables below */}
+      {/* Tap play/pause on clip; long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
         uri={
@@ -750,6 +754,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
         muted={muted}
         // Pause feed decoder while immersive uses the same URI (no double-audio / lag)
         active={active && !immersiveOpen}
+        // Tap = play/pause (SafeVideoPlayer); long-press = immersive viewer
+        onLongPress={immersiveOpen ? null : openImmersive}
       />
 
       {/* Hide feed mute while fullscreen is open — prevents duplicate megaphones */}
@@ -760,13 +766,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
           style={styles.reelMuteBtn}
         />
       ) : null}
-
-      {/* Safe middle tap → ArenaReelViewer (no native fullscreen) */}
-      <Pressable
-        style={styles.reelMiddleTap}
-        onPress={openImmersive}
-        accessibilityLabel="Open immersive reel"
-      />
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
@@ -1690,14 +1689,6 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     zIndex: 14,
-  },
-  reelMiddleTap: {
-    position: 'absolute',
-    top: '22%',
-    bottom: '28%',
-    left: '12%',
-    right: '18%',
-    zIndex: 6,
   },
   reelScrim: {
     ...StyleSheet.absoluteFillObject,
