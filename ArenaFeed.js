@@ -47,6 +47,7 @@ import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { safeReleaseExpoVideoPlayer } from './src/utils/safeUnloadVideo';
 import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
+import BawaalVideoControls from './src/components/BawaalVideoControls';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -330,6 +331,8 @@ function FeedVideoPlaceholder({ style, label }) {
  */
 function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null }) {
   const [failed, setFailed] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [isSlowMo, setIsSlowMo] = useState(false);
   const source = useMemo(
     () => (isUsablePlaybackUri(uri) ? { uri: String(uri).trim() } : null),
     [uri]
@@ -339,6 +342,7 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
     try {
       p.loop = loop !== false;
       p.muted = !!muted;
+      p.playbackRate = 1.0;
       p.play();
     } catch {
       /* ignore setup races */
@@ -347,6 +351,8 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
 
   useEffect(() => {
     setFailed(false);
+    setIsPlaying(true);
+    setIsSlowMo(false);
   }, [uri]);
 
   useEffect(() => {
@@ -354,13 +360,15 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
     try {
       player.muted = !!muted;
       player.loop = loop !== false;
-      player.play();
+      player.playbackRate = isSlowMo ? 0.5 : 1.0;
+      if (isPlaying) player.play();
+      else player.pause();
     } catch (err) {
       console.warn('[FeedVideoPlayer] play:', err?.message || err);
       setFailed(true);
     }
     return undefined;
-  }, [player, muted, loop, source]);
+  }, [player, muted, loop, source, isPlaying, isSlowMo]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -394,6 +402,44 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
     };
   }, [player]);
 
+  const togglePlay = useCallback(() => {
+    if (!player) return;
+    setIsPlaying((prev) => {
+      const next = !prev;
+      try {
+        if (next) player.play();
+        else player.pause();
+      } catch (_) {
+        /* ignore */
+      }
+      return next;
+    });
+  }, [player]);
+
+  const toggleSlowMo = useCallback(() => {
+    if (!player) return;
+    setIsSlowMo((prev) => {
+      const next = !prev;
+      try {
+        player.playbackRate = next ? 0.5 : 1.0;
+      } catch (_) {
+        /* ignore */
+      }
+      return next;
+    });
+  }, [player]);
+
+  const stopPlayback = useCallback(() => {
+    if (!player) return;
+    try {
+      player.pause();
+      player.currentTime = 0;
+    } catch (_) {
+      /* ignore */
+    }
+    setIsPlaying(false);
+  }, [player]);
+
   if (!source || failed) {
     return <FeedVideoPlaceholder style={style} label={label || 'CLIP UNAVAILABLE'} />;
   }
@@ -409,6 +455,15 @@ function FeedVideoPlayer({ uri, muted = false, loop = true, style, label = null 
         nativeControls={false}
         fullscreenOptions={{ enable: false }}
         pointerEvents="none"
+      />
+      <BawaalVideoControls
+        isPlaying={isPlaying}
+        isSlowMo={isSlowMo}
+        onTogglePlay={togglePlay}
+        onStop={stopPlayback}
+        onToggleSlowMo={toggleSlowMo}
+        statusLabel="BAWAAL HD"
+        bottomOffset={64}
       />
     </View>
   );
@@ -1770,8 +1825,9 @@ const styles = StyleSheet.create({
   },
   reelMiddleTap: {
     position: 'absolute',
-    top: '22%',
-    bottom: '28%',
+    // Leave top status tag + bottom control bar free for athletic controls
+    top: '26%',
+    bottom: '36%',
     left: '12%',
     right: '18%',
     zIndex: 6,

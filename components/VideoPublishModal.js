@@ -15,6 +15,7 @@ import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
 import { sanitizePlayableFeedUri } from '../src/services/uploadService';
 import { showBawaalAlert } from '../src/components/BawaalAlert';
+import BawaalVideoControls from '../src/components/BawaalVideoControls';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
 const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
@@ -65,43 +66,19 @@ function PreviewControlsOverlay({
   playbackRate,
   onTogglePlay,
   onToggleSlowMo,
+  onStop,
 }) {
   return (
-    <View style={styles.controlsLayer} pointerEvents="box-none">
-      <TouchableOpacity
-        style={styles.playPauseHit}
-        onPress={onTogglePlay}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel={isPlaying ? 'Pause preview' : 'Play preview'}
-      >
-        <View style={styles.playPauseBadge}>
-          <Text style={styles.playPauseIcon}>{isPlaying ? '❚❚' : '▶'}</Text>
-        </View>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[
-          styles.slowMoBtn,
-          playbackRate < 1 ? styles.slowMoBtnActive : null,
-        ]}
-        onPress={onToggleSlowMo}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel={
-          playbackRate < 1 ? 'Disable slow motion' : 'Enable slow motion'
-        }
-      >
-        <Text
-          style={[
-            styles.slowMoText,
-            playbackRate < 1 ? styles.slowMoTextActive : null,
-          ]}
-        >
-          {playbackRate < 1 ? '0.5× SLOW' : '1× SPEED'}
-        </Text>
-      </TouchableOpacity>
-    </View>
+    <BawaalVideoControls
+      isPlaying={isPlaying}
+      isSlowMo={playbackRate < 1}
+      onTogglePlay={onTogglePlay}
+      onToggleSlowMo={onToggleSlowMo}
+      onStop={onStop}
+      statusLabel="BAWAAL HD"
+      compact
+      bottomOffset={10}
+    />
   );
 }
 
@@ -112,6 +89,7 @@ function ExpoAvPreview({
   playbackRate,
   onTogglePlay,
   onToggleSlowMo,
+  onStop,
   onReady,
   onError,
   videoRef,
@@ -206,6 +184,7 @@ function ExpoAvPreview({
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
         onToggleSlowMo={onToggleSlowMo}
+        onStop={onStop}
       />
     </View>
   );
@@ -218,6 +197,7 @@ function ExpoVideoPreview({
   playbackRate,
   onTogglePlay,
   onToggleSlowMo,
+  onStop,
   onReady,
   onError,
 }) {
@@ -259,6 +239,16 @@ function ExpoVideoPreview({
     };
   }, [isPlaying, onError, onReady, playbackRate, player, uri, visible]);
 
+  const handleStop = () => {
+    try {
+      player?.pause?.();
+      if (player) player.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    onStop?.();
+  };
+
   return (
     <View style={styles.previewShell}>
       <VideoView
@@ -277,6 +267,7 @@ function ExpoVideoPreview({
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
         onToggleSlowMo={onToggleSlowMo}
+        onStop={handleStop}
       />
     </View>
   );
@@ -289,6 +280,7 @@ function PublishClipPreview({
   playbackRate,
   onTogglePlay,
   onToggleSlowMo,
+  onStop,
   videoRef,
 }) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
@@ -310,6 +302,7 @@ function PublishClipPreview({
         playbackRate={playbackRate}
         onTogglePlay={onTogglePlay}
         onToggleSlowMo={onToggleSlowMo}
+        onStop={onStop}
         videoRef={videoRef}
       />
     );
@@ -324,6 +317,7 @@ function PublishClipPreview({
       playbackRate={playbackRate}
       onTogglePlay={onTogglePlay}
       onToggleSlowMo={onToggleSlowMo}
+      onStop={onStop}
     />
   );
 }
@@ -389,6 +383,22 @@ export default function VideoPublishModal({
       );
     }
     setPlaybackRate(newRate);
+  };
+
+  const stopPlayback = async () => {
+    const node = videoRef.current;
+    try {
+      if (node) {
+        await node.pauseAsync?.();
+        await node.setPositionAsync?.(0);
+      }
+    } catch (err) {
+      console.warn(
+        '[VideoPublishModal] stopPlayback failed:',
+        err?.message || err
+      );
+    }
+    setIsPlaying(false);
   };
 
   const finishSuccess = (payload) => {
@@ -466,6 +476,7 @@ export default function VideoPublishModal({
           playbackRate={playbackRate}
           onTogglePlay={togglePlayPause}
           onToggleSlowMo={toggleSlowMo}
+          onStop={stopPlayback}
           videoRef={videoRef}
         />
 
