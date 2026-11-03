@@ -32,8 +32,8 @@ import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
+import SafeVideoPlayer from './src/components/SafeVideoPlayer';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
@@ -45,7 +45,6 @@ import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
-import { safeReleaseExpoVideoPlayer } from './src/utils/safeUnloadVideo';
 import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
 
 /** Insert an inline community shelf after every N video/battle rows. */
@@ -337,116 +336,10 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
 }
 
 /**
- * Active expo-video instance — mounted ONLY while the row is viewable.
- * Zero review chrome (play/pause/slow-mo live exclusively on publish preview).
- */
-function FeedVideoPlayer({ uri, muted = false, loop = true, style }) {
-  const [failed, setFailed] = useState(false);
-  const source = useMemo(
-    () => (isUsablePlaybackUri(uri) ? { uri: String(uri).trim() } : null),
-    [uri]
-  );
-
-  const player = useVideoPlayer(source, (p) => {
-    try {
-      p.loop = loop !== false;
-      p.muted = !!muted;
-      p.playbackRate = 1.0;
-      p.play();
-    } catch {
-      /* ignore setup races */
-    }
-  });
-
-  useEffect(() => {
-    setFailed(false);
-  }, [uri]);
-
-  useEffect(() => {
-    if (!player || !source) return undefined;
-    try {
-      player.muted = !!muted;
-      player.loop = loop !== false;
-      player.playbackRate = 1.0;
-      player.play();
-    } catch (err) {
-      console.warn('[FeedVideoPlayer] play:', err?.message || err);
-      setFailed(true);
-    }
-    return undefined;
-  }, [player, muted, loop, source]);
-
-  useEffect(() => {
-    if (!player) return undefined;
-    let sub = null;
-    try {
-      sub = player.addListener?.('statusChange', ({ status, error }) => {
-        try {
-          if (status === 'error' || error) {
-            console.warn(
-              '[FeedVideoPlayer] status error:',
-              error?.message || error
-            );
-            setFailed(true);
-          }
-        } catch (_) {
-          /* never crash native path */
-        }
-      });
-    } catch (_) {
-      /* older expo-video without events */
-    }
-    return () => {
-      try {
-        sub?.remove?.();
-      } catch (_) {
-        /* ignore */
-      }
-    };
-  }, [player]);
-
-  // Instant teardown when scrolled away / URI recycled
-  useEffect(() => {
-    return () => {
-      try {
-        player?.pause?.();
-      } catch (_) {
-        /* ignore */
-      }
-      safeReleaseExpoVideoPlayer(player);
-    };
-  }, [player]);
-
-  if (!source || failed) {
-    return (
-      <FeedVideoPlaceholder
-        style={style}
-        label="BAWAAL ARENA HD"
-        subtitle="Processing…"
-      />
-    );
-  }
-
-  return (
-    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
-      {/* Black underlay while buffering — never BAWAAL logo blink */}
-      <View style={styles.feedVideoUnderlay} pointerEvents="none" />
-      <VideoView
-        style={styles.clipVideoFill}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
-        fullscreenOptions={{ enable: false }}
-        pointerEvents="none"
-      />
-    </View>
-  );
-}
-
-/**
  * Memoized Arena feed video item.
- * `active={false}` → unmounts expo-video instantly (placeholder only, no decoder).
- * Missing / empty URI → branded Processing banner (never blank black).
+ * Uses SafeVideoPlayer only while viewable — unmount pauses + releases decoder.
+ * Missing URI / off-screen → BAWAAL Processing banner (never blank black).
+ * Zero review chrome (play/pause/slow-mo live on publish preview only).
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
@@ -457,9 +350,14 @@ const FeedVideoItem = memo(function FeedVideoItem({
   style,
   label = null,
 }) {
+  const [failed, setFailed] = useState(false);
   const playUri = isUsablePlaybackUri(uri) ? String(uri).trim() : null;
 
-  if (!playUri) {
+  useEffect(() => {
+    setFailed(false);
+  }, [playUri]);
+
+  if (!playUri || failed) {
     return (
       <FeedVideoPlaceholder
         style={style}
@@ -469,7 +367,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
     );
   }
 
-  // Off-viewport: do not keep a native player alive
+  // Off-viewport: unmount SafeVideoPlayer so useEffect cleanup pauses the player
   if (!active) {
     return (
       <FeedVideoPlaceholder
@@ -481,13 +379,16 @@ const FeedVideoItem = memo(function FeedVideoItem({
   }
 
   return (
-    <FeedVideoPlayer
-      key={playUri}
-      uri={playUri}
-      muted={muted}
-      loop={loop}
-      style={style}
-    />
+    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
+      <SafeVideoPlayer
+        key={playUri}
+        uri={playUri}
+        muted={muted}
+        loop={loop}
+        style={styles.clipVideoFill}
+        onError={() => setFailed(true)}
+      />
+    </View>
   );
 });
 
