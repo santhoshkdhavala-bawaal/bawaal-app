@@ -286,6 +286,8 @@ function mapPostToReel(post) {
     recordedVideoUri: post.recordedVideoUri || null,
     localVideoUri,
     publicCloudUrl: post.publicCloudUrl || null,
+    thumbnail_url: post.thumbnail_url || post.thumbnailUrl || null,
+    poster_url: post.poster_url || post.posterUrl || null,
     createdAt: ts,
     _freshPublish: !!fresh,
   };
@@ -369,10 +371,9 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
 
 /**
  * Memoized Arena feed video item.
- * Uses SafeVideoPlayer only while viewable — unmount pauses + releases decoder.
- * Missing URI / off-screen → BAWAAL Processing banner (never blank black).
- * Viewable row autoplays; leaving the row pauses via unmount.
- * Native controls live on SafeVideoPlayer. Speed / slow-mo stay on publish preview only.
+ * SafeVideoPlayer mounts a decoder only while this row is visible.
+ * Off-screen rows keep a poster or dark frame and release the player.
+ * Native controls live on the visible player. Speed / slow-mo stay on publish preview only.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
@@ -402,15 +403,11 @@ const FeedVideoItem = memo(function FeedVideoItem({
     );
   }
 
-  // Off-viewport: black shell only — no decoder (pause via SafeVideoPlayer unmount)
-  if (!active) {
-    return <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]} />;
-  }
-
   return (
     <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
       <SafeVideoPlayer
         key={playUri}
+        isVisible={!!active}
         item={item}
         uri={playUri}
         muted={muted}
@@ -770,6 +767,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
           remoteVideoUri: item.remoteVideoUri,
           thumbnail_url: item.thumbnail_url || item.thumbnailUrl,
           thumbnailUrl: item.thumbnailUrl || item.thumbnail_url,
+          poster_url: item.poster_url || item.posterUrl,
+          posterUrl: item.posterUrl || item.poster_url,
         }}
         label={null}
         style={styles.reelFullBleed}

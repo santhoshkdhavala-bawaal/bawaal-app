@@ -1,12 +1,10 @@
 /**
- * Minimal expo-video player for Arena feed clips.
- * Binds item.video_url, then item.uri, then item.url (or the uri prop).
- * Native controls own play / pause / scrub. A centered play glyph shows when paused.
- * Speed / slow-mo stay on publish preview only.
- * Pauses and releases the native player on unmount and when the app backgrounds.
+ * Arena clip surface with one live decoder.
+ * isVisible mounts expo-video, autoplays, and loops.
+ * Hidden rows render a poster or a dark frame and unmount the player.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Image, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
@@ -34,51 +32,39 @@ function ClipStatus({ style, title, detail, busy }) {
   );
 }
 
-function SafeVideoPlayer({
-  item = null,
-  uri,
-  muted = true,
-  loop = true,
+function posterUriFrom(item) {
+  return firstPlayableUri([
+    item?.thumbnail_url,
+    item?.poster_url,
+    item?.thumbnailUrl,
+    item?.posterUrl,
+  ]);
+}
+
+/** Decoder lives here so leaving the screen unmounts it immediately. */
+function ActiveClipPlayer({
+  resolvedUri,
+  muted,
+  loop,
   style,
-  contentFit = 'cover',
-  autoPlay = true,
-  /** Arena card: show the centered play glyph while paused. */
-  tapToToggle = true,
+  contentFit,
+  tapToToggle,
   onError,
   onLongPress,
 }) {
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(!!autoPlay);
+  const [isPlaying, setIsPlaying] = useState(true);
   const longPressTimer = useRef(null);
   const playerRef = useRef(null);
-  /**
-   * Post URL first (video_url → uri → url), then the explicit uri prop.
-   * resolveVideoSource drops mock, blob, and empty strings.
-   */
-  const resolvedUri = useMemo(
-    () =>
-      firstPlayableUri([
-        item?.video_url,
-        item?.uri,
-        item?.url,
-        uri,
-        item?.videoUrl,
-        item?.videoUri,
-      ]),
-    [item?.video_url, item?.uri, item?.url, item?.videoUrl, item?.videoUri, uri]
-  );
-  const source = useMemo(
-    () => (resolvedUri ? { uri: resolvedUri } : null),
-    [resolvedUri]
-  );
+  const source = useMemo(() => ({ uri: resolvedUri }), [resolvedUri]);
 
   const player = useVideoPlayer(source, (p) => {
     try {
       p.loop = true;
       p.muted = !!muted;
       p.playbackRate = 1.0;
-      if (autoPlay && source?.uri) p.play();
+      if (source?.uri) p.play();
       else p.pause();
     } catch {
       /* ignore setup races */
@@ -92,28 +78,25 @@ function SafeVideoPlayer({
 
   useEffect(() => {
     setFailed(false);
-    setBuffering(!!resolvedUri);
-    setIsPlaying(!!autoPlay && !!resolvedUri);
-  }, [resolvedUri, autoPlay]);
+    setBuffering(true);
+    setIsPlaying(true);
+  }, [resolvedUri]);
 
   useEffect(() => {
     if (!player) return undefined;
     try {
       player.muted = !!muted;
-      player.loop = loop !== false;
-      if (!resolvedUri || !autoPlay) {
-        player.pause();
-        setIsPlaying(false);
-      } else if (!player.playing) {
+      player.loop = true;
+      if (loop === false) player.loop = false;
+      if (!player.playing) {
         player.play();
         setIsPlaying(true);
       }
     } catch (err) {
-      // Keep the surface mounted — a play/pause race must not blank the cell.
       console.warn('[SafeVideoPlayer] sync failed:', err?.message || err);
     }
     return undefined;
-  }, [player, muted, loop, resolvedUri, autoPlay]);
+  }, [player, muted, loop, resolvedUri]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -238,16 +221,6 @@ function SafeVideoPlayer({
     }, 450);
   }, [clearLongPress, onLongPress]);
 
-  if (!resolvedUri) {
-    return (
-      <ClipStatus
-        style={style}
-        title="CLIP UNAVAILABLE"
-        detail="No playable video URL"
-      />
-    );
-  }
-
   if (failed) {
     return (
       <ClipStatus
@@ -298,10 +271,87 @@ function SafeVideoPlayer({
   );
 }
 
+function HiddenClipFrame({ style, posterUri }) {
+  const [broken, setBroken] = useState(false);
+  const showPoster = !!posterUri && !broken;
+  return (
+    <View style={[styles.shell, style]}>
+      <View style={styles.underlay} pointerEvents="none" />
+      {showPoster ? (
+        <Image
+          source={{ uri: posterUri }}
+          style={styles.video}
+          resizeMode="cover"
+          onError={() => setBroken(true)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function SafeVideoPlayer({
+  isVisible = true,
+  item = null,
+  uri,
+  muted = true,
+  loop = true,
+  style,
+  contentFit = 'cover',
+  /** Arena card: show the centered play glyph while paused. */
+  tapToToggle = true,
+  onError,
+  onLongPress,
+}) {
+  const resolvedUri = useMemo(
+    () =>
+      firstPlayableUri([
+        item?.video_url,
+        item?.uri,
+        item?.url,
+        uri,
+        item?.videoUrl,
+        item?.videoUri,
+      ]),
+    [item?.video_url, item?.uri, item?.url, item?.videoUrl, item?.videoUri, uri]
+  );
+  const posterUri = useMemo(
+    () => posterUriFrom(item),
+    [item?.thumbnail_url, item?.poster_url, item?.thumbnailUrl, item?.posterUrl]
+  );
+
+  if (!isVisible) {
+    return <HiddenClipFrame style={style} posterUri={posterUri} />;
+  }
+
+  if (!resolvedUri) {
+    return (
+      <ClipStatus
+        style={style}
+        title="CLIP UNAVAILABLE"
+        detail="No playable video URL"
+      />
+    );
+  }
+
+  return (
+    <ActiveClipPlayer
+      resolvedUri={resolvedUri}
+      muted={muted}
+      loop={loop !== false}
+      style={style}
+      contentFit={contentFit}
+      tapToToggle={tapToToggle}
+      onError={onError}
+      onLongPress={onLongPress}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   shell: {
     width: '100%',
-    height: '100%',
+    height: 450,
+    alignSelf: 'stretch',
     backgroundColor: '#000000',
     position: 'relative',
     overflow: 'hidden',
