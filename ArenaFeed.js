@@ -68,11 +68,7 @@ const GOLD = FLAME_ORANGE;
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
-  minimumViewTime: 100,
 };
-
-/** One stable key per row that has neither id nor video_url. */
-const feedFallbackKeys = new WeakMap();
 
 const DEMO_ATHLETE_HANDLES = [
   'Aarav_Iron',
@@ -1119,15 +1115,12 @@ export default function ArenaFeed({ navigation, route }) {
   const activeIndexRef = useRef(activeIndex);
   activeIndexRef.current = activeIndex;
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    const visible = (viewableItems || []).filter(
-      (entry) => entry?.isViewable && typeof entry.index === 'number'
-    );
-    if (!visible.length) return;
-    const centered = visible[Math.floor((visible.length - 1) / 2)];
-    const nextIndex = centered.index;
-    if (nextIndex === activeIndexRef.current) return;
-    activeIndexRef.current = nextIndex;
-    setActiveIndex(nextIndex);
+    if (viewableItems && viewableItems.length > 0 && typeof viewableItems[0].index === 'number') {
+      const nextIndex = viewableItems[0].index;
+      if (nextIndex === activeIndexRef.current) return;
+      activeIndexRef.current = nextIndex;
+      setActiveIndex(nextIndex);
+    }
   }).current;
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
   const absorbedUriById = useRef(new Map());
@@ -1578,26 +1571,16 @@ export default function ArenaFeed({ navigation, route }) {
     [screenHeight]
   );
 
-  const feedKeyExtractor = useCallback((item) => {
-    const id = item?.id != null ? item.id.toString() : '';
-    if (id) return id;
-    if (item?.video_url) return String(item.video_url);
-    if (item && typeof item === 'object') {
-      let fallback = feedFallbackKeys.get(item);
-      if (!fallback) {
-        fallback = Math.random().toString();
-        feedFallbackKeys.set(item, fallback);
-      }
-      return fallback;
-    }
-    return Math.random().toString();
+  const feedKeyExtractor = useCallback((item, index) => {
+    if (item?.id != null) return item.id.toString();
+    return index.toString();
   }, []);
 
   return (
     <View style={styles.container}>
       <FlatList
         ref={listRef}
-        style={[styles.feedList, { height: screenHeight }]}
+        style={styles.feedList}
         data={feedWithShelves}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
@@ -1607,20 +1590,18 @@ export default function ArenaFeed({ navigation, route }) {
             ? styles.scrollContentEmpty
             : styles.scrollContent
         }
-        showsVerticalScrollIndicator={false}
+        pagingEnabled
         snapToInterval={screenHeight}
         snapToAlignment="start"
-        disableIntervalMomentum
-        getItemLayout={getFeedItemLayout}
-        removeClippedSubviews={false}
-        initialNumToRender={3}
-        maxToRenderPerBatch={3}
-        windowSize={3}
         decelerationRate="fast"
-        updateCellsBatchingPeriod={50}
-        onEndReachedThreshold={0.6}
+        showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
+        removeClippedSubviews
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        initialNumToRender={2}
+        getItemLayout={getFeedItemLayout}
         extraData={activeIndex}
         refreshControl={
           <RefreshControl
@@ -1671,15 +1652,11 @@ export default function ArenaFeed({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
-    overflow: 'visible',
+    backgroundColor: 'black',
   },
   feedList: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#000000',
+    flex: 1,
+    backgroundColor: 'black',
   },
   headerOverlay: {
     position: 'absolute',
