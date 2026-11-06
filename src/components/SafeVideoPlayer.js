@@ -1,7 +1,8 @@
 /**
- * Arena clip surface with one live decoder.
- * isVisible mounts expo-video, autoplays, and loops.
- * Hidden rows render a poster or a dark frame and unmount the player.
+ * Arena clip surface.
+ * isMounted keeps the expo-video view in the tree so the clip stays buffered.
+ * shouldPlay only calls play/pause — it does not unmount the player or reset position.
+ * Rows outside the preload window render a poster and release the decoder.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Image, StyleSheet, Text, View } from 'react-native';
@@ -41,6 +42,24 @@ function posterUriFrom(item) {
   ]);
 }
 
+function playClip(player) {
+  if (!player) return;
+  if (typeof player.playAsync === 'function') {
+    player.playAsync();
+    return;
+  }
+  player.play();
+}
+
+function pauseClip(player) {
+  if (!player) return;
+  if (typeof player.pauseAsync === 'function') {
+    player.pauseAsync();
+    return;
+  }
+  player.pause();
+}
+
 /** Decoder lives here so leaving the screen unmounts it immediately. */
 function ActiveClipPlayer({
   resolvedUri,
@@ -55,6 +74,7 @@ function ActiveClipPlayer({
 }) {
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(true);
+  const [hasFrame, setHasFrame] = useState(false);
   const [isPlaying, setIsPlaying] = useState(!!shouldPlay);
   const longPressTimer = useRef(null);
   const playerRef = useRef(null);
@@ -65,8 +85,8 @@ function ActiveClipPlayer({
       p.loop = true;
       p.muted = !!muted;
       p.playbackRate = 1.0;
-      if (shouldPlay && source?.uri) p.play();
-      else p.pause();
+      if (shouldPlay && source?.uri) playClip(p);
+      else pauseClip(p);
     } catch {
       /* ignore setup races */
     }
@@ -80,8 +100,8 @@ function ActiveClipPlayer({
   useEffect(() => {
     setFailed(false);
     setBuffering(true);
-    setIsPlaying(!!shouldPlay);
-  }, [resolvedUri, shouldPlay]);
+    setHasFrame(false);
+  }, [resolvedUri]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -90,19 +110,17 @@ function ActiveClipPlayer({
       player.loop = true;
       if (loop === false) player.loop = false;
       if (shouldPlay) {
-        if (!player.playing) {
-          player.play();
-          setIsPlaying(true);
-        }
+        playClip(player);
+        setIsPlaying(true);
       } else {
-        player.pause();
+        pauseClip(player);
         setIsPlaying(false);
       }
     } catch (err) {
       console.warn('[SafeVideoPlayer] sync failed:', err?.message || err);
     }
     return undefined;
-  }, [player, muted, loop, resolvedUri, shouldPlay]);
+  }, [player, muted, loop, shouldPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -167,7 +185,7 @@ function ActiveClipPlayer({
       longPressTimer.current = null;
       if (!activePlayer) return;
       try {
-        activePlayer.pause();
+        pauseClip(activePlayer);
       } catch (_) {
         /* ignore */
       }
@@ -195,7 +213,7 @@ function ActiveClipPlayer({
       if (!activePlayer) return;
       if (next === 'active') return;
       try {
-        activePlayer.pause();
+        pauseClip(activePlayer);
       } catch (_) {
         /* ignore */
       }
@@ -248,6 +266,13 @@ function ActiveClipPlayer({
       onTouchCancel={clearLongPress}
     >
       <View style={styles.underlay} pointerEvents="none" />
+      {posterUri ? (
+        <Image
+          source={{ uri: posterUri }}
+          style={styles.video}
+          resizeMode="cover"
+        />
+      ) : null}
       <VideoView
         style={styles.video}
         player={player}
@@ -256,19 +281,20 @@ function ActiveClipPlayer({
         fullscreenOptions={{ enable: false }}
         onFirstFrameRender={() => {
           try {
+            setHasFrame(true);
             setBuffering(false);
           } catch (_) {
             /* ignore */
           }
         }}
       />
-      {buffering ? (
+      {buffering && !hasFrame ? (
         <View style={styles.fallback} pointerEvents="none">
           <ActivityIndicator color="#FFFFFF" />
           <Text style={styles.fallbackDetail}>LOADING</Text>
         </View>
       ) : null}
-      {tapToToggle && !isPlaying ? (
+      {tapToToggle && shouldPlay && !isPlaying ? (
         <View style={styles.playIconOverlay} pointerEvents="none">
           <Ionicons name="play" size={50} color="#FFFFFF" />
         </View>
@@ -373,9 +399,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   video: {
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: '#000000',
+    backgroundColor: 'transparent',
   },
   playIconOverlay: {
     ...StyleSheet.absoluteFillObject,
