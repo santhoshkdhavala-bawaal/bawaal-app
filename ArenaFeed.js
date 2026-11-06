@@ -65,8 +65,11 @@ const GOLD = FLAME_ORANGE;
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 50,
-  minimumViewTime: 80,
+  minimumViewTime: 180,
 };
+
+/** One stable key per row that has neither id nor video_url. */
+const feedFallbackKeys = new WeakMap();
 
 const DEMO_ATHLETE_HANDLES = [
   'Aarav_Iron',
@@ -1081,7 +1084,10 @@ export default function ArenaFeed({ navigation, route }) {
     void configureGlobalAudioSession();
   }, []);
 
-  // FlatList requires a stable ref — play one visible row; pause/unmount the rest
+  // FlatList requires a stable ref — play one visible row; pause/unmount the rest.
+  // Skip setState unless the primary index actually changes so a fling does not
+  // re-render every card on each viewability tick.
+  const activeFeedIndexRef = useRef(0);
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
     let primaryIdx = -1;
     for (const entry of viewableItems || []) {
@@ -1091,11 +1097,10 @@ export default function ArenaFeed({ navigation, route }) {
       // First ≥50% visible row wins (one decoder — cuts crash/lag from multi-play)
       if (primaryIdx < 0) primaryIdx = idx;
     }
-    if (primaryIdx < 0) primaryIdx = 0;
-    setWarmIndices((prev) => {
-      if (prev.size === 1 && prev.has(primaryIdx)) return prev;
-      return new Set([primaryIdx]);
-    });
+    // Empty callbacks mid-fling must not snap playback back to row 0.
+    if (primaryIdx < 0 || primaryIdx === activeFeedIndexRef.current) return;
+    activeFeedIndexRef.current = primaryIdx;
+    setWarmIndices(new Set([primaryIdx]));
   }).current;
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
   const absorbedUriById = useRef(new Map());
@@ -1522,9 +1527,19 @@ export default function ArenaFeed({ navigation, route }) {
     [openGameOn]
   );
 
-  const feedKeyExtractor = useCallback((item, index) => {
-    // Guarantee uniqueness even if a bad hydrate slips duplicate ids
-    return item?.id != null ? String(item.id) : `feed-row-${index}`;
+  const feedKeyExtractor = useCallback((item) => {
+    const id = item?.id != null ? item.id.toString() : '';
+    if (id) return id;
+    if (item?.video_url) return String(item.video_url);
+    if (item && typeof item === 'object') {
+      let fallback = feedFallbackKeys.get(item);
+      if (!fallback) {
+        fallback = Math.random().toString();
+        feedFallbackKeys.set(item, fallback);
+      }
+      return fallback;
+    }
+    return Math.random().toString();
   }, []);
 
   return (
@@ -1557,11 +1572,11 @@ export default function ArenaFeed({ navigation, route }) {
             : styles.scrollContent
         }
         showsVerticalScrollIndicator={false}
-        // Memory budget — tiny recycle window; only warmIndices row decodes
-        removeClippedSubviews={true}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
-        windowSize={3}
+        // Keep native cells mounted on Android so scrolling does not hide videos
+        removeClippedSubviews={false}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={5}
         updateCellsBatchingPeriod={50}
         onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
