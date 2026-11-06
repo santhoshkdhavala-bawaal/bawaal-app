@@ -183,6 +183,39 @@ function isOfficialBattlePost(post) {
   return false;
 }
 
+const FEED_URI_FIELDS = [
+  'video_url',
+  'videoUrl',
+  'publicCloudUrl',
+  'remoteVideoUri',
+  'videoUri',
+  'uri',
+  'recordedVideoUri',
+  'localVideoUri',
+];
+
+/** First playable URL on a post, cloud row, or raw string. */
+function pickFeedClipUri(...sources) {
+  for (const source of sources) {
+    if (source == null) continue;
+    if (typeof source === 'string') {
+      const normalized = resolveFeedVideoUri(source) || source;
+      if (isUsablePlaybackUri(normalized)) return String(normalized).trim();
+      continue;
+    }
+    if (typeof source !== 'object') continue;
+    const resolved = resolveFeedVideoUri(source);
+    if (isUsablePlaybackUri(resolved)) return String(resolved).trim();
+    for (const key of FEED_URI_FIELDS) {
+      const raw = source[key];
+      if (typeof raw !== 'string' || !raw.trim()) continue;
+      const normalized = resolveFeedVideoUri(raw) || raw.trim();
+      if (isUsablePlaybackUri(normalized)) return String(normalized).trim();
+    }
+  }
+  return null;
+}
+
 /** Stable key for the same cloud clip (dedupe storage fallback vs DB rows). */
 function videoIdentityKey(uri) {
   if (!uri || typeof uri !== 'string') return '';
@@ -207,13 +240,7 @@ function sortFeedItems(list) {
 }
 
 function mapPostToReel(post) {
-  const uri =
-    resolveFeedVideoUri(post) ||
-    post?.videoUri ||
-    post?.video_url ||
-    post?.uri ||
-    post?.localVideoUri ||
-    null;
+  const uri = pickFeedClipUri(post);
   const ts = post.timestamp || post.createdAt || Date.now();
   const rawHandle =
     post.author ||
@@ -250,7 +277,10 @@ function mapPostToReel(post) {
     hypeCount: post.hypeCount || 0,
     videoUri: uri,
     uri,
-    video_url: post.video_url || null,
+    video_url: post.video_url || post.videoUrl || null,
+    videoUrl: post.videoUrl || post.video_url || null,
+    remoteVideoUri: post.remoteVideoUri || null,
+    recordedVideoUri: post.recordedVideoUri || null,
     localVideoUri,
     publicCloudUrl: post.publicCloudUrl || null,
     createdAt: ts,
@@ -338,7 +368,8 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
  * Memoized Arena feed video item.
  * Uses SafeVideoPlayer only while viewable — unmount pauses + releases decoder.
  * Missing URI / off-screen → BAWAAL Processing banner (never blank black).
- * Tap play/pause on the card; speed / slow-mo stay on publish preview only.
+ * Viewable row autoplays; leaving the row pauses via unmount.
+ * Native controls live on SafeVideoPlayer. Speed / slow-mo stay on publish preview only.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
@@ -351,7 +382,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
   onLongPress = null,
 }) {
   const [failed, setFailed] = useState(false);
-  const playUri = isUsablePlaybackUri(uri) ? String(uri).trim() : null;
+  const playUri = pickFeedClipUri(uri);
 
   useEffect(() => {
     setFailed(false);
@@ -379,6 +410,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
         uri={playUri}
         muted={muted}
         loop={loop}
+        autoPlay={!!active}
         tapToToggle
         style={styles.clipVideoFill}
         onError={() => setFailed(true)}
@@ -404,15 +436,8 @@ const ClipSurface = memo(function ClipSurface({
     uri,
     localVideoUri: uri,
   };
-  // Prefer cloud `video_url` (Supabase videos row) then local capture URIs
-  const playUri =
-    resolveFeedVideoUri(playSource) ||
-    playSource.video_url ||
-    playSource.videoUri ||
-    uri ||
-    playSource.uri ||
-    playSource.localVideoUri ||
-    null;
+  // Bind the post's playable URL (cloud video_url, then local capture URIs)
+  const playUri = pickFeedClipUri(playSource, uri);
 
   return (
     <FeedVideoItem
@@ -436,14 +461,7 @@ function sortResponses(list, mode) {
 }
 
 function mapPostToResponse(post) {
-  const uri =
-    resolveFeedVideoUri(post) ||
-    post?.videoUri ||
-    post?.video_url ||
-    post?.uri ||
-    post?.recordedVideoUri ||
-    post?.localVideoUri ||
-    null;
+  const uri = pickFeedClipUri(post);
   const creator =
     post.creator === 'You' || post.creator === 'YOU' ? 'You' : post.creator || 'You';
   const localVideoUri =
@@ -731,21 +749,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   return (
     <View style={styles.reelCard}>
-      {/* Tap play/pause on clip; long-press opens immersive */}
+      {/* Viewable row autoplays; native controls on the clip; long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
-        uri={
-          item.video_url ||
-          item.videoUri ||
-          item.uri ||
-          item.localVideoUri ||
-          item.publicCloudUrl
-        }
+        uri={pickFeedClipUri(item)}
         source={{
           videoUri: item.videoUri,
           video_url: item.video_url || item.videoUrl,
+          videoUrl: item.videoUrl || item.video_url,
           uri: item.uri,
           localVideoUri: item.localVideoUri,
+          recordedVideoUri: item.recordedVideoUri,
           publicCloudUrl: item.publicCloudUrl,
           remoteVideoUri: item.remoteVideoUri,
           thumbnail_url: item.thumbnail_url || item.thumbnailUrl,

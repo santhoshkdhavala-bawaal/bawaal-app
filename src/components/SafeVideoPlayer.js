@@ -1,14 +1,15 @@
 /**
  * Minimal expo-video player for Arena feed clips.
- * Tap toggles play/pause with a centered play glyph when paused.
+ * Source URI is the post video URL string — expo-video rebinds via replaceAsync.
+ * Native controls own play / pause / scrub. A centered play glyph shows when paused.
  * Speed / slow-mo stay on publish preview only.
  * Pauses + soft-releases the native player on unmount.
  */
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { isUsablePlaybackUri } from '../utils/reelMediaFallback';
+import { resolveVideoSource } from '../utils/reelMediaFallback';
 import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 
 function SafeVideoPlayer({
@@ -18,24 +19,26 @@ function SafeVideoPlayer({
   style,
   contentFit = 'cover',
   autoPlay = true,
-  /** Arena card: tap video to play/pause. */
+  /** Arena card: show the centered play glyph while paused. */
   tapToToggle = true,
   onError,
   onLongPress,
 }) {
   const [failed, setFailed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(!!autoPlay);
-  const source = useMemo(() => {
-    if (!isUsablePlaybackUri(uri)) return null;
-    return { uri: String(uri).trim() };
+  const longPressTimer = useRef(null);
+  /** String URI so useVideoPlayer's source key tracks the post URL. */
+  const playbackUri = useMemo(() => {
+    const resolved = resolveVideoSource(uri);
+    return resolved?.uri || null;
   }, [uri]);
 
-  const player = useVideoPlayer(source, (p) => {
+  const player = useVideoPlayer(playbackUri, (p) => {
     try {
       p.loop = loop !== false;
       p.muted = !!muted;
       p.playbackRate = 1.0;
-      if (autoPlay) p.play();
+      if (autoPlay && playbackUri) p.play();
       else p.pause();
     } catch {
       /* ignore setup races */
@@ -45,27 +48,26 @@ function SafeVideoPlayer({
   useEffect(() => {
     setFailed(false);
     setIsPlaying(!!autoPlay);
-  }, [uri, autoPlay]);
+  }, [playbackUri, autoPlay]);
 
   useEffect(() => {
-    if (!player || !source) return undefined;
+    if (!player) return undefined;
     try {
       player.muted = !!muted;
       player.loop = loop !== false;
-      if (autoPlay) {
-        player.play();
-        setIsPlaying(true);
-      } else {
+      if (!playbackUri || !autoPlay) {
         player.pause();
         setIsPlaying(false);
+      } else {
+        player.play();
+        setIsPlaying(true);
       }
     } catch (err) {
+      // Keep the surface mounted — a play/pause race must not blank the cell.
       console.warn('[SafeVideoPlayer] sync failed:', err?.message || err);
-      setFailed(true);
-      onError?.(err);
     }
     return undefined;
-  }, [player, muted, loop, source, autoPlay, onError]);
+  }, [player, muted, loop, playbackUri, autoPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -126,59 +128,56 @@ function SafeVideoPlayer({
     };
   }, [player]);
 
-  const togglePlayback = useCallback(() => {
-    if (!player) return;
-    try {
-      if (player.playing) {
-        player.pause();
-        setIsPlaying(false);
-      } else {
-        player.play();
-        setIsPlaying(true);
-      }
-    } catch (err) {
-      console.warn('[SafeVideoPlayer] toggle failed:', err?.message || err);
+  const clearLongPress = useCallback(() => {
+    if (longPressTimer.current != null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
     }
-  }, [player]);
+  }, []);
 
-  if (!source || failed) {
+  useEffect(() => clearLongPress, [clearLongPress]);
+
+  const onVideoTouchStart = useCallback(() => {
+    if (!onLongPress) return;
+    clearLongPress();
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      try {
+        onLongPress();
+      } catch (err) {
+        console.warn('[SafeVideoPlayer] long-press failed:', err?.message || err);
+      }
+    }, 450);
+  }, [clearLongPress, onLongPress]);
+
+  if (!playbackUri || failed) {
     return <View style={[styles.shell, style]} />;
   }
 
-  const body = (
-    <>
+  return (
+    <View
+      style={[styles.shell, style]}
+      accessibilityRole="adjustable"
+      accessibilityLabel={isPlaying ? 'Pause clip' : 'Play clip'}
+      onTouchStart={onVideoTouchStart}
+      onTouchMove={clearLongPress}
+      onTouchEnd={clearLongPress}
+      onTouchCancel={clearLongPress}
+    >
       <View style={styles.underlay} pointerEvents="none" />
       <VideoView
         style={styles.video}
         player={player}
         contentFit={contentFit}
-        nativeControls={false}
+        nativeControls
         fullscreenOptions={{ enable: false }}
-        pointerEvents="none"
       />
       {tapToToggle && !isPlaying ? (
         <View style={styles.playIconOverlay} pointerEvents="none">
           <Ionicons name="play" size={50} color="#FFFFFF" />
         </View>
       ) : null}
-    </>
-  );
-
-  if (!tapToToggle) {
-    return <View style={[styles.shell, style]}>{body}</View>;
-  }
-
-  return (
-    <Pressable
-      style={[styles.shell, style]}
-      onPress={togglePlayback}
-      onLongPress={onLongPress}
-      delayLongPress={350}
-      accessibilityRole="button"
-      accessibilityLabel={isPlaying ? 'Pause clip' : 'Play clip'}
-    >
-      {body}
-    </Pressable>
+    </View>
   );
 }
 
