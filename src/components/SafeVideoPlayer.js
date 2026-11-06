@@ -36,6 +36,7 @@ function ClipStatus({ style, title, detail, busy }) {
 function posterUriFrom(item) {
   return firstPlayableUri([
     item?.thumbnail_url,
+    item?.poster,
     item?.poster_url,
     item?.thumbnailUrl,
     item?.posterUrl,
@@ -63,6 +64,7 @@ function pauseClip(player) {
 /** Decoder lives here so leaving the screen unmounts it immediately. */
 function ActiveClipPlayer({
   resolvedUri,
+  posterUri = null,
   muted,
   loop,
   shouldPlay = true,
@@ -350,7 +352,13 @@ function SafeVideoPlayer({
   );
   const posterUri = useMemo(
     () => posterUriFrom(item),
-    [item?.thumbnail_url, item?.poster_url, item?.thumbnailUrl, item?.posterUrl]
+    [
+      item?.thumbnail_url,
+      item?.poster,
+      item?.poster_url,
+      item?.thumbnailUrl,
+      item?.posterUrl,
+    ]
   );
 
   const mounted = isMounted != null ? !!isMounted : !!isVisible;
@@ -373,6 +381,7 @@ function SafeVideoPlayer({
   return (
     <ActiveClipPlayer
       resolvedUri={resolvedUri}
+      posterUri={posterUri}
       muted={muted}
       loop={loop !== false}
       shouldPlay={playing}
