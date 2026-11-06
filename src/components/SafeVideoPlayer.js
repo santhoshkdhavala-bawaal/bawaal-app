@@ -5,8 +5,15 @@
  * Rows outside the preload window render a poster and release the decoder.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Image, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  ActivityIndicator,
+  AppState,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
 import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
@@ -69,17 +76,14 @@ function ActiveClipPlayer({
   loop,
   shouldPlay = true,
   style,
-  contentFit,
-  tapToToggle,
   onError,
   onLongPress,
 }) {
   const [failed, setFailed] = useState(false);
-  const [buffering, setBuffering] = useState(true);
-  const [hasFrame, setHasFrame] = useState(false);
   const [isPlaying, setIsPlaying] = useState(!!shouldPlay);
-  const longPressTimer = useRef(null);
   const playerRef = useRef(null);
+  const userPausedRef = useRef(false);
+  const wasShouldPlayRef = useRef(false);
   const source = useMemo(() => ({ uri: resolvedUri }), [resolvedUri]);
 
   const player = useVideoPlayer(source, (p) => {
@@ -101,8 +105,6 @@ function ActiveClipPlayer({
 
   useEffect(() => {
     setFailed(false);
-    setBuffering(true);
-    setHasFrame(false);
   }, [resolvedUri]);
 
   useEffect(() => {
@@ -111,7 +113,9 @@ function ActiveClipPlayer({
       player.muted = !!muted;
       player.loop = true;
       if (loop === false) player.loop = false;
-      if (shouldPlay) {
+      if (shouldPlay && !wasShouldPlayRef.current) userPausedRef.current = false;
+      wasShouldPlayRef.current = !!shouldPlay;
+      if (shouldPlay && !userPausedRef.current) {
         playClip(player);
         setIsPlaying(true);
       } else {
@@ -134,16 +138,13 @@ function ActiveClipPlayer({
           console.log('[Video Status]:', status);
           if (status === 'loading') {
             console.log('[Video Status]:', 'buffering');
-            setBuffering(true);
           }
-          if (status === 'readyToPlay') setBuffering(false);
           if (status === 'error' || error) {
             console.log('[Video Error]:', error);
             console.warn(
               '[SafeVideoPlayer] status error:',
               error?.message || error
             );
-            setBuffering(false);
             setFailed(true);
             onError?.(error);
           }
@@ -157,7 +158,6 @@ function ActiveClipPlayer({
           try {
             console.log('[Video Status]:', next ? 'playing' : 'paused');
             setIsPlaying(!!next);
-            if (next) setBuffering(false);
           } catch (_) {
             /* ignore */
           }
@@ -183,8 +183,6 @@ function ActiveClipPlayer({
   useEffect(() => {
     const activePlayer = player;
     return () => {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
       if (!activePlayer) return;
       try {
         pauseClip(activePlayer);
@@ -225,27 +223,22 @@ function ActiveClipPlayer({
     };
   }, []);
 
-  const clearLongPress = useCallback(() => {
-    if (longPressTimer.current != null) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-  }, []);
-
-  useEffect(() => clearLongPress, [clearLongPress]);
-
-  const onVideoTouchStart = useCallback(() => {
-    if (!onLongPress) return;
-    clearLongPress();
-    longPressTimer.current = setTimeout(() => {
-      longPressTimer.current = null;
-      try {
-        onLongPress();
-      } catch (err) {
-        console.warn('[SafeVideoPlayer] long-press failed:', err?.message || err);
+  const togglePlayback = useCallback(() => {
+    if (!player || !shouldPlay) return;
+    try {
+      if (player.playing) {
+        userPausedRef.current = true;
+        pauseClip(player);
+        setIsPlaying(false);
+      } else {
+        userPausedRef.current = false;
+        playClip(player);
+        setIsPlaying(true);
       }
-    }, 450);
-  }, [clearLongPress, onLongPress]);
+    } catch (err) {
+      console.warn('[SafeVideoPlayer] toggle failed:', err?.message || err);
+    }
+  }, [player, shouldPlay]);
 
   if (failed) {
     return (
@@ -258,50 +251,32 @@ function ActiveClipPlayer({
   }
 
   return (
-    <View
-      style={[styles.shell, style]}
-      accessibilityRole="adjustable"
+    <TouchableWithoutFeedback
+      onPress={togglePlayback}
+      onLongPress={onLongPress}
+      delayLongPress={450}
+      accessibilityRole="button"
       accessibilityLabel={isPlaying ? 'Pause clip' : 'Play clip'}
-      onTouchStart={onVideoTouchStart}
-      onTouchMove={clearLongPress}
-      onTouchEnd={clearLongPress}
-      onTouchCancel={clearLongPress}
     >
-      <View style={styles.underlay} pointerEvents="none" />
-      {posterUri ? (
-        <Image
-          source={{ uri: posterUri }}
+      <View style={[styles.shell, style]}>
+        <View style={styles.underlay} pointerEvents="none" />
+        {posterUri ? (
+          <Image
+            source={{ uri: posterUri }}
+            style={styles.video}
+            resizeMode="cover"
+          />
+        ) : null}
+        <VideoView
           style={styles.video}
-          resizeMode="cover"
+          player={player}
+          contentFit="cover"
+          nativeControls={false}
+          fullscreenOptions={{ enable: false }}
+          pointerEvents="none"
         />
-      ) : null}
-      <VideoView
-        style={styles.video}
-        player={player}
-        contentFit={contentFit}
-        nativeControls={true}
-        fullscreenOptions={{ enable: false }}
-        onFirstFrameRender={() => {
-          try {
-            setHasFrame(true);
-            setBuffering(false);
-          } catch (_) {
-            /* ignore */
-          }
-        }}
-      />
-      {buffering && !hasFrame ? (
-        <View style={styles.fallback} pointerEvents="none">
-          <ActivityIndicator color="#FFFFFF" />
-          <Text style={styles.fallbackDetail}>LOADING</Text>
-        </View>
-      ) : null}
-      {tapToToggle && shouldPlay && !isPlaying ? (
-        <View style={styles.playIconOverlay} pointerEvents="none">
-          <Ionicons name="play" size={50} color="#FFFFFF" />
-        </View>
-      ) : null}
-    </View>
+      </View>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -332,9 +307,6 @@ function SafeVideoPlayer({
   muted = true,
   loop = true,
   style,
-  contentFit = 'cover',
-  /** Arena card: show the centered play glyph while paused. */
-  tapToToggle = true,
   onError,
   onLongPress,
 }) {
@@ -386,8 +358,6 @@ function SafeVideoPlayer({
       loop={loop !== false}
       shouldPlay={playing}
       style={style}
-      contentFit={contentFit}
-      tapToToggle={tapToToggle}
       onError={onError}
       onLongPress={onLongPress}
     />
@@ -397,8 +367,7 @@ function SafeVideoPlayer({
 const styles = StyleSheet.create({
   shell: {
     width: '100%',
-    height: 450,
-    alignSelf: 'stretch',
+    height: '100%',
     backgroundColor: '#000000',
     position: 'relative',
     overflow: 'hidden',
@@ -411,13 +380,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: 'transparent',
-  },
-  playIconOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: '#000000',
   },
   fallback: {
     ...StyleSheet.absoluteFillObject,
