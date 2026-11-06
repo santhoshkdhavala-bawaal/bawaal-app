@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { isCloudAuthError, isSupabaseConfigured, supabase } from './supabase';
+import { getActiveUser } from './activeUserProfile';
 
 /**
  * Yield so React can paint loading UI before heavy file / network work.
@@ -641,6 +642,84 @@ async function uploadVideoBytes(
 }
 
 /**
+ * After a Storage upload succeeds, insert a `battles` row so Arena can play it.
+ * First payload matches the feed (`video_url`). If the live table still uses
+ * the older host/opener columns, retry with those filled in too.
+ */
+export async function insertArenaBattleRow({
+  publicUrl,
+  thumbnailUrl,
+  username,
+  caption,
+} = {}) {
+  if (!publicUrl || !isSupabaseConfigured()) return { error: null };
+
+  const active = getActiveUser?.() || {};
+  const handle = String(
+    username || active.username || active.handle || 'athlete'
+  )
+    .replace(/^@/, '')
+    .trim() || 'athlete';
+  const label = String(caption || 'Arena drop').trim() || 'Arena drop';
+  const thumb = thumbnailUrl || publicUrl;
+  const primary = {
+    video_url: publicUrl,
+    thumbnail_url: thumb,
+    username: handle,
+    caption: label,
+  };
+
+  let { error } = await supabase.from('battles').insert([primary]);
+  if (!error) {
+    console.log('Video successfully saved to database table!');
+    return { error: null };
+  }
+
+  const msg = String(error.message || error.details || '');
+  if (/column|schema cache|PGRST204|null value|host_id|not-null/i.test(msg)) {
+    const retry = await supabase.from('battles').insert([
+      {
+        host_id: handle,
+        host_username: handle,
+        title: label,
+        status: 'live',
+        opener_video_url: publicUrl,
+        creator_video_url: publicUrl,
+        video_url: publicUrl,
+        thumbnail_url: thumb,
+        username: handle,
+        caption: label,
+      },
+    ]);
+    if (!retry.error) {
+      console.log('Video successfully saved to database table!');
+      return { error: null };
+    }
+    if (/column|schema cache|PGRST204/i.test(String(retry.error.message || ''))) {
+      const lean = await supabase.from('battles').insert([
+        {
+          host_id: handle,
+          host_username: handle,
+          title: label,
+          status: 'live',
+          opener_video_url: publicUrl,
+        },
+      ]);
+      if (!lean.error) {
+        console.log('Video successfully saved to database table!');
+        return { error: null };
+      }
+      error = lean.error;
+    } else {
+      error = retry.error;
+    }
+  }
+
+  console.log('Error saving to battles table:', error.message);
+  return { error };
+}
+
+/**
  * Upload a local video to Supabase Storage (`bawaalvideos/battles/{fileName}`).
  *
  * - Yields to UI (InteractionManager) before file I/O / network
@@ -697,6 +776,12 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
         ensurePublicBawaalVideoUrl(resolvedUri) || resolvedUri.trim();
       console.log('UPLOAD_SKIP: already remote HTTPS ->', publicExisting);
       if (onProgress) onProgress(100);
+      await insertArenaBattleRow({
+        publicUrl: publicExisting,
+        thumbnailUrl: options?.thumbnailUrl || publicExisting,
+        username: options?.username,
+        caption: options?.caption,
+      });
       return publicExisting;
     }
 
@@ -764,6 +849,12 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
       }
     );
     console.log('PUBLIC_URL:', publicUrl);
+    await insertArenaBattleRow({
+      publicUrl,
+      thumbnailUrl: options?.thumbnailUrl || publicUrl,
+      username: options?.username,
+      caption: options?.caption,
+    });
     return publicUrl;
   } catch (err) {
     const msg = err?.message || String(err);

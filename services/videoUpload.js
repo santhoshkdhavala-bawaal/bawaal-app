@@ -11,6 +11,7 @@ import {
   sanitizePlayableFeedUri,
   sanitizeVideoUriForUpload,
   stabilizeLocalVideoUri,
+  insertArenaBattleRow,
 } from '../src/services/uploadService';
 
 /**
@@ -431,6 +432,11 @@ export async function uploadVideoToSupabase(
       };
       const row = safeUserId ? { ...baseRow, user_id: safeUserId } : baseRow;
       const result = await insertVideosRow(row);
+      await insertArenaBattleRow({
+        publicUrl: publicExisting,
+        thumbnailUrl: publicExisting,
+        caption: caption || 'Arena drop',
+      });
       return {
         success: true,
         data: result.data?.[0] || { ...row, video_url: publicExisting },
@@ -517,6 +523,12 @@ export async function uploadVideoToSupabase(
       `[videoUpload] public URL ready (bucket="${usedBucket}"):`,
       videoPublicUrl
     );
+
+    await insertArenaBattleRow({
+      publicUrl: videoPublicUrl,
+      thumbnailUrl: videoPublicUrl,
+      caption: caption || 'Arena drop',
+    });
 
     let safeUserId = await resolveVideosUserId(userId, session);
     if (
