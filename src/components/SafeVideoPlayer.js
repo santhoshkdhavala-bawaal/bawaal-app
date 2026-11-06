@@ -87,6 +87,10 @@ function SafeVideoPlayer({
   playerRef.current = player;
 
   useEffect(() => {
+    console.log('[Video URI]:', resolvedUri);
+  }, [resolvedUri]);
+
+  useEffect(() => {
     setFailed(false);
     setBuffering(!!resolvedUri);
     setIsPlaying(!!autoPlay && !!resolvedUri);
@@ -118,9 +122,14 @@ function SafeVideoPlayer({
     try {
       statusSub = player.addListener?.('statusChange', ({ status, error }) => {
         try {
-          if (status === 'loading') setBuffering(true);
+          console.log('[Video Status]:', status);
+          if (status === 'loading') {
+            console.log('[Video Status]:', 'buffering');
+            setBuffering(true);
+          }
           if (status === 'readyToPlay') setBuffering(false);
           if (status === 'error' || error) {
+            console.log('[Video Error]:', error);
             console.warn(
               '[SafeVideoPlayer] status error:',
               error?.message || error
@@ -137,6 +146,7 @@ function SafeVideoPlayer({
         'playingChange',
         ({ isPlaying: next }) => {
           try {
+            console.log('[Video Status]:', next ? 'playing' : 'paused');
             setIsPlaying(!!next);
             if (next) setBuffering(false);
           } catch (_) {
@@ -175,6 +185,20 @@ function SafeVideoPlayer({
       safeReleaseExpoVideoPlayer(activePlayer);
     };
   }, [player]);
+
+  useEffect(() => {
+    if (!resolvedUri) return undefined;
+    const timer = setTimeout(() => {
+      const status = playerRef.current?.status;
+      if (status === 'loading' || status === 'idle') {
+        console.log(
+          '[Video Error]:',
+          new Error(`Video stream timed out for ${resolvedUri}`)
+        );
+      }
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [resolvedUri]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
