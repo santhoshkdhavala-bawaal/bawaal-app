@@ -1,10 +1,14 @@
-import React, { useEffect, useRef, useState, memo } from 'react';
-import { View, Dimensions, StyleSheet, Image, AppState, TouchableWithoutFeedback } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import React, { memo, useEffect } from 'react';
+import {
+  AppState,
+  Image,
+  StyleSheet,
+  TouchableWithoutFeedback,
+  View,
+} from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
-import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
-
-const { width, height } = Dimensions.get('window');
+import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 
 function firstPlayableUri(candidates) {
   for (const candidate of candidates) {
@@ -14,7 +18,79 @@ function firstPlayableUri(candidates) {
   return null;
 }
 
-const SafeVideoPlayer = memo(({
+function ActiveClip({
+  videoUri,
+  thumbnailUri,
+  shouldPlay,
+  muted,
+  loop,
+  onError,
+  onLongPress,
+}) {
+  const player = useVideoPlayer(videoUri, (p) => {
+    p.loop = true;
+    p.muted = false;
+  });
+
+  useEffect(() => {
+    if (!player) return;
+    try {
+      player.loop = loop !== false;
+      player.muted = !!muted;
+      if (shouldPlay) player.play();
+      else player.pause();
+    } catch (err) {
+      console.log('VIDEO ERROR:', err, 'URL:', videoUri);
+      onError?.(err);
+    }
+  }, [player, shouldPlay, muted, loop, videoUri, onError]);
+
+  useEffect(() => {
+    if (!player) return undefined;
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') return;
+      try {
+        player.pause();
+      } catch {
+        /* ignore */
+      }
+    });
+    return () => sub.remove();
+  }, [player]);
+
+  useEffect(() => {
+    return () => {
+      safeReleaseExpoVideoPlayer(player);
+    };
+  }, [player]);
+
+  return (
+    <TouchableWithoutFeedback
+      onLongPress={onLongPress}
+      delayLongPress={450}
+      disabled={!onLongPress}
+    >
+      <View style={styles.container}>
+        {thumbnailUri ? (
+          <Image
+            source={{ uri: thumbnailUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        ) : null}
+        <VideoView
+          style={styles.video}
+          player={player}
+          contentFit="cover"
+          nativeControls={false}
+          fullscreenOptions={{ enable: false }}
+        />
+      </View>
+    </TouchableWithoutFeedback>
+  );
+}
+
+const SafeVideoPlayer = memo(function SafeVideoPlayer({
   item,
   uri,
   shouldPlay = false,
@@ -24,12 +100,10 @@ const SafeVideoPlayer = memo(({
   style,
   onError,
   onLongPress,
-}) => {
-  const videoRef = useRef(null);
-  const [isBuffering, setIsBuffering] = useState(true);
+}) {
   const videoUri = firstPlayableUri([
-    item?.video_url,
     item?.videoUrl,
+    item?.video_url,
     item?.uri,
     item?.url,
     uri,
@@ -41,58 +115,12 @@ const SafeVideoPlayer = memo(({
     item?.poster_url,
     item?.poster,
   ]);
-
-  useEffect(() => {
-    setIsBuffering(true);
-  }, [videoUri]);
-
-  useEffect(() => {
-    return () => {
-      safeUnloadExpoAvVideo(videoRef);
-    };
-  }, []);
-
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (next) => {
-      if (next === 'active') return;
-      videoRef.current?.pauseAsync?.().catch(() => {});
-    });
-    return () => sub.remove();
-  }, []);
-
   const showVideo = isMounted !== false && !!videoUri;
 
-  return (
-    <TouchableWithoutFeedback
-      onLongPress={onLongPress}
-      delayLongPress={450}
-      disabled={!onLongPress}
-    >
+  if (!showVideo) {
+    return (
       <View style={[styles.container, style]}>
-        {showVideo ? (
-          <Video
-            ref={videoRef}
-            source={{ uri: videoUri }}
-            style={styles.video}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={!!shouldPlay}
-            isLooping={loop !== false}
-            isMuted={!!muted}
-            useNativeControls={false}
-            bufferConfig={{
-              minBufferMs: 1500,
-              maxBufferMs: 3000,
-              bufferForPlaybackMs: 500,
-              bufferForPlaybackAfterRebufferMs: 1000,
-            }}
-            onLoad={() => setIsBuffering(false)}
-            onError={(e) => {
-              console.log('VIDEO ERROR:', e, 'URL:', videoUri);
-              onError?.(e);
-            }}
-          />
-        ) : null}
-        {thumbnailUri && (!showVideo || isBuffering) ? (
+        {thumbnailUri ? (
           <Image
             source={{ uri: thumbnailUri }}
             style={StyleSheet.absoluteFill}
@@ -100,20 +128,39 @@ const SafeVideoPlayer = memo(({
           />
         ) : null}
       </View>
-    </TouchableWithoutFeedback>
+    );
+  }
+
+  return (
+    <View style={[styles.frame, style]}>
+      <ActiveClip
+        videoUri={videoUri}
+        thumbnailUri={thumbnailUri}
+        shouldPlay={!!shouldPlay}
+        muted={!!muted}
+        loop={loop}
+        onError={onError}
+        onLongPress={onLongPress}
+      />
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
+  frame: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'black',
+  },
   container: {
-    width,
-    height,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'black',
   },
   video: {
+    ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    position: 'absolute',
   },
 });
 

@@ -12,9 +12,7 @@ import {
   View,
   FlatList,
   TouchableOpacity,
-  Animated,
   Share,
-  Easing,
   RefreshControl,
   Platform,
   Dimensions,
@@ -665,100 +663,25 @@ function arenaOverlayClearance(insets) {
 const GeneralReelCard = memo(function GeneralReelCard({
   item,
   onOpen,
-  onHype,
   shouldPlay = false,
   isMounted = false,
-  /** When true, this card is open in ArenaReelViewer — hide duplicate mute/menu. */
+  /** When true, this card is open in ArenaReelViewer — hide duplicate mute. */
   immersiveOpen = false,
 }) {
   const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
-  const [engageOpen, setEngageOpen] = useState(false);
-  const [banterOpen, setBanterOpen] = useState(false);
   const [muted, setMuted] = useState(true);
-  const menuAnim = useRef(new Animated.Value(0)).current;
-  const fireScale = useRef(new Animated.Value(0)).current;
-  const fireOpacity = useRef(new Animated.Value(0)).current;
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
 
-  useEffect(() => {
-    Animated.timing(menuAnim, {
-      toValue: engageOpen ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [engageOpen, menuAnim]);
-
-  const playFireBurst = useCallback(() => {
-    fireScale.setValue(0.4);
-    fireOpacity.setValue(1);
-    Animated.parallel([
-      Animated.sequence([
-        Animated.timing(fireScale, {
-          toValue: 1.35,
-          duration: 220,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fireScale, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.sequence([
-        Animated.delay(280),
-        Animated.timing(fireOpacity, {
-          toValue: 0,
-          duration: 320,
-          useNativeDriver: true,
-        }),
-      ]),
-    ]).start();
-  }, [fireOpacity, fireScale]);
-
-  const onFirePress = useCallback(() => {
-    onHype?.(item.id);
-    playFireBurst();
-  }, [item.id, onHype, playFireBurst]);
-
   /** Open reel modal via JS navigation only — never native VideoView fullscreen. */
   const openImmersive = useCallback(() => {
     try {
-      setEngageOpen(false);
-      setBanterOpen(false);
-      // Pass current mute so immersive inherits audio without a second control flash
       onOpen?.(item, { muted });
     } catch (err) {
       console.warn('[ArenaFeed] openImmersive failed:', err?.message || err);
     }
   }, [item, onOpen, muted]);
-
-  const openBanterSheet = useCallback(() => {
-    setEngageOpen(false);
-    setBanterOpen(true);
-  }, []);
-
-  const onSharePress = useCallback(async () => {
-    setEngageOpen(false);
-    const postId = item?.id != null ? String(item.id) : '';
-    if (!postId) return;
-    try {
-      await Share.share({
-        title: 'BAWAAL Arena Reel',
-        message: `Check out this challenge on BAWAAL: https://bawaal.app/reel/${postId}`,
-      });
-    } catch (error) {
-      console.error('[ArenaFeed] share failed:', error);
-    }
-  }, [item?.id]);
-
-  const menuTranslateY = menuAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [28, 0],
-  });
-  const menuOpacity = menuAnim;
 
   const toggleMute = useCallback(() => {
     setMuted((m) => !m);
@@ -805,19 +728,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.fireBurst,
-          {
-            opacity: fireOpacity,
-            transform: [{ scale: fireScale }],
-          },
-        ]}
-      >
-        <Text style={styles.fireBurstText}>🔥</Text>
-      </Animated.View>
-
       <View
         style={[styles.reelBottomLeft, { bottom: tabBarHeight + 16 }]}
         pointerEvents="none"
@@ -834,69 +744,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
         </Text>
       </View>
 
-      {!immersiveOpen ? (
-        <View style={[styles.reelEngageWrap, { bottom: tabBarHeight + 12 }]}>
-          <Animated.View
-            pointerEvents={engageOpen ? 'auto' : 'none'}
-            style={[
-              styles.engageDrawer,
-              {
-                opacity: menuOpacity,
-                transform: [{ translateY: menuTranslateY }],
-              },
-            ]}
-          >
-            <TouchableOpacity
-              style={styles.reelActionBtn}
-              onPress={onFirePress}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.reelActionEmoji}>🔥</Text>
-              <Text style={styles.reelActionCount}>{item.hypeCount || 0}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.reelActionBtn}
-              onPress={openBanterSheet}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.reelActionEmoji}>💬</Text>
-              <Text style={styles.reelActionCount}>BANTER</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.reelActionBtn}
-              onPress={onSharePress}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.reelActionEmoji}>🚀</Text>
-              <Text style={styles.reelActionCount}>SHARE</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          <TouchableOpacity
-            style={styles.engageToggle}
-            onPress={() => setEngageOpen((v) => !v)}
-            activeOpacity={0.85}
-            accessibilityLabel={
-              engageOpen ? 'Close engage menu' : 'Open engage menu'
-            }
-          >
-            <Text
-              style={[
-                styles.engageToggleText,
-                engageOpen && styles.engageToggleTextOpen,
-              ]}
-            >
-              {engageOpen ? '✕' : '⋮'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
-      <BanterBottomSheet
-        visible={banterOpen}
-        reel={item}
-        onClose={() => setBanterOpen(false)}
-      />
     </View>
   );
 });
@@ -1083,6 +930,8 @@ export default function ArenaFeed({ navigation, route }) {
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [headerBanterOpen, setHeaderBanterOpen] = useState(false);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
   const { items: videoFeedItems, refresh: refreshVideoFeed } = useArenaFeed();
   const communityCallouts = useMemo(
@@ -1410,6 +1259,28 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [visibleFeed]);
 
+  const activeFeedItem = feedWithShelves[activeIndex] || null;
+  const activeSettingsReel =
+    activeFeedItem?.type === 'reel' ? activeFeedItem : null;
+
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [activeIndex]);
+
+  const shareActiveReel = useCallback(async () => {
+    setSettingsOpen(false);
+    const postId = activeSettingsReel?.id != null ? String(activeSettingsReel.id) : '';
+    if (!postId) return;
+    try {
+      await Share.share({
+        title: 'BAWAAL Arena Reel',
+        message: `Check out this challenge on BAWAAL: https://bawaal.app/reel/${postId}`,
+      });
+    } catch (error) {
+      console.error('[ArenaFeed] share failed:', error);
+    }
+  }, [activeSettingsReel]);
+
   const openGameOn = useCallback(() => {
     setGameOnOpen(true);
   }, []);
@@ -1504,7 +1375,6 @@ export default function ArenaFeed({ navigation, route }) {
             <GeneralReelCard
               item={item}
               onOpen={openReel}
-              onHype={hypeReel}
               shouldPlay={shouldPlay}
               isMounted={isMounted}
               // Hide ALL feed overlays while any fullscreen reel is open
@@ -1534,7 +1404,6 @@ export default function ArenaFeed({ navigation, route }) {
       openReel,
       openResponses,
       openChallengeRespond,
-      hypeReel,
       activeIndex,
       activeReel,
       screenHeight,
@@ -1619,19 +1488,70 @@ export default function ArenaFeed({ navigation, route }) {
           screenName="ARENA"
           onBrandPress={openProfileGateway}
           rightSlot={
-            <TouchableOpacity
-              style={styles.gameOnPill}
-              onPress={() => openGameOn()}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Open GAME ON hub"
-            >
-              <Text style={styles.gameOnPillText}>GAME ON</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              {activeSettingsReel ? (
+                <TouchableOpacity
+                  style={styles.gameOnPill}
+                  onPress={() => setSettingsOpen((open) => !open)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={settingsOpen ? 'Close settings' : 'Open settings'}
+                >
+                  <Text style={styles.gameOnPillText}>{settingsOpen ? '✕' : '⋮'}</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={styles.gameOnPill}
+                onPress={() => openGameOn()}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Open GAME ON hub"
+              >
+                <Text style={styles.gameOnPillText}>GAME ON</Text>
+              </TouchableOpacity>
+            </View>
           }
         />
+        {settingsOpen && activeSettingsReel ? (
+          <View style={styles.headerSettingsMenu}>
+            <TouchableOpacity
+              style={styles.headerSettingsItem}
+              onPress={() => {
+                hypeReel(activeSettingsReel.id);
+                setSettingsOpen(false);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.headerSettingsText}>
+                🔥  {activeSettingsReel.hypeCount || 0}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerSettingsItem}
+              onPress={() => {
+                setSettingsOpen(false);
+                setHeaderBanterOpen(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.headerSettingsText}>BANTER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerSettingsItem}
+              onPress={shareActiveReel}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.headerSettingsText}>SHARE</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
 
+      <BanterBottomSheet
+        visible={headerBanterOpen && !!activeSettingsReel}
+        reel={activeSettingsReel}
+        onClose={() => setHeaderBanterOpen(false)}
+      />
       <GameOnHub visible={gameOnOpen} onClose={closeGameOn} />
 
       <ArenaReelViewer
@@ -1724,6 +1644,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerSettingsMenu: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    marginRight: 16,
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  headerSettingsItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.12)',
+  },
+  headerSettingsText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   reelCard: {
     flex: 1,
