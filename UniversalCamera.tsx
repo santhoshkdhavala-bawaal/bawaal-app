@@ -32,7 +32,6 @@ import {
   useMicrophonePermissions,
   type CameraType,
 } from 'expo-camera';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { Video as ExpoAvVideo, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -54,7 +53,6 @@ import DeviceGalleryModal, {
 import { stabilizeLocalVideoUri } from './src/services/uploadService';
 import { lockLocalRecording } from './src/services/recordToPostService';
 import { saveVideoToGallery } from './src/services/galleryMediaService';
-import { isExpoGo } from './src/utils/runtimeEnv';
 import {
   coalesceRecordingUri,
   ensurePlayableRecordingUri,
@@ -441,38 +439,6 @@ function safeDurationSec(value: unknown, fallback = 15): number {
   return Math.max(1, n);
 }
 
-/** Pause + unload so preview audio cannot ghost after Post / leave. */
-function stopAndUnloadPlayer(player: {
-  pause?: () => void;
-  muted?: boolean;
-  volume?: number;
-  replace?: (source: null) => void;
-  replaceAsync?: (source: null) => Promise<unknown>;
-} | null) {
-  if (!player) return;
-  try {
-    player.pause?.();
-  } catch {
-    /* ignore */
-  }
-  try {
-    player.muted = true;
-    player.volume = 0;
-  } catch {
-    /* ignore */
-  }
-  try {
-    // expo-video equivalent of unloadAsync — clears decoder + audio session
-    if (typeof player.replace === 'function') {
-      player.replace(null);
-    } else if (typeof player.replaceAsync === 'function') {
-      void player.replaceAsync(null);
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 type ClipPreviewModalProps = {
   visible: boolean;
   uri: string | null;
@@ -485,57 +451,6 @@ type ClipPreviewModalProps = {
     slowMoEndSec: number;
   }) => void;
 };
-
-/** Expo Go: black shell — never mounts expo-video / native AV. */
-function ExpoGoClipPreviewModal({
-  visible,
-  uri,
-  fallbackDuration,
-  onRetake,
-  onNext,
-}: ClipPreviewModalProps) {
-  const bootDur = safeDurationSec(fallbackDuration, 15);
-  if (!visible || !uri) return null;
-  return (
-    <Modal visible animationType="slide" onRequestClose={onRetake}>
-      <View style={previewStyles.root}>
-        <StatusBar barStyle="light-content" />
-        <Text style={previewStyles.title}>Slow-Mo Preview</Text>
-        <View style={previewStyles.videoWrap}>
-          <View style={previewStyles.expoGoPlaceholder}>
-            <Text style={previewStyles.expoGoPlaceholderTitle}>PREVIEW</Text>
-            <Text style={previewStyles.expoGoPlaceholderBody}>
-              Video playback needs a development build
-            </Text>
-          </View>
-        </View>
-        <View style={previewStyles.actions}>
-          <TouchableOpacity
-            style={previewStyles.secondaryBtn}
-            onPress={onRetake}
-            activeOpacity={0.85}
-          >
-            <Text style={previewStyles.secondaryText}>RETAKE</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={previewStyles.primaryBtn}
-            onPress={() =>
-              onNext({
-                slowMoEnabled: false,
-                slowMoRate: 1,
-                slowMoStartSec: 0,
-                slowMoEndSec: bootDur,
-              })
-            }
-            activeOpacity={0.9}
-          >
-            <Text style={previewStyles.primaryText}>NEXT TO POST</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 function NativeClipPreviewModal({
   visible,
@@ -556,6 +471,7 @@ function NativeClipPreviewModal({
   const endSecRef = useRef(bootDur);
   const rateRef = useRef(0.5);
   const lastRateRef = useRef(1);
+  const videoRef = useRef<ExpoAvVideo>(null);
   const slowMoEnabled = slowMoRate > 0;
 
   useEffect(() => {
@@ -564,58 +480,29 @@ function NativeClipPreviewModal({
   }, [startSec, endSec]);
 
   useEffect(() => {
-    // 0 = No Slow-Mo → always play at 1x inside the region too
     rateRef.current = slowMoRate > 0 ? slowMoRate : 1;
   }, [slowMoRate]);
 
-  // Only attach a source while the preview is on-screen — kills ghost audio
-  const player = useVideoPlayer(
-    visible && uri ? { uri } : null,
-    (p) => {
-      p.loop = true;
-      p.muted = false;
-      try {
-        p.timeUpdateEventInterval = 0.08;
-      } catch {
-        /* ignore */
-      }
-    }
-  );
+  const releasePreview = useCallback(() => {
+    const node = videoRef.current;
+    if (!node) return;
+    node.pauseAsync?.().catch(() => {});
+    node.unloadAsync?.().catch(() => {});
+  }, []);
 
-  // Play / pause while visible; when hidden → hard stop + unload (ghost fix)
-  useEffect(() => {
-    if (!player) return;
-    if (!visible) {
-      stopAndUnloadPlayer(player);
-      return;
-    }
-    try {
-      if (playing) player.play();
-      else player.pause();
-    } catch {
-      /* ignore */
-    }
-  }, [player, playing, visible]);
-
-  // Unmount safety net — always tear down audio
   useEffect(() => {
     return () => {
-      stopAndUnloadPlayer(player);
+      releasePreview();
     };
-  }, [player]);
+  }, [releasePreview]);
 
-  useEffect(() => {
-    if (!player || !visible) return;
-    let sub: { remove?: () => void } | null = null;
-    let statusSub: { remove?: () => void } | null = null;
-    let durTimer: ReturnType<typeof setTimeout> | null = null;
-
-    try {
-      const syncDuration = () => {
-        const nativeDur = Number(player.duration);
-        if (!Number.isFinite(nativeDur) || nativeDur <= 0.2) return;
-        const safeDur = safeDurationSec(nativeDur, bootDur);
-        setDuration(safeDur);
+  const onPlaybackStatusUpdate = useCallback(
+    (status: { isLoaded?: boolean; durationMillis?: number; positionMillis?: number }) => {
+      if (!status?.isLoaded) return;
+      const durMs = Number(status.durationMillis);
+      if (Number.isFinite(durMs) && durMs > 200) {
+        const safeDur = safeDurationSec(durMs / 1000, bootDur);
+        setDuration((prev) => (Math.abs(prev - safeDur) > 0.05 ? safeDur : prev));
         setStartSec((s) => {
           const next = Math.max(0, Math.min(Number(s) || 0, safeDur - MIN_TRIM_SPAN));
           return Number.isFinite(next) ? next : 0;
@@ -628,57 +515,30 @@ function NativeClipPreviewModal({
           );
           return Number.isFinite(next) ? next : safeDur;
         });
-      };
-      durTimer = setTimeout(syncDuration, 150);
-      statusSub = player.addListener?.('statusChange', syncDuration);
-
-      sub = player.addListener?.(
-        'timeUpdate',
-        (payload: { currentTime?: number }) => {
-          const t =
-            typeof payload?.currentTime === 'number'
-              ? payload.currentTime
-              : Number(player.currentTime) || 0;
-          setPlayheadSec(t);
-
-          const s = startSecRef.current;
-          const e = endSecRef.current;
-          const inSlow = t >= s && t <= e;
-          const nextRate = inSlow ? rateRef.current : 1;
-          if (Math.abs(nextRate - lastRateRef.current) > 0.01) {
-            try {
-              player.playbackRate = nextRate;
-              lastRateRef.current = nextRate;
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-      );
-    } catch {
-      /* ignore */
-    }
-
-    return () => {
-      if (durTimer) clearTimeout(durTimer);
-      try {
-        sub?.remove?.();
-        statusSub?.remove?.();
-      } catch {
-        /* ignore */
       }
-    };
-  }, [player, visible, bootDur]);
+      const t = (Number(status.positionMillis) || 0) / 1000;
+      setPlayheadSec(t);
+      const inSlow = t >= startSecRef.current && t <= endSecRef.current;
+      const nextRate = inSlow ? rateRef.current : 1;
+      if (Math.abs(nextRate - lastRateRef.current) > 0.01) {
+        lastRateRef.current = nextRate;
+        videoRef.current
+          ?.setStatusAsync?.({ rate: nextRate, shouldCorrectPitch: true })
+          .catch(() => {});
+      }
+    },
+    [bootDur]
+  );
 
   const handleRetake = useCallback(() => {
     setPlaying(false);
-    stopAndUnloadPlayer(player);
+    releasePreview();
     onRetake();
-  }, [player, onRetake]);
+  }, [onRetake, releasePreview]);
 
   const handleNextToPost = useCallback(() => {
     setPlaying(false);
-    stopAndUnloadPlayer(player);
+    releasePreview();
     const dur = safeDurationSec(duration, bootDur);
     const start = Math.max(0, Math.min(Number(startSec) || 0, dur - MIN_TRIM_SPAN));
     const end = Math.min(
@@ -692,15 +552,7 @@ function NativeClipPreviewModal({
       slowMoStartSec: Number.isFinite(start) ? start : 0,
       slowMoEndSec: Number.isFinite(end) ? end : dur,
     });
-  }, [
-    player,
-    onNext,
-    slowMoRate,
-    startSec,
-    endSec,
-    duration,
-    bootDur,
-  ]);
+  }, [onNext, releasePreview, slowMoRate, startSec, endSec, duration, bootDur]);
 
   if (!visible || !uri) return null;
 
@@ -711,11 +563,17 @@ function NativeClipPreviewModal({
         <Text style={previewStyles.title}>Slow-Mo Preview</Text>
 
         <View style={previewStyles.videoWrap}>
-          <VideoView
+          <ExpoAvVideo
+            ref={videoRef}
+            source={{ uri }}
             style={previewStyles.video}
-            player={player}
-            contentFit="cover"
-            nativeControls={false}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={playing}
+            isLooping
+            isMuted={false}
+            useNativeControls={false}
+            progressUpdateIntervalMillis={80}
+            onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           />
           <TouchableOpacity
             style={previewStyles.playOverlay}
@@ -742,14 +600,7 @@ function NativeClipPreviewModal({
           }}
           onSeekPlayhead={(sec) => {
             setPlayheadSec(sec);
-            try {
-              if (player) {
-                // eslint-disable-next-line react-hooks/immutability -- VideoPlayer seek API
-                player.currentTime = sec;
-              }
-            } catch {
-              /* ignore */
-            }
+            videoRef.current?.setPositionAsync(Math.round(sec * 1000)).catch(() => {});
           }}
         />
 
@@ -803,9 +654,6 @@ function NativeClipPreviewModal({
 }
 
 function ClipPreviewModal(props: ClipPreviewModalProps) {
-  if (isExpoGo) {
-    return <ExpoGoClipPreviewModal {...props} />;
-  }
   return <NativeClipPreviewModal {...props} />;
 }
 
