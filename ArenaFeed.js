@@ -17,7 +17,6 @@ import {
   RefreshControl,
   Platform,
   Dimensions,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -69,7 +68,6 @@ const GOLD = FLAME_ORANGE;
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
-  minimumViewTime: 150,
 };
 
 const DEMO_ATHLETE_HANDLES = [
@@ -957,39 +955,30 @@ export default function ArenaFeed({ navigation, route }) {
   /** Index of the row that has settled in the viewport. */
   const [activeIndex, setActiveIndex] = useState(0);
   const [videos, setVideos] = useState([]);
-  const [page, setPage] = useState(0);
   const ingestedIds = useRef(new Set());
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
-  const pagingRef = useRef(false);
-  const pageRef = useRef(0);
-  const hasMoreRef = useRef(true);
 
-  const loadVideos = useCallback(async (p) => {
-    if (!isSupabaseConfigured() || pagingRef.current || !hasMoreRef.current) return;
-    pagingRef.current = true;
-    try {
-      const { data, error } = await supabase
-        .from('battles')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(p * 5, p * 5 + 4);
-      if (error) {
-        console.warn('[ArenaFeed] battles page failed:', error.message || error);
-        return;
-      }
-      if (!data || data.length < 5) hasMoreRef.current = false;
-      if (data) {
-        setVideos((prev) => (p === 0 ? data : [...prev, ...data]));
-      }
-    } finally {
-      pagingRef.current = false;
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('battles')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) {
+      console.log('SUPABASE ERROR', error);
+    } else {
+      setVideos(data || []);
     }
   }, []);
 
   useEffect(() => {
-    loadVideos(0);
-  }, [loadVideos]);
+    if (!isSupabaseConfigured()) {
+      console.log('SUPABASE ERROR', new Error('Supabase is not configured'));
+      return;
+    }
+    load();
+  }, [load]);
 
   // Re-assert AV session when Arena mounts (camera/record may have changed it)
   useEffect(() => {
@@ -1275,13 +1264,6 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [feedItems, videos]);
 
-  useEffect(() => {
-    Alert.alert(
-      'BAWAAL DEBUG',
-      `Total Videos: ${videos.length} \n 4th URL: ${videos[3]?.videoUrl || 'NULL/MISSING'}`
-    );
-  }, [videos]);
-
   /**
    * Vertical feed with inline horizontal challenge shelves every N media rows.
    * Cold start: never place a shelf at list index 0 or 1 — leading rows are video.
@@ -1498,22 +1480,53 @@ export default function ArenaFeed({ navigation, route }) {
     [screenHeight]
   );
 
-  const feedKeyExtractor = useCallback((item, index) => {
-    if (item?.id != null) return item.id.toString();
-    return index.toString();
-  }, []);
+  const battleClips = useMemo(
+    () =>
+      videos.map((row) => {
+        const videoUrl = battleRowVideoUrl(row);
+        return {
+          ...row,
+          video_url: videoUrl,
+          videoUrl,
+          thumbnail_url: row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
+          username: row.username || row.handle || row.author || row.creator,
+          caption: row.caption || row.title || row.target,
+        };
+      }),
+    [videos]
+  );
+
+  const renderBattleClip = useCallback(
+    ({ item, index }) => (
+      <VideoItem
+        item={item}
+        isActive={Math.abs(index - activeIndex) <= 1}
+        shouldPlay={index === activeIndex}
+      />
+    ),
+    [activeIndex]
+  );
+
+  const emptyBattleList = useMemo(
+    () => (
+      <Text style={styles.emptySupabase}>
+        No videos yet. Check Supabase table rows.
+      </Text>
+    ),
+    []
+  );
 
   return (
     <View style={styles.container}>
       <FlatList
         ref={listRef}
         style={styles.feedList}
-        data={feedWithShelves}
-        keyExtractor={feedKeyExtractor}
-        renderItem={renderFeedItem}
-        ListEmptyComponent={emptyFilter}
+        data={battleClips}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderBattleClip}
+        ListEmptyComponent={emptyBattleList}
         contentContainerStyle={
-          feedWithShelves.length === 0
+          battleClips.length === 0
             ? styles.scrollContentEmpty
             : styles.scrollContent
         }
@@ -1530,14 +1543,6 @@ export default function ArenaFeed({ navigation, route }) {
         initialNumToRender={3}
         getItemLayout={getFeedItemLayout}
         extraData={activeIndex}
-        onEndReachedThreshold={0.5}
-        onEndReached={() => {
-          if (pagingRef.current || !hasMoreRef.current) return;
-          const n = pageRef.current + 1;
-          pageRef.current = n;
-          setPage(n);
-          loadVideos(n);
-        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1659,6 +1664,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 110,
     paddingTop: 0,
+  },
+  emptySupabase: {
+    color: '#fff',
+    textAlign: 'center',
+    marginTop: 100,
   },
   emptyFeed: {
     flex: 1,
