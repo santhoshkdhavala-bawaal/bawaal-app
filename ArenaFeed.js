@@ -67,6 +67,7 @@ const GOLD = FLAME_ORANGE;
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 80,
+  minimumViewTime: 150,
 };
 
 const DEMO_ATHLETE_HANDLES = [
@@ -368,12 +369,13 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
 
 /**
  * Memoized Arena feed video item.
- * Only the active row mounts a decoder. Every other row keeps the thumbnail.
+ * The active row and its neighbor stay mounted. Only the centered row plays.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
   item = null,
   shouldPlay = false,
+  isActive = false,
   style,
   label = null,
   onLongPress = null,
@@ -405,20 +407,19 @@ const FeedVideoItem = memo(function FeedVideoItem({
             videoUrl: playUri,
           }}
           shouldPlay={!!shouldPlay}
-          isActive={!!shouldPlay}
+          isActive={!!isActive}
         />
       </View>
     </TouchableWithoutFeedback>
   );
 });
 
-/** Resolve the playable URL, then mount VideoItem only for the active row. */
+/** Resolve the playable URL. Neighbors stay mounted; only the centered row plays. */
 const ClipSurface = memo(function ClipSurface({
   uri,
   source,
   label,
   style,
-  muted = true,
   shouldPlay = false,
   isMounted = false,
   onLongPress = null,
@@ -436,10 +437,8 @@ const ClipSurface = memo(function ClipSurface({
     <FeedVideoItem
       uri={playUri}
       item={playSource}
-      muted={muted}
       shouldPlay={shouldPlay}
-      isMounted={isMounted}
-      loop
+      isActive={isMounted}
       style={style}
       label={label}
       onLongPress={onLongPress}
@@ -1459,10 +1458,10 @@ export default function ArenaFeed({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        removeClippedSubviews
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        initialNumToRender={2}
+        removeClippedSubviews={false}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        initialNumToRender={3}
         getItemLayout={getFeedItemLayout}
         extraData={activeIndex}
         refreshControl={
