@@ -31,7 +31,7 @@ export async function safeUnloadExpoAvVideo(videoRefOrNode) {
   }
 }
 
-/** Best-effort release for expo-video VideoPlayer. */
+/** Best-effort release for a player that exposes pause/replace. */
 export function safeReleaseExpoVideoPlayer(player) {
   if (!player) return;
   try {

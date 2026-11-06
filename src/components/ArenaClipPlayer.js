@@ -1,9 +1,8 @@
 /**
  * Arena / Battle feed clip player.
- * Prefers real expo-av Video; falls back to expo-video so clips still loop
- * when Metro stubs expo-av (no "dev client" text wall).
+ * Plays with expo-av. Idle rows stay black, with an optional thumbnail.
  */
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,16 +11,11 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import {
   resolvePlayableVideoUri,
   sanitizePlayableFeedUri,
 } from '../services/uploadService';
-import {
-  safeReleaseExpoVideoPlayer,
-  safeUnloadExpoAvVideo,
-} from '../utils/safeUnloadVideo';
-import SportsFeedPlaceholder from './SportsFeedPlaceholder';
+import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
 import {
   isUsablePlaybackUri,
   resolvePosterSource,
@@ -241,112 +235,6 @@ function ExpoAvClipPlayer({
   );
 }
 
-/** expo-video fallback — works when expo-av is Metro-stubbed. */
-function ExpoVideoClipPlayer({
-  resolved,
-  style,
-  label,
-  muted,
-  loop,
-  autoPlay,
-  active,
-}) {
-  const [paused, setPaused] = useState(!autoPlay);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-
-  const player = useVideoPlayer(resolved ? { uri: resolved } : null, (p) => {
-    try {
-      p.loop = !!loop;
-      p.muted = !!muted;
-      if (autoPlay) p.play();
-    } catch {
-      /* ignore */
-    }
-  });
-
-  useEffect(() => {
-    if (!player || !resolved) return undefined;
-    let cancelled = false;
-    const t = setTimeout(() => {
-      if (cancelled) return;
-      try {
-        player.muted = !!muted;
-        player.loop = !!loop;
-        if (active && autoPlay && !paused) player.play();
-        else player.pause();
-        setLoading(false);
-      } catch (err) {
-        console.warn('[ArenaClipPlayer] expo-video status:', err?.message || err);
-        setFailed(true);
-        setLoading(false);
-      }
-    }, 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [active, autoPlay, loop, muted, paused, player, resolved]);
-
-  useEffect(() => {
-    return () => {
-      safeReleaseExpoVideoPlayer(player);
-    };
-  }, [player]);
-
-  const togglePlay = useCallback(() => {
-    if (failed || !player) return;
-    setPaused((p) => {
-      const next = !p;
-      try {
-        if (next) player.pause();
-        else player.play();
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  }, [failed, player]);
-
-  if (failed) {
-    return (
-      <View style={[styles.shell, style, styles.fallback]}>
-        <Text style={styles.fallbackTitle}>CLIP UNAVAILABLE</Text>
-      </View>
-    );
-  }
-
-  return (
-    <ClipShell
-      style={style}
-      onPress={togglePlay}
-      accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
-    >
-      <VideoView
-        style={styles.videoPlayer}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
-      />
-      {loading ? (
-        <View style={styles.loading} pointerEvents="none">
-          <ActivityIndicator color="#FFFFFF" />
-        </View>
-      ) : null}
-      {paused ? (
-        <View style={styles.playBadge} pointerEvents="none">
-          <Text style={styles.playBadgeText}>▶ PLAY</Text>
-        </View>
-      ) : null}
-      {!!label ? (
-        <View style={styles.corner} pointerEvents="none">
-          <Text style={styles.cornerText}>{label}</Text>
-        </View>
-      ) : null}
-    </ClipShell>
-  );
-}
-
 function ArenaClipPlayer({
   uri: uriProp,
   source,
@@ -386,82 +274,27 @@ function ArenaClipPlayer({
     );
   }
 
-  // Prefer native expo-av when the real module is present (npm start / EAS)
-  // Missing / failed URI → black shell (no sync bundled-mp4 swap)
-  if (AvVideo) {
+  if (!AvVideo) {
     return (
-      <ExpoAvClipPlayer
-        key={`av-${resolved || 'fallback'}`}
-        resolved={resolved}
-        style={style}
-        label={label}
-        muted={muted}
-        loop={loop}
-        autoPlay={autoPlay}
-        active={active}
-        posterUri={posterUri}
-      />
+      <View style={[styles.shell, style, styles.idle]}>
+        <View style={styles.blackUnderlay} />
+      </View>
     );
   }
 
-  // Fallback: expo-video auto-loop when expo-av is stubbed — plays file:// + https
-  const expoVideoUri = resolved || null;
   return (
-    <ExpoVideoErrorBoundary
+    <ExpoAvClipPlayer
+      key={`av-${resolved || 'fallback'}`}
+      resolved={resolved}
       style={style}
       label={label}
-      seed={resolved || 'fallback'}
-    >
-      {expoVideoUri ? (
-        <ExpoVideoClipPlayer
-          key={`ev-${expoVideoUri}`}
-          resolved={expoVideoUri}
-          style={style}
-          label={label}
-          muted={muted}
-          loop={loop}
-          autoPlay={autoPlay}
-          active={active}
-        />
-      ) : (
-        <View style={[styles.shell, style, styles.fallback]}>
-          <View style={styles.blackUnderlay} />
-          <ActivityIndicator color="#FFFFFF" style={{ marginBottom: 8 }} />
-          <Text style={styles.fallbackTitle}>{label || 'BAWAAL CLIP'}</Text>
-          <Text style={styles.fallbackSub}>Loading clip…</Text>
-        </View>
-      )}
-    </ExpoVideoErrorBoundary>
+      muted={muted}
+      loop={loop}
+      autoPlay={autoPlay}
+      active={active}
+      posterUri={posterUri}
+    />
   );
-}
-
-class ExpoVideoErrorBoundary extends React.Component {
-  state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
-  componentDidCatch(error) {
-    console.warn('[ArenaClipPlayer] expo-video crashed:', error?.message || error);
-  }
-
-  render() {
-    if (this.state.failed) {
-      return (
-        <View style={[styles.shell, this.props.style]}>
-          <SportsFeedPlaceholder
-            style={StyleSheet.absoluteFill}
-            label={this.props.label || 'BAWAAL CLIP'}
-            seed={String(this.props.seed || 'clip').length}
-            variant="feed"
-            showExpoBadge={false}
-          />
-        </View>
-      );
-    }
-    return this.props.children;
-  }
 }
 
 const styles = StyleSheet.create({

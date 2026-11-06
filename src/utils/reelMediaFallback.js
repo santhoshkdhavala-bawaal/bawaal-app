@@ -29,7 +29,7 @@ export function isUsablePlaybackUri(uri) {
 }
 
 /**
- * expo-av / expo-video source for feed players: URI object only.
+ * expo-av source for feed players: URI object only.
  * Returns null when the URI is unusable — callers must show a black shell
  * instead of sync-swapping to the bundled sample (freezes the JS thread).
  * @param {string|null|undefined} uri

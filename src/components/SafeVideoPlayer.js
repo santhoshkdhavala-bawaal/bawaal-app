@@ -1,14 +1,14 @@
-import React, { memo, useEffect } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import {
   AppState,
-  Image,
   StyleSheet,
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { ResizeMode, Video } from 'expo-av';
+import { Image } from 'expo-image';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
-import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
+import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
 
 function firstPlayableUri(candidates) {
   for (const candidate of candidates) {
@@ -27,42 +27,22 @@ function ActiveClip({
   onError,
   onLongPress,
 }) {
-  const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = true;
-    p.muted = false;
-  });
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    if (!player) return;
-    try {
-      player.loop = loop !== false;
-      player.muted = !!muted;
-      if (shouldPlay) player.play();
-      else player.pause();
-    } catch (err) {
-      console.log('VIDEO ERROR:', err, 'URL:', videoUri);
-      onError?.(err);
-    }
-  }, [player, shouldPlay, muted, loop, videoUri, onError]);
-
-  useEffect(() => {
-    if (!player) return undefined;
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') return;
-      try {
-        player.pause();
-      } catch {
-        /* ignore */
-      }
+      videoRef.current?.pauseAsync?.().catch(() => {});
     });
     return () => sub.remove();
-  }, [player]);
+  }, []);
 
   useEffect(() => {
+    const node = videoRef.current;
     return () => {
-      safeReleaseExpoVideoPlayer(player);
+      void safeUnloadExpoAvVideo(node);
     };
-  }, [player]);
+  }, [videoUri]);
 
   return (
     <TouchableWithoutFeedback
@@ -75,15 +55,22 @@ function ActiveClip({
           <Image
             source={{ uri: thumbnailUri }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
           />
         ) : null}
-        <VideoView
+        <Video
+          ref={videoRef}
+          source={{ uri: videoUri }}
           style={styles.video}
-          player={player}
-          contentFit="cover"
-          nativeControls={false}
-          fullscreenOptions={{ enable: false }}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={!!shouldPlay}
+          isLooping={loop !== false}
+          isMuted={!!muted}
+          useNativeControls={false}
+          onError={(err) => {
+            console.log('VIDEO ERROR:', err, 'URL:', videoUri);
+            onError?.(err);
+          }}
         />
       </View>
     </TouchableWithoutFeedback>
@@ -124,7 +111,7 @@ const SafeVideoPlayer = memo(function SafeVideoPlayer({
           <Image
             source={{ uri: thumbnailUri }}
             style={StyleSheet.absoluteFill}
-            resizeMode="cover"
+            contentFit="cover"
           />
         ) : null}
       </View>

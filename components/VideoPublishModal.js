@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
 import { uploadVideoToSupabase } from '../services/videoUpload';
 import { BAWAAL_SPORTS_WITHOUT_ALL } from '../src/constants/sports';
 import { sanitizePlayableFeedUri } from '../src/services/uploadService';
@@ -204,108 +203,6 @@ function ExpoAvPreview({
   );
 }
 
-function ExpoVideoPreview({
-  uri,
-  visible,
-  isPlaying,
-  playbackRate,
-  onTogglePlay,
-  onSelectRate,
-  onReady,
-  onError,
-}) {
-  const [loading, setLoading] = useState(true);
-  const player = useVideoPlayer(uri ? { uri } : null, (p) => {
-    try {
-      p.loop = true;
-      p.muted = false;
-      p.playbackRate = Number(playbackRate) || 1;
-      if (visible && isPlaying) p.play();
-      else p.pause();
-    } catch {
-      /* ignore */
-    }
-  });
-
-  useEffect(() => {
-    setLoading(true);
-    if (!player || !uri) return undefined;
-    let cancelled = false;
-    const t = setTimeout(() => {
-      if (cancelled) return;
-      try {
-        player.loop = true;
-        player.muted = false;
-        player.playbackRate = Number(playbackRate) || 1;
-        if (visible && isPlaying) player.play();
-        else player.pause();
-        setLoading(false);
-        onReady?.();
-      } catch (err) {
-        setLoading(false);
-        onError?.(err);
-      }
-    }, 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [isPlaying, onError, onReady, playbackRate, player, uri, visible]);
-
-  const togglePlayPause = () => {
-    try {
-      if (!player) {
-        onTogglePlay?.();
-        return;
-      }
-      if (player.playing) player.pause();
-      else player.play();
-    } catch (err) {
-      console.warn(
-        '[VideoPublishModal] expo-video toggle failed:',
-        err?.message || err
-      );
-    }
-    onTogglePlay?.();
-  };
-
-  const setSpeed = (rate) => {
-    const next = Number(rate);
-    if (!Number.isFinite(next) || next <= 0) return;
-    try {
-      if (player) player.playbackRate = next;
-    } catch (err) {
-      console.warn(
-        '[VideoPublishModal] expo-video rate failed:',
-        err?.message || err
-      );
-    }
-    onSelectRate?.(next);
-  };
-
-  return (
-    <View style={styles.previewShell}>
-      <VideoView
-        style={styles.previewVideo}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
-      />
-      {loading ? (
-        <View style={styles.previewLoading} pointerEvents="none">
-          <ActivityIndicator color="#FFFFFF" />
-        </View>
-      ) : null}
-      <PreviewControlsOverlay
-        isPlaying={isPlaying}
-        playbackRate={playbackRate}
-        onTogglePlay={togglePlayPause}
-        onSelectRate={setSpeed}
-      />
-    </View>
-  );
-}
-
 function PublishClipPreview({
   videoUri,
   visible,
@@ -315,35 +212,15 @@ function PublishClipPreview({
   onSelectRate,
   videoRef,
 }) {
-  const [useAvFallback, setUseAvFallback] = useState(false);
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
 
-  useEffect(() => {
-    setUseAvFallback(false);
-  }, [uri]);
-
-  if (!uri) {
+  if (!uri || !AvVideo) {
     return (
       <View style={[styles.previewShell, styles.previewEmpty]}>
-        <Text style={styles.previewEmptyText}>No clip to preview</Text>
+        <Text style={styles.previewEmptyText}>
+          {uri ? 'Preview unavailable' : 'No clip to preview'}
+        </Text>
       </View>
-    );
-  }
-
-  // Prefer expo-video so center play + speed bar drive player.playbackRate
-  if (!useAvFallback || !AvVideo) {
-    return (
-      <ExpoVideoPreview
-        uri={uri}
-        visible={visible}
-        isPlaying={isPlaying}
-        playbackRate={playbackRate}
-        onTogglePlay={onTogglePlay}
-        onSelectRate={onSelectRate}
-        onError={() => {
-          if (AvVideo) setUseAvFallback(true);
-        }}
-      />
     );
   }
 

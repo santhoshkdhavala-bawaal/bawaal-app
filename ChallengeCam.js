@@ -11,13 +11,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import { ResizeMode, Video } from 'expo-av';
 import { COLORS, RADIUS } from './theme';
 import { setLatestBattleClip } from './battleClipStore';
 import { pushArenaPost } from './arenaFeedStore';
 import { postBattleResponseToSupabase } from './src/services/battleResponseService';
 import { persistLocalVideoUri } from './src/services/uploadService';
-import { isExpoGo } from './src/utils/runtimeEnv';
 import { validateRecordedVideoUri } from './src/utils/recordedVideoUri';
 import {
   coalesceRecordingUri,
@@ -201,30 +200,12 @@ function buildTargetMetricsLabel(rawTarget, durationSec, extras = {}) {
   return `TARGET: ${segments.join(' • ')}`;
 }
 
-/** Expo Go: solid black — never mounts expo-video / native AV. */
-function ExpoGoBlackVideo({ style }) {
-  return (
-    <View
-      style={[StyleSheet.absoluteFillObject, { backgroundColor: OBSIDIAN }, style]}
-      pointerEvents="none"
-      accessibilityLabel="Video unavailable in Expo Go"
-    />
-  );
-}
-
 /**
- * Review player — loads file:// URI immediately after a take.
- * Slow-mo ON: loops strictly inside [start, end] at 0.25x / 0.5x / 0.75x.
- * Slow-mo OFF: full-clip loop at 1x so athletes always see their take.
+ * Review player — loads the take with expo-av.
+ * Slow-mo ON: loops inside [start, end] at 0.25x / 0.5x / 0.75x.
+ * Slow-mo OFF: full-clip loop at 1x.
  */
-function ReviewSlowMoPlayer(props) {
-  if (isExpoGo) {
-    return <ExpoGoBlackVideo />;
-  }
-  return <NativeReviewSlowMoPlayer {...props} />;
-}
-
-function NativeReviewSlowMoPlayer({
+function ReviewSlowMoPlayer({
   uri,
   active = true,
   slowMoEnabled,
@@ -235,14 +216,7 @@ function NativeReviewSlowMoPlayer({
   videoRef,
 }) {
   const playable = isPlayableReviewUri(uri);
-  const source = playable ? { uri } : null;
-  const player = useVideoPlayer(source, (p) => {
-    p.loop = true;
-    p.muted = false;
-    p.preservesPitch = true;
-    p.timeUpdateEventInterval = 0.04;
-  });
-  const loadedUriRef = useRef(null);
+  const localRef = useRef(null);
   const seekingRef = useRef(false);
   const slowMoCfgRef = useRef({
     enabled: slowMoEnabled,
@@ -263,174 +237,84 @@ function NativeReviewSlowMoPlayer({
     };
   }, [slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate]);
 
-  useEffect(() => {
-    if (videoRef) videoRef.current = player;
-    return () => {
-      if (videoRef && videoRef.current === player) {
-        videoRef.current = null;
-      }
-    };
-  }, [player, videoRef]);
+  const assignRef = useCallback(
+    (node) => {
+      localRef.current = node;
+      if (videoRef) videoRef.current = node;
+    },
+    [videoRef]
+  );
 
   const seekTo = useCallback(
     (sec) => {
-      try {
-        seekingRef.current = true;
-        const t = Math.max(0, sec);
-        if (typeof player.seekBy === 'function') {
-          // seekBy is relative — prefer currentTime assignment
-        }
-        player.currentTime = t;
-        if (playheadRef) playheadRef.current = t;
-      } catch (_) {
-        /* ignore */
-      } finally {
-        setTimeout(() => {
-          seekingRef.current = false;
-        }, 80);
-      }
+      seekingRef.current = true;
+      const t = Math.max(0, Number(sec) || 0);
+      localRef.current?.setPositionAsync?.(Math.round(t * 1000)).catch(() => {});
+      if (playheadRef) playheadRef.current = t;
+      setTimeout(() => {
+        seekingRef.current = false;
+      }, 80);
     },
-    [player, playheadRef]
+    [playheadRef]
   );
 
-  const applyPlaybackForConfig = useCallback(() => {
-    const cfg = slowMoCfgRef.current;
-    try {
-      player.preservesPitch = true;
-      if (cfg.enabled) {
-        player.loop = false;
-        player.playbackRate = cfg.rate;
-        seekTo(cfg.start);
-      } else {
-        player.loop = true;
-        player.playbackRate = 1;
-      }
-      if (active) {
-        player.play();
-      } else {
-        player.pause();
-      }
-    } catch (_) {
-      /* ignore */
-    }
-  }, [player, active, seekTo]);
-
-  // Load / reload local file URI into the player as soon as a take lands
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!playable || !uri) {
-        loadedUriRef.current = null;
-        try {
-          player.pause();
-        } catch (_) {
-          /* ignore */
-        }
-        return;
-      }
-      try {
-        if (loadedUriRef.current !== uri) {
-          if (typeof player.replaceAsync === 'function') {
-            await player.replaceAsync({ uri });
-          } else if (typeof player.replace === 'function') {
-            player.replace({ uri });
-          }
-          if (cancelled) return;
-          loadedUriRef.current = uri;
-        }
-        if (active) {
-          // Small delay so replace settles before play/seek
-          requestAnimationFrame(() => {
-            if (!cancelled) applyPlaybackForConfig();
-          });
-        } else {
-          player.pause();
-        }
-      } catch (err) {
-        console.warn('[review] load failed:', err?.message || err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [player, uri, playable, active, applyPlaybackForConfig]);
-
-  // Slider / speed → live windowed loop
-  useEffect(() => {
-    if (!active || !playable) return;
-    applyPlaybackForConfig();
-  }, [
-    slowMoEnabled,
-    slowMoStartSec,
-    slowMoEndSec,
-    slowMoRate,
-    active,
-    playable,
-    applyPlaybackForConfig,
-  ]);
-
-  useEffect(() => {
-    const sub = player.addListener?.('timeUpdate', (payload) => {
-      if (seekingRef.current) return;
-      const currentSec =
-        typeof payload?.currentTime === 'number' ? payload.currentTime : player.currentTime || 0;
+  const onPlaybackStatusUpdate = useCallback(
+    (status) => {
+      if (!status?.isLoaded || seekingRef.current) return;
+      const currentSec = (Number(status.positionMillis) || 0) / 1000;
       if (playheadRef) playheadRef.current = currentSec;
       const cfg = slowMoCfgRef.current;
       if (!cfg.enabled || !active) return;
-      try {
-        if (currentSec < cfg.start - 0.05) {
-          seekTo(cfg.start);
-          player.playbackRate = cfg.rate;
-          player.play();
-          return;
-        }
-        if (currentSec >= cfg.end - 0.05) {
-          seekTo(cfg.start);
-          player.playbackRate = cfg.rate;
-          player.play();
-        } else if (Math.abs((player.playbackRate || 1) - cfg.rate) > 0.01) {
-          player.preservesPitch = true;
-          player.playbackRate = cfg.rate;
-        }
-      } catch (_) {
-        /* ignore */
-      }
-    });
-    // Also listen for playToEnd when loop is false
-    const endSub = player.addListener?.('playToEnd', () => {
-      const cfg = slowMoCfgRef.current;
-      if (!cfg.enabled || !active) return;
-      try {
+      if (currentSec < cfg.start - 0.05 || currentSec >= cfg.end - 0.05) {
         seekTo(cfg.start);
-        player.playbackRate = cfg.rate;
-        player.play();
-      } catch (_) {
-        /* ignore */
+        localRef.current
+          ?.setStatusAsync?.({
+            rate: cfg.rate,
+            shouldCorrectPitch: true,
+            shouldPlay: true,
+          })
+          .catch(() => {});
       }
-    });
-    return () => {
-      try {
-        sub?.remove?.();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        endSub?.remove?.();
-      } catch (_) {
-        /* ignore */
-      }
-    };
-  }, [player, playheadRef, seekTo, active]);
+    },
+    [active, playheadRef, seekTo]
+  );
+
+  useEffect(() => {
+    if (!active || !playable) return undefined;
+    const cfg = slowMoCfgRef.current;
+    const node = localRef.current;
+    if (!node) return undefined;
+    if (cfg.enabled) {
+      node
+        .setStatusAsync?.({
+          rate: cfg.rate,
+          shouldCorrectPitch: true,
+          isLooping: false,
+          shouldPlay: true,
+          positionMillis: Math.round(cfg.start * 1000),
+        })
+        .catch(() => {});
+    } else {
+      node
+        .setStatusAsync?.({
+          rate: 1,
+          shouldCorrectPitch: true,
+          isLooping: true,
+          shouldPlay: true,
+        })
+        .catch(() => {});
+    }
+    return undefined;
+  }, [slowMoEnabled, slowMoStartSec, slowMoEndSec, slowMoRate, active, playable, uri]);
 
   useEffect(() => {
     return () => {
-      try {
-        player.pause();
-      } catch (_) {
-        /* ignore */
-      }
+      const node = localRef.current;
+      node?.pauseAsync?.().catch(() => {});
+      node?.unloadAsync?.().catch(() => {});
+      if (videoRef && videoRef.current === node) videoRef.current = null;
     };
-  }, [player]);
+  }, [uri, videoRef]);
 
   if (!playable) {
     return (
@@ -438,94 +322,51 @@ function NativeReviewSlowMoPlayer({
     );
   }
 
+  const rate = slowMoEnabled ? Number(slowMoRate) || 0.5 : 1;
+
   return (
     <View style={StyleSheet.absoluteFillObject} collapsable={false}>
-      <VideoView
-        key={`review-vv-${uri}`}
+      <Video
+        ref={assignRef}
+        key={`review-av-${uri}`}
+        source={{ uri }}
         style={StyleSheet.absoluteFillObject}
-        player={player}
-        contentFit="cover"
-        nativeControls={false}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay={!!active}
+        isLooping={!slowMoEnabled}
+        isMuted={false}
+        rate={rate}
+        shouldCorrectPitch
+        useNativeControls={false}
+        progressUpdateIntervalMillis={40}
+        onPlaybackStatusUpdate={onPlaybackStatusUpdate}
       />
     </View>
   );
 }
 
-/** Permanently-mounted opponent clip — stable player, replaceAsync only. */
-function OpponentTargetPlayer(props) {
-  if (isExpoGo) {
-    return <ExpoGoBlackVideo style={styles.targetVideo} />;
-  }
-  return <NativeOpponentTargetPlayer {...props} />;
-}
-
-function NativeOpponentTargetPlayer({ uri, active = true }) {
-  const player = useVideoPlayer(OPPONENT_FALLBACK_ASSET, (p) => {
-    p.loop = true;
-    p.muted = true;
-    try {
-      p.play();
-    } catch (_) {
-      /* ignore */
-    }
-  });
-  const loadedKeyRef = useRef('asset');
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const next = resolveOpponentSource(uri);
-      const key =
-        typeof next === 'number'
-          ? `asset:${next}`
-          : next?.uri
-            ? `uri:${next.uri}`
-            : 'asset';
-      try {
-        if (loadedKeyRef.current !== key) {
-          await player.replaceAsync(next);
-          if (cancelled) return;
-          loadedKeyRef.current = key;
-        }
-        player.loop = true;
-        player.muted = true;
-        if (active) {
-          player.play();
-        } else {
-          player.pause();
-        }
-      } catch (_) {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [player, uri, active]);
+/** Opponent clip — expo-av, muted loop. */
+function OpponentTargetPlayer({ uri, active = true }) {
+  const source = resolveOpponentSource(uri);
+  const videoRef = useRef(null);
 
   useEffect(() => {
     return () => {
-      try {
-        player.pause();
-      } catch (_) {
-        /* ignore */
-      }
-      try {
-        if (typeof player.replace === 'function') {
-          player.replace(null);
-        }
-      } catch (_) {
-        /* ignore */
-      }
+      videoRef.current?.pauseAsync?.().catch(() => {});
+      videoRef.current?.unloadAsync?.().catch(() => {});
     };
-  }, [player]);
+  }, [uri]);
 
   return (
-    <VideoView
+    <Video
+      ref={videoRef}
       style={styles.targetVideo}
-      player={player}
-      contentFit="cover"
-      nativeControls={false}
+      source={source}
+      resizeMode={ResizeMode.COVER}
+      shouldPlay={!!active}
+      isLooping
+      isMuted
+      useNativeControls={false}
     />
   );
 }
@@ -729,7 +570,7 @@ export default function ChallengeCam({
   const pendingPublishPayloadRef = useRef(null);
   /** Live playhead seconds — ref only (avoids re-render thrash on every tick). */
   const reviewPlayheadRef = useRef(0);
-  /** expo-video player instance for review clip (pause/unload on unmount). */
+  /** expo-av review clip (pause/unload on unmount). */
   const videoRef = useRef(null);
   const recordStartedAtRef = useRef(0);
   const didAskPermsRef = useRef(false);
@@ -1010,19 +851,12 @@ export default function ChallengeCam({
       const player = videoRef.current;
       if (player) {
         try {
-          player.pause?.();
+          player.pauseAsync?.();
         } catch (_) {
           /* ignore */
         }
         try {
-          // expo-video equivalent of expo-av unloadAsync()
-          if (typeof player.replace === 'function') {
-            player.replace(null);
-          } else if (typeof player.replaceAsync === 'function') {
-            player.replaceAsync(null);
-          } else if (typeof player.unloadAsync === 'function') {
-            player.unloadAsync();
-          }
+          player.unloadAsync?.();
         } catch (_) {
           /* ignore */
         }
