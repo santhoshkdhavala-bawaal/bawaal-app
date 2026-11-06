@@ -1,18 +1,41 @@
 /**
  * Minimal expo-video player for Arena feed clips.
- * Source URI is the post video URL string — expo-video rebinds via replaceAsync.
+ * Binds item.video_url, then item.uri, then item.url (or the uri prop).
  * Native controls own play / pause / scrub. A centered play glyph shows when paused.
  * Speed / slow-mo stay on publish preview only.
- * Pauses + soft-releases the native player on unmount.
+ * Pauses and releases the native player on unmount and when the app backgrounds.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
 import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 
+function firstPlayableUri(candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const parsed = resolveVideoSource(candidate);
+    if (parsed?.uri) return parsed.uri;
+  }
+  return null;
+}
+
+function ClipStatus({ style, title, detail, busy }) {
+  return (
+    <View style={[styles.shell, style]}>
+      <View style={styles.underlay} pointerEvents="none" />
+      <View style={styles.fallback} pointerEvents="none">
+        {busy ? <ActivityIndicator color="#FFFFFF" /> : null}
+        <Text style={styles.fallbackTitle}>{title}</Text>
+        {detail ? <Text style={styles.fallbackDetail}>{detail}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 function SafeVideoPlayer({
+  item = null,
   uri,
   muted = true,
   loop = true,
@@ -25,40 +48,59 @@ function SafeVideoPlayer({
   onLongPress,
 }) {
   const [failed, setFailed] = useState(false);
+  const [buffering, setBuffering] = useState(true);
   const [isPlaying, setIsPlaying] = useState(!!autoPlay);
   const longPressTimer = useRef(null);
-  /** String URI so useVideoPlayer's source key tracks the post URL. */
-  const playbackUri = useMemo(() => {
-    const resolved = resolveVideoSource(uri);
-    return resolved?.uri || null;
-  }, [uri]);
+  const playerRef = useRef(null);
+  /**
+   * Post URL first (video_url → uri → url), then the explicit uri prop.
+   * resolveVideoSource drops mock, blob, and empty strings.
+   */
+  const resolvedUri = useMemo(
+    () =>
+      firstPlayableUri([
+        item?.video_url,
+        item?.uri,
+        item?.url,
+        uri,
+        item?.videoUrl,
+        item?.videoUri,
+      ]),
+    [item?.video_url, item?.uri, item?.url, item?.videoUrl, item?.videoUri, uri]
+  );
+  const source = useMemo(
+    () => (resolvedUri ? { uri: resolvedUri } : null),
+    [resolvedUri]
+  );
 
-  const player = useVideoPlayer(playbackUri, (p) => {
+  const player = useVideoPlayer(source, (p) => {
     try {
-      p.loop = loop !== false;
+      p.loop = true;
       p.muted = !!muted;
       p.playbackRate = 1.0;
-      if (autoPlay && playbackUri) p.play();
+      if (autoPlay && source?.uri) p.play();
       else p.pause();
     } catch {
       /* ignore setup races */
     }
   });
+  playerRef.current = player;
 
   useEffect(() => {
     setFailed(false);
-    setIsPlaying(!!autoPlay);
-  }, [playbackUri, autoPlay]);
+    setBuffering(!!resolvedUri);
+    setIsPlaying(!!autoPlay && !!resolvedUri);
+  }, [resolvedUri, autoPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
     try {
       player.muted = !!muted;
       player.loop = loop !== false;
-      if (!playbackUri || !autoPlay) {
+      if (!resolvedUri || !autoPlay) {
         player.pause();
         setIsPlaying(false);
-      } else {
+      } else if (!player.playing) {
         player.play();
         setIsPlaying(true);
       }
@@ -67,7 +109,7 @@ function SafeVideoPlayer({
       console.warn('[SafeVideoPlayer] sync failed:', err?.message || err);
     }
     return undefined;
-  }, [player, muted, loop, playbackUri, autoPlay]);
+  }, [player, muted, loop, resolvedUri, autoPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -76,11 +118,14 @@ function SafeVideoPlayer({
     try {
       statusSub = player.addListener?.('statusChange', ({ status, error }) => {
         try {
+          if (status === 'loading') setBuffering(true);
+          if (status === 'readyToPlay') setBuffering(false);
           if (status === 'error' || error) {
             console.warn(
               '[SafeVideoPlayer] status error:',
               error?.message || error
             );
+            setBuffering(false);
             setFailed(true);
             onError?.(error);
           }
@@ -93,6 +138,7 @@ function SafeVideoPlayer({
         ({ isPlaying: next }) => {
           try {
             setIsPlaying(!!next);
+            if (next) setBuffering(false);
           } catch (_) {
             /* ignore */
           }
@@ -116,17 +162,35 @@ function SafeVideoPlayer({
   }, [player, onError]);
 
   useEffect(() => {
+    const activePlayer = player;
     return () => {
-      if (player) {
-        try {
-          player.pause();
-        } catch (_) {
-          /* ignore */
-        }
-        safeReleaseExpoVideoPlayer(player);
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+      if (!activePlayer) return;
+      try {
+        activePlayer.pause();
+      } catch (_) {
+        /* ignore */
       }
+      safeReleaseExpoVideoPlayer(activePlayer);
     };
   }, [player]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      const activePlayer = playerRef.current;
+      if (!activePlayer) return;
+      if (next === 'active') return;
+      try {
+        activePlayer.pause();
+      } catch (_) {
+        /* ignore */
+      }
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
 
   const clearLongPress = useCallback(() => {
     if (longPressTimer.current != null) {
@@ -150,8 +214,24 @@ function SafeVideoPlayer({
     }, 450);
   }, [clearLongPress, onLongPress]);
 
-  if (!playbackUri || failed) {
-    return <View style={[styles.shell, style]} />;
+  if (!resolvedUri) {
+    return (
+      <ClipStatus
+        style={style}
+        title="CLIP UNAVAILABLE"
+        detail="No playable video URL"
+      />
+    );
+  }
+
+  if (failed) {
+    return (
+      <ClipStatus
+        style={style}
+        title="PLAYBACK FAILED"
+        detail="This clip could not be loaded"
+      />
+    );
   }
 
   return (
@@ -169,9 +249,22 @@ function SafeVideoPlayer({
         style={styles.video}
         player={player}
         contentFit={contentFit}
-        nativeControls
+        nativeControls={true}
         fullscreenOptions={{ enable: false }}
+        onFirstFrameRender={() => {
+          try {
+            setBuffering(false);
+          } catch (_) {
+            /* ignore */
+          }
+        }}
       />
+      {buffering ? (
+        <View style={styles.fallback} pointerEvents="none">
+          <ActivityIndicator color="#FFFFFF" />
+          <Text style={styles.fallbackDetail}>LOADING</Text>
+        </View>
+      ) : null}
       {tapToToggle && !isPlaying ? (
         <View style={styles.playIconOverlay} pointerEvents="none">
           <Ionicons name="play" size={50} color="#FFFFFF" />
@@ -203,6 +296,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+  fallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  fallbackTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    textAlign: 'center',
+  },
+  fallbackDetail: {
+    color: '#A0A0A0',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textAlign: 'center',
   },
 });
 

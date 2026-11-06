@@ -376,6 +376,7 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
+  item = null,
   muted = false,
   /** When false, unmount decoder immediately. */
   active = true,
@@ -410,6 +411,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
     <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
       <SafeVideoPlayer
         key={playUri}
+        item={item}
         uri={playUri}
         muted={muted}
         loop={loop}
@@ -445,6 +447,7 @@ const ClipSurface = memo(function ClipSurface({
   return (
     <FeedVideoItem
       uri={playUri}
+      item={playSource}
       muted={muted}
       active={active}
       loop
