@@ -6,7 +6,6 @@ import { Image } from 'expo-image';
 const { height, width } = Dimensions.get('window');
 
 const VideoItem = memo(({ item, shouldPlay, isActive }) => {
-  const videoUri = item?.video_url || item?.videoUrl || null;
   const handle = String(item?.username || item?.author || item?.handle || 'athlete').replace(
     /^@/,
     ''
@@ -21,9 +20,9 @@ const VideoItem = memo(({ item, shouldPlay, isActive }) => {
         cachePolicy="memory-disk"
         transition={200}
       />
-      {isActive && videoUri ? (
+      {isActive && item?.video_url ? (
         <Video
-          source={{ uri: videoUri }}
+          source={{ uri: item.video_url }}
           style={styles.video}
           resizeMode={ResizeMode.COVER}
           shouldPlay={shouldPlay}

@@ -107,7 +107,6 @@
           "imageWidth": 280
         }
       ],
-      "expo-video",
       "expo-status-bar",
       "expo-image"
     ],

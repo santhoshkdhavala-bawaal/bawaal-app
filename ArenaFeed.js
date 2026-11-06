@@ -1518,43 +1518,7 @@ export default function ArenaFeed({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      <FlatList
-        ref={listRef}
-        style={styles.feedList}
-        data={battleClips}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderBattleClip}
-        ListEmptyComponent={emptyBattleList}
-        contentContainerStyle={
-          battleClips.length === 0
-            ? styles.scrollContentEmpty
-            : styles.scrollContent
-        }
-        pagingEnabled
-        snapToInterval={screenHeight}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        showsVerticalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        removeClippedSubviews={false}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        initialNumToRender={3}
-        getItemLayout={getFeedItemLayout}
-        extraData={activeIndex}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#FFFFFF"
-            colors={['#FFFFFF']}
-            progressBackgroundColor="#121212"
-          />
-        }
-      />
-
-      <View style={styles.headerOverlay} pointerEvents="box-none">
+      <View style={styles.headerBar}>
         <BrandHeader
           screenName="ARENA"
           onBrandPress={openProfileGateway}
@@ -1618,6 +1582,42 @@ export default function ArenaFeed({ navigation, route }) {
         ) : null}
       </View>
 
+      <FlatList
+        ref={listRef}
+        style={styles.feedList}
+        data={battleClips}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={renderBattleClip}
+        ListEmptyComponent={emptyBattleList}
+        contentContainerStyle={
+          battleClips.length === 0
+            ? styles.scrollContentEmpty
+            : styles.scrollContent
+        }
+        pagingEnabled
+        snapToInterval={screenHeight}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        showsVerticalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
+        removeClippedSubviews={false}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        initialNumToRender={3}
+        getItemLayout={getFeedItemLayout}
+        extraData={activeIndex}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+            progressBackgroundColor="#121212"
+          />
+        }
+      />
+
       <BanterBottomSheet
         visible={headerBanterOpen && !!activeSettingsReel}
         reel={activeSettingsReel}
@@ -1649,12 +1649,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'black',
   },
-  headerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 30,
+  headerBar: {
+    backgroundColor: '#000',
+    zIndex: 10,
   },
   scrollContent: {
     paddingBottom: 0,
