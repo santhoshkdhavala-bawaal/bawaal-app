@@ -343,10 +343,9 @@ function ingestPostsBatch(prev, posts) {
 
 const FEED_VIDEO_SHELL = {
   width: '100%',
-  height: 450,
-  minHeight: 450,
+  height: '100%',
+  flex: 1,
   backgroundColor: '#000000',
-  position: 'relative',
   overflow: 'hidden',
 };
 
@@ -656,6 +655,17 @@ function ingestArenaPost(prev, post) {
   return [thread, ...prev];
 }
 
+function arenaOverlayClearance(insets) {
+  const headerHeight = Math.max(insets?.top || 0, 12) + 34 + 2 + 22 + 10 + 1;
+  const tabBarHeight =
+    10 +
+    52 +
+    1.5 +
+    Math.max(insets?.bottom || 0, Platform.OS === 'android' ? 24 : 12) +
+    (Platform.OS === 'android' ? 12 : 8);
+  return { headerHeight, tabBarHeight };
+}
+
 const GeneralReelCard = memo(function GeneralReelCard({
   item,
   onOpen,
@@ -665,6 +675,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   /** When true, this card is open in ArenaReelViewer — hide duplicate mute/menu. */
   immersiveOpen = false,
 }) {
+  const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [engageOpen, setEngageOpen] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const [muted, setMuted] = useState(true);
@@ -792,7 +803,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
         <MuteToggleButton
           muted={muted}
           onPress={toggleMute}
-          style={styles.reelMuteBtn}
+          style={[styles.reelMuteBtn, { top: headerHeight + 8 }]}
         />
       ) : null}
 
@@ -811,7 +822,10 @@ const GeneralReelCard = memo(function GeneralReelCard({
         <Text style={styles.fireBurstText}>🔥</Text>
       </Animated.View>
 
-      <View style={styles.reelBottomLeft} pointerEvents="none">
+      <View
+        style={[styles.reelBottomLeft, { bottom: tabBarHeight + 16 }]}
+        pointerEvents="none"
+      >
         <UserHandle
           handle={handle}
           verified={item.verified ?? isHandleVerified(handle)}
@@ -825,7 +839,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
       </View>
 
       {!immersiveOpen ? (
-        <View style={styles.reelEngageWrap}>
+        <View style={[styles.reelEngageWrap, { bottom: tabBarHeight + 12 }]}>
           <Animated.View
             pointerEvents={engageOpen ? 'auto' : 'none'}
             style={[
@@ -943,8 +957,10 @@ const BattleCard = memo(function BattleCard({
         ? 'YOU'
         : item.opponent || 'CLIP';
 
+  const { tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
+
   return (
-    <View style={styles.feedCard}>
+    <View style={[styles.feedCard, { paddingBottom: tabBarHeight }]}>
       <View style={styles.feedCardHeader}>
         <View style={styles.battleBadge}>
           <Text style={styles.battleBadgeText}>
@@ -1066,25 +1082,9 @@ const BattleCard = memo(function BattleCard({
   );
 });
 
-/** Brand header content under the status-bar inset: title, subtitle row, padding, hairline. */
-const ARENA_HEADER_BODY = 34 + 2 + 22 + 10 + 1;
-/** Tab bar content above the bottom inset: top padding, row, hairline. */
-const ARENA_TAB_BODY = 10 + 52 + 1.5;
-
 export default function ArenaFeed({ navigation, route }) {
-  const insets = useSafeAreaInsets();
-  const windowHeight = Dimensions.get('window').height;
-  const headerHeight = Math.max(insets.top, 12) + ARENA_HEADER_BODY;
-  const tabFloor = Platform.OS === 'android' ? 24 : 12;
-  const tabComfort = Platform.OS === 'android' ? 12 : 8;
-  const tabBarHeight =
-    ARENA_TAB_BODY + Math.max(insets.bottom, tabFloor) + tabComfort;
-  const screenPageHeight = Math.max(
-    1,
-    Math.round(windowHeight - headerHeight - tabBarHeight)
-  );
-  const [viewportHeight, setViewportHeight] = useState(0);
-  const itemHeight = viewportHeight > 0 ? viewportHeight : screenPageHeight;
+  const screenHeight = Dimensions.get('window').height;
+  const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
@@ -1488,14 +1488,14 @@ export default function ArenaFeed({ navigation, route }) {
   const renderFeedItem = useCallback(
     ({ item, index }) => {
       const pageStyle = {
-        height: itemHeight,
+        height: screenHeight,
         width: '100%',
         backgroundColor: '#000000',
         overflow: 'hidden',
       };
       if (item.type === 'community_shelf') {
         return (
-          <View style={pageStyle}>
+          <View style={[pageStyle, { paddingTop: headerHeight }]}>
             <CommunityChallengesShelf
               callouts={communityCallouts}
               onOpenCallout={openShelfCallout}
@@ -1544,7 +1544,8 @@ export default function ArenaFeed({ navigation, route }) {
       hypeReel,
       activeIndex,
       activeReel,
-      itemHeight,
+      screenHeight,
+      headerHeight,
     ]
   );
 
@@ -1570,11 +1571,11 @@ export default function ArenaFeed({ navigation, route }) {
 
   const getFeedItemLayout = useCallback(
     (_, index) => ({
-      length: itemHeight,
-      offset: itemHeight * index,
+      length: screenHeight,
+      offset: screenHeight * index,
       index,
     }),
-    [itemHeight]
+    [screenHeight]
   );
 
   const feedKeyExtractor = useCallback((item) => {
@@ -1594,25 +1595,9 @@ export default function ArenaFeed({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      <BrandHeader
-        screenName="ARENA"
-        onBrandPress={openProfileGateway}
-        rightSlot={
-          <TouchableOpacity
-            style={styles.gameOnPill}
-            onPress={() => openGameOn()}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="Open GAME ON hub"
-          >
-            <Text style={styles.gameOnPillText}>GAME ON</Text>
-          </TouchableOpacity>
-        }
-      />
-
       <FlatList
         ref={listRef}
-        style={styles.feedList}
+        style={[styles.feedList, { height: screenHeight }]}
         data={feedWithShelves}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
@@ -1622,17 +1607,12 @@ export default function ArenaFeed({ navigation, route }) {
             ? styles.scrollContentEmpty
             : styles.scrollContent
         }
-        onLayout={(event) => {
-          const next = Math.round(event.nativeEvent.layout.height);
-          if (next > 0 && next !== viewportHeight) setViewportHeight(next);
-        }}
         showsVerticalScrollIndicator={false}
-        pagingEnabled={true}
-        snapToInterval={itemHeight}
+        snapToInterval={screenHeight}
         snapToAlignment="start"
         disableIntervalMomentum
         getItemLayout={getFeedItemLayout}
-        removeClippedSubviews={Platform.OS === 'android'}
+        removeClippedSubviews={false}
         initialNumToRender={3}
         maxToRenderPerBatch={3}
         windowSize={3}
@@ -1652,6 +1632,24 @@ export default function ArenaFeed({ navigation, route }) {
           />
         }
       />
+
+      <View style={styles.headerOverlay} pointerEvents="box-none">
+        <BrandHeader
+          screenName="ARENA"
+          onBrandPress={openProfileGateway}
+          rightSlot={
+            <TouchableOpacity
+              style={styles.gameOnPill}
+              onPress={() => openGameOn()}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Open GAME ON hub"
+            >
+              <Text style={styles.gameOnPillText}>GAME ON</Text>
+            </TouchableOpacity>
+          }
+        />
+      </View>
 
       <GameOnHub visible={gameOnOpen} onClose={closeGameOn} />
 
@@ -1673,11 +1671,22 @@ export default function ArenaFeed({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#000000',
+    overflow: 'visible',
   },
   feedList: {
-    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#000000',
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 30,
   },
   scrollContent: {
     paddingBottom: 0,
@@ -1752,11 +1761,10 @@ const styles = StyleSheet.create({
   },
   clipShell: {
     width: '100%',
-    height: 450,
-    minHeight: 450,
+    height: '100%',
+    flex: 1,
     backgroundColor: '#000',
     overflow: 'hidden',
-    position: 'relative',
   },
   feedVideoUnderlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1920,7 +1928,7 @@ const styles = StyleSheet.create({
   splitRow: {
     position: 'relative',
     flexDirection: 'row',
-    height: 200,
+    flex: 1,
     backgroundColor: DARK_BG,
   },
   splitPane: {
