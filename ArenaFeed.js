@@ -12,6 +12,7 @@ import {
   View,
   FlatList,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Share,
   RefreshControl,
   Platform,
@@ -33,7 +34,7 @@ import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
-import SafeVideoPlayer from './src/components/SafeVideoPlayer';
+import VideoItem from './src/components/VideoItem';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
@@ -367,29 +368,19 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
 
 /**
  * Memoized Arena feed video item.
- * The centered row plays. The rows beside it stay mounted and paused.
- * Anything further out keeps a poster and releases the decoder.
- * Native controls live on the visible player. Speed / slow-mo stay on publish preview only.
+ * Only the active row mounts a decoder. Every other row keeps the thumbnail.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
   item = null,
-  muted = false,
   shouldPlay = false,
-  isMounted = false,
-  loop = true,
   style,
   label = null,
   onLongPress = null,
 }) {
-  const [failed, setFailed] = useState(false);
   const playUri = pickFeedClipUri(uri);
 
-  useEffect(() => {
-    setFailed(false);
-  }, [playUri]);
-
-  if (!playUri || failed) {
+  if (!playUri) {
     return (
       <FeedVideoPlaceholder
         style={style}
@@ -400,26 +391,28 @@ const FeedVideoItem = memo(function FeedVideoItem({
   }
 
   return (
-    <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
-      <SafeVideoPlayer
-        key={playUri}
-        shouldPlay={shouldPlay}
-        isMounted={isMounted}
-        item={item}
-        uri={playUri}
-        muted={muted}
-        loop={loop}
-        autoPlay={shouldPlay}
-        tapToToggle
-        style={styles.clipVideoFill}
-        onError={() => setFailed(true)}
-        onLongPress={onLongPress || undefined}
-      />
-    </View>
+    <TouchableWithoutFeedback
+      onLongPress={onLongPress}
+      delayLongPress={450}
+      disabled={!onLongPress}
+    >
+      <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
+        <VideoItem
+          item={{
+            ...item,
+            id: item?.id,
+            video_url: playUri,
+            videoUrl: playUri,
+          }}
+          shouldPlay={!!shouldPlay}
+          isActive={!!shouldPlay}
+        />
+      </View>
+    </TouchableWithoutFeedback>
   );
 });
 
-/** Resolve cloud/local URI then hand off to expo-video FeedVideoItem. */
+/** Resolve the playable URL, then mount VideoItem only for the active row. */
 const ClipSurface = memo(function ClipSurface({
   uri,
   source,
@@ -713,7 +706,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
         // Pause feed decoder while immersive uses the same URI (no double-audio / lag)
         shouldPlay={shouldPlay && !immersiveOpen}
         isMounted={isMounted && !immersiveOpen}
-        // Tap = play/pause (SafeVideoPlayer); long-press = immersive viewer
+        // Long-press opens the immersive viewer. Playback stays on the active row.
         onLongPress={immersiveOpen ? null : openImmersive}
       />
 

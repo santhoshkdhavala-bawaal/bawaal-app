@@ -108,7 +108,8 @@
         }
       ],
       "expo-video",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-image"
     ],
     "extra": {
       "eas": {
