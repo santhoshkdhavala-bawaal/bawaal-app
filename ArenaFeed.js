@@ -17,7 +17,9 @@ import {
   Easing,
   RefreshControl,
   Platform,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { consumeLatestBattleClip, peekLatestBattleClip } from './battleClipStore';
 import {
@@ -1064,7 +1066,25 @@ const BattleCard = memo(function BattleCard({
   );
 });
 
+/** Brand header content under the status-bar inset: title, subtitle row, padding, hairline. */
+const ARENA_HEADER_BODY = 34 + 2 + 22 + 10 + 1;
+/** Tab bar content above the bottom inset: top padding, row, hairline. */
+const ARENA_TAB_BODY = 10 + 52 + 1.5;
+
 export default function ArenaFeed({ navigation, route }) {
+  const insets = useSafeAreaInsets();
+  const windowHeight = Dimensions.get('window').height;
+  const headerHeight = Math.max(insets.top, 12) + ARENA_HEADER_BODY;
+  const tabFloor = Platform.OS === 'android' ? 24 : 12;
+  const tabComfort = Platform.OS === 'android' ? 12 : 8;
+  const tabBarHeight =
+    ARENA_TAB_BODY + Math.max(insets.bottom, tabFloor) + tabComfort;
+  const screenPageHeight = Math.max(
+    1,
+    Math.round(windowHeight - headerHeight - tabBarHeight)
+  );
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const itemHeight = viewportHeight > 0 ? viewportHeight : screenPageHeight;
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
@@ -1467,38 +1487,50 @@ export default function ArenaFeed({ navigation, route }) {
 
   const renderFeedItem = useCallback(
     ({ item, index }) => {
+      const pageStyle = {
+        height: itemHeight,
+        width: '100%',
+        backgroundColor: '#000000',
+        overflow: 'hidden',
+      };
       if (item.type === 'community_shelf') {
         return (
-          <CommunityChallengesShelf
-            callouts={communityCallouts}
-            onOpenCallout={openShelfCallout}
-          />
+          <View style={pageStyle}>
+            <CommunityChallengesShelf
+              callouts={communityCallouts}
+              onOpenCallout={openShelfCallout}
+            />
+          </View>
         );
       }
       const shouldPlay = index === activeIndex;
       const isMounted = Math.abs(index - activeIndex) <= 1;
       if (item.type === 'reel') {
         return (
-          <GeneralReelCard
-            item={item}
-            onOpen={openReel}
-            onHype={hypeReel}
-            shouldPlay={shouldPlay}
-            isMounted={isMounted}
-            // Hide ALL feed overlays while any fullscreen reel is open
-            immersiveOpen={!!activeReel}
-          />
+          <View style={pageStyle}>
+            <GeneralReelCard
+              item={item}
+              onOpen={openReel}
+              onHype={hypeReel}
+              shouldPlay={shouldPlay}
+              isMounted={isMounted}
+              // Hide ALL feed overlays while any fullscreen reel is open
+              immersiveOpen={!!activeReel}
+            />
+          </View>
         );
       }
       if (item.type === 'battle_thread') {
         return (
-          <BattleCard
-            item={item}
-            onOpenResponses={openResponses}
-            onRespond={openChallengeRespond}
-            shouldPlay={shouldPlay && !activeReel}
-            isMounted={isMounted && !activeReel}
-          />
+          <View style={pageStyle}>
+            <BattleCard
+              item={item}
+              onOpenResponses={openResponses}
+              onRespond={openChallengeRespond}
+              shouldPlay={shouldPlay && !activeReel}
+              isMounted={isMounted && !activeReel}
+            />
+          </View>
         );
       }
       return null;
@@ -1512,6 +1544,7 @@ export default function ArenaFeed({ navigation, route }) {
       hypeReel,
       activeIndex,
       activeReel,
+      itemHeight,
     ]
   );
 
@@ -1533,6 +1566,15 @@ export default function ArenaFeed({ navigation, route }) {
       </View>
     ),
     [openGameOn]
+  );
+
+  const getFeedItemLayout = useCallback(
+    (_, index) => ({
+      length: itemHeight,
+      offset: itemHeight * index,
+      index,
+    }),
+    [itemHeight]
   );
 
   const feedKeyExtractor = useCallback((item) => {
@@ -1570,6 +1612,7 @@ export default function ArenaFeed({ navigation, route }) {
 
       <FlatList
         ref={listRef}
+        style={styles.feedList}
         data={feedWithShelves}
         keyExtractor={feedKeyExtractor}
         renderItem={renderFeedItem}
@@ -1579,8 +1622,16 @@ export default function ArenaFeed({ navigation, route }) {
             ? styles.scrollContentEmpty
             : styles.scrollContent
         }
+        onLayout={(event) => {
+          const next = Math.round(event.nativeEvent.layout.height);
+          if (next > 0 && next !== viewportHeight) setViewportHeight(next);
+        }}
         showsVerticalScrollIndicator={false}
         pagingEnabled={true}
+        snapToInterval={itemHeight}
+        snapToAlignment="start"
+        disableIntervalMomentum
+        getItemLayout={getFeedItemLayout}
         removeClippedSubviews={Platform.OS === 'android'}
         initialNumToRender={3}
         maxToRenderPerBatch={3}
@@ -1624,8 +1675,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: DARK_BG,
   },
+  feedList: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
   scrollContent: {
-    paddingBottom: 110,
+    paddingBottom: 0,
     paddingTop: 0,
   },
   scrollContentEmpty: {
@@ -1685,9 +1740,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1.1,
   },
   reelCard: {
-    height: 560,
+    flex: 1,
+    height: '100%',
     marginHorizontal: 0,
-    marginBottom: 12,
+    marginBottom: 0,
     backgroundColor: DARK_BG,
     overflow: 'hidden',
     borderTopWidth: 1,
@@ -1709,13 +1765,13 @@ const styles = StyleSheet.create({
   clipVideoFill: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
-    height: 450,
+    height: '100%',
     backgroundColor: '#000',
   },
   reelFullBleed: {
     ...StyleSheet.absoluteFillObject,
     width: '100%',
-    height: 450,
+    height: '100%',
     backgroundColor: '#000',
   },
   reelMuteBtn: {
@@ -1833,10 +1889,12 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   feedCard: {
+    flex: 1,
+    height: '100%',
     backgroundColor: SURFACE,
     borderRadius: 16,
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: BORDER,
     overflow: 'hidden',
