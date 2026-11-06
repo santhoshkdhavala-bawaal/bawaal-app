@@ -65,7 +65,8 @@ const GOLD = FLAME_ORANGE;
 
 /** Stable FlatList viewability config — must not be recreated each render. */
 const ARENA_VIEWABILITY_CONFIG = {
-  itemVisiblePercentThreshold: 60,
+  itemVisiblePercentThreshold: 80,
+  minimumViewTime: 100,
 };
 
 /** One stable key per row that has neither id nor video_url. */
@@ -371,16 +372,16 @@ function FeedVideoPlaceholder({ style, label, subtitle }) {
 
 /**
  * Memoized Arena feed video item.
- * SafeVideoPlayer mounts a decoder only while this row is visible.
- * Off-screen rows keep a poster or dark frame and release the player.
+ * The centered row plays. The rows beside it stay mounted and paused.
+ * Anything further out keeps a poster and releases the decoder.
  * Native controls live on the visible player. Speed / slow-mo stay on publish preview only.
  */
 const FeedVideoItem = memo(function FeedVideoItem({
   uri,
   item = null,
   muted = false,
-  /** When false, keep the poster and leave the decoder unmounted. */
-  isVisible = false,
+  shouldPlay = false,
+  isMounted = false,
   loop = true,
   style,
   label = null,
@@ -407,12 +408,13 @@ const FeedVideoItem = memo(function FeedVideoItem({
     <View style={[FEED_VIDEO_SHELL, styles.clipShell, style]}>
       <SafeVideoPlayer
         key={playUri}
-        isVisible={isVisible}
+        shouldPlay={shouldPlay}
+        isMounted={isMounted}
         item={item}
         uri={playUri}
         muted={muted}
         loop={loop}
-        autoPlay={isVisible}
+        autoPlay={shouldPlay}
         tapToToggle
         style={styles.clipVideoFill}
         onError={() => setFailed(true)}
@@ -429,7 +431,8 @@ const ClipSurface = memo(function ClipSurface({
   label,
   style,
   muted = true,
-  isVisible = false,
+  shouldPlay = false,
+  isMounted = false,
   onLongPress = null,
 }) {
   const playSource = source || {
@@ -446,7 +449,8 @@ const ClipSurface = memo(function ClipSurface({
       uri={playUri}
       item={playSource}
       muted={muted}
-      isVisible={isVisible}
+      shouldPlay={shouldPlay}
+      isMounted={isMounted}
       loop
       style={style}
       label={label}
@@ -654,7 +658,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
   item,
   onOpen,
   onHype,
-  isVisible = false,
+  shouldPlay = false,
+  isMounted = false,
   /** When true, this card is open in ArenaReelViewer — hide duplicate mute/menu. */
   immersiveOpen = false,
 }) {
@@ -774,7 +779,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
         style={styles.reelFullBleed}
         muted={muted}
         // Pause feed decoder while immersive uses the same URI (no double-audio / lag)
-        isVisible={isVisible && !immersiveOpen}
+        shouldPlay={shouldPlay && !immersiveOpen}
+        isMounted={isMounted && !immersiveOpen}
         // Tap = play/pause (SafeVideoPlayer); long-press = immersive viewer
         onLongPress={immersiveOpen ? null : openImmersive}
       />
@@ -887,7 +893,8 @@ const BattleCard = memo(function BattleCard({
   item,
   onOpenResponses,
   onRespond,
-  isVisible = false,
+  shouldPlay = false,
+  isMounted = false,
 }) {
   const [muted, setMuted] = useState(true);
   const isOpenChallenge =
@@ -970,7 +977,8 @@ const BattleCard = memo(function BattleCard({
             label={leftLabel}
             style={styles.splitClip}
             muted={muted}
-            isVisible={isVisible}
+            shouldPlay={shouldPlay}
+            isMounted={isMounted}
           />
         </View>
         <View style={styles.splitDivider}>
@@ -1006,7 +1014,8 @@ const BattleCard = memo(function BattleCard({
                     : `@${leader.creator}`
                   : 'YOU'
               }
-              isVisible={isVisible}
+              shouldPlay={shouldPlay}
+              isMounted={isMounted}
               muted={muted}
               style={styles.splitClip}
             />
@@ -1075,10 +1084,8 @@ export default function ArenaFeed({ navigation, route }) {
   const [warmReel, setWarmReel] = useState(null);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  /** One centered row owns the decoder. */
-  const [activeId, setActiveId] = useState(
-    () => buildInitialFeed(route)[0]?.id ?? null
-  );
+  /** Index of the row that has settled in the viewport. */
+  const [activeIndex, setActiveIndex] = useState(0);
   const ingestedIds = useRef(new Set());
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
@@ -1088,19 +1095,19 @@ export default function ArenaFeed({ navigation, route }) {
     void configureGlobalAudioSession();
   }, []);
 
-  // FlatList requires a stable ref. Commit activeId only when the centered row changes.
-  const activeIdRef = useRef(activeId);
-  activeIdRef.current = activeId;
+  // FlatList requires a stable ref. Commit activeIndex only after a row has settled.
+  const activeIndexRef = useRef(activeIndex);
+  activeIndexRef.current = activeIndex;
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
     const visible = (viewableItems || []).filter(
-      (entry) => entry?.isViewable && entry?.item?.id != null
+      (entry) => entry?.isViewable && typeof entry.index === 'number'
     );
     if (!visible.length) return;
     const centered = visible[Math.floor((visible.length - 1) / 2)];
-    const nextId = centered.item.id;
-    if (nextId === activeIdRef.current) return;
-    activeIdRef.current = nextId;
-    setActiveId(nextId);
+    const nextIndex = centered.index;
+    if (nextIndex === activeIndexRef.current) return;
+    activeIndexRef.current = nextIndex;
+    setActiveIndex(nextIndex);
   }).current;
   /** Last absorbed playable URI per post id — blocks recursive You/fresh re-ingest loops. */
   const absorbedUriById = useRef(new Map());
@@ -1459,7 +1466,7 @@ export default function ArenaFeed({ navigation, route }) {
   );
 
   const renderFeedItem = useCallback(
-    ({ item }) => {
+    ({ item, index }) => {
       if (item.type === 'community_shelf') {
         return (
           <CommunityChallengesShelf
@@ -1468,14 +1475,16 @@ export default function ArenaFeed({ navigation, route }) {
           />
         );
       }
-      const isVisible = item.id === activeId;
+      const shouldPlay = index === activeIndex;
+      const isMounted = Math.abs(index - activeIndex) <= 1;
       if (item.type === 'reel') {
         return (
           <GeneralReelCard
             item={item}
             onOpen={openReel}
             onHype={hypeReel}
-            isVisible={isVisible}
+            shouldPlay={shouldPlay}
+            isMounted={isMounted}
             // Hide ALL feed overlays while any fullscreen reel is open
             immersiveOpen={!!activeReel}
           />
@@ -1487,7 +1496,8 @@ export default function ArenaFeed({ navigation, route }) {
             item={item}
             onOpenResponses={openResponses}
             onRespond={openChallengeRespond}
-            isVisible={isVisible && !activeReel}
+            shouldPlay={shouldPlay && !activeReel}
+            isMounted={isMounted && !activeReel}
           />
         );
       }
@@ -1500,7 +1510,7 @@ export default function ArenaFeed({ navigation, route }) {
       openResponses,
       openChallengeRespond,
       hypeReel,
-      activeId,
+      activeIndex,
       activeReel,
     ]
   );
@@ -1572,15 +1582,15 @@ export default function ArenaFeed({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         pagingEnabled={true}
         removeClippedSubviews={Platform.OS === 'android'}
-        initialNumToRender={2}
-        maxToRenderPerBatch={2}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
         windowSize={3}
         decelerationRate="fast"
         updateCellsBatchingPeriod={50}
         onEndReachedThreshold={0.6}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        extraData={activeId}
+        extraData={activeIndex}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

@@ -46,6 +46,7 @@ function ActiveClipPlayer({
   resolvedUri,
   muted,
   loop,
+  shouldPlay = true,
   style,
   contentFit,
   tapToToggle,
@@ -54,7 +55,7 @@ function ActiveClipPlayer({
 }) {
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(!!shouldPlay);
   const longPressTimer = useRef(null);
   const playerRef = useRef(null);
   const source = useMemo(() => ({ uri: resolvedUri }), [resolvedUri]);
@@ -64,7 +65,7 @@ function ActiveClipPlayer({
       p.loop = true;
       p.muted = !!muted;
       p.playbackRate = 1.0;
-      if (source?.uri) p.play();
+      if (shouldPlay && source?.uri) p.play();
       else p.pause();
     } catch {
       /* ignore setup races */
@@ -79,8 +80,8 @@ function ActiveClipPlayer({
   useEffect(() => {
     setFailed(false);
     setBuffering(true);
-    setIsPlaying(true);
-  }, [resolvedUri]);
+    setIsPlaying(!!shouldPlay);
+  }, [resolvedUri, shouldPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -88,15 +89,20 @@ function ActiveClipPlayer({
       player.muted = !!muted;
       player.loop = true;
       if (loop === false) player.loop = false;
-      if (!player.playing) {
-        player.play();
-        setIsPlaying(true);
+      if (shouldPlay) {
+        if (!player.playing) {
+          player.play();
+          setIsPlaying(true);
+        }
+      } else {
+        player.pause();
+        setIsPlaying(false);
       }
     } catch (err) {
       console.warn('[SafeVideoPlayer] sync failed:', err?.message || err);
     }
     return undefined;
-  }, [player, muted, loop, resolvedUri]);
+  }, [player, muted, loop, resolvedUri, shouldPlay]);
 
   useEffect(() => {
     if (!player) return undefined;
@@ -291,6 +297,8 @@ function HiddenClipFrame({ style, posterUri }) {
 
 function SafeVideoPlayer({
   isVisible = true,
+  shouldPlay,
+  isMounted,
   item = null,
   uri,
   muted = true,
@@ -319,7 +327,10 @@ function SafeVideoPlayer({
     [item?.thumbnail_url, item?.poster_url, item?.thumbnailUrl, item?.posterUrl]
   );
 
-  if (!isVisible) {
+  const mounted = isMounted != null ? !!isMounted : !!isVisible;
+  const playing = shouldPlay != null ? !!shouldPlay : !!isVisible;
+
+  if (!mounted) {
     return <HiddenClipFrame style={style} posterUri={posterUri} />;
   }
 
@@ -338,6 +349,7 @@ function SafeVideoPlayer({
       resolvedUri={resolvedUri}
       muted={muted}
       loop={loop !== false}
+      shouldPlay={playing}
       style={style}
       contentFit={contentFit}
       tapToToggle={tapToToggle}
