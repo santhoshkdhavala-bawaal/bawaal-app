@@ -17,9 +17,11 @@ import {
   RefreshControl,
   Platform,
   Dimensions,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { consumeLatestBattleClip, peekLatestBattleClip } from './battleClipStore';
 import {
   subscribeArenaPosts,
@@ -238,6 +240,17 @@ function feedSortScore(item) {
 function sortFeedItems(list) {
   return [...(list || [])].sort(
     (a, b) => feedSortScore(b) - feedSortScore(a)
+  );
+}
+
+function battleRowVideoUrl(row) {
+  return (
+    row?.video_url ||
+    row?.videoUrl ||
+    row?.opener_video_url ||
+    row?.openerVideoUrl ||
+    row?.uri ||
+    null
   );
 }
 
@@ -943,9 +956,40 @@ export default function ArenaFeed({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   /** Index of the row that has settled in the viewport. */
   const [activeIndex, setActiveIndex] = useState(0);
+  const [videos, setVideos] = useState([]);
+  const [page, setPage] = useState(0);
   const ingestedIds = useRef(new Set());
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
+  const pagingRef = useRef(false);
+  const pageRef = useRef(0);
+  const hasMoreRef = useRef(true);
+
+  const loadVideos = useCallback(async (p) => {
+    if (!isSupabaseConfigured() || pagingRef.current || !hasMoreRef.current) return;
+    pagingRef.current = true;
+    try {
+      const { data, error } = await supabase
+        .from('battles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(p * 5, p * 5 + 4);
+      if (error) {
+        console.warn('[ArenaFeed] battles page failed:', error.message || error);
+        return;
+      }
+      if (!data || data.length < 5) hasMoreRef.current = false;
+      if (data) {
+        setVideos((prev) => (p === 0 ? data : [...prev, ...data]));
+      }
+    } finally {
+      pagingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    loadVideos(0);
+  }, [loadVideos]);
 
   // Re-assert AV session when Arena mounts (camera/record may have changed it)
   useEffect(() => {
@@ -1189,7 +1233,22 @@ export default function ArenaFeed({ navigation, route }) {
 
   /** Unified Arena video feed — reels + challenge cards; shelves inject every N rows. */
   const visibleFeed = useMemo(() => {
-    const source = ensureDefaultBattles(feedItems);
+    const cloudReels = videos.map((row) => {
+      const videoUrl = battleRowVideoUrl(row);
+      return mapPostToReel({
+        ...row,
+        type: 'reel',
+        video_url: videoUrl,
+        videoUrl,
+        videoUri: videoUrl,
+        uri: videoUrl,
+        thumbnail_url: row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
+        caption: row.caption || row.title || row.target || 'Battle',
+        author: row.author || row.handle || row.creator || '@athlete',
+        createdAt: row.created_at ? Date.parse(row.created_at) : Date.now(),
+      });
+    });
+    const source = ensureDefaultBattles([...cloudReels, ...feedItems]);
     const seenIds = new Set();
     const seenVideos = new Set();
     const out = [];
@@ -1214,7 +1273,14 @@ export default function ArenaFeed({ navigation, route }) {
       }
     }
     return out;
-  }, [feedItems]);
+  }, [feedItems, videos]);
+
+  useEffect(() => {
+    Alert.alert(
+      'BAWAAL DEBUG',
+      `Total Videos: ${videos.length} \n 4th URL: ${videos[3]?.videoUrl || 'NULL/MISSING'}`
+    );
+  }, [videos]);
 
   /**
    * Vertical feed with inline horizontal challenge shelves every N media rows.
@@ -1464,6 +1530,14 @@ export default function ArenaFeed({ navigation, route }) {
         initialNumToRender={3}
         getItemLayout={getFeedItemLayout}
         extraData={activeIndex}
+        onEndReachedThreshold={0.5}
+        onEndReached={() => {
+          if (pagingRef.current || !hasMoreRef.current) return;
+          const n = pageRef.current + 1;
+          pageRef.current = n;
+          setPage(n);
+          loadVideos(n);
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
