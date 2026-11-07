@@ -21,6 +21,7 @@ import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
+import { CrashBoundary } from './src/components/CrashBoundary';
 
 enableScreens(true);
 
@@ -383,9 +384,9 @@ function AppBoot() {
 /** Outer boundary catches boot + navigation tree crashes. */
 export default function App() {
   return (
-    <RootErrorBoundary>
+    <CrashBoundary>
       <AppBoot />
-    </RootErrorBoundary>
+    </CrashBoundary>
   );
 }
 
