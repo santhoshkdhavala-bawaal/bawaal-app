@@ -106,7 +106,8 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     };
   }
 
-  if (stubNativeModules && moduleName === 'react-native-agora') {
+  // Always stub Agora — native binaries are excluded from autolinking.
+  if (moduleName === 'react-native-agora' || String(moduleName || '').startsWith('react-native-agora/')) {
     return {
       type: 'sourceFile',
       filePath: AGORA_STUB,
@@ -127,43 +128,47 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
+const toRegex = (filePath) =>
+  new RegExp(
+    `^${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]')}`
+  );
+
+const agoraRoot = path
+  .resolve(PROJECT_ROOT, 'node_modules/react-native-agora')
+  .replace(/\\/g, '/');
+
+// Always keep the real Agora package out of the bundle graph.
+const alwaysBlock = [toRegex(agoraRoot)];
+const prevBlock = config.resolver.blockList;
+if (Array.isArray(prevBlock)) {
+  config.resolver.blockList = [...prevBlock, ...alwaysBlock];
+} else if (prevBlock instanceof RegExp) {
+  config.resolver.blockList = [prevBlock, ...alwaysBlock];
+} else {
+  config.resolver.blockList = alwaysBlock;
+}
+
 if (stubNativeModules) {
-  const agoraRoot = path
-    .resolve(PROJECT_ROOT, 'node_modules/react-native-agora')
-    .replace(/\\/g, '/');
   const expoAvRoot = path
     .resolve(PROJECT_ROOT, 'node_modules/expo-av')
     .replace(/\\/g, '/');
   const realSafe = SAFE_NATIVE_REAL.replace(/\\/g, '/');
   const realBridge = REAL_BRIDGE.replace(/\\/g, '/');
 
-  const toRegex = (filePath) =>
-    new RegExp(
-      `^${filePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '[/\\\\]')}`
-    );
-
   const patterns = [
-    toRegex(agoraRoot),
     toRegex(expoAvRoot),
     toRegex(realSafe),
     toRegex(realBridge),
   ];
-  const prev = config.resolver.blockList;
 
-  if (Array.isArray(prev)) {
-    config.resolver.blockList = [...prev, ...patterns];
-  } else if (prev instanceof RegExp) {
-    config.resolver.blockList = [prev, ...patterns];
-  } else {
-    config.resolver.blockList = patterns;
-  }
+  config.resolver.blockList = [...config.resolver.blockList, ...patterns];
 
   console.log(
-    '[metro] BAWAAL stubs ON — expo-av → placeholder, Agora blocked (Expo Go safe)'
+    '[metro] BAWAAL stubs ON — expo-av → placeholder, Agora → JS stub (native excluded)'
   );
 } else {
   console.log(
-    '[metro] BAWAAL native modules ON — real expo-av + Agora (dev-client)'
+    '[metro] BAWAAL native AV ON — Agora → JS stub (autolinking excluded)'
   );
 }
 

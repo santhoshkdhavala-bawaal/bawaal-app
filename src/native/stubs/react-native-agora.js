@@ -1,6 +1,7 @@
 /**
- * Metro stub for `react-native-agora` while bundling for Expo Go.
- * Prevents the real native package from entering the dependency graph.
+ * Metro stub for `react-native-agora`.
+ * Native binaries are excluded from Expo / RN autolinking; all JS imports
+ * resolve here so bundling and runtime stay stable without Agora natives.
  */
 import { MOCK_AGORA_SDK } from '../nativeMocks';
 

@@ -45,6 +45,13 @@
     "lint": "expo lint"
   },
   "private": true,
+  "expo": {
+    "autolinking": {
+      "exclude": [
+        "react-native-agora"
+      ]
+    }
+  },
   "devDependencies": {
     "@expo/ngrok": "^4.1.3",
     "eslint": "^9.0.0",
