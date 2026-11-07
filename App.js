@@ -4,7 +4,6 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
-import * as SplashScreen from 'expo-splash-screen';
 import MainTabs from './MainTabs';
 import CameraPublishHost from './CameraPublishHost';
 import BattleChallengeForm from './BattleChallengeForm';
@@ -21,23 +20,30 @@ import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
-import { CrashBoundary } from './src/components/CrashBoundary';
 import { hasSupabaseEnv } from './src/services/supabase';
+import { logStartup } from './NativeLogger';
+import {
+  hideSplashSafe,
+  preventAutoHideSafe,
+} from './src/boot/safeSplash';
 
-enableScreens(true);
+try {
+  enableScreens(true);
+} catch (err) {
+  console.warn('[App] enableScreens failed:', err?.message || err);
+}
 
 // Native builds: keep splash until boot. Expo Go: never block on native splash.
 try {
   if (isExpoGo) {
-    SplashScreen.hideAsync().catch(() => {});
+    void hideSplashSafe('expo-go-app');
   } else {
-    SplashScreen.preventAutoHideAsync().catch(() => {});
+    void preventAutoHideSafe();
   }
 } catch (err) {
-  console.warn(
-    '[App] SplashScreen.preventAutoHideAsync failed:',
-    err?.message || err
-  );
+  console.warn('[App] SplashScreen init failed:', err?.message || err);
+} finally {
+  logStartup('App module loaded', { isExpoGo, hasSupabaseEnv: hasSupabaseEnv() });
 }
 
 const ROOT_BG = '#000000';
@@ -64,14 +70,7 @@ const navTheme = {
 };
 
 async function safeHideSplash(reason) {
-  try {
-    await SplashScreen.hideAsync();
-  } catch (err) {
-    console.warn(
-      `SplashScreen.hideAsync failed (${reason || 'boot'}):`,
-      err?.message || err
-    );
-  }
+  await hideSplashSafe(reason);
 }
 
 /** Surfaces render crashes instead of a blank / white freeze. */
@@ -403,20 +402,20 @@ function MissingSupabaseEnvScreen() {
   );
 }
 
-/** Outer boundary catches boot + navigation tree crashes. */
+/** Inner boundary — index.js CrashBoundary is the outermost wrapper. */
 export default function App() {
   if (!hasSupabaseEnv()) {
     return (
-      <CrashBoundary>
+      <RootErrorBoundary>
         <MissingSupabaseEnvScreen />
-      </CrashBoundary>
+      </RootErrorBoundary>
     );
   }
 
   return (
-    <CrashBoundary>
+    <RootErrorBoundary>
       <AppBoot />
-    </CrashBoundary>
+    </RootErrorBoundary>
   );
 }
 

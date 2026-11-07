@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import * as SplashScreen from 'expo-splash-screen';
 import { readNativeCrashLog } from '../../NativeLogger';
+import { hideSplashSafe } from '../boot/safeSplash';
 
 export class CrashBoundary extends React.Component {
   state = { hasError: false, error: null, stack: null, crashFile: null };
@@ -14,7 +14,7 @@ export class CrashBoundary extends React.Component {
     this.setState({ stack: errorInfo?.componentStack });
     console.error('BAWAAL Caught Startup Crash:', error, errorInfo);
     // Never leave the native splash covering a crashed tree
-    SplashScreen.hideAsync().catch(() => {});
+    void hideSplashSafe('crash-boundary');
     readNativeCrashLog()
       .then((crashFile) => this.setState({ crashFile }))
       .catch(() => {});

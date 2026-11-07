@@ -35,8 +35,11 @@ export function getSupabaseAnonKey() {
 if (!hasSupabaseEnv()) {
   console.warn(
     '[supabase] Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
-      'Copy .env.example to .env and fill in your project credentials.'
+      'Copy .env.example to .env and fill in your project credentials. ' +
+      'Client will use an inert placeholder — App shows a visible error screen.'
   );
+} else {
+  console.log('[supabase] Env present — creating client');
 }
 
 /**
@@ -96,14 +99,53 @@ const PLACEHOLDER_JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24ifQ.placeholder';
 
 function createSafeClient() {
-  try {
-    const url = hasSupabaseEnv() ? supabaseUrl : PLACEHOLDER_URL;
-    const key =
-      hasSupabaseEnv() && isValidSupabaseKey(supabaseAnonKey)
-        ? supabaseAnonKey
-        : PLACEHOLDER_JWT;
+  // Never create against undefined env — placeholder avoids unhandled throws.
+  if (!hasSupabaseEnv()) {
+    console.warn('[supabase] Skipping real client — env undefined/empty');
+    try {
+      return createClient(PLACEHOLDER_URL, PLACEHOLDER_JWT, {
+        auth: {
+          storage: MemoryStorage,
+          autoRefreshToken: false,
+          persistSession: false,
+          detectSessionInUrl: false,
+        },
+      });
+    } catch (err) {
+      console.warn(
+        '[supabase] placeholder createClient failed:',
+        err?.message || err
+      );
+      // Last-resort inert shell — never throw at import time.
+      return {
+        auth: {
+          getSession: async () => ({ data: { session: null }, error: null }),
+          getUser: async () => ({ data: { user: null }, error: null }),
+          signOut: async () => ({ error: null }),
+        },
+        from: () => ({
+          select: async () => ({ data: [], error: null }),
+          upsert: async () => ({ data: null, error: null }),
+          insert: async () => ({ data: null, error: null }),
+        }),
+        storage: {
+          from: () => ({
+            upload: async () => ({ data: null, error: null }),
+            getPublicUrl: () => ({ data: { publicUrl: '' } }),
+          }),
+        },
+      };
+    }
+  }
 
-    return createClient(url, key, {
+  try {
+    const key = isValidSupabaseKey(supabaseAnonKey)
+      ? supabaseAnonKey
+      : PLACEHOLDER_JWT;
+    if (!isValidSupabaseKey(supabaseAnonKey)) {
+      console.warn('[supabase] Anon key shape invalid — using placeholder key');
+    }
+    return createClient(supabaseUrl, key, {
       auth: {
         storage: authStorage,
         autoRefreshToken: persistSession,
