@@ -9,7 +9,7 @@ import {
 import { COLORS } from './theme';
 
 /**
- * In-app splash — mirrors native splash_v2.png / #000000 branding.
+ * In-app splash — mirrors native splash_android_PROPER_1080x1920_black.png / #000000 branding.
  */
 export default function SplashScreen({ navigation }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -37,7 +37,7 @@ export default function SplashScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor="#000000" hidden />
       <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
         <Image
-          source={require('./assets/splash_v2.png')}
+          source={require('./assets/splash_android_PROPER_1080x1920_black.png')}
           style={styles.splashImage}
           resizeMode="contain"
         />

@@ -7,14 +7,19 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash_v2.png",
+      "image": "./assets/splash_android_PROPER_1080x1920_black.png",
       "resizeMode": "contain",
-      "backgroundColor": "#08120F"
+      "backgroundColor": "#000000"
     },
     "scheme": "bawaal",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bawaal.mobile",
+      "splash": {
+        "image": "./assets/splash_android_PROPER_1080x1920_black.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#000000"
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "Allow BAWAAL to access your camera for live battle streaming and responses.",
         "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone for live battle audio and responses.",
@@ -26,12 +31,12 @@
       "package": "com.bawaal.mobile",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#08120F"
+        "backgroundColor": "#000000"
       },
       "splash": {
-        "image": "./assets/splash_v2.png",
+        "image": "./assets/splash_android_PROPER_1080x1920_black.png",
         "resizeMode": "contain",
-        "backgroundColor": "#08120F"
+        "backgroundColor": "#000000"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -102,8 +107,8 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash_v2.png",
-          "backgroundColor": "#08120F",
+          "image": "./assets/splash_android_PROPER_1080x1920_black.png",
+          "backgroundColor": "#000000",
           "resizeMode": "contain",
           "imageWidth": 280
         }

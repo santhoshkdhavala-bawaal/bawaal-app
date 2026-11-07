@@ -260,7 +260,7 @@ function AppBoot() {
       <View style={styles.jsSplash}>
         <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} hidden />
         <Image
-          source={require('./assets/splash_v2.png')}
+          source={require('./assets/splash_android_PROPER_1080x1920_black.png')}
           style={styles.splashImage}
           resizeMode="contain"
           onError={(e) => {
