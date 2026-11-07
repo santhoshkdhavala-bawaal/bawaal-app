@@ -38,6 +38,7 @@
         "resizeMode": "contain",
         "backgroundColor": "#000000"
       },
+      "proguardRules": "./proguard-rules.pro",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -97,7 +98,7 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "extraProguardRules": "-keep class expo.modules.core.interfaces.services.KeepAwakeManager { *; }\n-dontwarn expo.modules.core.interfaces.services.KeepAwakeManager\n-keep class expo.modules.av.** { *; }\n-dontwarn expo.modules.av.**"
+            "extraProguardRules": "-keep class expo.modules.core.interfaces.services.KeepAwakeManager { *; }\n-dontwarn expo.modules.core.interfaces.services.KeepAwakeManager\n-keep class expo.modules.av.** { *; }\n-dontwarn expo.modules.av.**\n-keep class androidx.work.impl.WorkDatabase** { *; }"
           },
           "ios": {
             "deploymentTarget": "16.4"
