@@ -22,6 +22,10 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://petjdnyrjhgruvhzavmu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBldGpkbnlyamhncnV2aHphdm11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI1OTQ1MDEsImV4cCI6MjEwODE3MDUwMX0.IZhheIHaLVdWqQOhS4LtSqSkm17RTGwPDJn9J4PDRXY"
       }
     },
     "production": {
