@@ -22,14 +22,22 @@ import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
 import { CrashBoundary } from './src/components/CrashBoundary';
+import { hasSupabaseEnv } from './src/services/supabase';
 
 enableScreens(true);
 
 // Native builds: keep splash until boot. Expo Go: never block on native splash.
-if (isExpoGo) {
-  SplashScreen.hideAsync().catch(() => {});
-} else {
-  SplashScreen.preventAutoHideAsync().catch(() => {});
+try {
+  if (isExpoGo) {
+    SplashScreen.hideAsync().catch(() => {});
+  } else {
+    SplashScreen.preventAutoHideAsync().catch(() => {});
+  }
+} catch (err) {
+  console.warn(
+    '[App] SplashScreen.preventAutoHideAsync failed:',
+    err?.message || err
+  );
 }
 
 const ROOT_BG = '#000000';
@@ -381,8 +389,30 @@ function AppBoot() {
   );
 }
 
+function MissingSupabaseEnvScreen() {
+  useEffect(() => {
+    void safeHideSplash('missing-supabase-env');
+  }, []);
+
+  return (
+    <View style={styles.errorRoot}>
+      <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
+      <Text style={styles.errorTitle}>BAWAAL</Text>
+      <Text style={styles.errorBody}>Missing Supabase Environment Variables</Text>
+    </View>
+  );
+}
+
 /** Outer boundary catches boot + navigation tree crashes. */
 export default function App() {
+  if (!hasSupabaseEnv()) {
+    return (
+      <CrashBoundary>
+        <MissingSupabaseEnvScreen />
+      </CrashBoundary>
+    );
+  }
+
   return (
     <CrashBoundary>
       <AppBoot />

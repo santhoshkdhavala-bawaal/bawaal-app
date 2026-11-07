@@ -1,19 +1,35 @@
 import { registerRootComponent } from 'expo';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
+
 // Install global ErrorUtils crash file logger before App mounts
 import './NativeLogger';
 import App from './App';
 
-// Expo Go: hide native splash immediately so App can paint Entry/Main.
-// Native builds: App.js calls preventAutoHideAsync and hideAsync after boot.
-if (Constants.appOwnership === 'expo') {
-  SplashScreen.hideAsync().catch(() => {});
+const isExpoGo = Constants.appOwnership === 'expo';
+
+try {
+  if (isExpoGo) {
+    // Expo Go: never block on native splash
+    SplashScreen.hideAsync().catch(() => {});
+  } else {
+    // Native / APK: keep splash until AppBoot finally/hide
+    SplashScreen.preventAutoHideAsync().catch(() => {});
+  }
+} catch (err) {
+  console.warn(
+    '[boot] SplashScreen init failed:',
+    err?.message || err
+  );
 }
 
 // Absolute failsafe — never leave the white/native splash covering a hung boot.
 setTimeout(() => {
-  SplashScreen.hideAsync().catch(() => {});
+  try {
+    SplashScreen.hideAsync().catch(() => {});
+  } catch (_) {
+    /* soft-fail */
+  }
 }, 6000);
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App).

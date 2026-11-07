@@ -4,6 +4,7 @@
  */
 export {
   supabase,
+  hasSupabaseEnv,
   isSupabaseConfigured,
   getSupabaseUrl,
   getSupabaseAnonKey,
