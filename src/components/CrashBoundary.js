@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
-import { readNativeCrashLog } from '../utils/nativeCrashLog';
+import { readNativeCrashLog } from '../../NativeLogger';
 
 export class CrashBoundary extends React.Component {
   state = { hasError: false, error: null, stack: null, crashFile: null };
