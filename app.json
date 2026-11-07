@@ -91,7 +91,8 @@
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 24
+            "minSdkVersion": 24,
+            "extraProguardRules": "-keep class expo.modules.core.interfaces.services.KeepAwakeManager { *; }\n-dontwarn expo.modules.core.interfaces.services.KeepAwakeManager\n-keep class expo.modules.av.** { *; }\n-dontwarn expo.modules.av.**"
           },
           "ios": {
             "deploymentTarget": "16.4"
@@ -108,7 +109,8 @@
         }
       ],
       "expo-status-bar",
-      "expo-image"
+      "expo-image",
+      "expo-font"
     ],
     "extra": {
       "eas": {
