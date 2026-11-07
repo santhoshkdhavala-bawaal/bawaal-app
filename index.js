@@ -1,6 +1,8 @@
 import { registerRootComponent } from 'expo';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
+// Install global ErrorUtils crash file logger before App mounts
+import './src/utils/nativeCrashLog';
 import App from './App';
 
 // Expo Go: hide native splash immediately so App can paint Entry/Main.
