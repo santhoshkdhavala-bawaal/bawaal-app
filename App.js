@@ -27,25 +27,6 @@ import {
   preventAutoHideSafe,
 } from './src/boot/safeSplash';
 
-try {
-  enableScreens(true);
-} catch (err) {
-  console.warn('[App] enableScreens failed:', err?.message || err);
-}
-
-// Native builds: keep splash until boot. Expo Go: never block on native splash.
-try {
-  if (isExpoGo) {
-    void hideSplashSafe('expo-go-app');
-  } else {
-    void preventAutoHideSafe();
-  }
-} catch (err) {
-  console.warn('[App] SplashScreen init failed:', err?.message || err);
-} finally {
-  logStartup('App module loaded', { isExpoGo, hasSupabaseEnv: hasSupabaseEnv() });
-}
-
 const ROOT_BG = '#000000';
 
 /**
@@ -149,6 +130,27 @@ function AppBoot() {
   const [bootReady, setBootReady] = useState(false);
   const [initialRoute, setInitialRoute] = useState('Entry');
   const [bootError, setBootError] = useState(null);
+
+  // Post-mount only — no heavy sync init at App.js module top-level
+  useEffect(() => {
+    try {
+      enableScreens(true);
+    } catch (err) {
+      console.warn('[App] enableScreens failed:', err?.message || err);
+    }
+
+    try {
+      if (isExpoGo) {
+        void hideSplashSafe('expo-go-app');
+      } else {
+        void preventAutoHideSafe();
+      }
+    } catch (err) {
+      console.warn('[App] SplashScreen init failed:', err?.message || err);
+    } finally {
+      logStartup('App mounted', { isExpoGo, hasSupabaseEnv: hasSupabaseEnv() });
+    }
+  }, []);
 
   // Global AV session — unlocks Arena / publish video under iOS silent switch
   useEffect(() => {
