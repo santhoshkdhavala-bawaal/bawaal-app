@@ -94,16 +94,22 @@ export class RootErrorBoundary extends Component {
 
   render() {
     if (this.state.error) {
+      const message = String(this.state.error?.message || this.state.error);
+      const jsStack = this.state.error?.stack
+        ? String(this.state.error.stack)
+        : null;
       return (
         <View style={styles.errorRoot}>
           <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
           <Text style={styles.errorTitle}>BAWAAL failed to start</Text>
           <ScrollView style={styles.errorScroll}>
-            <Text style={styles.errorBody}>
-              {String(this.state.error?.message || this.state.error)}
-            </Text>
+            <Text style={styles.errorBody}>{message}</Text>
+            {!!jsStack && <Text style={styles.errorStack}>{jsStack}</Text>}
             {!!this.state.info?.componentStack && (
-              <Text style={styles.errorStack}>{this.state.info.componentStack}</Text>
+              <Text style={styles.errorStack}>
+                {'\n'}Component stack:{'\n'}
+                {this.state.info.componentStack}
+              </Text>
             )}
           </ScrollView>
           <Text

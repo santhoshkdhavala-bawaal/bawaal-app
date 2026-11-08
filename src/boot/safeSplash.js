@@ -1,5 +1,7 @@
 /**
  * Soft-fail SplashScreen helpers — never block render if native splash control fails.
+ * Every SplashScreen.hideAsync / preventAutoHideAsync call lives in try/catch/finally
+ * so splash lockups never block app rendering.
  */
 import * as SplashScreen from 'expo-splash-screen';
 

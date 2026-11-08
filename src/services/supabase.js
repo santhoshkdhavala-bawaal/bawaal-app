@@ -33,10 +33,21 @@ export function getSupabaseAnonKey() {
 }
 
 if (!hasSupabaseEnv()) {
+  if (rawUrl === undefined || rawUrl === null || !supabaseUrl) {
+    console.warn(
+      '[supabase] EXPO_PUBLIC_SUPABASE_URL is missing/undefined. ' +
+        'Set it in .env (local) or eas.json env (EAS builds).'
+    );
+  }
+  if (rawKey === undefined || rawKey === null || !supabaseAnonKey) {
+    console.warn(
+      '[supabase] EXPO_PUBLIC_SUPABASE_ANON_KEY is missing/undefined. ' +
+        'Set it in .env (local) or eas.json env (EAS builds).'
+    );
+  }
   console.warn(
-    '[supabase] Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
-      'Copy .env.example to .env and fill in your project credentials. ' +
-      'Client will use an inert placeholder — App shows a visible error screen.'
+    '[supabase] Missing env — client uses an inert placeholder so createClient never throws a fatal unhandled error. ' +
+      'Copy .env.example to .env and fill in your project credentials. App shows a visible error screen.'
   );
 } else {
   console.log('[supabase] Env present — creating client');

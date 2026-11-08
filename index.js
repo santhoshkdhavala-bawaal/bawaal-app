@@ -34,7 +34,10 @@ try {
   }, 6000);
 }
 
-/** Outermost boundary — render errors show on screen instead of killing the process. */
+/**
+ * Outermost root — CrashBoundary (ErrorBoundary) catches unhandled JS exceptions
+ * on launch and renders raw error + stack in Text so the phone stays usable.
+ */
 function Root() {
   return (
     <CrashBoundary>
