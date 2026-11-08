@@ -6,20 +6,10 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash_android_PROPER_1080x1920_black.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
-    },
     "scheme": "bawaal",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.bawaal.mobile",
-      "splash": {
-        "image": "./assets/splash_android_PROPER_1080x1920_black.png",
-        "resizeMode": "contain",
-        "backgroundColor": "#000000"
-      },
       "infoPlist": {
         "NSCameraUsageDescription": "Allow BAWAAL to access your camera for live battle streaming and responses.",
         "NSMicrophoneUsageDescription": "Allow BAWAAL to access your microphone for live battle audio and responses.",
@@ -33,12 +23,6 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
       },
-      "splash": {
-        "image": "./assets/splash_android_PROPER_1080x1920_black.png",
-        "resizeMode": "contain",
-        "backgroundColor": "#000000"
-      },
-      "proguardRules": "./proguard-rules.pro",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -98,7 +82,7 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "extraProguardRules": "-keep class expo.modules.** { *; }\n-keep class expo.modules.ExpoModulesV2ModuleList { *; }\n-dontwarn expo.modules.**"
+            "extraProguardRules": "-keep class expo.modules.** { *; }\n-keep class expo.modules.ExpoModulesV2ModuleList { *; }\n-dontwarn expo.modules.**\n-keep class androidx.work.impl.WorkDatabase** { *; }"
           },
           "ios": {
             "deploymentTarget": "16.4"
