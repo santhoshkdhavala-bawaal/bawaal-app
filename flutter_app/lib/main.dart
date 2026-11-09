@@ -20,11 +20,16 @@ Future<void> main() async {
     }
   }
 
-  // Soft-init Supabase so the registration UI still boots without credentials.
+  // Soft-init Supabase so registration still boots without credentials.
+  // detectSessionInUri: false bypasses deep-link / root-URL OAuth intercept
+  // on cold start (avoids "Auth code" errors on plain navigation).
   if (AppEnv.isConfigured) {
     await Supabase.initialize(
       url: AppEnv.supabaseUrl,
       publishableKey: AppEnv.supabaseAnonKey,
+      authOptions: const FlutterAuthClientOptions(
+        detectSessionInUri: false,
+      ),
     );
   }
 
