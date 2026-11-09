@@ -9,7 +9,7 @@ import '../config/theme.dart';
 class BawaalLogoLockup extends StatelessWidget {
   const BawaalLogoLockup({
     super.key,
-    this.height = 118,
+    this.height = 80,
   });
 
   /// Visual height of the full lockup on dark (#0E0F13) surfaces.
@@ -24,7 +24,7 @@ class BawaalLogoLockup extends StatelessWidget {
       image: true,
       child: Center(
         child: Image.asset(
-          fullLockupAsset,
+          'assets/images/BAWAALFULL.png',
           height: height,
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
