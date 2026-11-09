@@ -21,9 +21,7 @@ Future<void> main() async {
     await Supabase.initialize(
       url: AppEnv.supabaseUrl,
       publishableKey: AppEnv.supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        detectSessionInUri: false,
-      ),
+      authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
     );
   }
 
