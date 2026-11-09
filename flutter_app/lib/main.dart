@@ -9,20 +9,14 @@ import 'screens/registration_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Prefer local `.env` (gitignored). Falls back to `--dart-define`.
   try {
     await dotenv.load(fileName: '.env');
   } catch (_) {
     try {
       await dotenv.load(fileName: '.env.example');
-    } catch (_) {
-      // Env may still come from --dart-define=SUPABASE_URL / SUPABASE_ANON_KEY
-    }
+    } catch (_) {}
   }
 
-  // Soft-init Supabase so registration still boots without credentials.
-  // detectSessionInUri: false bypasses deep-link / root-URL OAuth intercept
-  // on cold start (avoids "Auth code" errors on plain navigation).
   if (AppEnv.isConfigured) {
     await Supabase.initialize(
       url: AppEnv.supabaseUrl,
