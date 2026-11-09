@@ -20,6 +20,7 @@ Future<void> main() async {
     }
   }
 
+  // Soft-init Supabase so the registration UI still boots without credentials.
   if (AppEnv.isConfigured) {
     await Supabase.initialize(
       url: AppEnv.supabaseUrl,
@@ -39,31 +40,7 @@ class BawaalApp extends StatelessWidget {
       title: 'BAWAAL',
       debugShowCheckedModeBanner: false,
       theme: buildBawaalTheme(),
-      home: AppEnv.isConfigured
-          ? const RegistrationPage()
-          : const _MissingEnvScreen(),
-    );
-  }
-}
-
-class _MissingEnvScreen extends StatelessWidget {
-  const _MissingEnvScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: BawaalColors.background,
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'Add SUPABASE_URL and SUPABASE_ANON_KEY to flutter_app/.env '
-            '(copy from .env.example), then restart.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white70, height: 1.4),
-          ),
-        ),
-      ),
+      home: const RegistrationPage(),
     );
   }
 }
