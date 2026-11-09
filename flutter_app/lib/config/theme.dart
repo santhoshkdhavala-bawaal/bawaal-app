@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-/// BAWAAL registration visual tokens (wireframe).
+/// BAWAAL registration visual tokens (locked production).
 abstract final class BawaalColors {
-  static const Color background = Color(0xFF0E0F13);
-  static const Color surface = Color(0xFF1E1F23);
+  static const Color background = Color(0xFF0B0C0E);
+  static const Color surface = Color(0xFF1E2026);
   static const Color accent = Color(0xFFF36017);
   static const Color button = Color(0xFFF36017);
   static const Color textPrimary = Color(0xFFF5F5F5);
@@ -63,27 +63,28 @@ ThemeData buildBawaalTheme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: BawaalColors.surface,
-      hintStyle: const TextStyle(color: BawaalColors.textMuted),
-      labelStyle: const TextStyle(color: BawaalColors.textMuted),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      isDense: true,
+      hintStyle: const TextStyle(color: BawaalColors.textMuted, fontSize: 13),
+      labelStyle: const TextStyle(color: BawaalColors.textMuted, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: BawaalColors.fieldBorder),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: BawaalColors.fieldBorder),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: BawaalColors.accent, width: 1.6),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: BawaalColors.danger),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: BawaalColors.danger, width: 1.6),
       ),
     ),
@@ -95,6 +96,8 @@ ThemeData buildBawaalTheme() {
       checkColor: WidgetStateProperty.all(Colors.white),
       side: const BorderSide(color: BawaalColors.textMuted, width: 1.4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
@@ -102,11 +105,11 @@ ThemeData buildBawaalTheme() {
         foregroundColor: Colors.white,
         disabledBackgroundColor: BawaalColors.button.withValues(alpha: 0.35),
         disabledForegroundColor: Colors.white70,
-        minimumSize: const Size.fromHeight(52),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        minimumSize: const Size.fromHeight(48),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         textStyle: GoogleFonts.archivo(
           fontWeight: FontWeight.w800,
-          fontSize: 16,
+          fontSize: 15,
           letterSpacing: 0.8,
         ),
       ),

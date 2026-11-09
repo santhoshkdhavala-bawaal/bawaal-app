@@ -63,11 +63,14 @@ class _GlowTextFieldState extends State<GlowTextField> {
   @override
   Widget build(BuildContext context) {
     final glow = widget.glowOnFocus && _focused;
+    final orangeBorder = widget.glowOnFocus
+        ? const BorderSide(color: BawaalColors.accent, width: 1.6)
+        : null;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: glow
             ? [
                 BoxShadow(
@@ -96,6 +99,18 @@ class _GlowTextFieldState extends State<GlowTextField> {
           counterText: '',
           prefixIcon: widget.prefix,
           suffixIcon: widget.suffix,
+          enabledBorder: orangeBorder == null
+              ? null
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: orangeBorder,
+                ),
+          focusedBorder: orangeBorder == null
+              ? null
+              : OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: orangeBorder,
+                ),
         ),
       ),
     );

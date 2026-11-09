@@ -1,4 +1,4 @@
-/// Grouped sports taxonomy for the registration Sports picker.
+/// Locked 7-category BAWAAL sports master list for registration.
 const Map<String, List<String>> sportsCategories = {
   'Ball Sports': [
     'Cricket',
@@ -52,6 +52,7 @@ const Map<String, List<String>> sportsCategories = {
     'Bodybuilding',
   ],
   'Others': [
+    'Archery',
     'Esports',
     'Yoga',
     'Dance Sport',
@@ -59,10 +60,21 @@ const Map<String, List<String>> sportsCategories = {
   ],
 };
 
-List<String> get allSportsFlat {
-  final out = <String>[];
+/// Flat dropdown entries: disabled category headers + selectable sports.
+List<({String value, String label, bool isHeader})> get sportsDropdownEntries {
+  final out = <({String value, String label, bool isHeader})>[];
   for (final entry in sportsCategories.entries) {
-    out.addAll(entry.value);
+    out.add((
+      value: 'header:${entry.key}',
+      label: '-- ${entry.key} --',
+      isHeader: true,
+    ));
+    for (final sport in entry.value) {
+      out.add((value: sport, label: sport, isHeader: false));
+    }
   }
   return out;
 }
+
+bool isSportsHeaderValue(String? value) =>
+    value == null || value.startsWith('header:');

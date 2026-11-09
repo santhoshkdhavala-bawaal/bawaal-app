@@ -30,6 +30,7 @@ Future<void> main() async {
   runApp(const BawaalApp());
 }
 
+/// Production entry — boots directly into the locked registration module.
 class BawaalApp extends StatelessWidget {
   const BawaalApp({super.key});
 
