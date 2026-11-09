@@ -159,7 +159,11 @@ class _RegistrationPageState extends State<RegistrationPage> {
                   maxWidth: 480,
                   minHeight: constraints.maxHeight,
                 ),
-                child: SingleChildScrollView(
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context).copyWith(
+                    scrollbars: false,
+                  ),
+                  child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
@@ -435,6 +439,7 @@ class _RegistrationPageState extends State<RegistrationPage> {
                       ),
                     ),
                   ),
+                ),
                 ),
               ),
             );

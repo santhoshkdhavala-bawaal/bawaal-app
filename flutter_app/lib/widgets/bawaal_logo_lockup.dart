@@ -12,8 +12,7 @@ class BawaalLogoLockup extends StatelessWidget {
 
   final double height;
 
-  static const String primaryAsset = 'assets/images/BAWAAL.png';
-  static const String fallbackAsset = 'assets/BAWAAL.png';
+  static const String logoAsset = 'assets/images/BAWAAL.png';
 
   @override
   Widget build(BuildContext context) {
@@ -23,23 +22,17 @@ class BawaalLogoLockup extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Image.asset(
-            primaryAsset,
+            'assets/images/BAWAAL.png',
             height: height,
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
-            errorBuilder: (context, error, stackTrace) => Image.asset(
-              fallbackAsset,
-              height: height,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) => Text(
-                'BAWAAL',
-                style: GoogleFonts.bebasNeue(
-                  fontSize: 36,
-                  color: BawaalColors.accent,
-                  letterSpacing: 2,
-                  height: 1,
-                ),
+            errorBuilder: (context, error, stackTrace) => Text(
+              'BAWAAL',
+              style: GoogleFonts.bebasNeue(
+                fontSize: 36,
+                color: BawaalColors.accent,
+                letterSpacing: 2,
+                height: 1,
               ),
             ),
           ),
