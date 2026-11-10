@@ -20,6 +20,26 @@ export const ARENA_CHALLENGES_SETUP_HINT =
 /** Canonical Arena challenge publish / feed table. */
 const TABLE = 'arena_challenges';
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Only real UUIDs are safe for arena_challenges.user_id (uuid / FK columns).
+ * Rejects placeholders like "user-local", "host-local", handles, etc.
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function asUuidOrNull(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  // Explicit reject of non-uuid local / pseudo ids
+  if (/^user-/i.test(s) || /^host-/i.test(s) || s.startsWith('@')) {
+    return null;
+  }
+  return UUID_RE.test(s) ? s : null;
+}
+
 function resolveHost(overrides = {}) {
   const user = getActiveUser?.() || {};
   const handleRaw = String(
@@ -239,11 +259,19 @@ export async function publishArenaChallenge({
     _freshPublish: true,
   };
 
-  let userId = null;
+  let rawUserId = null;
   try {
-    userId = (await resolveVideosUserId(host.userId)) || host.userId || null;
+    rawUserId = (await resolveVideosUserId(host.userId)) || host.userId || null;
   } catch (_) {
-    userId = host.userId || null;
+    rawUserId = host.userId || null;
+  }
+  // DB expects uuid — drop "user-…" / non-uuid strings so Postgres doesn't type-error
+  const safeUserId = asUuidOrNull(rawUserId);
+  if (rawUserId && !safeUserId) {
+    console.warn(
+      '[arena_challenges] omitting non-UUID user_id from insert payload:',
+      String(rawUserId)
+    );
   }
 
   // Required fields for arena_challenges — always set explicitly
@@ -260,9 +288,12 @@ export async function publishArenaChallenge({
     title: requiredTitle,
     sport: requiredSport,
     video_url: requiredVideoUrl,
-    user_id: userId != null ? String(userId) : null,
     created_at: createdAt,
   };
+  // Only attach user_id when it is a valid UUID (omit otherwise)
+  if (safeUserId) {
+    insertPayload.user_id = safeUserId;
+  }
 
   const localCard = mapRowToCard(insertPayload, cardExtras);
 
@@ -358,19 +389,10 @@ export async function publishArenaChallenge({
     let statusText = null;
 
     try {
+      // insertPayload already omits user_id when it is not a valid UUID
       const insertResult = await supabase
         .from(TABLE)
-        .upsert(
-          {
-            id: challengeId,
-            title: insertPayload.title,
-            sport: insertPayload.sport,
-            video_url: insertPayload.video_url,
-            user_id: insertPayload.user_id,
-            created_at: insertPayload.created_at,
-          },
-          { onConflict: 'id' }
-        )
+        .upsert({ ...insertPayload }, { onConflict: 'id' })
         .select()
         .single();
       data = insertResult.data;
