@@ -25,7 +25,14 @@ import {
   Easing,
   Image,
   InteractionManager,
+  Platform,
 } from 'react-native';
+import {
+  abortWebClipRecording,
+  isWebMediaRecorderAvailable,
+  startWebClipRecording,
+  stopWebClipRecording,
+} from './src/utils/webMediaRecorder';
 import {
   CameraView,
   useCameraPermissions,
@@ -1007,7 +1014,11 @@ export default function UniversalCamera({
     recordingLockRef.current = false;
     stoppingRef.current = false;
     try {
-      cam?.stopRecording?.();
+      if (Platform.OS === 'web') {
+        abortWebClipRecording();
+      } else {
+        cam?.stopRecording?.();
+      }
     } catch {
       /* ignore — may not be recording */
     }
@@ -1095,7 +1106,11 @@ export default function UniversalCamera({
       pendingPreviewUriRef.current = null;
       recordAsyncWaitRef.current = null;
       try {
-        cameraRef.current?.stopRecording?.();
+        if (Platform.OS === 'web') {
+          abortWebClipRecording();
+        } else {
+          cameraRef.current?.stopRecording?.();
+        }
       } catch {
         /* ignore */
       }
@@ -1344,10 +1359,20 @@ export default function UniversalCamera({
     fadeTimePill(true);
     startElapsedTimer();
 
-    const recordPromise = cam.recordAsync({
-      maxDuration: recordLimit,
-      // Higher bitrate when slow-mo capture is armed (cleaner ramp / punch-ins)
-    });
+    const useWebRecorder =
+      Platform.OS === 'web' && isWebMediaRecorderAvailable();
+
+    // Web: expo-camera record() is a no-op (`uri: ''`) — use MediaRecorder on the live stream.
+    // Native: expo-camera recordAsync until stop or maxDuration.
+    if (useWebRecorder) {
+      // CameraView may attach srcObject a tick after onCameraReady
+      await waitMs(50);
+    }
+    const recordPromise = useWebRecorder
+      ? startWebClipRecording({ maxDurationSec: recordLimit })
+      : cam.recordAsync({
+          maxDuration: recordLimit,
+        });
     // Swallow late Invariant rejections after stop already opened preview
     recordAsyncWaitRef.current = Promise.resolve(recordPromise).catch((err) => {
       console.warn(
@@ -1384,7 +1409,8 @@ export default function UniversalCamera({
             if (
               !u ||
               String(u).startsWith('emulator-mock://') ||
-              /^https?:\/\//i.test(String(u))
+              /^https?:\/\//i.test(String(u)) ||
+              /^blob:/i.test(String(u))
             ) {
               return u;
             }
@@ -1499,6 +1525,11 @@ export default function UniversalCamera({
     const openPreview =
       mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
 
+    const stopTimeoutMs =
+      Platform.OS === 'web'
+        ? Math.max(STOP_SAVE_TIMEOUT_MS, 4000)
+        : STOP_SAVE_TIMEOUT_MS;
+
     const savingWatchdog = setTimeout(() => {
       setIsFinalizingClip(false);
       setIsProcessing(false);
@@ -1511,16 +1542,23 @@ export default function UniversalCamera({
           setShowPreview(true);
         }
       }
-    }, Math.max(500, STOP_SAVE_TIMEOUT_MS));
+    }, Math.max(500, stopTimeoutMs));
 
     try {
       const settled = await settleStopRecording({
-        timeoutMs: STOP_SAVE_TIMEOUT_MS,
+        // Web MediaRecorder onstop needs a few seconds after stop click
+        timeoutMs: stopTimeoutMs,
         recordPromise: recordAsyncWaitRef.current as
           | Promise<{ uri?: string } | null>
           | null
           | undefined,
-        stopRecording: () => cameraRef.current?.stopRecording?.(),
+        stopRecording: () => {
+          if (Platform.OS === 'web') {
+            stopWebClipRecording();
+            return;
+          }
+          cameraRef.current?.stopRecording?.();
+        },
       });
 
       if (recordingHandoffDoneRef.current) {

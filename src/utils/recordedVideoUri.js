@@ -52,10 +52,16 @@ export function validateRecordedVideoUri(uri) {
   const isPh =
     /^ph:\/\//i.test(trimmed) || /^assets-library:\/\//i.test(trimmed);
   const isHttps = /^https:\/\//i.test(trimmed);
+  // Web MediaRecorder object URLs (no file extension)
+  const isBlob = /^blob:/i.test(trimmed);
   // Metro / asset-server URIs for bundled sample_challenge.mp4
   const isAssetHttp =
     /^https?:\/\//i.test(trimmed) &&
     (/sample_challenge\.mp4/i.test(pathOnly) || hasVideoExt);
+
+  if (isBlob) {
+    return { ok: true, uri: trimmed };
+  }
 
   // Prefer explicit video extension; allow content:// / ph:// (often no extension)
   if (
