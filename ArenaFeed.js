@@ -268,11 +268,70 @@ function battleRowVideoUrl(row) {
   return (
     row?.video_url ||
     row?.videoUrl ||
+    row?.videoUri ||
     row?.opener_video_url ||
     row?.openerVideoUrl ||
+    row?.openerVideoUri ||
+    row?.challengeVideoUri ||
+    row?.publicCloudUrl ||
     row?.uri ||
+    row?.localVideoUri ||
     null
   );
+}
+
+/** Human @tag for Arena list rows — never flash a raw UUID. */
+function resolveChallengeUserTag(row) {
+  const raw =
+    row?.username ||
+    row?.handle ||
+    row?.author ||
+    row?.host ||
+    row?.creator ||
+    row?.user_id ||
+    'athlete';
+  const s = String(raw || 'athlete').trim();
+  if (!s || s === 'null' || s === 'undefined') return '@athlete';
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+  ) {
+    return '@athlete';
+  }
+  return s.startsWith('@') ? s : `@${s.replace(/^@/, '')}`;
+}
+
+/** Normalize any arena_challenges / feed row into a FlatList video card. */
+function mapChallengeRowToFeedItem(row, index = 0) {
+  if (!row || typeof row !== 'object') return null;
+  const videoUrl = battleRowVideoUrl(row);
+  const title = String(
+    row.title || row.caption || row.target || row.description || 'OPEN CHALLENGE'
+  ).trim();
+  const userTag = resolveChallengeUserTag(row);
+  const id = String(
+    row.id ||
+      row.challengeId ||
+      (videoUrl ? `uri-${videoIdentityKey(videoUrl)}` : `challenge-${index}-${createdAtMs(row)}`)
+  );
+  return {
+    ...row,
+    id,
+    type: 'challenge_video',
+    video_url: videoUrl,
+    videoUrl,
+    videoUri: videoUrl,
+    uri: videoUrl,
+    title,
+    caption: title,
+    username: userTag,
+    author: userTag,
+    handle: userTag,
+    thumbnail_url:
+      row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
+    created_at: row.created_at || null,
+    createdAt: createdAtMs(row) || Date.now(),
+    _fromArenaChallenges: row._fromArenaChallenges !== false,
+  };
 }
 
 function mapPostToReel(post) {
@@ -1461,9 +1520,47 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [visibleFeed]);
 
-  const activeFeedItem = feedWithShelves[activeIndex] || null;
-  const activeSettingsReel =
-    activeFeedItem?.type === 'reel' ? activeFeedItem : null;
+  /**
+   * Vertical Arena list data — every Supabase `arena_challenges` row, newest first,
+   plus any fresh local publishes not yet present in the cloud array.
+   */
+  const challengeVideoFeed = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+
+    const pushRow = (row, index) => {
+      const mapped = mapChallengeRowToFeedItem(row, index);
+      if (!mapped?.id || seen.has(mapped.id)) return;
+      // Also dedupe by identical playable URI when both cloud + local copies exist
+      const vKey = videoIdentityKey(mapped.video_url);
+      if (vKey && seen.has(`v:${vKey}`)) return;
+      seen.add(mapped.id);
+      if (vKey) seen.add(`v:${vKey}`);
+      out.push(mapped);
+    };
+
+    // 1) All rows returned from Supabase (created_at desc)
+    const cloud = sortByCreatedAtDesc(Array.isArray(videos) ? videos : []);
+    cloud.forEach((row, index) => pushRow(row, index));
+
+    // 2) Fresh device publishes not yet mirrored in the cloud fetch
+    const locals = sortByCreatedAtDesc(
+      (Array.isArray(feedItems) ? feedItems : []).filter(
+        (item) =>
+          item &&
+          item.type !== 'community_shelf' &&
+          (item._freshPublish ||
+            item._fromArenaChallenges ||
+            battleRowVideoUrl(item))
+      )
+    );
+    locals.forEach((row, index) => pushRow(row, cloud.length + index));
+
+    return sortByCreatedAtDesc(out);
+  }, [videos, feedItems]);
+
+  const activeFeedItem = challengeVideoFeed[activeIndex] || null;
+  const activeSettingsReel = activeFeedItem || null;
 
   useEffect(() => {
     setSettingsOpen(false);
@@ -1642,22 +1739,6 @@ export default function ArenaFeed({ navigation, route }) {
     [screenHeight]
   );
 
-  const battleClips = useMemo(
-    () =>
-      sortByCreatedAtDesc(videos).map((row) => {
-        const videoUrl = battleRowVideoUrl(row);
-        return {
-          ...row,
-          video_url: videoUrl,
-          videoUrl,
-          thumbnail_url: row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
-          username: row.username || row.handle || row.author || row.creator,
-          caption: row.caption || row.title || row.target,
-        };
-      }),
-    [videos]
-  );
-
   /** Local / blob clip still uploading — show busy indicator on Arena. */
   const isUploadingClip = useMemo(() => {
     const checkUri = (uri) => {
@@ -1696,21 +1777,32 @@ export default function ArenaFeed({ navigation, route }) {
 
   const showFeedSpinner =
     isUploadingClip ||
-    (feedLoading && battleClips.length === 0 && !refreshing) ||
-    (videoFeedLoading && battleClips.length === 0 && !refreshing);
+    (feedLoading && challengeVideoFeed.length === 0 && !refreshing) ||
+    (videoFeedLoading && challengeVideoFeed.length === 0 && !refreshing);
 
-  const renderBattleClip = useCallback(
+  /** One full-bleed page per challenge — video player + title + @user tag. */
+  const renderChallengeVideo = useCallback(
     ({ item, index }) => (
-      <VideoItem
-        item={item}
-        isActive={Math.abs(index - activeIndex) <= 1}
-        shouldPlay={index === activeIndex}
-      />
+      <View
+        style={{
+          height: screenHeight,
+          width: '100%',
+          backgroundColor: '#000000',
+          overflow: 'hidden',
+        }}
+      >
+        <VideoItem
+          item={item}
+          itemHeight={screenHeight}
+          isActive={Math.abs(index - activeIndex) <= 1}
+          shouldPlay={index === activeIndex}
+        />
+      </View>
     ),
-    [activeIndex]
+    [activeIndex, screenHeight]
   );
 
-  const emptyBattleList = useMemo(
+  const emptyChallengeList = useMemo(
     () =>
       showFeedSpinner || refreshing ? (
         <View style={styles.loadingEmpty}>
@@ -1720,11 +1812,9 @@ export default function ArenaFeed({ navigation, route }) {
           </Text>
         </View>
       ) : (
-        <Text style={styles.emptySupabase}>
-          No videos yet. Pull down to refresh.
-        </Text>
+        emptyFilter
       ),
-    [showFeedSpinner, refreshing, isUploadingClip]
+    [showFeedSpinner, refreshing, isUploadingClip, emptyFilter]
   );
 
   return (
@@ -1797,12 +1887,14 @@ export default function ArenaFeed({ navigation, route }) {
         <FlatList
           ref={listRef}
           style={styles.feedList}
-          data={battleClips}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderBattleClip}
-          ListEmptyComponent={emptyBattleList}
+          data={challengeVideoFeed}
+          keyExtractor={(item, index) =>
+            String(item?.id || item?.video_url || `challenge-${index}`)
+          }
+          renderItem={renderChallengeVideo}
+          ListEmptyComponent={emptyChallengeList}
           contentContainerStyle={
-            battleClips.length === 0
+            challengeVideoFeed.length === 0
               ? styles.scrollContentEmpty
               : styles.scrollContent
           }
@@ -1813,12 +1905,12 @@ export default function ArenaFeed({ navigation, route }) {
           showsVerticalScrollIndicator={false}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-          removeClippedSubviews={false}
+          removeClippedSubviews={Platform.OS !== 'web'}
           maxToRenderPerBatch={5}
-          windowSize={5}
-          initialNumToRender={3}
+          windowSize={7}
+          initialNumToRender={Math.min(3, Math.max(challengeVideoFeed.length, 1))}
           getItemLayout={getFeedItemLayout}
-          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}`}
+          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${challengeVideoFeed.length}`}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1829,7 +1921,8 @@ export default function ArenaFeed({ navigation, route }) {
             />
           }
         />
-        {isUploadingClip || (feedLoading && battleClips.length > 0 && !refreshing) ? (
+        {isUploadingClip ||
+        (feedLoading && challengeVideoFeed.length > 0 && !refreshing) ? (
           <View style={styles.loadingOverlay} pointerEvents="none">
             <ActivityIndicator color="#FFFFFF" size="large" />
             <Text style={styles.loadingEmptyText}>
