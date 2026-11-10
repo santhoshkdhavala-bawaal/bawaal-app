@@ -43,10 +43,11 @@ export function isPlayableFeedUri(uri) {
   if (uri == null || typeof uri !== 'string') return false;
   const t = uri.trim();
   if (!t || t === 'null' || t === 'undefined') return false;
-  if (/^(mock|placeholder|local:|blob:)/i.test(t)) return false;
+  if (/^(mock|placeholder|local:)/i.test(t)) return false;
   return (
     t.startsWith('https://') ||
     t.startsWith('http://') ||
+    t.startsWith('blob:') ||
     t.startsWith('file://') ||
     t.startsWith('content://') ||
     t.startsWith('ph://') ||
