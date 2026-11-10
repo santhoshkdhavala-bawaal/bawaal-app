@@ -34,9 +34,15 @@ function getEnvAnonKey() {
   return typeof key === 'string' ? key.trim() : '';
 }
 
+/** True for browser MediaRecorder / object-URL clips. */
+export function isWebBlobUri(uri) {
+  return typeof uri === 'string' && /^blob:/i.test(uri.trim());
+}
+
 /**
  * Sanitize local video URIs for Android / iOS before upload.
  * Bare absolute paths on Android must be prefixed with `file://`.
+ * Web `blob:` URIs are left intact (no file:// rewrite).
  */
 export function sanitizeVideoUriForUpload(videoUri) {
   if (!videoUri || typeof videoUri !== 'string') return null;
@@ -49,6 +55,7 @@ export function sanitizeVideoUriForUpload(videoUri) {
     trimmed.startsWith('ph://') ||
     trimmed.startsWith('assets-library://') ||
     trimmed.startsWith('emulator-mock://') ||
+    trimmed.startsWith('blob:') ||
     /^https?:\/\//i.test(trimmed)
   ) {
     return trimmed;
@@ -71,14 +78,18 @@ function normalizeLocalUri(uri) {
   return sanitizeVideoUriForUpload(uri);
 }
 
-function makeObjectFileName(fileName) {
+function makeObjectFileName(fileName, preferredExt = '.mp4') {
+  const ext =
+    typeof preferredExt === 'string' && /^\.\w+$/.test(preferredExt)
+      ? preferredExt.toLowerCase()
+      : '.mp4';
   const raw =
     typeof fileName === 'string' && fileName.trim().length > 0
       ? fileName.trim()
-      : `bawaal_${Date.now()}.mp4`;
-  // Always keep .mp4 so Storage / CDN serve video/mp4
+      : `bawaal_${Date.now()}${ext}`;
   const cleaned = raw.replace(/[^\w.\-]+/g, '_');
-  return cleaned.toLowerCase().endsWith('.mp4') ? cleaned : `${cleaned}.mp4`;
+  if (/\.(mp4|webm|mov|m4v)$/i.test(cleaned)) return cleaned;
+  return `${cleaned}${ext}`;
 }
 
 export function isRemoteHttpsUri(uri) {
@@ -109,7 +120,8 @@ export function sanitizePlayableFeedUri(raw) {
     sanitized.startsWith('file://') ||
     sanitized.startsWith('content://') ||
     sanitized.startsWith('ph://') ||
-    sanitized.startsWith('assets-library://')
+    sanitized.startsWith('assets-library://') ||
+    sanitized.startsWith('blob:')
   ) {
     return ensurePublicBawaalVideoUrl(sanitized) || sanitized;
   }
@@ -141,12 +153,13 @@ export function ensurePublicBawaalVideoUrl(raw) {
 
   const base = getEnvSupabaseUrl();
 
-  // Local device URIs — leave alone
+  // Local device / browser blob URIs — leave alone
   if (
     uri.startsWith('file://') ||
     uri.startsWith('content://') ||
     uri.startsWith('ph://') ||
-    uri.startsWith('assets-library://')
+    uri.startsWith('assets-library://') ||
+    uri.startsWith('blob:')
   ) {
     return uri;
   }
@@ -288,10 +301,17 @@ export function resolvePlayableVideoUri(source) {
 
 /**
  * Copy camera temp clips into app document storage so POST still works after review.
+ * Web: never touch expo-file-system — return blob:/http(s) URI as-is.
  */
 export async function persistLocalVideoUri(localUri) {
   const uri = sanitizeVideoUriForUpload(localUri);
   if (!uri || uri.startsWith('emulator-mock://')) return uri;
+
+  // Browser MediaRecorder / object URLs — no native FS
+  if (Platform.OS === 'web' || isWebBlobUri(uri)) {
+    return uri;
+  }
+
   if (!FileSystem.documentDirectory) return uri;
 
   try {
@@ -316,9 +336,37 @@ export async function persistLocalVideoUri(localUri) {
 }
 
 /**
+ * Web: resolve a blob:/http(s) URI to a Blob without expo-file-system.
+ * @param {string} fileUri
+ * @returns {Promise<Blob>}
+ */
+async function readWebVideoBlob(fileUri) {
+  const response = await fetch(fileUri);
+  if (!response.ok) {
+    throw new Error(
+      `Could not open web clip for upload (HTTP ${response.status})`
+    );
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size < MIN_VIDEO_BYTES) {
+    throw new Error(
+      `Web clip too small for upload (${blob?.size || 0} bytes)`
+    );
+  }
+  return blob;
+}
+
+/**
  * Ensure the local file exists and is large enough to be a real video (not empty stream).
+ * Web uses fetch→Blob size; native uses expo-file-system getInfoAsync.
  */
 async function assertUploadableVideoFile(fileUri) {
+  if (Platform.OS === 'web' || isWebBlobUri(fileUri)) {
+    const blob = await readWebVideoBlob(fileUri);
+    console.log('UPLOAD_FILE_SIZE:', blob.size, 'uri=', fileUri, '(web blob)');
+    return blob.size;
+  }
+
   const info = await FileSystem.getInfoAsync(fileUri);
   if (!info.exists || info.isDirectory) {
     throw new Error(`Video file missing before upload: ${fileUri}`);
@@ -333,6 +381,14 @@ async function assertUploadableVideoFile(fileUri) {
   return size;
 }
 
+/** Prefer real MIME from MediaRecorder blobs; default to MP4 for native clips. */
+function resolveVideoContentType(blob, fileUri) {
+  const typed = typeof blob?.type === 'string' ? blob.type.trim() : '';
+  if (typed && /^video\//i.test(typed)) return typed;
+  if (/\.webm$/i.test(String(fileUri || ''))) return 'video/webm';
+  return 'video/mp4';
+}
+
 function buildPublicUrl(supabaseUrl, safeName) {
   return `${supabaseUrl}/storage/v1/object/public/bawaalvideos/battles/${safeName}`;
 }
@@ -341,10 +397,10 @@ function buildUploadUrl(supabaseUrl, safeName) {
   return `${supabaseUrl}/storage/v1/object/bawaalvideos/battles/${safeName}`;
 }
 
-const STORAGE_HEADERS = (anonKey) => ({
+const STORAGE_HEADERS = (anonKey, contentType = 'video/mp4') => ({
   apikey: anonKey,
   Authorization: `Bearer ${anonKey}`,
-  'Content-Type': 'video/mp4',
+  'Content-Type': contentType || 'video/mp4',
   'x-upsert': 'true',
 });
 
@@ -436,29 +492,40 @@ async function uploadViaSupabaseSdk(objectPath, fileUri, onProgress) {
   }
   if (onProgress) onProgress(12);
 
-  // Direct stream-friendly blob — never base64 / readAsStringAsync
+  // Direct stream-friendly blob — never base64 / readAsStringAsync / expo-file-system
   console.log('UPLOAD_SDK: fetch blob →', fileUri);
-  const response = await fetch(fileUri);
-  if (!response.ok) {
-    throw new Error(`Could not open clip for SDK upload (HTTP ${response.status})`);
-  }
-  const blob = await response.blob();
-  if (!blob || blob.size < MIN_VIDEO_BYTES) {
-    throw new Error(`Clip too small for upload (${blob?.size || 0} bytes)`);
-  }
+  const blob =
+    Platform.OS === 'web' || isWebBlobUri(fileUri)
+      ? await readWebVideoBlob(fileUri)
+      : await (async () => {
+          const response = await fetch(fileUri);
+          if (!response.ok) {
+            throw new Error(
+              `Could not open clip for SDK upload (HTTP ${response.status})`
+            );
+          }
+          const b = await response.blob();
+          if (!b || b.size < MIN_VIDEO_BYTES) {
+            throw new Error(`Clip too small for upload (${b?.size || 0} bytes)`);
+          }
+          return b;
+        })();
   if (onProgress) onProgress(40);
 
+  const contentType = resolveVideoContentType(blob, fileUri);
   console.log(
     'UPLOAD_SDK: path=',
     objectPath,
     'bodyType=Blob',
     'bytes=',
-    blob.size
+    blob.size,
+    'contentType=',
+    contentType
   );
   const { data, error } = await supabase.storage
     .from(BAWAAL_VIDEO_BUCKET)
     .upload(objectPath, blob, {
-      contentType: 'video/mp4',
+      contentType,
       upsert: true,
       cacheControl: '3600',
     });
@@ -498,6 +565,28 @@ async function uploadViaFetchArrayBuffer(
   console.log('UPLOAD_BLOB_FETCH: reading', fileUri);
   if (onProgress) onProgress(15);
 
+  // Web blob: URIs — upload the Blob directly (no FileSystem, no Uint8Array path required)
+  if (Platform.OS === 'web' || isWebBlobUri(fileUri)) {
+    const blob = await readWebVideoBlob(fileUri);
+    const contentType = resolveVideoContentType(blob, fileUri);
+    if (onProgress) onProgress(45);
+    const res = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: STORAGE_HEADERS(anonKey, contentType),
+      body: blob,
+    });
+    const bodyText = await res.text().catch(() => '');
+    if (!res.ok) {
+      console.error('REST_UPLOAD_ERROR (web blob/fetch):', res.status, bodyText);
+      throw new Error(
+        bodyText || `Storage Blob upload failed with status ${res.status}`
+      );
+    }
+    if (onProgress) onProgress(100);
+    console.log('BLOB_FETCH_UPLOAD_OK (web): status=', res.status);
+    return true;
+  }
+
   const bytes = await readLocalVideoBytes(fileUri);
   const body = bytesToUploadBody(bytes);
   if (onProgress) onProgress(45);
@@ -531,6 +620,10 @@ async function uploadViaFileSystemBinary(
   anonKey,
   onProgress
 ) {
+  if (Platform.OS === 'web') {
+    throw new Error('expo-file-system upload is not available on web');
+  }
+
   const options = {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
@@ -604,12 +697,42 @@ async function uploadVideoBytes(
       uploadViaFetchArrayBuffer(uploadUrl, fileUri, anonKey, onProgress),
   };
 
+  // Web: never call expo-file-system — blob:/object URL → Supabase SDK / fetch.
+  if (Platform.OS === 'web' || isWebBlobUri(fileUri)) {
+    let fileSize = 0;
+    try {
+      const blob = await readWebVideoBlob(fileUri);
+      fileSize = blob.size;
+    } catch (_) {
+      /* size probe soft-fail; upload steps will re-read */
+    }
+    const ordered = [sdkBlob, fetchBlob];
+    let lastErr = null;
+    for (const step of ordered) {
+      try {
+        console.log(
+          '[upload] trying',
+          step.name,
+          fileSize ? `(~${Math.round(fileSize / 1024 / 1024)}MB web)` : '(web)'
+        );
+        await step.run();
+        return true;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[upload] ${step.name} failed:`, err?.message || err);
+      }
+    }
+    throw lastErr || new Error('All web storage upload strategies failed');
+  }
+
   // Large F1 / racing clips: stream via native FileSystem first (no full-file
   // ArrayBuffer in JS heap → fewer Android OOM crashes).
   let fileSize = 0;
   try {
-    const info = await FileSystem.getInfoAsync(fileUri);
-    fileSize = Number(info?.size) || 0;
+    if (Platform.OS !== 'web') {
+      const info = await FileSystem.getInfoAsync(fileUri);
+      fileSize = Number(info?.size) || 0;
+    }
   } catch (_) {
     /* ignore */
   }
@@ -785,7 +908,19 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
       return publicExisting;
     }
 
-    const safeName = makeObjectFileName(fileName);
+    // Web MediaRecorder blobs are often video/webm — pick a matching object extension
+    let preferredExt = '.mp4';
+    if (Platform.OS === 'web' || isWebBlobUri(resolvedUri)) {
+      try {
+        const probe = await readWebVideoBlob(resolvedUri);
+        const ct = resolveVideoContentType(probe, resolvedUri);
+        if (/webm/i.test(ct)) preferredExt = '.webm';
+      } catch (_) {
+        /* extension probe soft-fail — default .mp4 */
+      }
+    }
+
+    const safeName = makeObjectFileName(fileName, preferredExt);
     const objectPath = `battles/${safeName}`;
     const uploadUrl = buildUploadUrl(SUPABASE_URL, safeName);
     // Exact public playback URL (must include /public/)
@@ -802,33 +937,42 @@ export async function uploadVideoToSupabase(videoUri, fileName, options) {
     );
 
     // Stable file:// path — content:// / bare Android paths cause empty streams
+    // Web blob: URIs skip expo-file-system entirely.
     let fileUri = resolvedUri;
-    try {
+    if (Platform.OS === 'web' || isWebBlobUri(resolvedUri)) {
       if (onProgress) onProgress(5);
-      const persisted = await persistLocalVideoUri(resolvedUri);
-      if (typeof persisted === 'string' && persisted.length > 0) {
-        fileUri = sanitizeVideoUriForUpload(persisted) || persisted;
+      fileUri = resolvedUri;
+      console.log('UPLOAD_WEB_BLOB: skipping expo-file-system persist');
+    } else {
+      try {
+        if (onProgress) onProgress(5);
+        const persisted = await persistLocalVideoUri(resolvedUri);
+        if (typeof persisted === 'string' && persisted.length > 0) {
+          fileUri = sanitizeVideoUriForUpload(persisted) || persisted;
+        }
+      } catch (persistErr) {
+        const persistMsg = persistErr?.message || String(persistErr);
+        console.warn('[upload] persist failed:', persistMsg);
+        // content:// often cannot be read as base64 — abort rather than upload junk
+        if (/^content:\/\//i.test(resolvedUri)) {
+          reportError(
+            `Could not copy gallery clip to app storage before upload: ${persistMsg}`
+          );
+          return null;
+        }
+        fileUri = sanitizeVideoUriForUpload(resolvedUri) || resolvedUri;
       }
-    } catch (persistErr) {
-      const persistMsg = persistErr?.message || String(persistErr);
-      console.warn('[upload] persist failed:', persistMsg);
-      // content:// often cannot be read as base64 — abort rather than upload junk
-      if (/^content:\/\//i.test(resolvedUri)) {
-        reportError(
-          `Could not copy gallery clip to app storage before upload: ${persistMsg}`
-        );
-        return null;
-      }
-      fileUri = sanitizeVideoUriForUpload(resolvedUri) || resolvedUri;
-    }
 
-    // Extra Android guard matching PostCreationSheet sanitization
-    if (
-      Platform.OS === 'android' &&
-      !fileUri.startsWith('file://') &&
-      !fileUri.startsWith('content://')
-    ) {
-      fileUri = fileUri.startsWith('/') ? `file://${fileUri}` : `file:///${fileUri}`;
+      // Extra Android guard matching PostCreationSheet sanitization
+      if (
+        Platform.OS === 'android' &&
+        !fileUri.startsWith('file://') &&
+        !fileUri.startsWith('content://')
+      ) {
+        fileUri = fileUri.startsWith('/')
+          ? `file://${fileUri}`
+          : `file:///${fileUri}`;
+      }
     }
 
     console.log('UPLOAD_FILE_URI:', fileUri);
@@ -874,6 +1018,8 @@ export async function stabilizeLocalVideoUri(videoUri) {
   const sanitized = sanitizeVideoUriForUpload(videoUri);
   if (!sanitized) return videoUri;
   if (isRemoteHttpsUri(sanitized)) return sanitized;
+  // Web blob URLs are already stable for the page session — skip FileSystem
+  if (Platform.OS === 'web' || isWebBlobUri(sanitized)) return sanitized;
   try {
     const persisted = await persistLocalVideoUri(sanitized);
     return sanitizeVideoUriForUpload(persisted) || persisted || sanitized;
