@@ -16,10 +16,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createLiveBattle, newBattleId } from './src/services/battleSyncService';
 import { publishArenaChallenge } from './src/services/arenaChallengeService';
 import { getActiveUser } from './src/services/activeUserProfile';
+import { fetchArenaFeed } from './src/services/api';
 import {
   ARENA_SPORT_OPTIONS,
   BAWAAL_FORM_SPORTS,
 } from './src/utils/sportCategory';
+
+/** Hard cap so the publish button never sits at 100% forever. */
+const PUBLISH_WATCHDOG_MS = 45_000;
 
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
@@ -253,6 +257,28 @@ export default function CreateBattleSheet({
     const host = resolveHost();
     const challengeTitle = title.trim() || 'OPEN CHALLENGE';
 
+    let settled = false;
+    const resetPublishUi = (reason) => {
+      if (settled) return;
+      settled = true;
+      setSubmitting(false);
+      setUploadPct(0);
+      console.log('[CreateBattleSheet] publish UI reset:', reason);
+    };
+
+    // Fallback — never leave the button stuck at 100% if the network hangs
+    const watchdog = setTimeout(() => {
+      console.warn(
+        '[CreateBattleSheet] publish watchdog fired — forcing dismiss/reset'
+      );
+      resetPublishUi('watchdog');
+      try {
+        onClose?.();
+      } catch (_) {
+        /* ignore */
+      }
+    }, PUBLISH_WATCHDOG_MS);
+
     try {
       const result = await publishArenaChallenge({
         sport,
@@ -262,7 +288,11 @@ export default function CreateBattleSheet({
         hostId: host.userId,
         hostUsername: host.handle,
         hostFlag: host.flag,
-        onUploadProgress: (pct) => setUploadPct(Number(pct) || 0),
+        // Cap at 99 until insert+dismiss succeed — avoids a frozen 100% spinner
+        onUploadProgress: (pct) => {
+          const n = Number(pct) || 0;
+          setUploadPct(Math.max(0, Math.min(99, n)));
+        },
       });
 
       console.log('[CreateBattleSheet] publishArenaChallenge result', {
@@ -322,13 +352,46 @@ export default function CreateBattleSheet({
         source: 'ARENA_CHALLENGE',
       };
 
-      onClose?.();
-      onPublishOpen?.(card);
+      // Success path: flash 100 → clear loading → dismiss modal → refetch Arena
+      setUploadPct(100);
+      resetPublishUi('success');
+      try {
+        onClose?.();
+      } catch (closeErr) {
+        console.warn(
+          '[CreateBattleSheet] onClose failed:',
+          closeErr?.message || closeErr
+        );
+      }
+
+      try {
+        console.log('[CreateBattleSheet] fetchArenaFeed after publish');
+        await fetchArenaFeed('ALL');
+      } catch (feedErr) {
+        console.warn(
+          '[CreateBattleSheet] fetchArenaFeed failed:',
+          feedErr?.message || feedErr
+        );
+      }
+
+      try {
+        onPublishOpen?.(card);
+      } catch (publishErr) {
+        console.warn(
+          '[CreateBattleSheet] onPublishOpen failed:',
+          publishErr?.message || publishErr
+        );
+      }
     } catch (err) {
-      console.warn('[CreateBattleSheet] open publish failed:', err?.message || err);
+      console.warn(
+        '[CreateBattleSheet] open publish failed:',
+        err?.message || err
+      );
+      resetPublishUi('error');
     } finally {
-      setSubmitting(false);
-      setUploadPct(0);
+      clearTimeout(watchdog);
+      // Always clear loading / pct even if success path already ran
+      resetPublishUi('finally');
     }
   };
 
