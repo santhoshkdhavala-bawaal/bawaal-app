@@ -1,28 +1,40 @@
--- BAWAAL · ensure public.arena_challenges for OPEN Arena challenges.
+-- BAWAAL · ensure public.arena_challenges for Arena publish + feed.
 -- Paste into Supabase → SQL Editor and run once per project.
+-- Canonical columns: title, sport, video_url, user_id, created_at
 
 create extension if not exists "pgcrypto";
 
 create table if not exists public.arena_challenges (
   id uuid primary key default gen_random_uuid(),
-  host_id text not null,
-  host_username text,
-  host_flag text,
+  title text not null default 'OPEN CHALLENGE',
   sport text not null default 'COMBAT',
-  target_title text not null,
-  target_details text,
-  opener_video_url text,
-  status text not null default 'OPEN'
-    check (status in ('OPEN', 'LIVE', 'CLOSED')),
-  response_count integer not null default 0,
+  video_url text,
+  user_id text,
   created_at timestamptz not null default now()
 );
+
+-- Migrate / extend older shapes safely
+alter table public.arena_challenges add column if not exists title text;
+alter table public.arena_challenges add column if not exists sport text;
+alter table public.arena_challenges add column if not exists video_url text;
+alter table public.arena_challenges add column if not exists user_id text;
+alter table public.arena_challenges add column if not exists created_at timestamptz default now();
+
+-- Legacy columns kept if already present (soft-compat with older clients)
+alter table public.arena_challenges add column if not exists host_id text;
+alter table public.arena_challenges add column if not exists host_username text;
+alter table public.arena_challenges add column if not exists host_flag text;
+alter table public.arena_challenges add column if not exists target_title text;
+alter table public.arena_challenges add column if not exists target_details text;
+alter table public.arena_challenges add column if not exists opener_video_url text;
+alter table public.arena_challenges add column if not exists status text default 'OPEN';
+alter table public.arena_challenges add column if not exists response_count integer default 0;
 
 create index if not exists arena_challenges_created_at_idx
   on public.arena_challenges (created_at desc);
 
-create index if not exists arena_challenges_status_idx
-  on public.arena_challenges (status);
+create index if not exists arena_challenges_sport_idx
+  on public.arena_challenges (sport);
 
 alter table public.arena_challenges enable row level security;
 

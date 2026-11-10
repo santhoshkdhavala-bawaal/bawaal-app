@@ -270,16 +270,16 @@ export default function MainTabs({ navigation, route }) {
         },
       },
     }));
-    // Re-query videos so the new reel is in store + subscribers instantly
+    // Re-query arena_challenges so the new reel is in store + subscribers instantly
     void refreshArenaChallengesIntoFeed({ emitEvent: true, freshPublish: true })
       .then((rows) => {
-        console.log('[MainTabs] videos refetch after publish', {
+        console.log('[MainTabs] arena_challenges refetch after publish', {
           count: Array.isArray(rows) ? rows.length : 0,
         });
       })
       .catch((err) => {
         console.warn(
-          '[MainTabs] videos refetch failed:',
+          '[MainTabs] arena_challenges refetch failed:',
           err?.message || err
         );
       });

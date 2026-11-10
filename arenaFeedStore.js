@@ -514,13 +514,12 @@ async function hydrateLocal() {
 }
 
 /**
- * Merge `videos` rows (created_at desc) into the in-memory Arena store.
+ * Merge `arena_challenges` rows (created_at desc) into the in-memory Arena store.
  * Emits each card so ArenaFeed subscribers paint instantly after publish/refresh.
- * (Name kept for call-site compat — source table is `videos`, not arena_challenges.)
  */
 export async function refreshArenaChallengesIntoFeed(opts = {}) {
   const emitEvent = opts.emitEvent !== false;
-  console.log('[arenaFeedStore] refresh videos into feed start');
+  console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed start');
   try {
     const cards = await fetchArenaChallenges({
       limit: opts.limit || 40,
@@ -532,7 +531,7 @@ export async function refreshArenaChallengesIntoFeed(opts = {}) {
         const withFlags = {
           ...card,
           _fromRemote: true,
-          _fromVideosTable: true,
+          _fromArenaChallenges: true,
           _freshPublish: !!opts.freshPublish || !!card._freshPublish,
         };
         const playable =
@@ -552,30 +551,32 @@ export async function refreshArenaChallengesIntoFeed(opts = {}) {
         incoming.push(normalized);
       } catch (rowErr) {
         console.warn(
-          '[arenaFeedStore] videos row skipped:',
+          '[arenaFeedStore] arena_challenges row skipped:',
           rowErr?.message || rowErr
         );
       }
     }
-    console.log('[arenaFeedStore] refresh videos into feed ok', {
+    console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed ok', {
       count: incoming.length,
     });
     return incoming;
   } catch (err) {
     console.warn(
-      '[arenaFeedStore] refresh videos into feed failed:',
+      '[arenaFeedStore] refreshArenaChallengesIntoFeed failed:',
       err?.message || err
     );
     return [];
   }
 }
 
-/** Cloud `videos` hydrate — never throws; empty array on failure. */
+/** Cloud hydrate: `videos` reels + `arena_challenges` (created_at desc). */
 async function hydrateRemote() {
   try {
     const remote = await fetchArenaPostsFromSupabase();
+    const challenges = await fetchArenaChallenges({ limit: 40 });
     console.log('[arenaFeedStore] hydrateRemote sources', {
       videos: Array.isArray(remote) ? remote.length : 0,
+      arena_challenges: Array.isArray(challenges) ? challenges.length : 0,
     });
 
     const incoming = [];
@@ -592,6 +593,32 @@ async function hydrateRemote() {
       } catch (rowErr) {
         console.warn(
           '[arenaFeedStore] hydrateRemote videos row skipped:',
+          rowErr?.message || rowErr
+        );
+      }
+    }
+
+    for (const card of challenges || []) {
+      try {
+        if (!card) continue;
+        const playable =
+          card.videoUri ||
+          card.challengeVideoUri ||
+          card.openerVideoUri ||
+          card.uri;
+        const withFlags = {
+          ...card,
+          _fromRemote: true,
+          _fromArenaChallenges: true,
+          videoUri: playable || card.videoUri || null,
+          uri: playable || card.uri || null,
+        };
+        const normalized = normalizeArenaPost(withFlags) || withFlags;
+        mergeIntoStore(normalized, { emitEvent: false });
+        incoming.push(normalized);
+      } catch (rowErr) {
+        console.warn(
+          '[arenaFeedStore] hydrateRemote arena_challenges row skipped:',
           rowErr?.message || rowErr
         );
       }
@@ -730,13 +757,13 @@ export function startArenaFeedWarmup() {
 
 /**
  * Force a fresh fetch (e.g. on Arena focus after a long background).
- * Re-queries `videos` ordered by `created_at` descending.
+ * Re-queries `arena_challenges` ordered by `created_at` descending.
  */
 export async function refreshArenaPostsFromSupabase() {
   try {
     hydratePromise = null;
     const posts = await hydrateArenaPostsFromSupabase();
-    // Explicit second pass so publish → Arena always sees latest videos rows
+    // Explicit second pass so publish → Arena always sees latest challenges
     await refreshArenaChallengesIntoFeed({ emitEvent: true });
     return posts;
   } catch (err) {

@@ -1,6 +1,6 @@
 /**
- * Arena OPEN challenges — Storage opener upload + `public.videos` insert/fetch.
- * Canonical feed table is `videos` (caption/title, category/sport, video_url, created_at).
+ * Arena OPEN challenges — Storage opener upload + `public.arena_challenges`.
+ * Canonical columns: title, sport, video_url, user_id, created_at.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
@@ -11,18 +11,13 @@ import {
 } from './uploadService';
 import { resolvePostSport } from '../utils/sportCategory';
 import { newBattleId } from './battleSyncService';
-import {
-  fetchArenaPostsFromSupabase,
-  mapDbRowToArenaPost,
-  persistArenaPostToSupabase,
-  resolveVideosUserId,
-} from './arenaPostsService';
+import { resolveVideosUserId } from './arenaPostsService';
 
 export const ARENA_CHALLENGES_SETUP_HINT =
-  'Open Supabase → SQL Editor → run supabase_schema.sql (creates public.videos)';
+  'Open Supabase → SQL Editor → run supabase/ENSURE_ARENA_CHALLENGES.sql';
 
-/** Canonical Arena publish / feed table. */
-const TABLE = 'videos';
+/** Canonical Arena challenge publish / feed table. */
+const TABLE = 'arena_challenges';
 
 function resolveHost(overrides = {}) {
   const user = getActiveUser?.() || {};
@@ -42,7 +37,8 @@ function resolveHost(overrides = {}) {
 }
 
 /**
- * Map a `videos` (or legacy challenge-shaped) row → Arena challenge/reel card.
+ * Map an `arena_challenges` row → Arena feed card.
+ * Supports new columns (title, sport, video_url, user_id) + legacy aliases.
  */
 function mapRowToCard(row, extras = {}) {
   if (!row) return null;
@@ -51,16 +47,15 @@ function mapRowToCard(row, extras = {}) {
     : Number(extras.createdAt) || Date.now();
   const sport = resolvePostSport(
     {
-      sport: row.category || row.sport,
-      category: row.category || row.sport,
+      sport: row.sport || row.category,
+      category: row.sport || row.category,
     },
     'COMBAT'
   );
   const hostRaw =
     row.host_username ||
-    row.profiles?.username ||
-    row.author ||
     extras.host ||
+    row.user_id ||
     '@YOU';
   const host = String(hostRaw).startsWith('@')
     ? String(hostRaw)
@@ -75,7 +70,7 @@ function mapRowToCard(row, extras = {}) {
     null;
   const id = String(row.id);
   const target = String(
-    row.caption || row.title || row.target_title || 'OPEN CHALLENGE'
+    row.title || row.target_title || row.caption || 'OPEN CHALLENGE'
   );
   return {
     id,
@@ -97,6 +92,7 @@ function mapRowToCard(row, extras = {}) {
     host,
     opponent: host,
     author: host || 'CHALLENGE',
+    user_id: row.user_id || null,
     challengerLabel: '@YOU',
     leaderLabel: 'OPEN',
     challengeVideoUri: opener,
@@ -112,14 +108,14 @@ function mapRowToCard(row, extras = {}) {
     createdAt: ts,
     feedTarget: 'ARENA',
     source: 'ARENA_CHALLENGE',
-    _fromVideosTable: true,
+    _fromArenaChallenges: true,
     _freshPublish: !!extras._freshPublish,
     ...extras,
   };
 }
 
 /**
- * Fetch Arena items from `videos` newest-first (`created_at` desc).
+ * Fetch Arena challenges newest-first from `arena_challenges` (`created_at` desc).
  * Soft-fails to [] on schema/RLS/network errors (never throws).
  *
  * @param {{ limit?: number }} [opts]
@@ -127,43 +123,16 @@ function mapRowToCard(row, extras = {}) {
  */
 export async function fetchArenaChallenges(opts = {}) {
   const limit = Math.min(Math.max(Number(opts.limit) || 40, 1), 80);
-  console.log('[videos] FETCH start', { table: TABLE, limit });
+  console.log('[arena_challenges] FETCH start', { table: TABLE, limit });
 
   if (!isSupabaseConfigured()) {
-    console.warn('[videos] FETCH skipped — Supabase not configured');
+    console.warn(
+      '[arena_challenges] FETCH skipped — Supabase not configured'
+    );
     return [];
   }
 
   try {
-    // Prefer shared Arena posts fetch (videos ⨝ profiles, created_at desc)
-    const posts = await fetchArenaPostsFromSupabase();
-    if (Array.isArray(posts) && posts.length > 0) {
-      console.log('[videos] FETCH ok via arenaPostsService', {
-        count: posts.length,
-        newestId: posts[0]?.id || null,
-      });
-      return posts.slice(0, limit).map((post) =>
-        mapRowToCard(
-          {
-            id: post.id,
-            video_url: post.videoUri || post.video_url || post.uri,
-            caption: post.caption || post.title,
-            title: post.title || post.caption,
-            category: post.category || post.sport,
-            created_at:
-              typeof post.createdAt === 'number'
-                ? new Date(post.createdAt).toISOString()
-                : post.created_at,
-            author: post.author,
-            profiles: post.avatarUrl
-              ? { username: post.author, avatar_url: post.avatarUrl }
-              : null,
-          },
-          { _fromVideosTable: true }
-        )
-      );
-    }
-
     const { data, error, status, statusText } = await supabase
       .from(TABLE)
       .select('*')
@@ -171,7 +140,7 @@ export async function fetchArenaChallenges(opts = {}) {
       .limit(limit);
 
     if (error) {
-      console.error('[videos] FETCH error — schema/RLS mismatch?', {
+      console.error('[arena_challenges] FETCH error — schema/RLS mismatch?', {
         message: error.message,
         code: error.code,
         details: error.details,
@@ -184,18 +153,16 @@ export async function fetchArenaChallenges(opts = {}) {
     }
 
     const rows = Array.isArray(data) ? data : [];
-    console.log('[videos] FETCH ok', {
+    console.log('[arena_challenges] FETCH ok', {
       count: rows.length,
       newestId: rows[0]?.id || null,
       newestCreatedAt: rows[0]?.created_at || null,
       sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
     });
 
-    return rows
-      .map((row) => mapDbRowToArenaPost(row) || mapRowToCard(row))
-      .filter(Boolean);
+    return rows.map((row) => mapRowToCard(row)).filter(Boolean);
   } catch (err) {
-    console.error('[videos] FETCH crashed:', {
+    console.error('[arena_challenges] FETCH crashed:', {
       message: err?.message || String(err),
       err,
     });
@@ -204,10 +171,9 @@ export async function fetchArenaChallenges(opts = {}) {
 }
 
 /**
- * Upload opener (if local) + insert into `public.videos`
- * (`caption`←title, `category`←sport, `video_url`, `created_at`).
- * Soft-falls back to a local feed card when cloud is offline / insert fails.
- * On success, immediately re-queries `videos` (created_at desc).
+ * Upload opener (if local) + insert into `arena_challenges`
+ * (`title`, `sport`, `video_url`, `user_id`, `created_at`).
+ * On success, re-queries the table (created_at desc) for instant Arena paint.
  */
 export async function publishArenaChallenge({
   id,
@@ -239,7 +205,7 @@ export async function publishArenaChallenge({
       publicOpenerUrl = ensurePublicBawaalVideoUrl(localOpener) || localOpener;
     } else {
       try {
-        console.log('[videos] UPLOAD opener start', {
+        console.log('[arena_challenges] UPLOAD opener start', {
           challengeId,
           localOpener: String(localOpener).slice(0, 120),
         });
@@ -251,31 +217,20 @@ export async function publishArenaChallenge({
         publicOpenerUrl = uploaded
           ? ensurePublicBawaalVideoUrl(uploaded) || uploaded
           : null;
-        console.log('[videos] UPLOAD opener result', {
+        console.log('[arena_challenges] UPLOAD opener result', {
           challengeId,
           publicOpenerUrl,
         });
       } catch (err) {
-        console.warn('[videos] UPLOAD opener failed:', err?.message || err);
+        console.warn(
+          '[arena_challenges] UPLOAD opener failed:',
+          err?.message || err
+        );
       }
     }
   }
 
-  const caption = details ? `${title} — ${details}` : title;
   const createdAt = new Date().toISOString();
-
-  /** `videos` row — title→caption, sport→category (schema columns). */
-  const videosRow = {
-    id: challengeId,
-    video_url: publicOpenerUrl || null,
-    caption,
-    // Conceptual title/sport aliases for logging / soft schema retries
-    title,
-    sport: category,
-    category,
-    created_at: createdAt,
-  };
-
   const cardExtras = {
     localOpenerUri: localOpener,
     targetDetails: details,
@@ -283,24 +238,29 @@ export async function publishArenaChallenge({
     _freshPublish: true,
   };
 
-  const localCard = mapRowToCard(
-    {
-      id: challengeId,
-      video_url: publicOpenerUrl,
-      caption,
-      title,
-      category,
-      created_at: createdAt,
-      host_username: host.handle,
-      status: 'OPEN',
-    },
-    cardExtras
-  );
+  let userId = null;
+  try {
+    userId = (await resolveVideosUserId(host.userId)) || host.userId || null;
+  } catch (_) {
+    userId = host.userId || null;
+  }
+
+  /** Canonical insert payload for the new arena_challenges table. */
+  const insertPayload = {
+    id: challengeId,
+    title,
+    sport: category,
+    video_url: publicOpenerUrl || null,
+    user_id: userId != null ? String(userId) : null,
+    created_at: createdAt,
+  };
+
+  const localCard = mapRowToCard(insertPayload, cardExtras);
 
   if (!isSupabaseConfigured()) {
-    console.warn('[videos] INSERT skipped — Supabase not configured', {
+    console.warn('[arena_challenges] INSERT skipped — Supabase not configured', {
       challengeId,
-      payloadKeys: Object.keys(videosRow),
+      payloadKeys: Object.keys(insertPayload),
     });
     return {
       ok: true,
@@ -313,46 +273,11 @@ export async function publishArenaChallenge({
     };
   }
 
-  if (!publicOpenerUrl || !isRemoteHttpsUri(publicOpenerUrl)) {
-    console.warn(
-      '[videos] INSERT skipped — need public HTTPS video_url before write',
-      { challengeId, publicOpenerUrl }
-    );
-    return {
-      ok: true,
-      softFallback: true,
-      reason: 'missing-https-url',
-      challengeId,
-      card: localCard,
-      localOnly: true,
-      refreshed: [],
-    };
-  }
-
-  // Attach auth uuid when available (FK / RLS)
-  let userId = null;
-  try {
-    userId = await resolveVideosUserId(host.userId);
-  } catch (_) {
-    userId = null;
-  }
-
-  const insertPayload = {
-    id: challengeId,
-    video_url: publicOpenerUrl,
-    caption,
-    category,
-    created_at: createdAt,
-  };
-  if (userId) insertPayload.user_id = userId;
-
-  console.log('[videos] INSERT payload', {
+  console.log('[arena_challenges] INSERT payload', {
     table: TABLE,
     challengeId,
     payload: insertPayload,
     payloadKeys: Object.keys(insertPayload),
-    title,
-    sport: category,
   });
 
   try {
@@ -365,12 +290,12 @@ export async function publishArenaChallenge({
     // Soft-retry without user_id on FK/RLS noise
     if (
       error &&
-      userId &&
+      insertPayload.user_id &&
       /user_id|foreign key|violates|23503|42501|RLS/i.test(
         String(error.message || error.code || '')
       )
     ) {
-      console.warn('[videos] INSERT retry without user_id', {
+      console.warn('[arena_challenges] INSERT retry without user_id', {
         message: error.message,
         code: error.code,
       });
@@ -386,53 +311,73 @@ export async function publishArenaChallenge({
       statusText = retry.statusText;
     }
 
-    // Unknown title/sport columns should never be in insertPayload — but if caption/category
-    // naming drifts, fall back through persistArenaPostToSupabase.
-    if (error) {
-      console.error('[videos] INSERT error — schema/payload mismatch?', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        status,
-        statusText,
-        payload: insertPayload,
-        setupHint: ARENA_CHALLENGES_SETUP_HINT,
-      });
-
-      console.log('[videos] INSERT soft-retry via persistArenaPostToSupabase');
-      const persistRes = await persistArenaPostToSupabase({
+    // Legacy schema soft-retry (target_title / opener_video_url / host_*)
+    if (
+      error &&
+      /column|schema cache|PGRST204|Could not find/i.test(
+        String(error.message || error.code || '')
+      )
+    ) {
+      console.warn(
+        '[arena_challenges] INSERT retry with legacy column aliases',
+        { message: error.message, code: error.code }
+      );
+      const legacyPayload = {
         id: challengeId,
         title,
-        caption,
         sport: category,
-        category,
-        video_url: publicOpenerUrl,
-        videoUri: publicOpenerUrl,
-        publicCloudUrl: publicOpenerUrl,
-        user_id: userId,
-        timestamp: Date.parse(createdAt) || Date.now(),
-        createdAt: Date.parse(createdAt) || Date.now(),
-        _freshPublish: true,
-      });
-      if (!persistRes?.ok && !persistRes?.skipped) {
-        throw error;
-      }
-      data = { ...insertPayload, id: persistRes?.id || challengeId };
+        video_url: publicOpenerUrl || null,
+        user_id: insertPayload.user_id,
+        created_at: createdAt,
+        host_id: String(host.userId),
+        host_username: host.handle,
+        host_flag: host.flag,
+        target_title: title,
+        target_details: details,
+        opener_video_url: publicOpenerUrl || null,
+        status: 'OPEN',
+        response_count: 0,
+      };
+      const retry = await supabase
+        .from(TABLE)
+        .upsert(legacyPayload, { onConflict: 'id' })
+        .select()
+        .single();
+      data = retry.data;
+      error = retry.error;
+      status = retry.status;
+      statusText = retry.statusText;
     }
 
-    console.log('[videos] INSERT ok', {
+    if (error) {
+      console.error(
+        '[arena_challenges] INSERT error — schema/payload mismatch?',
+        {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          status,
+          statusText,
+          payload: insertPayload,
+          setupHint: ARENA_CHALLENGES_SETUP_HINT,
+        }
+      );
+      throw error;
+    }
+
+    console.log('[arena_challenges] INSERT ok', {
       id: data?.id || challengeId,
-      video_url: data?.video_url || insertPayload.video_url,
-      caption: data?.caption || caption,
-      category: data?.category || category,
+      title: data?.title || title,
+      sport: data?.sport || category,
+      video_url: data?.video_url || publicOpenerUrl,
+      user_id: data?.user_id || insertPayload.user_id,
       created_at: data?.created_at || createdAt,
       rowKeys: data ? Object.keys(data) : [],
     });
 
-    // Instant feed sync — re-query videos newest-first
     const refreshed = await fetchArenaChallenges({ limit: 40 });
-    console.log('[videos] REFRESH after insert', {
+    console.log('[arena_challenges] REFRESH after insert', {
       count: refreshed.length,
       includesNew: refreshed.some((c) => String(c?.id) === String(challengeId)),
     });
@@ -446,7 +391,7 @@ export async function publishArenaChallenge({
     };
   } catch (error) {
     const msg = String(error?.message || error);
-    console.warn('[videos] INSERT soft-fallback:', {
+    console.warn('[arena_challenges] INSERT soft-fallback:', {
       message: msg,
       challengeId,
       payload: insertPayload,
@@ -466,11 +411,6 @@ export async function publishArenaChallenge({
 }
 
 export function mapArenaChallengeRowToCard(row) {
-  // Prefer reel mapper for pure videos rows, then challenge card shape
-  if (row && (row.video_url || row._fromVideosTable) && !row.opener_video_url) {
-    const reel = mapDbRowToArenaPost(row);
-    if (reel) return { ...reel, isOpenChallenge: true, source: 'ARENA_CHALLENGE' };
-  }
   return mapRowToCard(row);
 }
 
