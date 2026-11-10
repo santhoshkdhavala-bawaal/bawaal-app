@@ -1,0 +1,32 @@
+---
+description: BAWAAL core stack, web/mobile compatibility, Arena feed performance, and web layout constraints
+alwaysApply: true
+---
+
+# BAWAAL Core Project Rules
+
+## 1. Stack & tech
+
+- **Framework:** React Native + Expo (SDK 50+) — Web (`localhost:8081`) and Android native builds.
+- **Backend:** Supabase (Auth, Storage, Database/PostgreSQL).
+- **Video:** HTML5 / RN-Web video fallback on Web; mobile recording/live via platform modules (`expo-video` / Agora where already wired). **Arena feed playback** stays on the locked declarative `expo-av` path — see `bawaal-arena-video-playback-locked.mdc`.
+- **Theme:** High-contrast dark — bg `#000000`, cards `#090D16`, white text, accent `#FF5500`.
+
+## 2. Web vs mobile
+
+- Write cross-platform-safe React Native components.
+- Gate platform-only logic (camera record, Agora init, native-only APIs) with `Platform.OS === 'web'` (or native) checks.
+- **Form inputs:** Never use static non-interactive boxes for OTP/text. Always back visuals with a transparent `<TextInput>` for focus + `onChange` on web and mobile.
+
+## 3. Arena feed performance
+
+- Video lists (`FlatList` / `FlashList`): **one** active player — off-center items paused or unmounted.
+- Drive visibility via `onViewableItemsChanged` → `paused` / `active={false}` for non-viewport items.
+- Wrap list item components in `React.memo` to cut scroll re-renders.
+- Do not regress locked declarative `shouldPlay` / shell sizing contracts (`bawaal-arena-video-playback-locked.mdc`).
+
+## 4. UI layout
+
+- On web, wrap root screens in `maxWidth: 480`, `alignSelf: 'center'` so desktop matches phone width.
+- Use `SafeAreaView` (or equivalent) for top headers so icons/logos clear status bars and web edges.
+- Watermark / decorative overlays: `pointerEvents="none"` + `position: 'absolute'` so they never block taps/clicks.
