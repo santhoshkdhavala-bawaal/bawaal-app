@@ -31,6 +31,7 @@ import {
   refreshArenaChallengesIntoFeed,
 } from './arenaFeedStore';
 import {
+  ARENA_CHALLENGES_FEED_SELECT,
   fetchArenaChallenges,
   mapArenaChallengeRowToCard,
 } from './src/services/arenaChallengeService';
@@ -964,9 +965,12 @@ export default function ArenaFeed({ navigation, route }) {
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
 
-  /** Direct `arena_challenges` query (created_at desc) for Arena video reels. */
+  /** Direct `arena_challenges` query (created_at desc) — no sport filters. */
   const load = useCallback(async () => {
-    console.log('[ArenaFeed] FETCH arena_challenges start');
+    console.log('[ArenaFeed] FETCH arena_challenges start', {
+      select: ARENA_CHALLENGES_FEED_SELECT,
+      sportFilter: null,
+    });
     if (!isSupabaseConfigured()) {
       console.warn(
         '[ArenaFeed] FETCH arena_challenges skipped — Supabase not configured'
@@ -974,11 +978,34 @@ export default function ArenaFeed({ navigation, route }) {
       return;
     }
     try {
-      const { data, error, status, statusText } = await supabase
+      // No .eq('sport', …) — COMBAT and every sport must appear in the feed
+      let { data, error, status, statusText } = await supabase
         .from('arena_challenges')
-        .select('*')
+        .select(ARENA_CHALLENGES_FEED_SELECT)
         .order('created_at', { ascending: false })
         .limit(40);
+
+      if (
+        error &&
+        /description|column|schema cache|PGRST204|Could not find/i.test(
+          String(error.message || error.code || '')
+        )
+      ) {
+        console.warn(
+          '[ArenaFeed] FETCH retry without description column',
+          { message: error.message, code: error.code }
+        );
+        const lean = await supabase
+          .from('arena_challenges')
+          .select('id, user_id, title, sport, video_url, created_at')
+          .order('created_at', { ascending: false })
+          .limit(40);
+        data = lean.data;
+        error = lean.error;
+        status = lean.status;
+        statusText = lean.statusText;
+      }
+
       if (error) {
         console.error(
           '[ArenaFeed] FETCH arena_challenges error — schema/RLS mismatch?',
@@ -993,13 +1020,15 @@ export default function ArenaFeed({ navigation, route }) {
         );
         // Soft-fallback via service mapper (same table, richer logging)
         const cards = await fetchArenaChallenges({ limit: 40 });
+        console.log('ARENA_CHALLENGES_FETCHED:', cards);
         setVideos(
           cards.map((c) => ({
             id: c.id,
+            user_id: c.user_id || null,
             title: c.title || c.target || c.caption,
+            description: c.description || c.targetDetails || null,
             sport: c.sport || c.category,
             video_url: c.videoUri || c.video_url || c.openerVideoUri,
-            user_id: c.user_id || null,
             created_at: c.createdAt
               ? new Date(c.createdAt).toISOString()
               : c.created_at,
@@ -1011,10 +1040,15 @@ export default function ArenaFeed({ navigation, route }) {
         return;
       }
       const rows = Array.isArray(data) ? data : [];
+      console.log('ARENA_CHALLENGES_FETCHED:', rows);
       console.log('[ArenaFeed] FETCH arena_challenges ok', {
         count: rows.length,
+        combatCount: rows.filter(
+          (r) => String(r?.sport || '').toUpperCase() === 'COMBAT'
+        ).length,
         newestId: rows[0]?.id || null,
         newestCreatedAt: rows[0]?.created_at || null,
+        sports: [...new Set(rows.map((r) => r?.sport).filter(Boolean))],
         sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
       });
       setVideos(rows);

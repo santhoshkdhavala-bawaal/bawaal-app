@@ -20,6 +20,14 @@ export const ARENA_CHALLENGES_SETUP_HINT =
 /** Canonical Arena challenge publish / feed table. */
 const TABLE = 'arena_challenges';
 
+/** Explicit feed columns — no sport filters (COMBAT / CRICKET / etc. all return). */
+export const ARENA_CHALLENGES_FEED_SELECT =
+  'id, user_id, title, description, sport, video_url, created_at';
+
+/** Fallback if `description` is not yet migrated on the project. */
+const ARENA_CHALLENGES_FEED_SELECT_LEAN =
+  'id, user_id, title, sport, video_url, created_at';
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -121,6 +129,10 @@ function mapRowToCard(row, extras = {}) {
   const target = String(
     row.title || row.target_title || row.caption || 'OPEN CHALLENGE'
   );
+  const description =
+    row.description != null && String(row.description).trim()
+      ? String(row.description).trim()
+      : row.target_details || extras.targetDetails || null;
   return {
     id,
     challengeId: id,
@@ -137,7 +149,8 @@ function mapRowToCard(row, extras = {}) {
     target,
     title: target,
     caption: target,
-    targetDetails: row.target_details || extras.targetDetails || null,
+    description,
+    targetDetails: description,
     host,
     opponent: host,
     author: host || 'CHALLENGE',
@@ -172,7 +185,13 @@ function mapRowToCard(row, extras = {}) {
  */
 export async function fetchArenaChallenges(opts = {}) {
   const limit = Math.min(Math.max(Number(opts.limit) || 40, 1), 80);
-  console.log('[arena_challenges] FETCH start', { table: TABLE, limit });
+  console.log('[arena_challenges] FETCH start', {
+    table: TABLE,
+    limit,
+    select: ARENA_CHALLENGES_FEED_SELECT,
+    // Intentionally no .eq('sport', …) — COMBAT and all sports must return
+    sportFilter: null,
+  });
 
   if (!isSupabaseConfigured()) {
     console.warn(
@@ -182,11 +201,33 @@ export async function fetchArenaChallenges(opts = {}) {
   }
 
   try {
-    const { data, error, status, statusText } = await supabase
+    let { data, error, status, statusText } = await supabase
       .from(TABLE)
-      .select('*')
+      .select(ARENA_CHALLENGES_FEED_SELECT)
       .order('created_at', { ascending: false })
       .limit(limit);
+
+    // Soft-retry without description if that column is missing from schema cache
+    if (
+      error &&
+      /description|column|schema cache|PGRST204|Could not find/i.test(
+        String(error.message || error.code || '')
+      )
+    ) {
+      console.warn(
+        '[arena_challenges] FETCH retry without description column',
+        { message: error.message, code: error.code }
+      );
+      const lean = await supabase
+        .from(TABLE)
+        .select(ARENA_CHALLENGES_FEED_SELECT_LEAN)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      data = lean.data;
+      error = lean.error;
+      status = lean.status;
+      statusText = lean.statusText;
+    }
 
     if (error) {
       console.error('[arena_challenges] FETCH error — schema/RLS mismatch?', {
@@ -202,13 +243,20 @@ export async function fetchArenaChallenges(opts = {}) {
     }
 
     const rows = Array.isArray(data) ? data : [];
+    // Confirm raw rows reached the client (incl. sport: 'COMBAT')
+    console.log('ARENA_CHALLENGES_FETCHED:', rows);
     console.log('[arena_challenges] FETCH ok', {
       count: rows.length,
+      combatCount: rows.filter(
+        (r) => String(r?.sport || '').toUpperCase() === 'COMBAT'
+      ).length,
       newestId: rows[0]?.id || null,
       newestCreatedAt: rows[0]?.created_at || null,
+      sports: [...new Set(rows.map((r) => r?.sport).filter(Boolean))],
       sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
     });
 
+    // Map every row — never filter out by sport
     return rows.map((row) => mapRowToCard(row)).filter(Boolean);
   } catch (err) {
     console.error('[arena_challenges] FETCH crashed:', {
@@ -318,6 +366,9 @@ export async function publishArenaChallenge({
     video_url: requiredVideoUrl,
     created_at: createdAt,
   };
+  if (details) {
+    insertPayload.description = details;
+  }
   // Only attach user_id when it is a valid UUID (omit / null otherwise)
   if (safeUserId) {
     insertPayload.user_id = safeUserId;

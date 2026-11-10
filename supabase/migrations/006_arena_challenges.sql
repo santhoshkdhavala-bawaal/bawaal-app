@@ -6,6 +6,7 @@ create extension if not exists "pgcrypto";
 create table if not exists public.arena_challenges (
   id uuid primary key default gen_random_uuid(),
   title text not null default 'OPEN CHALLENGE',
+  description text,
   sport text not null default 'COMBAT',
   video_url text,
   user_id text,
@@ -13,6 +14,7 @@ create table if not exists public.arena_challenges (
 );
 
 alter table public.arena_challenges add column if not exists title text;
+alter table public.arena_challenges add column if not exists description text;
 alter table public.arena_challenges add column if not exists sport text;
 alter table public.arena_challenges add column if not exists video_url text;
 alter table public.arena_challenges add column if not exists user_id text;
