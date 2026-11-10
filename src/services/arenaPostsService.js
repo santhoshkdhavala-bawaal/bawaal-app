@@ -276,9 +276,11 @@ export function mapArenaPostToVideosRow(post) {
     },
     'OTHERS'
   );
-  const caption = String(
-    post.caption || post.title || post.target || 'Arena drop'
-  ).trim() || 'Arena drop';
+  // title / sport (client) → caption / category (videos schema)
+  const caption =
+    String(
+      post.caption || post.title || post.target || 'Arena drop'
+    ).trim() || 'Arena drop';
 
   /** Public Storage URL + required fields; omit null user_id (FK/RLS safe). */
   const row = {
@@ -286,7 +288,7 @@ export function mapArenaPostToVideosRow(post) {
     video_url: videoUrl,
     thumbnail_url: post.thumbnailUrl || post.thumbnail_url || null,
     caption,
-    // Schema column is `category` (sport_category mapped from client)
+    // Schema column is `category` (client `sport` / `title` mapped above)
     category: sport,
     created_at: new Date(ts).toISOString(),
   };
@@ -370,7 +372,10 @@ export async function fetchArenaPostsFromSupabase() {
   }
 
   try {
-    console.log('[arenaPosts] FETCH videos start (Arena also hydrates arena_challenges separately)');
+    console.log('[arenaPosts] FETCH videos start', {
+      table: TABLE,
+      order: 'created_at desc',
+    });
     // Canonical live query: videos + profile username / avatar
     let { data, error } = await supabase
       .from(TABLE)

@@ -34,6 +34,7 @@ import {
   fetchArenaChallenges,
   mapArenaChallengeRowToCard,
 } from './src/services/arenaChallengeService';
+import { mapDbRowToArenaPost } from './src/services/arenaPostsService';
 import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
@@ -964,24 +965,24 @@ export default function ArenaFeed({ navigation, route }) {
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
 
-  /** Direct `arena_challenges` query (created_at desc) for Arena video reels. */
+  /** Direct `videos` query (created_at desc) for Arena video reels. */
   const load = useCallback(async () => {
-    console.log('[ArenaFeed] FETCH arena_challenges start');
+    console.log('[ArenaFeed] FETCH videos start');
     if (!isSupabaseConfigured()) {
       console.warn(
-        '[ArenaFeed] FETCH arena_challenges skipped — Supabase not configured'
+        '[ArenaFeed] FETCH videos skipped — Supabase not configured'
       );
       return;
     }
     try {
       const { data, error, status, statusText } = await supabase
-        .from('arena_challenges')
+        .from('videos')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(40);
       if (error) {
         console.error(
-          '[ArenaFeed] FETCH arena_challenges error — schema/RLS mismatch?',
+          '[ArenaFeed] FETCH videos error — schema/RLS mismatch?',
           {
             message: error.message,
             code: error.code,
@@ -991,28 +992,27 @@ export default function ArenaFeed({ navigation, route }) {
             statusText,
           }
         );
-        // Soft-fallback via service mapper (same table, richer logging)
+        // Soft-fallback via shared videos fetch (same table, richer logging)
         const cards = await fetchArenaChallenges({ limit: 40 });
         setVideos(
           cards.map((c) => ({
             id: c.id,
-            opener_video_url: c.openerVideoUri || c.videoUri,
-            video_url: c.videoUri || c.openerVideoUri,
-            host_username: c.host,
-            target_title: c.target || c.title,
-            sport: c.sport,
-            status: c.status,
+            video_url: c.videoUri || c.video_url || c.openerVideoUri,
+            caption: c.caption || c.target || c.title,
+            title: c.title || c.target || c.caption,
+            category: c.category || c.sport,
+            sport: c.sport || c.category,
             created_at: c.createdAt
               ? new Date(c.createdAt).toISOString()
-              : undefined,
-            caption: c.target || c.title,
-            author: c.host,
+              : c.created_at,
+            author: c.author || c.host,
+            _fromVideosTable: true,
           }))
         );
         return;
       }
       const rows = Array.isArray(data) ? data : [];
-      console.log('[ArenaFeed] FETCH arena_challenges ok', {
+      console.log('[ArenaFeed] FETCH videos ok', {
         count: rows.length,
         newestId: rows[0]?.id || null,
         newestCreatedAt: rows[0]?.created_at || null,
@@ -1020,7 +1020,7 @@ export default function ArenaFeed({ navigation, route }) {
       });
       setVideos(rows);
     } catch (err) {
-      console.error('[ArenaFeed] FETCH arena_challenges crashed:', {
+      console.error('[ArenaFeed] FETCH videos crashed:', {
         message: err?.message || String(err),
         err,
       });
@@ -1030,7 +1030,7 @@ export default function ArenaFeed({ navigation, route }) {
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       console.warn(
-        '[ArenaFeed] Supabase is not configured — arena_challenges feed offline'
+        '[ArenaFeed] Supabase is not configured — videos feed offline'
       );
       return;
     }
@@ -1221,7 +1221,7 @@ export default function ArenaFeed({ navigation, route }) {
     try {
       refreshVideoFeed();
       refreshOpenBattles();
-      // Re-query arena_challenges first so new publishes appear at the top
+      // Re-query videos first so new publishes appear at the top
       await load();
       await refreshArenaChallengesIntoFeed({ emitEvent: true });
       const [posts, videoRows] = await Promise.all([
@@ -1280,21 +1280,22 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, [videoFeedItems, absorbPost]);
 
-  // Absorb freshly fetched `arena_challenges` rows into the cinematic feed
+  // Absorb freshly fetched `videos` rows into the cinematic feed
   useEffect(() => {
     if (!Array.isArray(videos) || videos.length === 0) return;
     for (const row of videos) {
       try {
-        const card = mapArenaChallengeRowToCard(row);
+        const reel = mapDbRowToArenaPost(row);
+        const card = reel || mapArenaChallengeRowToCard(row);
         if (!card) continue;
         absorbPost({
           ...card,
           _fromRemote: true,
-          _fromArenaChallenges: true,
+          _fromVideosTable: true,
         });
       } catch (err) {
         console.warn(
-          '[ArenaFeed] arena_challenges absorb skipped:',
+          '[ArenaFeed] videos absorb skipped:',
           err?.message || err
         );
       }
@@ -1303,16 +1304,24 @@ export default function ArenaFeed({ navigation, route }) {
 
   /** Unified Arena video feed — reels + challenge cards; shelves inject every N rows. */
   const visibleFeed = useMemo(() => {
-    // `videos` is loaded from arena_challenges (created_at desc)
-    const cloudChallenges = videos
+    // `videos` state is loaded from public.videos (created_at desc)
+    const cloudReels = videos
       .map((row) => {
         try {
+          const reel = mapDbRowToArenaPost(row);
+          if (reel?.videoUri) {
+            return {
+              ...reel,
+              _fromRemote: true,
+              _fromVideosTable: true,
+            };
+          }
           const card = mapArenaChallengeRowToCard(row);
           if (card) {
             return {
               ...card,
               _fromRemote: true,
-              _fromArenaChallenges: true,
+              _fromVideosTable: true,
             };
           }
         } catch (_) {
@@ -1332,10 +1341,11 @@ export default function ArenaFeed({ navigation, route }) {
           caption: row.caption || row.title || row.target || 'Battle',
           author: row.author || row.handle || row.creator || '@athlete',
           createdAt: row.created_at ? Date.parse(row.created_at) : Date.now(),
+          _fromVideosTable: true,
         });
       })
       .filter(Boolean);
-    const source = ensureDefaultBattles([...cloudChallenges, ...feedItems]);
+    const source = ensureDefaultBattles([...cloudReels, ...feedItems]);
     const seenIds = new Set();
     const seenVideos = new Set();
     const out = [];
