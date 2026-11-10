@@ -15,6 +15,7 @@ import {
   TouchableWithoutFeedback,
   Share,
   RefreshControl,
+  ActivityIndicator,
   Platform,
   Dimensions,
 } from 'react-native';
@@ -233,9 +234,25 @@ function videoIdentityKey(uri) {
   return clean;
 }
 
+/** Parse created_at / createdAt / timestamp into ms for newest-first sorts. */
+function createdAtMs(row) {
+  if (!row || typeof row !== 'object') return 0;
+  if (typeof row.created_at === 'string' && row.created_at.trim()) {
+    const parsed = Date.parse(row.created_at);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const n = Number(row.createdAt ?? row.timestamp ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Supabase / Arena rows — always newest `created_at` first. */
+function sortByCreatedAtDesc(list) {
+  return [...(list || [])].sort((a, b) => createdAtMs(b) - createdAtMs(a));
+}
+
 /** Fresh publishes always sort above older cloud / demo clips (no MMA flash). */
 function feedSortScore(item) {
-  const ts = Number(item?.createdAt) || 0;
+  const ts = createdAtMs(item) || Number(item?.createdAt) || 0;
   const fresh =
     item?._freshPublish === true || ts > Date.now() - 120_000 ? 1e15 : 0;
   return fresh + ts;
@@ -942,7 +959,11 @@ export default function ArenaFeed({ navigation, route }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerBanterOpen, setHeaderBanterOpen] = useState(false);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
-  const { items: videoFeedItems, refresh: refreshVideoFeed } = useArenaFeed();
+  const {
+    items: videoFeedItems,
+    refresh: refreshVideoFeed,
+    loading: videoFeedLoading,
+  } = useArenaFeed();
   const communityCallouts = useMemo(
     () =>
       Array.isArray(liveCallouts) && liveCallouts.length > 0
@@ -958,6 +979,8 @@ export default function ArenaFeed({ navigation, route }) {
   const [warmReel, setWarmReel] = useState(null);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  /** Initial / explicit Supabase fetch of arena_challenges. */
+  const [feedLoading, setFeedLoading] = useState(true);
   /** Index of the row that has settled in the viewport. */
   const [activeIndex, setActiveIndex] = useState(0);
   const [videos, setVideos] = useState([]);
@@ -975,8 +998,10 @@ export default function ArenaFeed({ navigation, route }) {
       console.warn(
         '[ArenaFeed] FETCH arena_challenges skipped — Supabase not configured'
       );
-      return;
+      setFeedLoading(false);
+      return [];
     }
+    setFeedLoading(true);
     try {
       // No .eq('sport', …) — COMBAT and every sport must appear in the feed
       let { data, error, status, statusText } = await supabase
@@ -1021,7 +1046,7 @@ export default function ArenaFeed({ navigation, route }) {
         // Soft-fallback via service mapper (same table, richer logging)
         const cards = await fetchArenaChallenges({ limit: 40 });
         console.log('ARENA_CHALLENGES_FETCHED:', cards);
-        setVideos(
+        const mapped = sortByCreatedAtDesc(
           cards.map((c) => ({
             id: c.id,
             user_id: c.user_id || null,
@@ -1037,9 +1062,10 @@ export default function ArenaFeed({ navigation, route }) {
             _fromArenaChallenges: true,
           }))
         );
-        return;
+        setVideos(mapped);
+        return mapped;
       }
-      const rows = Array.isArray(data) ? data : [];
+      const rows = sortByCreatedAtDesc(Array.isArray(data) ? data : []);
       console.log('ARENA_CHALLENGES_FETCHED:', rows);
       console.log('[ArenaFeed] FETCH arena_challenges ok', {
         count: rows.length,
@@ -1052,11 +1078,15 @@ export default function ArenaFeed({ navigation, route }) {
         sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
       });
       setVideos(rows);
+      return rows;
     } catch (err) {
       console.error('[ArenaFeed] FETCH arena_challenges crashed:', {
         message: err?.message || String(err),
         err,
       });
+      return [];
+    } finally {
+      setFeedLoading(false);
     }
   }, []);
 
@@ -1254,7 +1284,7 @@ export default function ArenaFeed({ navigation, route }) {
     try {
       refreshVideoFeed();
       refreshOpenBattles();
-      // Re-query arena_challenges first so new publishes appear at the top
+      // Re-query arena_challenges first (created_at desc) so newest clips lead
       await load();
       await refreshArenaChallengesIntoFeed({ emitEvent: true });
       const [posts, videoRows] = await Promise.all([
@@ -1266,22 +1296,21 @@ export default function ArenaFeed({ navigation, route }) {
           row?._fromVideosTable &&
           (row.videoUri || row.videoUrl || row.video_url || row.uri)
       );
-      const merged = [
+      const merged = sortByCreatedAtDesc([
         ...(Array.isArray(posts) ? posts : []),
         ...playableVideos,
-      ];
+      ]);
       setFeedItems((prev) => {
         // Keep fresh publishes + always-on official battle shells
         let next = prev.filter(
           (p) =>
             p?._demoBattle ||
             p?._freshPublish ||
-            (Number(p?.createdAt) || 0) > Date.now() - 120_000
+            createdAtMs(p) > Date.now() - 120_000
         );
+        // Ingest oldest→newest so final sortFeedItems leaves newest on top
         const ordered = [...merged].sort(
-          (a, b) =>
-            (Number(a.timestamp || a.createdAt) || 0) -
-            (Number(b.timestamp || b.createdAt) || 0)
+          (a, b) => createdAtMs(a) - createdAtMs(b)
         );
         for (const post of ordered) {
           const key =
@@ -1393,7 +1422,8 @@ export default function ArenaFeed({ navigation, route }) {
         out.unshift(fallback);
       }
     }
-    return out;
+    // Newest created_at first (fresh publishes still win via feedSortScore)
+    return sortFeedItems(out);
   }, [feedItems, videos]);
 
   /**
@@ -1614,7 +1644,7 @@ export default function ArenaFeed({ navigation, route }) {
 
   const battleClips = useMemo(
     () =>
-      videos.map((row) => {
+      sortByCreatedAtDesc(videos).map((row) => {
         const videoUrl = battleRowVideoUrl(row);
         return {
           ...row,
@@ -1628,6 +1658,47 @@ export default function ArenaFeed({ navigation, route }) {
     [videos]
   );
 
+  /** Local / blob clip still uploading — show busy indicator on Arena. */
+  const isUploadingClip = useMemo(() => {
+    const checkUri = (uri) => {
+      if (typeof uri !== 'string' || !uri.trim()) return false;
+      const t = uri.trim();
+      return (
+        t.startsWith('blob:') ||
+        t.startsWith('file:') ||
+        t.startsWith('content:') ||
+        t.startsWith('ph://')
+      );
+    };
+    const fromRoute = route?.params?.newArenaPost;
+    if (
+      fromRoute &&
+      checkUri(
+        fromRoute.videoUri ||
+          fromRoute.video_url ||
+          fromRoute.uri ||
+          fromRoute.localVideoUri
+      )
+    ) {
+      return true;
+    }
+    return (feedItems || []).some(
+      (item) =>
+        item?._freshPublish === true &&
+        checkUri(
+          item.localVideoUri || item.videoUri || item.uri || item.video_url
+        ) &&
+        !/^https?:\/\//i.test(
+          String(item.videoUri || item.uri || item.video_url || '')
+        )
+    );
+  }, [feedItems, route?.params?.newArenaPost]);
+
+  const showFeedSpinner =
+    isUploadingClip ||
+    (feedLoading && battleClips.length === 0 && !refreshing) ||
+    (videoFeedLoading && battleClips.length === 0 && !refreshing);
+
   const renderBattleClip = useCallback(
     ({ item, index }) => (
       <VideoItem
@@ -1640,12 +1711,20 @@ export default function ArenaFeed({ navigation, route }) {
   );
 
   const emptyBattleList = useMemo(
-    () => (
-      <Text style={styles.emptySupabase}>
-        No videos yet. Check Supabase table rows.
-      </Text>
-    ),
-    []
+    () =>
+      showFeedSpinner || refreshing ? (
+        <View style={styles.loadingEmpty}>
+          <ActivityIndicator color="#FFFFFF" size="large" />
+          <Text style={styles.loadingEmptyText}>
+            {isUploadingClip ? 'UPLOADING…' : 'LOADING CLIPS…'}
+          </Text>
+        </View>
+      ) : (
+        <Text style={styles.emptySupabase}>
+          No videos yet. Pull down to refresh.
+        </Text>
+      ),
+    [showFeedSpinner, refreshing, isUploadingClip]
   );
 
   return (
@@ -1714,41 +1793,51 @@ export default function ArenaFeed({ navigation, route }) {
         ) : null}
       </View>
 
-      <FlatList
-        ref={listRef}
-        style={styles.feedList}
-        data={battleClips}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={renderBattleClip}
-        ListEmptyComponent={emptyBattleList}
-        contentContainerStyle={
-          battleClips.length === 0
-            ? styles.scrollContentEmpty
-            : styles.scrollContent
-        }
-        pagingEnabled
-        snapToInterval={screenHeight}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        showsVerticalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-        removeClippedSubviews={false}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        initialNumToRender={3}
-        getItemLayout={getFeedItemLayout}
-        extraData={activeIndex}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#FFFFFF"
-            colors={['#FFFFFF']}
-            progressBackgroundColor="#121212"
-          />
-        }
-      />
+      <View style={styles.feedList}>
+        <FlatList
+          ref={listRef}
+          style={styles.feedList}
+          data={battleClips}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={renderBattleClip}
+          ListEmptyComponent={emptyBattleList}
+          contentContainerStyle={
+            battleClips.length === 0
+              ? styles.scrollContentEmpty
+              : styles.scrollContent
+          }
+          pagingEnabled
+          snapToInterval={screenHeight}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          showsVerticalScrollIndicator={false}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
+          removeClippedSubviews={false}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          initialNumToRender={3}
+          getItemLayout={getFeedItemLayout}
+          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}`}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#FFFFFF"
+              colors={['#FFFFFF']}
+              progressBackgroundColor="#121212"
+            />
+          }
+        />
+        {isUploadingClip || (feedLoading && battleClips.length > 0 && !refreshing) ? (
+          <View style={styles.loadingOverlay} pointerEvents="none">
+            <ActivityIndicator color="#FFFFFF" size="large" />
+            <Text style={styles.loadingEmptyText}>
+              {isUploadingClip ? 'UPLOADING…' : 'LOADING CLIPS…'}
+            </Text>
+          </View>
+        ) : null}
+      </View>
 
       <BanterBottomSheet
         visible={headerBanterOpen && !!activeSettingsReel}
@@ -1798,6 +1887,27 @@ const styles = StyleSheet.create({
     color: '#fff',
     textAlign: 'center',
     marginTop: 100,
+  },
+  loadingEmpty: {
+    flexGrow: 1,
+    minHeight: 280,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 80,
+  },
+  loadingEmptyText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+    marginTop: 12,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    zIndex: 20,
   },
   emptyFeed: {
     flex: 1,

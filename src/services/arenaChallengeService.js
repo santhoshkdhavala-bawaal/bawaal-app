@@ -256,8 +256,21 @@ export async function fetchArenaChallenges(opts = {}) {
       sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
     });
 
-    // Map every row — never filter out by sport
-    return rows.map((row) => mapRowToCard(row)).filter(Boolean);
+    // Map every row — never filter out by sport; keep created_at desc
+    return rows
+      .map((row) => mapRowToCard(row))
+      .filter(Boolean)
+      .sort((a, b) => {
+        const ta =
+          Number(a?.createdAt) ||
+          (a?.created_at ? Date.parse(a.created_at) : 0) ||
+          0;
+        const tb =
+          Number(b?.createdAt) ||
+          (b?.created_at ? Date.parse(b.created_at) : 0) ||
+          0;
+        return tb - ta;
+      });
   } catch (err) {
     console.error('[arena_challenges] FETCH crashed:', {
       message: err?.message || String(err),
