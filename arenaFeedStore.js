@@ -13,6 +13,7 @@ import {
   mapChallengeClipToFeedPost,
   persistArenaPostToSupabase,
 } from './src/services/arenaPostsService';
+import { fetchArenaChallenges } from './src/services/arenaChallengeService';
 import { resolvePostSport } from './src/utils/sportCategory';
 
 /** @type {object[]} */
@@ -512,13 +513,75 @@ async function hydrateLocal() {
   }
 }
 
-/** Cloud `videos` hydrate — never throws; empty array on failure. */
+/**
+ * Merge `arena_challenges` rows (created_at desc) into the in-memory Arena store.
+ * Emits each card so ArenaFeed subscribers paint instantly after publish/refresh.
+ */
+export async function refreshArenaChallengesIntoFeed(opts = {}) {
+  const emitEvent = opts.emitEvent !== false;
+  console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed start');
+  try {
+    const cards = await fetchArenaChallenges({
+      limit: opts.limit || 40,
+    });
+    const incoming = [];
+    for (const card of cards || []) {
+      try {
+        if (!card) continue;
+        const withFlags = {
+          ...card,
+          _fromRemote: true,
+          _fromArenaChallenges: true,
+          _freshPublish: !!opts.freshPublish || !!card._freshPublish,
+        };
+        // Open challenges often play via challengeVideoUri / openerVideoUri
+        const playable =
+          withFlags.videoUri ||
+          withFlags.challengeVideoUri ||
+          withFlags.openerVideoUri ||
+          withFlags.uri;
+        if (!playable && !withFlags.isOpenChallenge) continue;
+        mergeIntoStore(
+          {
+            ...withFlags,
+            videoUri: playable || withFlags.videoUri || null,
+            uri: playable || withFlags.uri || null,
+          },
+          { emitEvent }
+        );
+        incoming.push(withFlags);
+      } catch (rowErr) {
+        console.warn(
+          '[arenaFeedStore] arena_challenges row skipped:',
+          rowErr?.message || rowErr
+        );
+      }
+    }
+    console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed ok', {
+      count: incoming.length,
+    });
+    return incoming;
+  } catch (err) {
+    console.warn(
+      '[arenaFeedStore] refreshArenaChallengesIntoFeed failed:',
+      err?.message || err
+    );
+    return [];
+  }
+}
+
+/** Cloud `videos` + `arena_challenges` hydrate — never throws; empty array on failure. */
 async function hydrateRemote() {
   try {
     const remote = await fetchArenaPostsFromSupabase();
-    if (!Array.isArray(remote) || remote.length === 0) return [];
+    const challenges = await fetchArenaChallenges({ limit: 40 });
+    console.log('[arenaFeedStore] hydrateRemote sources', {
+      videos: Array.isArray(remote) ? remote.length : 0,
+      arena_challenges: Array.isArray(challenges) ? challenges.length : 0,
+    });
+
     const incoming = [];
-    for (const row of remote) {
+    for (const row of remote || []) {
       try {
         const normalized = normalizeArenaPost({ ...row, _fromRemote: true });
         if (!normalized?.videoUri) continue;
@@ -526,11 +589,37 @@ async function hydrateRemote() {
         incoming.push(normalized);
       } catch (rowErr) {
         console.warn(
-          '[arenaFeedStore] hydrateRemote row skipped:',
+          '[arenaFeedStore] hydrateRemote videos row skipped:',
           rowErr?.message || rowErr
         );
       }
     }
+
+    for (const card of challenges || []) {
+      try {
+        if (!card) continue;
+        const playable =
+          card.videoUri ||
+          card.challengeVideoUri ||
+          card.openerVideoUri ||
+          card.uri;
+        const withFlags = {
+          ...card,
+          _fromRemote: true,
+          _fromArenaChallenges: true,
+          videoUri: playable || card.videoUri || null,
+          uri: playable || card.uri || null,
+        };
+        mergeIntoStore(withFlags, { emitEvent: false });
+        incoming.push(withFlags);
+      } catch (rowErr) {
+        console.warn(
+          '[arenaFeedStore] hydrateRemote arena_challenges row skipped:',
+          rowErr?.message || rowErr
+        );
+      }
+    }
+
     return incoming;
   } catch (err) {
     console.warn(
@@ -664,11 +753,15 @@ export function startArenaFeedWarmup() {
 
 /**
  * Force a fresh fetch (e.g. on Arena focus after a long background).
+ * Always re-queries `arena_challenges` (created_at desc) alongside videos.
  */
 export async function refreshArenaPostsFromSupabase() {
   try {
     hydratePromise = null;
-    return await hydrateArenaPostsFromSupabase();
+    const posts = await hydrateArenaPostsFromSupabase();
+    // Explicit second pass so publish → Arena always sees latest challenges
+    await refreshArenaChallengesIntoFeed({ emitEvent: true });
+    return posts;
   } catch (err) {
     console.warn(
       '[arenaFeedStore] refresh failed:',
@@ -689,6 +782,7 @@ const arenaFeedStore = {
   drainPendingArenaPosts,
   hydrateArenaPostsFromSupabase,
   refreshArenaPostsFromSupabase,
+  refreshArenaChallengesIntoFeed,
   startArenaFeedWarmup,
 };
 

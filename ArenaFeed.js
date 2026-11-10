@@ -28,7 +28,12 @@ import {
   getArenaPosts,
   hydrateArenaPostsFromSupabase,
   refreshArenaPostsFromSupabase,
+  refreshArenaChallengesIntoFeed,
 } from './arenaFeedStore';
+import {
+  fetchArenaChallenges,
+  mapArenaChallengeRowToCard,
+} from './src/services/arenaChallengeService';
 import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
@@ -959,22 +964,74 @@ export default function ArenaFeed({ navigation, route }) {
   const demosSeededRef = useRef(false);
   const listRef = useRef(null);
 
+  /** Direct `arena_challenges` query (created_at desc) for Arena video reels. */
   const load = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('battles')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(10);
-    if (error) {
-      console.log('SUPABASE ERROR', error);
-    } else {
-      setVideos(data || []);
+    console.log('[ArenaFeed] FETCH arena_challenges start');
+    if (!isSupabaseConfigured()) {
+      console.warn(
+        '[ArenaFeed] FETCH arena_challenges skipped — Supabase not configured'
+      );
+      return;
+    }
+    try {
+      const { data, error, status, statusText } = await supabase
+        .from('arena_challenges')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(40);
+      if (error) {
+        console.error(
+          '[ArenaFeed] FETCH arena_challenges error — schema/RLS mismatch?',
+          {
+            message: error.message,
+            code: error.code,
+            details: error.details,
+            hint: error.hint,
+            status,
+            statusText,
+          }
+        );
+        // Soft-fallback via service mapper (same table, richer logging)
+        const cards = await fetchArenaChallenges({ limit: 40 });
+        setVideos(
+          cards.map((c) => ({
+            id: c.id,
+            opener_video_url: c.openerVideoUri || c.videoUri,
+            video_url: c.videoUri || c.openerVideoUri,
+            host_username: c.host,
+            target_title: c.target || c.title,
+            sport: c.sport,
+            status: c.status,
+            created_at: c.createdAt
+              ? new Date(c.createdAt).toISOString()
+              : undefined,
+            caption: c.target || c.title,
+            author: c.host,
+          }))
+        );
+        return;
+      }
+      const rows = Array.isArray(data) ? data : [];
+      console.log('[ArenaFeed] FETCH arena_challenges ok', {
+        count: rows.length,
+        newestId: rows[0]?.id || null,
+        newestCreatedAt: rows[0]?.created_at || null,
+        sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
+      });
+      setVideos(rows);
+    } catch (err) {
+      console.error('[ArenaFeed] FETCH arena_challenges crashed:', {
+        message: err?.message || String(err),
+        err,
+      });
     }
   }, []);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      console.log('SUPABASE ERROR', new Error('Supabase is not configured'));
+      console.warn(
+        '[ArenaFeed] Supabase is not configured — arena_challenges feed offline'
+      );
       return;
     }
     load();
@@ -1164,6 +1221,9 @@ export default function ArenaFeed({ navigation, route }) {
     try {
       refreshVideoFeed();
       refreshOpenBattles();
+      // Re-query arena_challenges first so new publishes appear at the top
+      await load();
+      await refreshArenaChallengesIntoFeed({ emitEvent: true });
       const [posts, videoRows] = await Promise.all([
         refreshArenaPostsFromSupabase(),
         fetchArenaFeed('ALL').catch(() => []),
@@ -1205,7 +1265,7 @@ export default function ArenaFeed({ navigation, route }) {
     } finally {
       setRefreshing(false);
     }
-  }, [refreshVideoFeed, refreshOpenBattles]);
+  }, [refreshVideoFeed, refreshOpenBattles, load]);
 
   // Hook-driven videos: absorb only new playable rows (deduped) — no full-list remount flash
   useEffect(() => {
@@ -1220,24 +1280,62 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, [videoFeedItems, absorbPost]);
 
+  // Absorb freshly fetched `arena_challenges` rows into the cinematic feed
+  useEffect(() => {
+    if (!Array.isArray(videos) || videos.length === 0) return;
+    for (const row of videos) {
+      try {
+        const card = mapArenaChallengeRowToCard(row);
+        if (!card) continue;
+        absorbPost({
+          ...card,
+          _fromRemote: true,
+          _fromArenaChallenges: true,
+        });
+      } catch (err) {
+        console.warn(
+          '[ArenaFeed] arena_challenges absorb skipped:',
+          err?.message || err
+        );
+      }
+    }
+  }, [videos, absorbPost]);
+
   /** Unified Arena video feed — reels + challenge cards; shelves inject every N rows. */
   const visibleFeed = useMemo(() => {
-    const cloudReels = videos.map((row) => {
-      const videoUrl = battleRowVideoUrl(row);
-      return mapPostToReel({
-        ...row,
-        type: 'reel',
-        video_url: videoUrl,
-        videoUrl,
-        videoUri: videoUrl,
-        uri: videoUrl,
-        thumbnail_url: row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
-        caption: row.caption || row.title || row.target || 'Battle',
-        author: row.author || row.handle || row.creator || '@athlete',
-        createdAt: row.created_at ? Date.parse(row.created_at) : Date.now(),
-      });
-    });
-    const source = ensureDefaultBattles([...cloudReels, ...feedItems]);
+    // `videos` is loaded from arena_challenges (created_at desc)
+    const cloudChallenges = videos
+      .map((row) => {
+        try {
+          const card = mapArenaChallengeRowToCard(row);
+          if (card) {
+            return {
+              ...card,
+              _fromRemote: true,
+              _fromArenaChallenges: true,
+            };
+          }
+        } catch (_) {
+          /* fall through to reel map */
+        }
+        const videoUrl = battleRowVideoUrl(row);
+        if (!videoUrl) return null;
+        return mapPostToReel({
+          ...row,
+          type: 'reel',
+          video_url: videoUrl,
+          videoUrl,
+          videoUri: videoUrl,
+          uri: videoUrl,
+          thumbnail_url:
+            row.thumbnail_url || row.thumbnail || row.thumbnailUrl || null,
+          caption: row.caption || row.title || row.target || 'Battle',
+          author: row.author || row.handle || row.creator || '@athlete',
+          createdAt: row.created_at ? Date.parse(row.created_at) : Date.now(),
+        });
+      })
+      .filter(Boolean);
+    const source = ensureDefaultBattles([...cloudChallenges, ...feedItems]);
     const seenIds = new Set();
     const seenVideos = new Set();
     const out = [];

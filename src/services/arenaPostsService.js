@@ -370,6 +370,7 @@ export async function fetchArenaPostsFromSupabase() {
   }
 
   try {
+    console.log('[arenaPosts] FETCH videos start (Arena also hydrates arena_challenges separately)');
     // Canonical live query: videos + profile username / avatar
     let { data, error } = await supabase
       .from(TABLE)

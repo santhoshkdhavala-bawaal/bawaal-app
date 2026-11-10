@@ -90,8 +90,65 @@ function mapRowToCard(row, extras = {}) {
 }
 
 /**
+ * Fetch OPEN Arena challenges newest-first from `arena_challenges`.
+ * Soft-fails to [] on schema/RLS/network errors (never throws).
+ *
+ * @param {{ limit?: number }} [opts]
+ * @returns {Promise<object[]>} feed-ready challenge cards
+ */
+export async function fetchArenaChallenges(opts = {}) {
+  const limit = Math.min(Math.max(Number(opts.limit) || 40, 1), 80);
+  console.log('[arena_challenges] FETCH start', { table: TABLE, limit });
+
+  if (!isSupabaseConfigured()) {
+    console.warn(
+      '[arena_challenges] FETCH skipped — Supabase not configured'
+    );
+    return [];
+  }
+
+  try {
+    const { data, error, status, statusText } = await supabase
+      .from(TABLE)
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.error('[arena_challenges] FETCH error — schema/RLS mismatch?', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        status,
+        statusText,
+        setupHint: ARENA_CHALLENGES_SETUP_HINT,
+      });
+      return [];
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    console.log('[arena_challenges] FETCH ok', {
+      count: rows.length,
+      newestId: rows[0]?.id || null,
+      newestCreatedAt: rows[0]?.created_at || null,
+      sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
+    });
+
+    return rows.map((row) => mapRowToCard(row)).filter(Boolean);
+  } catch (err) {
+    console.error('[arena_challenges] FETCH crashed:', {
+      message: err?.message || String(err),
+      err,
+    });
+    return [];
+  }
+}
+
+/**
  * Upload opener (if local) + insert OPEN row into `arena_challenges`.
  * Soft-falls back to a local feed card when cloud is offline / table missing.
+ * On success, immediately re-queries `arena_challenges` (created_at desc).
  */
 export async function publishArenaChallenge({
   id,
@@ -123,6 +180,10 @@ export async function publishArenaChallenge({
       publicOpenerUrl = ensurePublicBawaalVideoUrl(localOpener) || localOpener;
     } else {
       try {
+        console.log('[arena_challenges] UPLOAD opener start', {
+          challengeId,
+          localOpener: String(localOpener).slice(0, 120),
+        });
         const uploaded = await uploadVideoToSupabase(
           localOpener,
           `arena-opener-${challengeId}.mp4`,
@@ -131,9 +192,13 @@ export async function publishArenaChallenge({
         publicOpenerUrl = uploaded
           ? ensurePublicBawaalVideoUrl(uploaded) || uploaded
           : null;
+        console.log('[arena_challenges] UPLOAD opener result', {
+          challengeId,
+          publicOpenerUrl,
+        });
       } catch (err) {
         console.warn(
-          '[arenaChallenge] opener upload failed:',
+          '[arena_challenges] UPLOAD opener failed:',
           err?.message || err
         );
       }
@@ -161,6 +226,10 @@ export async function publishArenaChallenge({
   };
 
   if (!isSupabaseConfigured()) {
+    console.warn(
+      '[arena_challenges] INSERT skipped — Supabase not configured',
+      { challengeId, payloadKeys: Object.keys(localRow) }
+    );
     return {
       ok: true,
       skipped: true,
@@ -172,25 +241,70 @@ export async function publishArenaChallenge({
         localOpenerUri: localOpener,
       }),
       localOnly: true,
+      refreshed: [],
     };
   }
 
+  console.log('[arena_challenges] INSERT payload', {
+    table: TABLE,
+    challengeId,
+    payload: localRow,
+    payloadKeys: Object.keys(localRow),
+  });
+
   try {
-    const { data, error } = await supabase
+    const { data, error, status, statusText } = await supabase
       .from(TABLE)
       .upsert(localRow, { onConflict: 'id' })
       .select()
       .single();
-    if (error) throw error;
+
+    if (error) {
+      console.error(
+        '[arena_challenges] INSERT error — schema/payload mismatch?',
+        {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint,
+          status,
+          statusText,
+          payload: localRow,
+          setupHint: ARENA_CHALLENGES_SETUP_HINT,
+        }
+      );
+      throw error;
+    }
+
+    console.log('[arena_challenges] INSERT ok', {
+      id: data?.id || challengeId,
+      opener_video_url: data?.opener_video_url || localRow.opener_video_url,
+      created_at: data?.created_at || localRow.created_at,
+      rowKeys: data ? Object.keys(data) : [],
+    });
+
+    // Instant feed sync — re-query newest-first so Arena can paint the new reel
+    const refreshed = await fetchArenaChallenges({ limit: 40 });
+    console.log('[arena_challenges] REFRESH after insert', {
+      count: refreshed.length,
+      includesNew: refreshed.some((c) => String(c?.id) === String(challengeId)),
+    });
+
     return {
       ok: true,
       challengeId,
       row: data,
       card: mapRowToCard(data || localRow, cardExtras),
+      refreshed,
     };
   } catch (error) {
     const msg = String(error?.message || error);
-    console.warn('[arenaChallenge] insert soft-fallback:', msg);
+    console.warn('[arena_challenges] INSERT soft-fallback:', {
+      message: msg,
+      challengeId,
+      payload: localRow,
+      setupHint: ARENA_CHALLENGES_SETUP_HINT,
+    });
     return {
       ok: true,
       softFallback: true,
@@ -199,6 +313,7 @@ export async function publishArenaChallenge({
       card: mapRowToCard(localRow, cardExtras),
       localOnly: true,
       setupHint: ARENA_CHALLENGES_SETUP_HINT,
+      refreshed: [],
     };
   }
 }
@@ -209,6 +324,7 @@ export function mapArenaChallengeRowToCard(row) {
 
 export default {
   publishArenaChallenge,
+  fetchArenaChallenges,
   mapArenaChallengeRowToCard,
   ARENA_CHALLENGES_SETUP_HINT,
 };

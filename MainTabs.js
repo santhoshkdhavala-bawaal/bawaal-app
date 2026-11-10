@@ -12,6 +12,7 @@ import ChallengeAlertModal from './ChallengeAlertModal';
 import CreateBattleSheet from './CreateBattleSheet';
 import {
   pushOpenChallenge,
+  refreshArenaChallengesIntoFeed,
   startArenaFeedWarmup,
 } from './arenaFeedStore';
 import { pushBattleChallenge } from './battlesFeedStore';
@@ -240,6 +241,10 @@ export default function MainTabs({ navigation, route }) {
   /** Publish OPEN challenge → Arena feed top + Battles OPEN list. */
   const onPublishOpenChallenge = useCallback((card) => {
     if (!card) return;
+    console.log('[MainTabs] publish open challenge → Arena', {
+      id: card.id || card.challengeId,
+      hasVideo: !!(card.videoUri || card.challengeVideoUri || card.openerVideoUri),
+    });
     const arenaCard = pushOpenChallenge(card) || card;
     pushBattleChallenge({
       ...card,
@@ -265,6 +270,19 @@ export default function MainTabs({ navigation, route }) {
         },
       },
     }));
+    // Re-query arena_challenges so the new reel is in store + subscribers instantly
+    void refreshArenaChallengesIntoFeed({ emitEvent: true, freshPublish: true })
+      .then((rows) => {
+        console.log('[MainTabs] arena_challenges refetch after publish', {
+          count: Array.isArray(rows) ? rows.length : 0,
+        });
+      })
+      .catch((err) => {
+        console.warn(
+          '[MainTabs] arena_challenges refetch failed:',
+          err?.message || err
+        );
+      });
   }, []);
 
   /** Center FAB → immediate UniversalCamera challenge mode (1-tap). */

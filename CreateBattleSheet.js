@@ -265,8 +265,28 @@ export default function CreateBattleSheet({
         onUploadProgress: (pct) => setUploadPct(Number(pct) || 0),
       });
 
+      console.log('[CreateBattleSheet] publishArenaChallenge result', {
+        ok: result?.ok,
+        challengeId: result?.challengeId,
+        softFallback: result?.softFallback,
+        localOnly: result?.localOnly,
+        error: result?.error || null,
+        refreshedCount: Array.isArray(result?.refreshed)
+          ? result.refreshed.length
+          : 0,
+        setupHint: result?.setupHint || null,
+      });
+
+      const fromRefresh =
+        Array.isArray(result?.refreshed) && result.refreshed.length > 0
+          ? result.refreshed.find(
+              (c) => String(c?.id) === String(result?.challengeId)
+            ) || result.refreshed[0]
+          : null;
+
       const card = {
         ...(result?.card || {}),
+        ...(fromRefresh || {}),
         id: result?.challengeId || result?.card?.id || newBattleId(),
         type: 'battle_thread',
         isOpenChallenge: true,
@@ -282,6 +302,7 @@ export default function CreateBattleSheet({
         challengerLabel: '@YOU',
         leaderLabel: 'OPEN',
         challengeVideoUri:
+          fromRefresh?.challengeVideoUri ||
           result?.card?.challengeVideoUri ||
           result?.card?.localVideoUri ||
           openerUri ||
@@ -289,6 +310,8 @@ export default function CreateBattleSheet({
         openerVideoUri: openerUri || null,
         localVideoUri: openerUri || null,
         videoUri:
+          fromRefresh?.publicCloudUrl ||
+          fromRefresh?.videoUri ||
           result?.card?.publicCloudUrl ||
           result?.card?.challengeVideoUri ||
           openerUri ||
