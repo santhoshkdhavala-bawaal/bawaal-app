@@ -53,12 +53,15 @@ function OTPModalBody({ onVerify, onNotice }) {
           { paddingBottom: Math.max(48, insets.bottom + 36) },
         ]}
       >
-        <Image
-          source={LOGO}
-          style={styles.watermark}
-          resizeMode="contain"
-          pointerEvents="none"
-        />
+        <View style={styles.watermarkClip} pointerEvents="none">
+          <Image
+            source={LOGO}
+            style={styles.watermark}
+            resizeMode="contain"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        </View>
         <Image
           source={LOGO}
           style={styles.logo}
@@ -137,7 +140,9 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   card: {
-    width: '90%',
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     backgroundColor: BG,
     borderRadius: 0,
     borderWidth: 0,
@@ -148,12 +153,15 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
   },
+  watermarkClip: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   watermark: {
-    position: 'absolute',
-    top: 8,
-    right: 12,
-    width: 140,
-    height: 140,
+    width: 160,
+    height: 160,
     opacity: 0.06,
   },
   logo: {

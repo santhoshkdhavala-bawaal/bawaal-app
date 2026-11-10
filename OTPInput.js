@@ -1,9 +1,17 @@
 /**
  * Locked 4-box OTP input — no 6-digit fallback, no auto-submit.
+ * One transparent TextInput overlays the visual boxes (web + mobile).
  * Parent must fire verification via an explicit SUBMIT / VERIFY control.
  */
-import React, { useRef } from 'react';
-import { StyleSheet, TextInput, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 /** Fixed OTP length — do not change or make dynamic. */
 export const OTP_LENGTH = 4;
@@ -16,83 +24,112 @@ export function emptyOtpDigits() {
   return Array.from({ length: OTP_LENGTH }, () => '');
 }
 
+function digitsToCode(digits) {
+  if (!Array.isArray(digits) || digits.length !== OTP_LENGTH) return '';
+  return digits.join('').replace(/\D/g, '').slice(0, OTP_LENGTH);
+}
+
+function codeToDigits(code) {
+  const cleaned = String(code || '')
+    .replace(/\D/g, '')
+    .slice(0, OTP_LENGTH);
+  const next = emptyOtpDigits();
+  for (let i = 0; i < cleaned.length; i += 1) {
+    next[i] = cleaned[i];
+  }
+  return next;
+}
+
 /**
  * @param {{
  *   digits?: string[],
  *   onChangeDigits?: (next: string[]) => void,
  *   editable?: boolean,
+ *   autoFocus?: boolean,
  * }} props
  */
 export default function OTPInput({
   digits,
   onChangeDigits,
   editable = true,
+  autoFocus = true,
 }) {
-  const inputs = useRef([]);
+  const inputRef = useRef(null);
   const values =
     Array.isArray(digits) && digits.length === OTP_LENGTH
       ? digits
       : emptyOtpDigits();
+  const code = digitsToCode(values);
 
-  const commit = (next) => {
-    onChangeDigits?.(next.slice(0, OTP_LENGTH));
-  };
+  useEffect(() => {
+    if (!autoFocus || !editable) return undefined;
+    const t = setTimeout(() => {
+      inputRef.current?.focus?.();
+    }, 50);
+    return () => clearTimeout(t);
+  }, [autoFocus, editable]);
 
-  const handleChange = (raw, index) => {
+  const focusInput = () => {
     if (!editable) return;
-    // Keep a single numeric digit only (paste of longer strings takes first digit)
-    const cleaned = String(raw || '').replace(/\D/g, '');
-    const digit = cleaned.slice(-1);
-    const next = [...values];
-    next[index] = digit;
-    commit(next);
-    // Advance focus only — never auto-verify
-    if (digit && index < OTP_LENGTH - 1) {
-      inputs.current[index + 1]?.focus?.();
-    }
+    inputRef.current?.focus?.();
   };
 
-  const handleKeyPress = (e, index) => {
-    if (e.nativeEvent.key !== 'Backspace') return;
-    if (values[index]) return;
-    if (index > 0) {
-      inputs.current[index - 1]?.focus?.();
-    }
+  const handleChange = (raw) => {
+    if (!editable) return;
+    // Never auto-verify — only sync digit boxes from the single field.
+    onChangeDigits?.(codeToDigits(raw));
   };
 
   return (
-    <View style={styles.row}>
+    <Pressable
+      style={styles.row}
+      onPress={focusInput}
+      accessibilityRole="none"
+      accessible={false}
+    >
       {Array.from({ length: OTP_LENGTH }, (_, idx) => (
-        <TextInput
-          key={`otp-${idx}`}
-          ref={(ref) => {
-            inputs.current[idx] = ref;
-          }}
+        <View
+          key={`otp-box-${idx}`}
           style={[styles.box, values[idx] ? styles.boxFilled : null]}
-          keyboardType="number-pad"
-          maxLength={1}
-          value={values[idx]}
-          onChangeText={(val) => handleChange(val, idx)}
-          onKeyPress={(e) => handleKeyPress(e, idx)}
-          selectionColor={WHITE}
-          editable={editable}
-          textAlign="center"
-          importantForAutofill="no"
-          autoComplete="off"
-          textContentType="oneTimeCode"
-          accessibilityLabel={`OTP digit ${idx + 1} of ${OTP_LENGTH}`}
-        />
+          pointerEvents="none"
+        >
+          <Text style={styles.digit}>{values[idx] || ''}</Text>
+        </View>
       ))}
-    </View>
+
+      <TextInput
+        ref={inputRef}
+        style={[styles.hiddenInput, Platform.OS === 'web' && styles.hiddenInputWeb]}
+        value={code}
+        onChangeText={handleChange}
+        maxLength={OTP_LENGTH}
+        keyboardType="number-pad"
+        inputMode="numeric"
+        autoFocus={autoFocus}
+        editable={editable}
+        caretHidden
+        autoCorrect={false}
+        autoCapitalize="none"
+        importantForAutofill="yes"
+        autoComplete={Platform.OS === 'web' ? 'one-time-code' : 'sms-otp'}
+        textContentType="oneTimeCode"
+        selectionColor="transparent"
+        underlineColorAndroid="transparent"
+        accessibilityLabel={`OTP ${OTP_LENGTH}-digit code`}
+      />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
+    position: 'relative',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
+    // Keep hit target large enough for the overlay input.
+    minHeight: 56,
   },
   box: {
     width: 52,
@@ -101,14 +138,35 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: BOX_BORDER,
     borderRadius: 10,
-    color: WHITE,
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center',
-    paddingVertical: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   boxFilled: {
     borderColor: BOX_BORDER,
     backgroundColor: BOX_BG,
+  },
+  digit: {
+    color: WHITE,
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  hiddenInput: {
+    ...StyleSheet.absoluteFillObject,
+    color: 'transparent',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    fontSize: 22,
+    opacity: 0.02,
+    zIndex: 2,
+    padding: 0,
+    margin: 0,
+  },
+  hiddenInputWeb: {
+    // Opacity 0 can swallow clicks on RN-Web; keep opaque + transparent glyphs.
+    opacity: 1,
+    caretColor: 'transparent',
+    outlineStyle: 'none',
+    outlineWidth: 0,
   },
 });

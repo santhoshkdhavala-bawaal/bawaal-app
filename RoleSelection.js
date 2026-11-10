@@ -621,12 +621,15 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 { paddingBottom: Math.max(48, insets.bottom + 36) },
               ]}
             >
-              <Image
-                source={require('./assets/BAWAAL_B_solo.png')}
-                style={styles.otpWatermark}
-                resizeMode="contain"
-                pointerEvents="none"
-              />
+              <View style={styles.otpWatermarkClip} pointerEvents="none">
+                <Image
+                  source={require('./assets/BAWAAL_B_solo.png')}
+                  style={styles.otpWatermark}
+                  resizeMode="contain"
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+              </View>
               <Image
                 source={require('./assets/BAWAAL_B_solo.png')}
                 style={styles.otpLogo}
@@ -1000,16 +1003,21 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     borderWidth: 0,
     padding: 28,
-    width: '90%',
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
     alignItems: 'center',
     overflow: 'hidden',
   },
+  otpWatermarkClip: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
   otpWatermark: {
-    position: 'absolute',
-    top: 8,
-    right: 12,
-    width: 140,
-    height: 140,
+    width: 160,
+    height: 160,
     opacity: 0.06,
   },
   otpLogo: {
