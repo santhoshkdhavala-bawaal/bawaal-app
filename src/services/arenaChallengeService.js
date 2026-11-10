@@ -24,8 +24,8 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * Only real UUIDs are safe for arena_challenges.user_id (uuid / FK columns).
- * Rejects placeholders like "user-local", "host-local", handles, etc.
+ * Only real UUIDs are safe for arena_challenges.user_id (uuid column).
+ * Rejects empty strings and placeholders like "user-santhosh", "host-local", handles.
  * @param {unknown} value
  * @returns {string|null}
  */
@@ -33,11 +33,39 @@ function asUuidOrNull(value) {
   if (value == null) return null;
   const s = String(value).trim();
   if (!s) return null;
-  // Explicit reject of non-uuid local / pseudo ids
-  if (/^user-/i.test(s) || /^host-/i.test(s) || s.startsWith('@')) {
+  // Explicit reject of non-uuid local / pseudo ids (e.g. ACTIVE_USER id "user-santhosh")
+  if (
+    /^user-/i.test(s) ||
+    /^host-/i.test(s) ||
+    s.startsWith('@') ||
+    !UUID_RE.test(s)
+  ) {
     return null;
   }
-  return UUID_RE.test(s) ? s : null;
+  return s;
+}
+
+/**
+ * Strip invalid user_id from a payload right before Supabase upsert.
+ * Mutates a shallow copy — never sends non-UUID strings to a uuid column.
+ * @param {Record<string, unknown>} payload
+ * @returns {Record<string, unknown>}
+ */
+function sanitizeInsertUserId(payload) {
+  const next = { ...(payload || {}) };
+  const safe = asUuidOrNull(next.user_id);
+  if (safe) {
+    next.user_id = safe;
+  } else {
+    if (next.user_id != null && String(next.user_id).trim() !== '') {
+      console.warn(
+        '[arena_challenges] scrubbing non-UUID user_id before insert:',
+        String(next.user_id)
+      );
+    }
+    delete next.user_id;
+  }
+  return next;
 }
 
 function resolveHost(overrides = {}) {
@@ -259,18 +287,18 @@ export async function publishArenaChallenge({
     _freshPublish: true,
   };
 
+  // Prefer auth UUID only — never fall back to ACTIVE_USER "user-santhosh" / host-local
   let rawUserId = null;
   try {
-    rawUserId = (await resolveVideosUserId(host.userId)) || host.userId || null;
+    rawUserId = await resolveVideosUserId(host.userId);
   } catch (_) {
-    rawUserId = host.userId || null;
+    rawUserId = null;
   }
-  // DB expects uuid — drop "user-…" / non-uuid strings so Postgres doesn't type-error
-  const safeUserId = asUuidOrNull(rawUserId);
-  if (rawUserId && !safeUserId) {
+  const safeUserId = asUuidOrNull(rawUserId) || asUuidOrNull(host.userId);
+  if ((rawUserId || host.userId) && !safeUserId) {
     console.warn(
       '[arena_challenges] omitting non-UUID user_id from insert payload:',
-      String(rawUserId)
+      String(rawUserId || host.userId)
     );
   }
 
@@ -290,7 +318,7 @@ export async function publishArenaChallenge({
     video_url: requiredVideoUrl,
     created_at: createdAt,
   };
-  // Only attach user_id when it is a valid UUID (omit otherwise)
+  // Only attach user_id when it is a valid UUID (omit / null otherwise)
   if (safeUserId) {
     insertPayload.user_id = safeUserId;
   }
@@ -389,10 +417,16 @@ export async function publishArenaChallenge({
     let statusText = null;
 
     try {
-      // insertPayload already omits user_id when it is not a valid UUID
+      // Final scrub — never send "user-santhosh" / empty / non-UUID to uuid column
+      const safeRow = sanitizeInsertUserId(insertPayload);
+      console.log('[arena_challenges] INSERT user_id check', {
+        raw: rawUserId || host.userId || null,
+        safe: safeRow.user_id ?? null,
+        omitted: !Object.prototype.hasOwnProperty.call(safeRow, 'user_id'),
+      });
       const insertResult = await supabase
         .from(TABLE)
-        .upsert({ ...insertPayload }, { onConflict: 'id' })
+        .upsert(safeRow, { onConflict: 'id' })
         .select()
         .single();
       data = insertResult.data;
@@ -422,13 +456,13 @@ export async function publishArenaChallenge({
           const retry = await supabase
             .from(TABLE)
             .upsert(
-              {
+              sanitizeInsertUserId({
                 id: challengeId,
                 title: insertPayload.title,
                 sport: insertPayload.sport,
                 video_url: insertPayload.video_url,
                 created_at: insertPayload.created_at,
-              },
+              }),
               { onConflict: 'id' }
             )
             .select()
@@ -457,12 +491,11 @@ export async function publishArenaChallenge({
         { message: error.message, code: error.code }
       );
       try {
-        const legacyPayload = {
+        const legacyPayload = sanitizeInsertUserId({
           id: challengeId,
           title: insertPayload.title,
           sport: insertPayload.sport,
           video_url: insertPayload.video_url,
-          user_id: insertPayload.user_id,
           created_at: createdAt,
           host_id: String(host.userId),
           host_username: host.handle,
@@ -472,7 +505,8 @@ export async function publishArenaChallenge({
           opener_video_url: insertPayload.video_url,
           status: 'OPEN',
           response_count: 0,
-        };
+          ...(safeUserId ? { user_id: safeUserId } : {}),
+        });
         const retry = await supabase
           .from(TABLE)
           .upsert(legacyPayload, { onConflict: 'id' })
