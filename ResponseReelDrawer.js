@@ -15,6 +15,7 @@ import {
   resolveFeedVideoUri,
 } from './src/components/SafeFeedVideo';
 import ArenaClipPlayer from './src/components/ArenaClipPlayer';
+import CustomMatchupViewer from './src/components/CustomMatchupViewer';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -83,15 +84,41 @@ export default function ResponseReelDrawer({ visible, thread, onClose }) {
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
   const [page, setPage] = useState(0);
+  const [matchupOpen, setMatchupOpen] = useState(false);
 
   const responses = useMemo(() => {
     const list = [...(thread?.responses || [])];
     return list.sort((a, b) => (b.votes || 0) - (a.votes || 0));
   }, [thread?.responses]);
 
+  const challengeId =
+    (typeof thread?.challengeId === 'string' && thread.challengeId) ||
+    (typeof thread?.battleId === 'string' && thread.battleId) ||
+    (typeof thread?.id === 'string' && thread.id) ||
+    null;
+
+  const matchupSeed = useMemo(
+    () =>
+      responses.map((r, index) => ({
+        id: String(r.id || `resp-${index}`),
+        handle:
+          r.creator === 'You'
+            ? '@YOU'
+            : `@${String(r.creator || r.author || r.handle || 'athlete').replace(/^@/, '')}`,
+        videoUri: r.videoUri || r.uri || r.video_url || null,
+        video_url: r.video_url || r.videoUri || null,
+        uri: r.uri || r.videoUri || null,
+        votes: Number(r.votes) || 0,
+        isFirstBlood: Boolean(r.isFirstBlood),
+        isGladiator: Boolean(r.isGladiator),
+      })),
+    [responses]
+  );
+
   useEffect(() => {
     if (visible) {
       setPage(0);
+      setMatchupOpen(false);
       requestAnimationFrame(() => {
         listRef.current?.scrollToOffset?.({ offset: 0, animated: false });
       });
@@ -114,6 +141,15 @@ export default function ResponseReelDrawer({ visible, thread, onClose }) {
               {responses.length} ATHLETE{responses.length === 1 ? '' : 'S'} · SWIPE
             </Text>
           </View>
+          {challengeId && responses.length >= 2 ? (
+            <TouchableOpacity
+              onPress={() => setMatchupOpen(true)}
+              style={styles.matchupBtn}
+              hitSlop={8}
+            >
+              <Text style={styles.matchupBtnText}>MATCHUP</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
             <Text style={styles.closeText}>✕</Text>
           </TouchableOpacity>
@@ -155,6 +191,19 @@ export default function ResponseReelDrawer({ visible, thread, onClose }) {
             </View>
           }
         />
+
+        <Modal
+          visible={matchupOpen && !!challengeId}
+          animationType="slide"
+          onRequestClose={() => setMatchupOpen(false)}
+        >
+          <CustomMatchupViewer
+            challengeId={String(challengeId || '')}
+            initialResponses={matchupSeed}
+            title="CUSTOM MATCHUP"
+            onClose={() => setMatchupOpen(false)}
+          />
+        </Modal>
       </View>
     </Modal>
   );
@@ -190,6 +239,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 2,
+  },
+  matchupBtn: {
+    marginRight: 8,
+    marginTop: 2,
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,87,34,0.16)',
+  },
+  matchupBtnText: {
+    color: ACCENT,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   closeBtn: {
     width: 36,
