@@ -132,6 +132,7 @@ function LocationFlagBadge({ flag, country, iso }) {
   const label = country ? `Country flag ${country}` : 'Country flag';
 
   // Image flags avoid regional-indicator letter fallback ("IN") on Windows web.
+  // Fixed 32×24 slot keeps every country flag the same visual footprint.
   if (isoCode.length === 2) {
     return (
       <View style={styles.flagBadge} accessibilityLabel={label}>
@@ -884,7 +885,8 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 34,
+    width: 32,
+    minWidth: 32,
   },
   selectValue: {
     flex: 1,
@@ -903,23 +905,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   flagBadge: {
-    width: 34,
-    height: 26,
-    borderRadius: 6,
+    width: 32,
+    height: 24,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
-    marginHorizontal: 2,
   },
   flagImage: {
-    width: 28,
-    height: 20,
+    width: 32,
+    height: 24,
   },
   flagEmoji: {
     fontSize: 22,
-    lineHeight: 26,
+    lineHeight: 24,
+    width: 32,
+    height: 24,
     textAlign: 'center',
+    textAlignVertical: 'center',
     includeFontPadding: false,
     ...(Platform.OS === 'web'
       ? {
