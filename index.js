@@ -12,7 +12,11 @@ import {
   hideSplashSafe,
   preventAutoHideSafe,
 } from './src/boot/safeSplash';
+import { injectWebScrollbarStyles } from './src/styles/injectWebScrollbar';
 import App from './App';
+
+// Web-only: replace default light grey scrollbars with BAWAAL orange/black chrome
+injectWebScrollbarStyles();
 
 const isExpoGo = Constants.appOwnership === 'expo';
 

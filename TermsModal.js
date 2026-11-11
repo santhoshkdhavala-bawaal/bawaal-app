@@ -1,17 +1,34 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, ScrollView, Image } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Modal,
+  ScrollView,
+  Image,
+  Platform,
+} from 'react-native';
 import BackLink from './src/components/BackLink';
+import { injectWebScrollbarStyles } from './src/styles/injectWebScrollbar';
+
+if (Platform.OS === 'web') {
+  injectWebScrollbarStyles();
+}
 
 export default function TermsModal({ visible, onAgree, onBack }) {
   return (
     <Modal visible={visible} animationType="slide" transparent={true}>
       <View style={styles.modalOverlay}>
         <View style={styles.goldGlowCard}>
-          
-          <ScrollView 
-            style={{ flex: 1 }} 
+          <ScrollView
+            style={styles.termsScroll}
             contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
+            showsVerticalScrollIndicator={Platform.OS !== 'web'}
+            // RN-Web maps className onto the overflow node for CSS scrollbar hooks
+            {...(Platform.OS === 'web'
+              ? { className: 'bawaal-terms-scroll' }
+              : null)}
           >
             {/* Header Logo */}
             <View style={styles.logoHeader}>
@@ -109,6 +126,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FF6600',
     padding: 12,
+  },
+  termsScroll: {
+    flex: 1,
+    backgroundColor: '#000000',
   },
   scrollContent: { paddingBottom: 30 },
   logoHeader: { alignItems: 'center', marginBottom: 12 },

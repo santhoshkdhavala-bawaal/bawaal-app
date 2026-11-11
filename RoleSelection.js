@@ -619,7 +619,10 @@ export default function RoleSelection({ onCompleteRegistration }) {
               style={styles.termsScrollView}
               onScroll={handleTermsScroll}
               scrollEventThrottle={16}
-              showsVerticalScrollIndicator
+              showsVerticalScrollIndicator={Platform.OS !== 'web'}
+              {...(Platform.OS === 'web'
+                ? { className: 'bawaal-terms-scroll' }
+                : null)}
             >
               <Text style={styles.legalHeading}>1. Age Eligibility & Parental Consent (13+)</Text>
               <Text style={styles.legalBody}>
@@ -1085,6 +1088,7 @@ const styles = StyleSheet.create({
   },
   termsScrollView: {
     marginBottom: 12,
+    backgroundColor: BG,
   },
   legalHeading: {
     color: WHITE,
