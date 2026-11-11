@@ -70,16 +70,30 @@ function InputCard({
   leading,
   trailing,
   style,
+  inputStyle,
 }) {
+  const hasTrailing = !!trailing;
   return (
-    <View style={[styles.inputCard, focused && styles.inputCardFocused, style]}>
+    <View
+      style={[
+        styles.inputCard,
+        hasTrailing && styles.inputCardWithTrailing,
+        focused && styles.inputCardFocused,
+        style,
+      ]}
+    >
       {leading ? (
         <View style={styles.inputLeading} pointerEvents="none">
           {leading}
         </View>
       ) : null}
       <TextInput
-        style={[styles.input, Platform.OS === 'web' && styles.inputWeb]}
+        style={[
+          styles.input,
+          hasTrailing && styles.inputWithTrailingPad,
+          Platform.OS === 'web' && styles.inputWeb,
+          inputStyle,
+        ]}
         placeholder={placeholder}
         placeholderTextColor={PLACEHOLDER}
         value={value}
@@ -92,7 +106,7 @@ function InputCard({
         underlineColorAndroid="transparent"
         selectionColor={ORANGE}
       />
-      {trailing ? (
+      {hasTrailing ? (
         <View style={styles.inputTrailing} pointerEvents="none">
           {trailing}
         </View>
@@ -815,10 +829,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.06)',
-    paddingHorizontal: 14,
+    paddingLeft: 14,
+    paddingRight: 14,
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
+  },
+  inputCardWithTrailing: {
+    justifyContent: 'space-between',
+    paddingRight: 10,
   },
   inputCardFocused: {
     borderColor: ORANGE,
@@ -829,13 +848,20 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    minWidth: 0,
     height: '100%',
     color: WHITE,
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 0,
+    paddingRight: 0,
     backgroundColor: 'transparent',
     borderWidth: 0,
+  },
+  /** Keep typed location text clear of the flag chip on the right. */
+  inputWithTrailingPad: {
+    paddingRight: 40,
+    marginRight: 4,
   },
   inputWeb: {
     outlineStyle: 'none',
@@ -850,11 +876,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inputTrailing: {
-    marginLeft: 10,
+    marginLeft: 8,
+    marginRight: 4,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 28,
+    minWidth: 34,
   },
   selectValue: {
     flex: 1,
@@ -880,6 +907,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.06)',
     overflow: 'hidden',
+    marginHorizontal: 2,
   },
   flagImage: {
     width: 28,
