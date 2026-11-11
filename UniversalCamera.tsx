@@ -304,7 +304,7 @@ function BawaalHubDrawer({
       >
         <View style={hubStyles.handle} />
         <Image
-          source={require('./assets/bawaal-full-logo.png')}
+          source={require('./assets/BAWAAL_white_full.png')}
           style={hubStyles.logo}
           resizeMode="contain"
         />
