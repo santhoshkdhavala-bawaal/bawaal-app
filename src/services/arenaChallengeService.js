@@ -133,11 +133,15 @@ function mapRowToCard(row, extras = {}) {
     row.description != null && String(row.description).trim()
       ? String(row.description).trim()
       : row.target_details || extras.targetDetails || null;
+  const tier = String(row.tier || 'dark_arena')
+    .trim()
+    .toLowerCase() || 'dark_arena';
   return {
     id,
     challengeId: id,
     battleId: id,
     type: 'battle_thread',
+    tier,
     isOpenChallenge: true,
     isBattle: true,
     status:

@@ -1,5 +1,12 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  StatusBar,
+  Image,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const BG = '#000000';
@@ -7,14 +14,20 @@ const WHITE = '#FFFFFF';
 const ACCENT = '#FF5722';
 const MUTED = '#A0A0A0';
 
+/** Orange brand mark (asset file name kept; file is the orange logo). */
+const BAWAAL_LOGO = require('./assets/BAWAAL_white_full.png');
+
 /**
  * Global brand header: BAWAAL + screen subtitle.
  * Optional rightSlot aligns opposite the screen-name row.
+ * Pass `useLogo` to render the orange logo image instead of white wordmark text.
  */
 export default function BrandHeader({
   screenName = 'ARENA',
   onBrandPress,
   rightSlot = null,
+  useLogo = false,
+  logoSource = BAWAAL_LOGO,
 }) {
   const insets = useSafeAreaInsets();
 
@@ -30,7 +43,16 @@ export default function BrandHeader({
           hitSlop={{ top: 8, bottom: 4, left: 4, right: 8 }}
           style={styles.brandWrap}
         >
-          <Text style={styles.brand}>BAWAAL</Text>
+          {useLogo ? (
+            <Image
+              source={logoSource}
+              style={styles.brandLogo}
+              resizeMode="contain"
+              accessibilityLabel="BAWAAL"
+            />
+          ) : (
+            <Text style={styles.brand}>BAWAAL</Text>
+          )}
         </TouchableOpacity>
       </View>
       <View style={styles.subRow}>
@@ -63,6 +85,10 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '900',
     letterSpacing: 1.2,
+  },
+  brandLogo: {
+    width: 148,
+    height: 32,
   },
   subRow: {
     flexDirection: 'row',

@@ -33,7 +33,7 @@ Sport interest / filter chips are a **single-line horizontal** `ScrollView` of p
 - Arena publish — `PostCreationSheet` via `ARENA_SPORT_OPTIONS` (excludes ALL)
 - Upload challenge category — `UploadScreen`
 - Arena / BATTLES sport filters — `ARENA_SPORT_TABS` / `BAWAAL_SPORTS`
-- GAME ON live scores pills — `ScoresSportsPanel` / `GameOnHub` via `BAWAAL_SPORTS` only (never Tennis, Badminton, Baseball, or other fallbacks)
+- Arena header destination pills — `ARENA_FEED_TIERS` in `arenaFeedTiers.js` (All / Battle / Dark Arena / Faceoff / War Cry) — not a sport array
 - Sport Hub Map category pills — may add ALL / SPORTS SPOTS chrome but sport keys must match taxonomy (see `bawaal-sport-hub-map-locked.mdc`)
 
 ## Accent

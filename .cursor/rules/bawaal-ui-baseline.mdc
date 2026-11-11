@@ -16,14 +16,14 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 - **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, floating speed badges, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
 - Full contract: `.cursor/rules/bawaal-challengecam-locked.mdc`.
 
-## 2. Arena header & GAME ON hub (`ArenaFeed.js` + `GameOnHub` + `ScoresSportsPanel.js`)
+## 2. Arena header & tier filters (`ArenaFeed.js` + `ArenaTierFilterBar`)
 
-- **Keep:** Main Arena as a single clutter-free video feed — header **ARENA** + top-right **GAME ON** (no feed-top dual toggle, floating alert toasts, or shelf at index 0/1).
+- **Keep:** Main Arena as a single clutter-free video feed — orange BAWAAL logo header (`BrandHeader` `useLogo`) + horizontal destination-tier pills under the header.
+- **Keep:** Tier pills from `ARENA_FEED_TIERS`: All · Bawaal Battle · Dark Arena · Faceoff · War Cry (`src/constants/arenaFeedTiers.js`) — single-line horizontal scroll; active pill uses subtle orange border.
+- **Keep:** Selecting a pill filters the infinite feed by `tier` / inferred destination (no sport-taxonomy pills on this bar).
 - **Keep:** Inline horizontal **LIVE COMMUNITY CHALLENGES** shelf every 4–5 feed items **after** leading videos (`CommunityChallengesShelf`) deep-linking to BATTLES.
-- **Keep:** GAME ON hub hosts scores ticker with horizontal **BAWAAL_SPORTS** filter pills only (no redundant lower taxonomy grid; no Tennis/Badminton/etc. fallbacks; no Open Callouts inside GAME ON).
 - **Keep:** Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS) on the **BATTLES** tab via `OpenCalloutsPanel`.
-- **Keep:** Black-and-white monochromatic Scores & Sports panel inside GAME ON (locked sport pills → match list → inline score card).
-- **Do not** restyle into colorful/dashboard chrome or invent local sport category arrays.
+- **Never re-add:** GAME ON hub, sports score tickers, or `ScoresSportsPanel` / spectator score APIs on Arena.
 
 ## 3. Video feed surfaces (`SportsFeedPlaceholder.js` feed variant, Arena reel cards)
 

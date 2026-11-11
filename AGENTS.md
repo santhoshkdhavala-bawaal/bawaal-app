@@ -36,7 +36,7 @@ Docs: https://docs.expo.dev/eas/index.md
 
 ## UI baseline (locked)
 
-Camera (minimal shutter/cancel/flip + pinch zoom), Arena B&W sports ticker, clean feed surfaces (no category pills), and the spaced bottom tab bar are **finalized**. Do not re-introduce removed chrome or reshape those layouts. See `.cursor/rules/bawaal-ui-baseline.mdc`.
+Camera (minimal shutter/cancel/flip + pinch zoom), Arena orange logo + destination-tier pills, clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Do not re-introduce GAME ON / score tickers or reshape those layouts. See `.cursor/rules/bawaal-ui-baseline.mdc`.
 
 ## ChallengeCam / UniversalCamera (locked)
 
@@ -64,7 +64,7 @@ Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOT
 
 ## Arena challenge architecture (locked)
 
-Hubs: **ARENA** (cinematic feed; shelf at index 2+), **GAME ON** (scores + locked `BAWAAL_SPORTS` pills), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Taxonomy source: `src/constants/sports.js`. **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc` and `bawaal-sport-taxonomy-locked.mdc`.
+Hubs: **ARENA** (cinematic feed; orange logo + destination-tier pills; shelf at index 2+), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Taxonomy source: `src/constants/sports.js`. Arena tier filters: `src/constants/arenaFeedTiers.js`. **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc` and `bawaal-sport-taxonomy-locked.mdc`.
 
 ## Arena video playback & hydrate (locked)
 

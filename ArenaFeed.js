@@ -47,14 +47,19 @@ import MuteToggleButton from './src/components/MuteToggleButton';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
-import GameOnHub from './src/components/GameOnHub';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
+import ArenaTierFilterBar from './src/components/ArenaTierFilterBar';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
+import {
+  ARENA_FEED_TIER_ALL,
+  filterArenaFeedByTier,
+  resolveArenaFeedTier,
+} from './src/constants/arenaFeedTiers';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -313,10 +318,15 @@ function mapChallengeRowToFeedItem(row, index = 0) {
       row.challengeId ||
       (videoUrl ? `uri-${videoIdentityKey(videoUrl)}` : `challenge-${index}-${createdAtMs(row)}`)
   );
+  const tier =
+    resolveArenaFeedTier(row) ||
+    String(row.tier || 'dark_arena').toLowerCase() ||
+    'dark_arena';
   return {
     ...row,
     id,
     type: 'challenge_video',
+    tier,
     video_url: videoUrl,
     videoUrl,
     videoUri: videoUrl,
@@ -734,8 +744,18 @@ function ingestArenaPost(prev, post) {
   return [thread, ...prev];
 }
 
+/** Tier filter pill strip under BrandHeader. */
+const ARENA_TIER_FILTER_BAR_H = 44;
+
 function arenaOverlayClearance(insets) {
-  const headerHeight = Math.max(insets?.top || 0, 12) + 34 + 2 + 22 + 10 + 1;
+  const headerHeight =
+    Math.max(insets?.top || 0, 12) +
+    34 +
+    2 +
+    22 +
+    10 +
+    1 +
+    ARENA_TIER_FILTER_BAR_H;
   const tabBarHeight =
     10 +
     52 +
@@ -1014,9 +1034,9 @@ export default function ArenaFeed({ navigation, route }) {
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
-  const [gameOnOpen, setGameOnOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerBanterOpen, setHeaderBanterOpen] = useState(false);
+  const [selectedFeedTier, setSelectedFeedTier] = useState(ARENA_FEED_TIER_ALL);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
   const {
     items: videoFeedItems,
@@ -1559,12 +1579,29 @@ export default function ArenaFeed({ navigation, route }) {
     return sortByCreatedAtDesc(out);
   }, [videos, feedItems]);
 
-  const activeFeedItem = challengeVideoFeed[activeIndex] || null;
+  /** Tier-filtered infinite feed (All = unfiltered). */
+  const filteredChallengeVideoFeed = useMemo(
+    () => filterArenaFeedByTier(challengeVideoFeed, selectedFeedTier),
+    [challengeVideoFeed, selectedFeedTier]
+  );
+
+  const activeFeedItem = filteredChallengeVideoFeed[activeIndex] || null;
   const activeSettingsReel = activeFeedItem || null;
 
   useEffect(() => {
     setSettingsOpen(false);
   }, [activeIndex]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+    requestAnimationFrame(() => {
+      try {
+        listRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+      } catch {
+        /* ignore */
+      }
+    });
+  }, [selectedFeedTier]);
 
   const shareActiveReel = useCallback(async () => {
     setSettingsOpen(false);
@@ -1580,10 +1617,6 @@ export default function ArenaFeed({ navigation, route }) {
     }
   }, [activeSettingsReel]);
 
-  const openGameOn = useCallback(() => {
-    setGameOnOpen(true);
-  }, []);
-
   const openShelfCallout = useCallback(
     (item) => {
       const id = item?.id || item?.challengeId || null;
@@ -1596,8 +1629,8 @@ export default function ArenaFeed({ navigation, route }) {
     [openBattlesCallout, navigation]
   );
 
-  const closeGameOn = useCallback(() => {
-    setGameOnOpen(false);
+  const onSelectFeedTier = useCallback((tierId) => {
+    setSelectedFeedTier(tierId || ARENA_FEED_TIER_ALL);
   }, []);
 
   const openReel = useCallback((item, opts) => {
@@ -1713,21 +1746,28 @@ export default function ArenaFeed({ navigation, route }) {
   const emptyFilter = useMemo(
     () => (
       <View style={styles.emptyFeed}>
-        <Text style={styles.emptyFeedTitle}>NO CLIPS YET</Text>
+        <Text style={styles.emptyFeedTitle}>
+          {selectedFeedTier === ARENA_FEED_TIER_ALL
+            ? 'NO CLIPS YET'
+            : 'NO CLIPS IN THIS TIER'}
+        </Text>
         <Text style={styles.emptyFeedSub}>
-          Drop a SPARKS or JOSH clip to light up Arena. Open callouts live on
-          the Battles tab.
+          {selectedFeedTier === ARENA_FEED_TIER_ALL
+            ? 'Drop a clip to light up Arena. Open callouts live on the Battles tab.'
+            : 'Try All, or publish a challenge into this destination tier.'}
         </Text>
         <TouchableOpacity
           style={styles.emptyFeedBtn}
-          onPress={() => openGameOn()}
+          onPress={() =>
+            navigation?.navigate?.('UniversalCamera', { initialMode: 'JOSH' })
+          }
           activeOpacity={0.85}
         >
-          <Text style={styles.emptyFeedBtnText}>GAME ON</Text>
+          <Text style={styles.emptyFeedBtnText}>POST A CLIP</Text>
         </TouchableOpacity>
       </View>
     ),
-    [openGameOn]
+    [navigation, selectedFeedTier]
   );
 
   const getFeedItemLayout = useCallback(
@@ -1822,31 +1862,31 @@ export default function ArenaFeed({ navigation, route }) {
       <View style={styles.headerBar}>
         <BrandHeader
           screenName="ARENA"
+          useLogo
           onBrandPress={openProfileGateway}
           rightSlot={
             <View style={styles.headerActions}>
               {activeSettingsReel ? (
                 <TouchableOpacity
-                  style={styles.gameOnPill}
+                  style={styles.settingsPill}
                   onPress={() => setSettingsOpen((open) => !open)}
                   activeOpacity={0.85}
                   accessibilityRole="button"
-                  accessibilityLabel={settingsOpen ? 'Close settings' : 'Open settings'}
+                  accessibilityLabel={
+                    settingsOpen ? 'Close settings' : 'Open settings'
+                  }
                 >
-                  <Text style={styles.gameOnPillText}>{settingsOpen ? '✕' : '⋮'}</Text>
+                  <Text style={styles.settingsPillText}>
+                    {settingsOpen ? '✕' : '⋮'}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
-              <TouchableOpacity
-                style={styles.gameOnPill}
-                onPress={() => openGameOn()}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel="Open GAME ON hub"
-              >
-                <Text style={styles.gameOnPillText}>GAME ON</Text>
-              </TouchableOpacity>
             </View>
           }
+        />
+        <ArenaTierFilterBar
+          selectedId={selectedFeedTier}
+          onSelect={onSelectFeedTier}
         />
         {settingsOpen && activeSettingsReel ? (
           <View style={styles.headerSettingsMenu}>
@@ -1887,14 +1927,14 @@ export default function ArenaFeed({ navigation, route }) {
         <FlatList
           ref={listRef}
           style={styles.feedList}
-          data={challengeVideoFeed}
+          data={filteredChallengeVideoFeed}
           keyExtractor={(item, index) =>
             String(item?.id || item?.video_url || `challenge-${index}`)
           }
           renderItem={renderChallengeVideo}
           ListEmptyComponent={emptyChallengeList}
           contentContainerStyle={
-            challengeVideoFeed.length === 0
+            filteredChallengeVideoFeed.length === 0
               ? styles.scrollContentEmpty
               : styles.scrollContent
           }
@@ -1908,9 +1948,12 @@ export default function ArenaFeed({ navigation, route }) {
           removeClippedSubviews={Platform.OS !== 'web'}
           maxToRenderPerBatch={5}
           windowSize={7}
-          initialNumToRender={Math.min(3, Math.max(challengeVideoFeed.length, 1))}
+          initialNumToRender={Math.min(
+            3,
+            Math.max(filteredChallengeVideoFeed.length, 1)
+          )}
           getItemLayout={getFeedItemLayout}
-          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${challengeVideoFeed.length}`}
+          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${filteredChallengeVideoFeed.length}:${selectedFeedTier}`}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1922,7 +1965,9 @@ export default function ArenaFeed({ navigation, route }) {
           }
         />
         {isUploadingClip ||
-        (feedLoading && challengeVideoFeed.length > 0 && !refreshing) ? (
+        (feedLoading &&
+          filteredChallengeVideoFeed.length > 0 &&
+          !refreshing) ? (
           <View style={styles.loadingOverlay} pointerEvents="none">
             <ActivityIndicator color="#FFFFFF" size="large" />
             <Text style={styles.loadingEmptyText}>
@@ -1937,7 +1982,6 @@ export default function ArenaFeed({ navigation, route }) {
         reel={activeSettingsReel}
         onClose={() => setHeaderBanterOpen(false)}
       />
-      <GameOnHub visible={gameOnOpen} onClose={closeGameOn} />
 
       <ArenaReelViewer
         visible={!!activeReel}
@@ -2039,15 +2083,15 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.8,
   },
-  gameOnPill: {
+  settingsPill: {
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: SURFACE,
     borderWidth: 1,
-    borderColor: WHITE,
+    borderColor: 'rgba(255,85,0,0.55)',
   },
-  gameOnPillText: {
+  settingsPillText: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '900',

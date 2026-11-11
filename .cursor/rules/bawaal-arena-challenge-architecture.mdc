@@ -1,26 +1,30 @@
 ---
-description: BAWAAL Arena / GAME ON / BATTLES architecture (locked baseline)
+description: BAWAAL Arena / BATTLES architecture (locked baseline)
 alwaysApply: true
 ---
 
 # BAWAAL Arena Challenge Architecture (LOCKED baseline)
 
 High-performance stealth-black sports network centered on **asynchronous 1v1 video battles**.
-Do not regress: single cinematic Arena feed, shelf at index 2+, slim GAME ON hub, BATTLES open callouts, locked `BAWAAL_SPORTS`, 1-tap challenge camera, or 200ms post-record teardown.
+Do not regress: single cinematic Arena feed, shelf at index 2+, destination-tier filter pills, BATTLES open callouts, locked `BAWAAL_SPORTS`, 1-tap challenge camera, or 200ms post-record teardown.
 
 ## Navigation hubs
 
 | Hub | Role |
 |---|---|
-| **ARENA** | Clean single-stream video feed. Header **ARENA** + **GAME ON**. Inline **LIVE COMMUNITY CHALLENGES** shelf at index **2+** only. |
-| **GAME ON** | Live scores + `BAWAAL_SPORTS` pills only (`GameOnHub` / `ScoresSportsPanel`). |
+| **ARENA** | Clean single-stream video feed. Orange BAWAAL logo header + horizontal destination-tier pills (**All · Bawaal Battle · Dark Arena · Faceoff · War Cry**). Inline **LIVE COMMUNITY CHALLENGES** shelf at index **2+** only. |
 | **BATTLES** | Active battles + Open Callouts (**OPEN CHALLENGES** \| **TIPS & BREAKDOWNS**). |
 
 ## Immutable sports taxonomy
 
 Source: `src/constants/sports.js` → `BAWAAL_SPORTS`  
 Order: ALL → CRICKET → FOOTBALL → GYM → KABADDI → COMBAT → THROTTLE → WAVE & BLADE → COURT KINGS → SKY & SUMMIT → OTHERS.  
-No local sport arrays. No Tennis/Badminton/etc. fallbacks in GAME ON.
+No local sport arrays.
+
+## Arena destination tiers
+
+Source: `src/constants/arenaFeedTiers.js` → `ARENA_FEED_TIERS`  
+Filter pills under the Arena header filter the infinite feed by destination `tier` (not sport).
 
 ## Feed & startup
 
@@ -35,7 +39,7 @@ No local sport arrays. No Tennis/Badminton/etc. fallbacks in GAME ON.
 
 ## Re-hydration prompt
 
-Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + shelf at index 2+), GAME ON (scores + BAWAAL_SPORTS pills only), and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js is the immutable taxonomy. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay.
+Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + destination-tier pills + shelf at index 2+) and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js is the immutable sport taxonomy. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay. Do not re-add GAME ON / score tickers on Arena.
 
 ## Related locks
 
