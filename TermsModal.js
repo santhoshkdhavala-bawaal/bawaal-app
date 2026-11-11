@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: { paddingBottom: 30 },
   logoHeader: { alignItems: 'center', marginBottom: 12 },
-  headerLogo: { width: 220, height: 64 },
+  headerLogo: { width: 240, height: 72 },
   subtitle: { color: '#A0A0A0', fontSize: 12, marginTop: 8, fontWeight: '600' },
   sectionCard: {
     backgroundColor: '#000000',

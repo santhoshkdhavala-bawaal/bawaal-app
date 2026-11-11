@@ -1,9 +1,10 @@
 /**
- * Locked 4-box OTP input — no 6-digit fallback, no auto-submit.
+ * 4-box OTP input — no 6-digit fallback, no auto-submit.
  * One transparent TextInput overlays the visual boxes (web + mobile).
  * Parent must fire verification via an explicit SUBMIT / VERIFY control.
+ * Box chrome: dark grey fill, orange focus border (explicit brand unlock).
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -16,9 +17,11 @@ import {
 /** Fixed OTP length — do not change or make dynamic. */
 export const OTP_LENGTH = 4;
 
-const BOX_BG = '#0A192F';
-const BOX_BORDER = '#3B82F6';
+const BOX_BG = '#1E1E22';
+const BOX_BORDER = '#333333';
+const BOX_BORDER_ACTIVE = '#FF6600';
 const WHITE = '#FFFFFF';
+const ORANGE = '#FF6600';
 
 export function emptyOtpDigits() {
   return Array.from({ length: OTP_LENGTH }, () => '');
@@ -55,11 +58,15 @@ export default function OTPInput({
   autoFocus = true,
 }) {
   const inputRef = useRef(null);
+  const [focused, setFocused] = useState(false);
   const values =
     Array.isArray(digits) && digits.length === OTP_LENGTH
       ? digits
       : emptyOtpDigits();
   const code = digitsToCode(values);
+  const activeIndex = focused
+    ? Math.min(code.length, OTP_LENGTH - 1)
+    : -1;
 
   useEffect(() => {
     if (!autoFocus || !editable) return undefined;
@@ -90,7 +97,11 @@ export default function OTPInput({
       {Array.from({ length: OTP_LENGTH }, (_, idx) => (
         <View
           key={`otp-box-${idx}`}
-          style={[styles.box, values[idx] ? styles.boxFilled : null]}
+          style={[
+            styles.box,
+            values[idx] ? styles.boxFilled : null,
+            activeIndex === idx ? styles.boxActive : null,
+          ]}
           pointerEvents="none"
         >
           <Text style={styles.digit}>{values[idx] || ''}</Text>
@@ -102,6 +113,8 @@ export default function OTPInput({
         style={[styles.hiddenInput, Platform.OS === 'web' && styles.hiddenInputWeb]}
         value={code}
         onChangeText={handleChange}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         maxLength={OTP_LENGTH}
         keyboardType="number-pad"
         inputMode="numeric"
@@ -113,7 +126,7 @@ export default function OTPInput({
         importantForAutofill="yes"
         autoComplete={Platform.OS === 'web' ? 'one-time-code' : 'sms-otp'}
         textContentType="oneTimeCode"
-        selectionColor="transparent"
+        selectionColor={ORANGE}
         underlineColorAndroid="transparent"
         accessibilityLabel={`OTP ${OTP_LENGTH}-digit code`}
       />
@@ -128,7 +141,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
-    // Keep hit target large enough for the overlay input.
     minHeight: 56,
   },
   box: {
@@ -144,6 +156,9 @@ const styles = StyleSheet.create({
   boxFilled: {
     borderColor: BOX_BORDER,
     backgroundColor: BOX_BG,
+  },
+  boxActive: {
+    borderColor: BOX_BORDER_ACTIVE,
   },
   digit: {
     color: WHITE,
@@ -163,10 +178,11 @@ const styles = StyleSheet.create({
     margin: 0,
   },
   hiddenInputWeb: {
-    // Opacity 0 can swallow clicks on RN-Web; keep opaque + transparent glyphs.
     opacity: 1,
     caretColor: 'transparent',
     outlineStyle: 'none',
     outlineWidth: 0,
+    outlineColor: 'transparent',
+    boxShadow: 'none',
   },
 });

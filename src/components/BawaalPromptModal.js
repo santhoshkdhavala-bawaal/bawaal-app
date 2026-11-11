@@ -30,7 +30,9 @@ const HAIRLINE = 'rgba(255,255,255,0.18)';
 const ACCENT = '#4ADE80';
 const CREATE_YELLOW = '#FACC15';
 const BRIEF_PURPLE = '#A855F7';
-const LOGO = require('../../assets/BAWAAL_B_solo.png');
+const LOGO_MARK = require('../../assets/BAWAAL_B_solo.png');
+/** Full orange brand mark for notice / prompt headers (e.g. Terms Required). */
+const LOGO_FULL = require('../../assets/BAWAAL_white_full.png');
 
 function resolveConfirmColor(confirmLabel, confirmColor) {
   if (confirmColor) return confirmColor;
@@ -181,7 +183,7 @@ export default function BawaalPromptModal({
           <View style={styles.card} accessibilityViewIsModal>
             <View style={styles.watermarkClip} pointerEvents="none">
               <Image
-                source={LOGO}
+                source={LOGO_MARK}
                 style={styles.watermark}
                 resizeMode="contain"
                 accessibilityElementsHidden
@@ -202,8 +204,11 @@ export default function BawaalPromptModal({
               nestedScrollEnabled
             >
               <View style={styles.headerRow}>
-                <Image source={LOGO} style={styles.headerLogo} resizeMode="contain" />
-                <Text style={styles.brandMark}>BAWAAL</Text>
+                <Image
+                  source={LOGO_FULL}
+                  style={styles.headerLogo}
+                  resizeMode="contain"
+                />
               </View>
 
               <Text style={styles.title}>{title}</Text>
@@ -416,13 +421,12 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 14,
   },
   headerLogo: {
-    width: 22,
-    height: 22,
-    marginRight: 10,
-    tintColor: WHITE,
+    width: 160,
+    height: 44,
   },
   brandMark: {
     color: WHITE,

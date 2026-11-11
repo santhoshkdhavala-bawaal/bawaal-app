@@ -20,7 +20,8 @@ import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const LOGO = require('./assets/BAWAAL_B_solo.png');
+const LOGO_MARK = require('./assets/BAWAAL_B_solo.png');
+const LOGO_FULL = require('./assets/BAWAAL_white_full.png');
 
 function OTPModalBody({ onVerify, onNotice }) {
   const insets = useSafeAreaInsets();
@@ -55,7 +56,7 @@ function OTPModalBody({ onVerify, onNotice }) {
       >
         <View style={styles.watermarkClip} pointerEvents="none">
           <Image
-            source={LOGO}
+            source={LOGO_MARK}
             style={styles.watermark}
             resizeMode="contain"
             accessibilityElementsHidden
@@ -63,12 +64,10 @@ function OTPModalBody({ onVerify, onNotice }) {
           />
         </View>
         <Image
-          source={LOGO}
+          source={LOGO_FULL}
           style={styles.logo}
           resizeMode="contain"
-          tintColor={WHITE}
         />
-        <Text style={styles.brand}>BAWAAL</Text>
         <Text style={styles.title}>VERIFY MOBILE NUMBER</Text>
         <Text style={styles.subtitle}>
           Enter the {OTP_LENGTH}-digit OTP sent to your registered mobile number
@@ -165,16 +164,9 @@ const styles = StyleSheet.create({
     opacity: 0.06,
   },
   logo: {
-    width: 28,
-    height: 28,
-    marginBottom: 10,
-  },
-  brand: {
-    color: WHITE,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 3.2,
-    marginBottom: 14,
+    width: 180,
+    height: 56,
+    marginBottom: 18,
   },
   title: {
     color: WHITE,

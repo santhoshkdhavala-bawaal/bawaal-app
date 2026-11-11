@@ -72,7 +72,7 @@ function InputCard({
   return (
     <View style={[styles.inputCard, focused && styles.inputCardFocused, style]}>
       <TextInput
-        style={styles.input}
+        style={[styles.input, Platform.OS === 'web' && styles.inputWeb]}
         placeholder={placeholder}
         placeholderTextColor={PLACEHOLDER}
         value={value}
@@ -82,6 +82,8 @@ function InputCard({
         autoCorrect={autoCorrect}
         onFocus={onFocus}
         onBlur={onBlur}
+        underlineColorAndroid="transparent"
+        selectionColor={ORANGE}
       />
       {trailing ? <View style={styles.inputTrailing}>{trailing}</View> : null}
     </View>
@@ -636,12 +638,10 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 />
               </View>
               <Image
-                source={require('./assets/BAWAAL_B_solo.png')}
+                source={require('./assets/BAWAAL_white_full.png')}
                 style={styles.otpLogo}
                 resizeMode="contain"
-                tintColor={WHITE}
               />
-              <Text style={styles.otpBrand}>BAWAAL</Text>
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
                 {isDevOtpPhone(phone)
@@ -750,14 +750,16 @@ const styles = StyleSheet.create({
     height: 50,
     backgroundColor: CARD,
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.06)',
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   inputCardFocused: {
     borderColor: ORANGE,
+    borderWidth: 1.5,
   },
   selectCard: {
     justifyContent: 'space-between',
@@ -770,6 +772,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingVertical: 0,
     backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  inputWeb: {
+    outlineStyle: 'none',
+    outlineWidth: 0,
+    outlineColor: 'transparent',
+    boxShadow: 'none',
   },
   inputTrailing: {
     marginLeft: 8,
@@ -999,16 +1008,9 @@ const styles = StyleSheet.create({
     opacity: 0.06,
   },
   otpLogo: {
-    width: 28,
-    height: 28,
-    marginBottom: 10,
-  },
-  otpBrand: {
-    color: WHITE,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 3.2,
-    marginBottom: 14,
+    width: 180,
+    height: 56,
+    marginBottom: 18,
   },
   otpTitle: {
     color: WHITE,
