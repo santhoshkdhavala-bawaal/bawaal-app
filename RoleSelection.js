@@ -22,6 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { resolveLocationFlag } from './src/utils/locationFlag';
+import { flagFromIso } from './src/data/worldCountries';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
 import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 import {
@@ -100,15 +101,43 @@ function InputCard({
   );
 }
 
-/** Country flag chip shown inside the location field when resolveLocationFlag hits. */
-function LocationFlagBadge({ flag, country }) {
-  if (!flag || flag === '🌐') return null;
+/**
+ * Country flag chip for the location field.
+ * Prefer ISO → PNG (Windows/web often render 🇮🇳 as plain "IN" letters).
+ * Fall back to emoji Text when no ISO is available.
+ */
+function LocationFlagBadge({ flag, country, iso }) {
+  const isoCode = String(iso || '')
+    .trim()
+    .toUpperCase();
+  const emoji =
+    (flag && flag !== '🌐' ? flag : '') ||
+    (isoCode.length === 2 ? flagFromIso(isoCode) : '');
+  if (!emoji && isoCode.length !== 2) return null;
+
+  const label = country ? `Country flag ${country}` : 'Country flag';
+
+  // Image flags avoid regional-indicator letter fallback ("IN") on Windows web.
+  if (isoCode.length === 2) {
+    return (
+      <View style={styles.flagBadge} accessibilityLabel={label}>
+        <Image
+          source={{
+            uri: `https://flagcdn.com/w80/${isoCode.toLowerCase()}.png`,
+          }}
+          style={styles.flagImage}
+          resizeMode="contain"
+          accessibilityLabel={label}
+        />
+      </View>
+    );
+  }
+
   return (
-    <View
-      style={styles.flagBadge}
-      accessibilityLabel={country ? `Country flag ${country}` : 'Country flag'}
-    >
-      <Text style={styles.flagEmoji}>{flag}</Text>
+    <View style={styles.flagBadge} accessibilityLabel={label}>
+      <Text style={styles.flagEmoji} allowFontScaling={false}>
+        {emoji}
+      </Text>
     </View>
   );
 }
@@ -461,10 +490,12 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 onFocus={() => setFocusedField('location')}
                 onBlur={() => setFocusedField(null)}
                 trailing={
-                  locationFlag && locationFlag !== '🌐' ? (
+                  locationMeta.iso ||
+                  (locationFlag && locationFlag !== '🌐') ? (
                     <LocationFlagBadge
                       flag={locationFlag}
                       country={locationMeta.country}
+                      iso={locationMeta.iso}
                     />
                   ) : null
                 }
@@ -472,7 +503,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
               />
               {locationMeta.country ? (
                 <Text style={styles.locationHelper}>
-                  {locationFlag && locationFlag !== '🌐' ? `${locationFlag} ` : ''}
                   {locationMeta.country}
                   {' · regional matchmaking'}
                 </Text>
@@ -843,19 +873,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   flagBadge: {
-    minWidth: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 34,
+    height: 26,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.06)',
+    overflow: 'hidden',
+  },
+  flagImage: {
+    width: 28,
+    height: 20,
   },
   flagEmoji: {
-    fontSize: 20,
-    lineHeight: 24,
+    fontSize: 22,
+    lineHeight: 26,
     textAlign: 'center',
+    includeFontPadding: false,
     ...(Platform.OS === 'web'
-      ? { fontFamily: 'Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, sans-serif' }
+      ? {
+          fontFamily:
+            '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif',
+        }
       : null),
   },
   locationHelper: {
