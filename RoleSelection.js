@@ -1,6 +1,7 @@
 /**
- * BAWAAL Landing / Onboarding — LOCKED production surface.
- * Do not modify layout, fields, OTP, terms, or sport pills without an explicit unlock.
+ * BAWAAL Landing / Onboarding — production surface.
+ * Layout refined for orange/black identity (explicit unlock: mobile form width,
+ * larger full logo, dark field cards, ENTER THE ARENA CTA). OTP contract unchanged.
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import React, { useMemo, useState } from 'react';
@@ -50,8 +51,12 @@ const BG = '#000000';
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
 const MUTED = '#8A8A8A';
-const LINE = 'rgba(255, 255, 255, 0.18)';
-const LINE_FOCUS = 'rgba(255, 255, 255, 0.72)';
+const CARD = '#141416';
+const ORANGE = '#FF6600';
+const ORANGE_DEEP = '#E85A00';
+const ORANGE_LIGHT = '#FF8533';
+const LINE = 'rgba(255, 255, 255, 0.12)';
+const LINE_FOCUS = ORANGE;
 
 function PillRow({ options, selected, onSelect }) {
   return (
@@ -134,21 +139,23 @@ function UnderlineField({
   return (
     <View style={styles.formGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={[styles.fieldRow, focused && styles.fieldRowFocused]}>
-        {leading ? <View style={styles.fieldLeading}>{leading}</View> : null}
-        <TextInput
-          style={styles.input}
-          placeholder={placeholder}
-          placeholderTextColor={MUTED}
-          value={value}
-          onChangeText={onChangeText}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
-          autoCorrect={autoCorrect}
-          onFocus={onFocus}
-          onBlur={onBlur}
-        />
-        {trailing ? <View style={styles.fieldTrailing}>{trailing}</View> : null}
+      <View style={[styles.fieldCard, focused && styles.fieldCardFocused]}>
+        <View style={styles.fieldRow}>
+          {leading ? <View style={styles.fieldLeading}>{leading}</View> : null}
+          <TextInput
+            style={styles.input}
+            placeholder={placeholder}
+            placeholderTextColor={MUTED}
+            value={value}
+            onChangeText={onChangeText}
+            keyboardType={keyboardType}
+            autoCapitalize={autoCapitalize}
+            autoCorrect={autoCorrect}
+            onFocus={onFocus}
+            onBlur={onBlur}
+          />
+          {trailing ? <View style={styles.fieldTrailing}>{trailing}</View> : null}
+        </View>
       </View>
     </View>
   );
@@ -337,11 +344,13 @@ export default function RoleSelection({ onCompleteRegistration }) {
           showsVerticalScrollIndicator={false}
           bounces
         >
+          <View style={styles.formShell}>
           <View style={styles.brandHeader}>
             <Image
               source={require('./assets/BAWAAL_white_full.png')}
               style={styles.logoImage}
               resizeMode="contain"
+              accessibilityLabel="BAWAAL — own your chaos"
             />
             <Text style={styles.brandSubheader}>
               The World's Premier Digital Arena for Every Sport, Every Adventure
@@ -349,7 +358,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.cardTitle}>ENTER THE ARENA</Text>
+            <Text style={styles.cardTitle}>CLAIM YOUR SPOT</Text>
             <Text style={styles.cardHint}>Claim your identity. Join the digital arena.</Text>
 
             <UnderlineField
@@ -378,30 +387,32 @@ export default function RoleSelection({ onCompleteRegistration }) {
             <View style={styles.demoRow}>
               <View style={styles.demoCol}>
                 <Text style={styles.fieldLabel}>GENDER</Text>
-                <View style={styles.genderPillRow}>
-                  {GENDER_OPTIONS.map((opt) => {
-                    const active = gender === opt.key;
-                    return (
-                      <TouchableOpacity
-                        key={opt.key}
-                        style={[styles.genderPill, active && styles.genderPillActive]}
-                        onPress={() => setGender(opt.key)}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: active }}
-                      >
-                        <Text
-                          style={[
-                            styles.genderPillText,
-                            active && styles.genderPillTextActive,
-                          ]}
-                          numberOfLines={1}
+                <View style={styles.fieldCard}>
+                  <View style={styles.genderPillRow}>
+                    {GENDER_OPTIONS.map((opt) => {
+                      const active = gender === opt.key;
+                      return (
+                        <TouchableOpacity
+                          key={opt.key}
+                          style={[styles.genderPill, active && styles.genderPillActive]}
+                          onPress={() => setGender(opt.key)}
+                          activeOpacity={0.8}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
                         >
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.genderPillText,
+                              active && styles.genderPillTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
 
@@ -409,23 +420,25 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 <Text style={styles.fieldLabel}>AGE</Text>
                 <View
                   style={[
-                    styles.fieldRow,
+                    styles.fieldCard,
                     styles.ageFieldRow,
-                    focusedField === 'age' && styles.fieldRowFocused,
+                    focusedField === 'age' && styles.fieldCardFocused,
                   ]}
                 >
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 25"
-                    placeholderTextColor={MUTED}
-                    value={age}
-                    onChangeText={(text) =>
-                      setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
-                    }
-                    keyboardType="number-pad"
-                    onFocus={() => setFocusedField('age')}
-                    onBlur={() => setFocusedField(null)}
-                  />
+                  <View style={styles.fieldRow}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="e.g. 25"
+                      placeholderTextColor={MUTED}
+                      value={age}
+                      onChangeText={(text) =>
+                        setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
+                      }
+                      keyboardType="number-pad"
+                      onFocus={() => setFocusedField('age')}
+                      onBlur={() => setFocusedField(null)}
+                    />
+                  </View>
                 </View>
               </View>
             </View>
@@ -476,16 +489,20 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>ROLE</Text>
-              <PillRow options={ROLES} selected={role} onSelect={setRole} />
+              <View style={styles.fieldCard}>
+                <PillRow options={ROLES} selected={role} onSelect={setRole} />
+              </View>
             </View>
 
             <View style={styles.formGroup}>
               <Text style={styles.fieldLabel}>SPORT INTEREST</Text>
-              <HorizontalPillScroll
-                options={SPORT_INTERESTS}
-                selected={sportInterest}
-                onSelect={setSportInterest}
-              />
+              <View style={styles.fieldCard}>
+                <HorizontalPillScroll
+                  options={SPORT_INTERESTS}
+                  selected={sportInterest}
+                  onSelect={setSportInterest}
+                />
+              </View>
             </View>
 
             <TouchableOpacity
@@ -508,18 +525,26 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 (!agreedToTerms || otpBusy) && styles.ctaBtnDisabled,
               ]}
               onPress={handleSendOtpTrigger}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
               disabled={otpBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Enter the Arena"
             >
+              <View style={styles.ctaGradientTrack} pointerEvents="none">
+                <View style={styles.ctaGradientDeep} />
+                <View style={styles.ctaGradientMid} />
+                <View style={styles.ctaGradientLight} />
+              </View>
               <Text
                 style={[
                   styles.ctaBtnText,
                   (!agreedToTerms || otpBusy) && styles.ctaBtnTextDisabled,
                 ]}
               >
-                {otpBusy && !otpModalVisible ? 'SENDING…' : 'SEND OTP'}
+                {otpBusy && !otpModalVisible ? 'SENDING…' : 'ENTER THE ARENA'}
               </Text>
             </TouchableOpacity>
+          </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -689,18 +714,26 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
   scrollContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 56,
+    alignItems: 'center',
+  },
+  formShell: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
+    width: '100%',
   },
   logoImage: {
-    width: 260,
-    height: 88,
-    marginBottom: 14,
+    width: 280,
+    maxWidth: '100%',
+    height: 120,
+    marginBottom: 12,
   },
   brandSubheader: {
     fontSize: 13,
@@ -715,10 +748,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   cardTitle: {
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: '800',
-    color: WHITE,
-    letterSpacing: 2.4,
+    color: ORANGE,
+    letterSpacing: 2.2,
     textAlign: 'center',
   },
   cardHint: {
@@ -726,28 +759,33 @@ const styles = StyleSheet.create({
     color: MUTED,
     textAlign: 'center',
     marginTop: 8,
-    marginBottom: 28,
+    marginBottom: 24,
   },
   formGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   fieldLabel: {
     color: MUTED,
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.6,
-    marginBottom: 10,
+    marginBottom: 8,
     textTransform: 'uppercase',
+  },
+  fieldCard: {
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  fieldCardFocused: {
+    borderColor: ORANGE,
   },
   fieldRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: LINE,
-    paddingBottom: 10,
-  },
-  fieldRowFocused: {
-    borderBottomColor: WHITE,
   },
   fieldLeading: {
     marginRight: 8,
@@ -758,10 +796,10 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     backgroundColor: 'transparent',
-    paddingVertical: 4,
+    paddingVertical: 6,
     paddingHorizontal: 0,
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
@@ -792,7 +830,6 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
     alignItems: 'center',
     gap: 6,
-    paddingTop: 4,
   },
   genderPill: {
     flexShrink: 1,
@@ -804,8 +841,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   genderPillActive: {
-    borderColor: WHITE,
-    backgroundColor: WHITE,
+    borderColor: ORANGE,
+    backgroundColor: ORANGE,
   },
   genderPillText: {
     color: MUTED,
@@ -818,7 +855,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   ageFieldRow: {
-    marginTop: 2,
+    marginTop: 0,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   pillWrap: {
     flexDirection: 'row',
@@ -833,7 +872,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   pillActive: {
-    borderBottomColor: WHITE,
+    borderBottomColor: ORANGE,
   },
   pillText: {
     color: MUTED,
@@ -842,7 +881,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   pillTextActive: {
-    color: '#FFFFFF',
+    color: ORANGE,
     fontWeight: '800',
   },
   sportScroll: {
@@ -864,8 +903,8 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   chipPillActive: {
-    backgroundColor: WHITE,
-    borderColor: WHITE,
+    backgroundColor: ORANGE,
+    borderColor: ORANGE,
   },
   chipPillText: {
     color: MUTED,
@@ -886,16 +925,16 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 18,
     height: 18,
-    borderRadius: 0,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: LINE_FOCUS,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   checkboxChecked: {
-    backgroundColor: WHITE,
-    borderColor: WHITE,
+    backgroundColor: ORANGE,
+    borderColor: ORANGE,
   },
   checkmark: {
     color: BG,
@@ -909,28 +948,58 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   termsLink: {
-    color: WHITE,
+    color: ORANGE,
     textDecorationLine: 'underline',
     fontWeight: '600',
   },
   ctaBtn: {
-    backgroundColor: 'transparent',
-    borderRadius: 0,
-    paddingVertical: 16,
+    width: '100%',
+    borderRadius: 14,
+    paddingVertical: 18,
     alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: ORANGE,
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: ORANGE,
+        shadowOpacity: 0.45,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 6 },
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
+  ctaGradientTrack: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+  },
+  ctaGradientDeep: {
+    flex: 1,
+    backgroundColor: ORANGE_DEEP,
+  },
+  ctaGradientMid: {
+    flex: 1.2,
+    backgroundColor: ORANGE,
+  },
+  ctaGradientLight: {
+    flex: 1,
+    backgroundColor: ORANGE_LIGHT,
   },
   ctaBtnDisabled: {
-    backgroundColor: 'transparent',
     opacity: 0.45,
   },
   ctaBtnText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '900',
-    fontSize: 14,
-    letterSpacing: 2.2,
+    fontSize: 15,
+    letterSpacing: 1.8,
+    zIndex: 1,
   },
   ctaBtnTextDisabled: {
-    color: MUTED,
+    color: '#1A1A1A',
   },
   modalOverlay: {
     flex: 1,
