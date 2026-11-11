@@ -837,7 +837,7 @@ const styles = StyleSheet.create({
   },
   inputCardWithTrailing: {
     justifyContent: 'space-between',
-    paddingRight: 10,
+    paddingRight: 4,
   },
   inputCardFocused: {
     borderColor: ORANGE,
@@ -854,14 +854,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 0,
+    paddingLeft: 4,
     paddingRight: 0,
     backgroundColor: 'transparent',
     borderWidth: 0,
   },
   /** Keep typed location text clear of the flag chip on the right. */
   inputWithTrailingPad: {
-    paddingRight: 40,
-    marginRight: 4,
+    flex: 1,
+    paddingLeft: 4,
+    paddingRight: 12,
+    marginRight: 0,
   },
   inputWeb: {
     outlineStyle: 'none',
@@ -877,7 +880,7 @@ const styles = StyleSheet.create({
   },
   inputTrailing: {
     marginLeft: 8,
-    marginRight: 4,
+    marginRight: 8,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
