@@ -1,0 +1,75 @@
+---
+description: BAWAAL V1 Master Full-Stack Lock — UI theme, registration, Terms/OTP, Supabase profiles + phone auth
+alwaysApply: true
+---
+
+# BAWAAL V1 — Master Full-Stack Lock
+
+Production-final contract for onboarding UI + Supabase auth/profiles. Do **not** restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+
+## 1. Frontend UI & design system
+
+| Token | Value |
+|---|---|
+| Global background | Pitch black `#000000` |
+| Primary accent | Electric orange `#FF6600` |
+| Input containers | Dark grey `#1E1E22`, `borderRadius: 12` |
+| Focus state | `1.5px` border `#FF6600`; web `outlineStyle: 'none'` |
+| Typography | Bold white body; orange accents for links / checkboxes |
+| Brand | Centered `BAWAAL_white_full.png` + `BAWAAL_tagline.png` (“own your chaos”) on entry, registration, Terms, OTP |
+
+## 2. Registration layout (`RoleSelection.js`)
+
+1. Username (full width)
+2. Real Name (full width)
+3. Age \| Gender (2-column)
+4. Email (full width)
+5. Phone (full width)
+6. City, Country + far-right flag badge (**32×24**), regional helper when matched
+7. Category \| Role (2-column) — category from `BAWAAL_SPORTS_WITHOUT_ALL`
+8. Footer: Terms checkbox (orange link) + full-width orange **pill** **Continue** — **no** login redirect links
+
+## 3. Modal architecture
+
+### Terms
+- Pitch black; custom web scrollbar (track `#0A0A0C`/`#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, radius 4)
+- Central logo + tagline; full-width orange accept pill
+
+### OTP
+- Pitch black; central logo + tagline
+- 4 boxes: fill `#1E1E22`, focus `#FF6600`, white digits
+- Manual **SUBMIT / VERIFY** only — never auto-verify on 4th digit
+- Dev bypass: `+917993992315` / `1234` (`authOtp.js`)
+
+## 4. Backend (Supabase)
+
+### Client
+- `src/services/supabase.js` → `lib/supabase.js`
+- `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- AsyncStorage session persistence (`persistSession` / `autoRefreshToken`)
+
+### `public.profiles` (RLS on)
+- `id uuid primary key references auth.users (id) on delete cascade`
+- `username`, `real_name`, `age`, `gender`, `email`, `phone`, `country`, `category`, `role`, `created_at`
+- Ensure SQL: `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` (+ `supabase_schema.sql`)
+- Types: `src/types/profile.js`
+
+### Auth & persistence
+- Continue → `supabase.auth.signInWithOtp({ phone })` via `sendPhoneOtp`
+- SUBMIT → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })` via `verifyPhoneOtp`
+- Then `upsertRegisteredProfile` with the V1 form fields keyed by auth user id
+- Soft-fail offline / schema mismatch — still complete local registration
+
+## Locked files
+
+- `RoleSelection.js`, `AthleteRegistrationScreen.js`, `OTPInput.js`, `OTPModal.js`, `TermsModal.js`
+- `src/styles/injectWebScrollbar.js`
+- `src/services/supabase.js`, `lib/supabase.js`, `src/services/authOtp.js`, `src/services/profilesService.js`
+- `src/types/profile.js`
+- `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql`
+
+## Related
+
+- UI detail: `.cursor/rules/bawaal-onboarding-locked.mdc`
+- Sport taxonomy: `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`
+---

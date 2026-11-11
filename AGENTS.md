@@ -44,7 +44,7 @@ Live viewfinder is **untouchable** — Close/Cancel + title, Flip, spinning dott
 
 ## Onboarding stack (locked)
 
-`AthleteRegistrationScreen` / `RoleSelection` V1 lock: `#000` / `#FF6600` / `#1E1E22` cards (`borderRadius: 12`), field order User Name → Real Name → Age|Gender → Email → Phone → City+flag → Category|Role, sticky orange pill **Continue**, Terms + 4-digit OTP (`#1E1E22` / orange focus, manual SUBMIT only), `authOtp` bypass (`+917993992315` / `1234`), `upsertRegisteredProfile` → `public.profiles`. See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+**V1 full-stack lock** (UI + Supabase): `#000` / `#FF6600` / `#1E1E22` cards (`borderRadius: 12`), registration User Name → Real Name → Age|Gender → Email → Phone → City+flag → Category|Role, sticky orange pill **Continue**, Terms scrollbar + 4-digit OTP (`#1E1E22` / orange focus, manual SUBMIT), `signInWithOtp` → `verifyOtp` → `upsertRegisteredProfile` (`profiles` uuid → `auth.users`, RLS on). See `.cursor/rules/bawaal-v1-fullstack-locked.mdc` and `bawaal-onboarding-locked.mdc`.
 
 ## Locker Room & Clinic (locked)
 

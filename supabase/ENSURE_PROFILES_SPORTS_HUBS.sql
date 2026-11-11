@@ -73,6 +73,7 @@ create index if not exists profiles_created_at_idx on public.profiles (created_a
 
 alter table public.profiles enable row level security;
 
+-- Demo-open policies for Expo Go / V1 registration (tighten later if needed)
 do $$
 begin
   if not exists (
@@ -83,6 +84,13 @@ begin
       for all using (true) with check (true);
   end if;
 end $$;
+
+-- Prefer owner-scoped updates when a live auth session exists
+drop policy if exists profiles_update_own_strict on public.profiles;
+create policy profiles_update_own_strict on public.profiles
+  for update to authenticated
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
 
 grant select, insert, update, delete on public.profiles to anon, authenticated;
 

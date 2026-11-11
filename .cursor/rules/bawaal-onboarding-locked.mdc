@@ -1,11 +1,13 @@
 ---
-description: Locked BAWAAL V1 landing/onboarding — RoleSelection dark cards, dropdowns, Continue CTA, 4-digit OTP, Terms scrollbar
+description: Locked BAWAAL V1 landing/onboarding — UI + Supabase phone OTP + profiles upsert (see also bawaal-v1-fullstack-locked)
 alwaysApply: true
 ---
 
-# BAWAAL onboarding stack (LOCKED — V1 frontend)
+# BAWAAL onboarding stack (LOCKED — V1 full-stack)
 
-The **landing / onboarding / OTP / legal / location-flag** flow is **production-final** per the BAWAAL V1 Master Frontend Lock. Do **not** modify, restyle, reorder, or “improve” it unless the user explicitly unlocks this rule.
+Authoritative summary: `.cursor/rules/bawaal-v1-fullstack-locked.mdc`.
+
+The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **production-final**. Do **not** modify, restyle, reorder, or rewire unless the user explicitly unlocks this rule.
 
 ## Locked files (do not edit)
 
@@ -15,8 +17,11 @@ The **landing / onboarding / OTP / legal / location-flag** flow is **production-
 - `OTPModal.js` — OTP shell; verify only via explicit SUBMIT / VERIFY
 - `TermsModal.js` — standalone Terms surface (logo + orange accept + web scrollbar)
 - `src/styles/injectWebScrollbar.js` — web orange/black scrollbar chrome
-- `src/services/authOtp.js` — send/verify + dev phone bypass
+- `src/services/supabase.js` / `lib/supabase.js` — Expo env + AsyncStorage sessions
+- `src/services/authOtp.js` — `signInWithOtp` / `verifyOtp` + dev phone bypass
 - `src/services/profilesService.js` — `upsertRegisteredProfile` → `public.profiles`
+- `src/types/profile.js` — V1 column contract
+- `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` — profiles + RLS ensure
 - `src/utils/locationFlag.js` — location → country flag resolution
 - `src/data/worldCountries.js` — worldwide country/territory flag registry
 
@@ -61,19 +66,26 @@ Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky
 - **Manual SUBMIT / VERIFY only** — never auto-verify on 4th digit
 - Dev bypass: phone `+917993992315` + OTP `1234` → instant session (`authOtp.js`)
 
-## Profiles sync (LOCKED — V1)
+## Backend — Supabase (LOCKED — V1)
 
+### Client
+- `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- AsyncStorage session persistence via `lib/supabase.js`
+
+### `public.profiles` (RLS enabled)
+- `id uuid primary key references auth.users (id) on delete cascade`
+- `username`, `real_name`, `age`, `gender`, `email`, `phone`, `country`, `category`, `role`, `created_at`
+
+### Auth & persistence flow
 - Continue → `sendPhoneOtp` → `supabase.auth.signInWithOtp({ phone })`
 - OTP **SUBMIT** → `verifyPhoneOtp` → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })`
-- Then `upsertRegisteredProfile` into `public.profiles` with V1 fields:
-  `id` (auth uuid), `username`, `real_name`, `age`, `gender`, `email`, `phone`, `country`, `category`, `role`
-- Schema ensure: `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` (+ `src/types/profile.js`)
+- Then `upsertRegisteredProfile` with V1 form fields keyed by auth user id
 - Soft-fail if offline / schema mismatch — still complete local registration / enter Arena
 
 ## App wiring
 
 - Entry mounts `AthleteRegistrationScreen` from `App.js` (not a parallel LandingScreen).
-- Do not strip `flag` / `country` / `location` / `gender` / `age` from the session payload.
+- Do not strip `flag` / `country` / `location` / `gender` / `age` / `username` / `category` from the session payload.
 
 ## Allowed elsewhere
 
