@@ -61,12 +61,14 @@ Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky
 - **Manual SUBMIT / VERIFY only** — never auto-verify on 4th digit
 - Dev bypass: phone `+917993992315` + OTP `1234` → instant session (`authOtp.js`)
 
-## Profiles sync (LOCKED)
+## Profiles sync (LOCKED — V1)
 
-- OTP **SUBMIT** calls `upsertRegisteredProfile` into `public.profiles` with:
-  `id`, `real_name`, `gender`, `age`, `mobile`, `location`, `role`, `sport_interests`
-- Schema ensure: `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql`
-- Soft-fail if offline — still complete local registration / enter Arena
+- Continue → `sendPhoneOtp` → `supabase.auth.signInWithOtp({ phone })`
+- OTP **SUBMIT** → `verifyPhoneOtp` → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })`
+- Then `upsertRegisteredProfile` into `public.profiles` with V1 fields:
+  `id` (auth uuid), `username`, `real_name`, `age`, `gender`, `email`, `phone`, `country`, `category`, `role`
+- Schema ensure: `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` (+ `src/types/profile.js`)
+- Soft-fail if offline / schema mismatch — still complete local registration / enter Arena
 
 ## App wiring
 

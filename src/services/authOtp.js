@@ -1,6 +1,8 @@
 /**
- * Phone OTP send / verify for Landing auth.
- * Dev bypass: allowlisted phones + OTP `1234` grant session without Supabase SMS.
+ * Phone OTP send / verify for Landing auth (V1).
+ * Continue → `supabase.auth.signInWithOtp({ phone })`
+ * SUBMIT / VERIFY → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })`
+ * Dev bypass: allowlisted phones + OTP `1234` grant a local session without SMS.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { OTP_LENGTH } from '../../OTPInput';
@@ -112,6 +114,7 @@ export async function verifyPhoneOtp({ phone, token }) {
       mode: 'dev',
       phone: normalized,
       session: { user: { phone: normalized }, access_token: 'dev-bypass' },
+      user: { phone: normalized },
       error: null,
     };
   }
@@ -132,12 +135,23 @@ export async function verifyPhoneOtp({ phone, token }) {
       type: 'sms',
     });
     if (error) throw error;
+
+    let user = data?.user || data?.session?.user || null;
+    if (!user?.id) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        user = userData?.user || user;
+      } catch {
+        // soft — session may still be on data.session
+      }
+    }
+
     return {
       ok: true,
       mode: 'supabase',
       phone: normalized,
       session: data?.session || null,
-      user: data?.user || null,
+      user,
       data,
       error: null,
     };

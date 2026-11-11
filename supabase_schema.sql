@@ -42,18 +42,41 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
--- Soft-compat columns when a legacy profiles table already existed
+-- Soft-compat + V1 registration columns when a legacy profiles table already existed
 alter table public.profiles add column if not exists username text;
+alter table public.profiles add column if not exists real_name text;
+alter table public.profiles add column if not exists age integer;
+alter table public.profiles add column if not exists gender text;
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists country text;
+alter table public.profiles add column if not exists category text;
+alter table public.profiles add column if not exists role text;
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.profiles add column if not exists primary_sport text;
 alter table public.profiles add column if not exists created_at timestamptz default now();
+alter table public.profiles add column if not exists mobile text;
+alter table public.profiles add column if not exists location text;
+alter table public.profiles add column if not exists sport_interests text[];
+alter table public.profiles add column if not exists handle text;
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists sport text;
+alter table public.profiles add column if not exists city text;
+alter table public.profiles add column if not exists updated_at timestamptz default now();
 
 create unique index if not exists profiles_username_unique_idx
   on public.profiles (username)
   where username is not null;
+create unique index if not exists profiles_email_unique_idx
+  on public.profiles (email)
+  where email is not null;
+create unique index if not exists profiles_phone_unique_idx
+  on public.profiles (phone)
+  where phone is not null;
 create index if not exists profiles_created_at_idx on public.profiles (created_at desc);
 create index if not exists profiles_primary_sport_idx on public.profiles (primary_sport);
+create index if not exists profiles_category_idx on public.profiles (category);
 
 -- Auto-create profile row when a user signs up (auth.users insert)
 create or replace function public.handle_new_user()

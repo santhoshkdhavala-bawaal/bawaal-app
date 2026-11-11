@@ -1,35 +1,42 @@
--- BAWAAL · Registration profiles columns + sports_hubs map pins
+-- BAWAAL · Registration profiles (V1) + sports_hubs map pins
 -- Run in Supabase SQL Editor. Safe to re-run.
+--
+-- V1 profile columns: id (uuid → auth.users), username, real_name, age, gender,
+-- email, phone, country, category, role, created_at.
+-- Legacy columns (mobile / location / handle / sport_interests / …) kept for
+-- soft-compat with Passport / Arena joins.
+
+create extension if not exists "pgcrypto";
 
 -- ── Profiles: registration sync columns ──────────────────────────────
+-- Fresh projects: auth-linked UUID primary key.
 create table if not exists public.profiles (
-  id text primary key,
-  display_name text,
-  handle text,
-  bio text,
+  id uuid primary key references auth.users (id) on delete cascade,
+  username text unique,
+  real_name text,
+  age integer,
+  gender text,
+  email text unique,
+  phone text unique,
+  country text,
+  category text,
   role text default 'athlete',
-  sport text,
-  avatar_uri text,
-  city text,
-  status_badge text,
-  verified boolean not null default false,
-  online boolean not null default false,
-  followers integer not null default 0,
-  following_count integer not null default 0,
-  win_rate integer not null default 0,
-  battles_won integer not null default 0,
-  bawaal_pts integer not null default 0,
-  rank integer,
-  list_bucket text not null default 'suggested',
   created_at timestamptz not null default now()
 );
 
+-- Soft-compat / legacy columns when an older profiles table already existed
+alter table public.profiles add column if not exists username text;
 alter table public.profiles add column if not exists real_name text;
-alter table public.profiles add column if not exists gender text;
 alter table public.profiles add column if not exists age integer;
+alter table public.profiles add column if not exists gender text;
+alter table public.profiles add column if not exists email text;
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists country text;
+alter table public.profiles add column if not exists category text;
+alter table public.profiles add column if not exists role text;
+alter table public.profiles add column if not exists created_at timestamptz default now();
 alter table public.profiles add column if not exists mobile text;
 alter table public.profiles add column if not exists location text;
-alter table public.profiles add column if not exists role text;
 alter table public.profiles add column if not exists sport_interests text[];
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists handle text;
@@ -38,9 +45,31 @@ alter table public.profiles add column if not exists city text;
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists primary_sport text;
 alter table public.profiles add column if not exists updated_at timestamptz default now();
+alter table public.profiles add column if not exists bio text;
+alter table public.profiles add column if not exists avatar_uri text;
+alter table public.profiles add column if not exists status_badge text;
+alter table public.profiles add column if not exists verified boolean default false;
+alter table public.profiles add column if not exists online boolean default false;
+alter table public.profiles add column if not exists followers integer default 0;
+alter table public.profiles add column if not exists following_count integer default 0;
+alter table public.profiles add column if not exists win_rate integer default 0;
+alter table public.profiles add column if not exists battles_won integer default 0;
+alter table public.profiles add column if not exists bawaal_pts integer default 0;
+alter table public.profiles add column if not exists rank integer;
+alter table public.profiles add column if not exists list_bucket text default 'suggested';
+
+-- Unique indexes (null-safe) for V1 identity fields
+create unique index if not exists profiles_username_unique_idx
+  on public.profiles (username) where username is not null;
+create unique index if not exists profiles_email_unique_idx
+  on public.profiles (email) where email is not null;
+create unique index if not exists profiles_phone_unique_idx
+  on public.profiles (phone) where phone is not null;
 
 create index if not exists profiles_mobile_idx on public.profiles (mobile);
 create index if not exists profiles_list_bucket_idx on public.profiles (list_bucket);
+create index if not exists profiles_category_idx on public.profiles (category);
+create index if not exists profiles_created_at_idx on public.profiles (created_at desc);
 
 alter table public.profiles enable row level security;
 

@@ -270,24 +270,33 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
+  /** Form values mapped to V1 `public.profiles` (+ local session extras). */
   const buildRegistrationPayload = () => {
     const resolved = resolveLocationFlag(location);
     const ageNum = Number(String(age).trim());
+    const username = String(handle || '')
+      .trim()
+      .replace(/^@+/, '');
     return {
-      handle: handle.trim(),
-      displayName: handle.trim(),
-      name: realName.trim(),
+      // V1 profiles columns
+      username,
+      real_name: realName.trim(),
       realName: realName.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      gender,
       age: Number.isFinite(ageNum) && ageNum > 0 ? ageNum : null,
+      gender,
+      email: email.trim(),
+      phone: phone.trim(),
+      country: resolved.country || location.trim() || null,
+      category: sportInterest,
       role,
+      // Soft-compat aliases used elsewhere in the app
+      handle: username,
+      displayName: username,
+      name: realName.trim(),
       sport: sportInterest,
       sportInterest,
       location: location.trim(),
       flag: resolved.flag || '🌐',
-      country: resolved.country || null,
       countryFlag: resolved.flag || '🌐',
       label: resolved.country || location.trim(),
     };
@@ -370,6 +379,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
         sport_interests: [sportInterest].filter(Boolean),
       };
 
+      // Prefer verifyOtp user; session.user is the auth.users row for profiles.id
       const authUser = result.user || result.session?.user || null;
       const synced = await upsertRegisteredProfile(userData, authUser);
       userData.profileId = synced.id || null;
