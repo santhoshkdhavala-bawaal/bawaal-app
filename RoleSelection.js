@@ -1,7 +1,7 @@
 /**
- * BAWAAL Landing / Onboarding — registration surface (explicit layout unlock).
- * Field order + dark cards + sticky Continue CTA; OTP / profiles contract unchanged.
- * Sport categories still import locked `BAWAAL_SPORTS`.
+ * BAWAAL Landing / Onboarding — V1 Master Frontend Lock.
+ * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
+ * OTP / profiles / authOtp contract unchanged. Categories: `BAWAAL_SPORTS_WITHOUT_ALL`.
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import React, { useMemo, useState } from 'react';
@@ -32,7 +32,7 @@ import {
   verifyPhoneOtp,
 } from './src/services/authOtp';
 import { upsertRegisteredProfile } from './src/services/profilesService';
-import { BAWAAL_SPORTS } from './src/constants/sports';
+import { BAWAAL_SPORTS_WITHOUT_ALL } from './src/constants/sports';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -40,8 +40,11 @@ const ROLES = [
   { key: 'scout', label: 'Scout' },
 ];
 
-/** Locked BAWAAL sport taxonomy — single source, no local rename/reorder. */
-const SPORT_INTERESTS = BAWAAL_SPORTS;
+/** Locked BAWAAL sport taxonomy (excludes ALL) — single source, no local rename/reorder. */
+const SPORT_INTERESTS = BAWAAL_SPORTS_WITHOUT_ALL;
+
+const LOGO_FULL = require('./assets/BAWAAL_white_full.png');
+const LOGO_TAGLINE = require('./assets/BAWAAL_tagline.png');
 
 const GENDER_OPTIONS = [
   { key: 'male', label: 'Male' },
@@ -417,10 +420,16 @@ export default function RoleSelection({ onCompleteRegistration }) {
           <View style={styles.formShell}>
             <View style={styles.brandHeader}>
               <Image
-                source={require('./assets/BAWAAL_white_full.png')}
+                source={LOGO_FULL}
                 style={styles.logoImage}
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
+              />
+              <Image
+                source={LOGO_TAGLINE}
+                style={styles.taglineImage}
+                resizeMode="contain"
+                accessibilityLabel="own your chaos"
               />
               <Text style={styles.title}>Create Your Account</Text>
               <Text style={styles.subtitle}>
@@ -614,7 +623,21 @@ export default function RoleSelection({ onCompleteRegistration }) {
       <Modal visible={termsModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.termsModal]}>
-            <Text style={styles.modalTitle}>Terms of Service & Legal Rules</Text>
+            <View style={styles.termsLogoHeader}>
+              <Image
+                source={LOGO_FULL}
+                style={styles.termsLogo}
+                resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+              <Image
+                source={LOGO_TAGLINE}
+                style={styles.termsTagline}
+                resizeMode="contain"
+                accessibilityLabel="own your chaos"
+              />
+              <Text style={styles.modalTitle}>Terms of Service & Legal Rules</Text>
+            </View>
             <ScrollView
               style={styles.termsScrollView}
               onScroll={handleTermsScroll}
@@ -719,9 +742,16 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 />
               </View>
               <Image
-                source={require('./assets/BAWAAL_white_full.png')}
+                source={LOGO_FULL}
                 style={styles.otpLogo}
                 resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+              <Image
+                source={LOGO_TAGLINE}
+                style={styles.otpTagline}
+                resizeMode="contain"
+                accessibilityLabel="own your chaos"
               />
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
@@ -795,6 +825,12 @@ const styles = StyleSheet.create({
     width: 260,
     maxWidth: '100%',
     height: 110,
+    marginBottom: 6,
+  },
+  taglineImage: {
+    width: 180,
+    maxWidth: '70%',
+    height: 28,
     marginBottom: 16,
   },
   title: {
@@ -990,7 +1026,7 @@ const styles = StyleSheet.create({
   continueBtn: {
     width: '100%',
     height: 52,
-    borderRadius: 16,
+    borderRadius: 999,
     backgroundColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1078,17 +1114,37 @@ const styles = StyleSheet.create({
   termsModal: {
     height: '80%',
   },
+  termsLogoHeader: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  termsLogo: {
+    width: 200,
+    height: 64,
+    marginBottom: 4,
+  },
+  termsTagline: {
+    width: 140,
+    height: 22,
+    marginBottom: 10,
+  },
   modalTitle: {
     color: WHITE,
     fontSize: 15,
     fontWeight: '800',
     letterSpacing: 1.2,
-    marginBottom: 16,
     textAlign: 'center',
   },
   termsScrollView: {
     marginBottom: 12,
     backgroundColor: BG,
+  },
+  acceptTermsBtn: {
+    width: '100%',
+    backgroundColor: ORANGE,
+    borderRadius: 999,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
   legalHeading: {
     color: WHITE,
@@ -1106,12 +1162,6 @@ const styles = StyleSheet.create({
   },
   termsFooter: {
     marginTop: 8,
-  },
-  acceptTermsBtn: {
-    backgroundColor: ORANGE,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
   },
   acceptTermsBtnDisabled: {
     opacity: 0.45,
@@ -1150,7 +1200,12 @@ const styles = StyleSheet.create({
   otpLogo: {
     width: 180,
     height: 56,
-    marginBottom: 18,
+    marginBottom: 4,
+  },
+  otpTagline: {
+    width: 140,
+    height: 22,
+    marginBottom: 16,
   },
   otpTitle: {
     color: WHITE,
@@ -1172,7 +1227,7 @@ const styles = StyleSheet.create({
   otpCtaBtn: {
     width: '100%',
     height: 52,
-    borderRadius: 16,
+    borderRadius: 999,
     backgroundColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',

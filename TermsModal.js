@@ -36,6 +36,13 @@ export default function TermsModal({ visible, onAgree, onBack }) {
                 source={require('./assets/BAWAAL_white_full.png')}
                 style={styles.headerLogo}
                 resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+              <Image
+                source={require('./assets/BAWAAL_tagline.png')}
+                style={styles.taglineLogo}
+                resizeMode="contain"
+                accessibilityLabel="own your chaos"
               />
               <Text style={styles.subtitle}>Arena Philosophy & Terms of Service</Text>
             </View>
@@ -96,13 +103,11 @@ export default function TermsModal({ visible, onAgree, onBack }) {
               </Text>
             </View>
 
-            {/* Action Buttons */}
-            <View style={styles.btnRow}>
-              <BackLink label="Back" onPress={onBack} />
-
+            <View style={styles.btnCol}>
               <TouchableOpacity style={styles.agreeBtn} onPress={onAgree}>
-                <Text style={styles.agreeText}>I AGREE & ENTER 🔥</Text>
+                <Text style={styles.agreeText}>I AGREE & ENTER</Text>
               </TouchableOpacity>
+              <BackLink label="Back" onPress={onBack} />
             </View>
           </ScrollView>
 
@@ -134,6 +139,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 30 },
   logoHeader: { alignItems: 'center', marginBottom: 12 },
   headerLogo: { width: 240, height: 72 },
+  taglineLogo: { width: 160, height: 24, marginTop: 4 },
   subtitle: { color: '#A0A0A0', fontSize: 12, marginTop: 8, fontWeight: '600' },
   sectionCard: {
     backgroundColor: '#000000',
@@ -163,28 +169,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 102, 0, 0.25)',
     marginVertical: 10,
   },
-  btnRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  btnCol: {
+    width: '100%',
     alignItems: 'center',
-    gap: 12,
-    marginTop: 4,
+    gap: 14,
+    marginTop: 8,
   },
-  backBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
-    backgroundColor: 'rgba(59, 130, 246, 0.14)',
-  },
-  backText: { color: '#3B82F6', fontWeight: '900', fontSize: 13 },
   agreeBtn: {
-    flex: 1,
+    width: '100%',
     backgroundColor: '#FF6600',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
   },
-  agreeText: { color: '#000000', fontWeight: 'bold', fontSize: 13 },
+  agreeText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13, letterSpacing: 1 },
 });

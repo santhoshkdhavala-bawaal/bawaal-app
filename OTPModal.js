@@ -67,6 +67,13 @@ function OTPModalBody({ onVerify, onNotice }) {
           source={LOGO_FULL}
           style={styles.logo}
           resizeMode="contain"
+          accessibilityLabel="BAWAAL"
+        />
+        <Image
+          source={require('./assets/BAWAAL_tagline.png')}
+          style={styles.tagline}
+          resizeMode="contain"
+          accessibilityLabel="own your chaos"
         />
         <Text style={styles.title}>VERIFY MOBILE NUMBER</Text>
         <Text style={styles.subtitle}>
@@ -166,7 +173,12 @@ const styles = StyleSheet.create({
   logo: {
     width: 180,
     height: 56,
-    marginBottom: 18,
+    marginBottom: 4,
+  },
+  tagline: {
+    width: 140,
+    height: 22,
+    marginBottom: 16,
   },
   title: {
     color: WHITE,
@@ -188,9 +200,12 @@ const styles = StyleSheet.create({
   },
   verifyBtn: {
     width: '100%',
-    backgroundColor: 'transparent',
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: '#FF6600',
     paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 24,
   },
   verifyBtnDisabled: { opacity: 0.45 },

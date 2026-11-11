@@ -1,35 +1,64 @@
 ---
-description: Locked BAWAAL landing/onboarding — AthleteRegistrationScreen, 4-digit OTP, demographics, profiles upsert, authOtp
+description: Locked BAWAAL V1 landing/onboarding — RoleSelection dark cards, dropdowns, Continue CTA, 4-digit OTP, Terms scrollbar
 alwaysApply: true
 ---
 
-# BAWAAL onboarding stack (LOCKED)
+# BAWAAL onboarding stack (LOCKED — V1 frontend)
 
-The **landing / onboarding / OTP / legal / location-flag** flow is **production-final**. Do **not** modify, restyle, reorder, or “improve” it unless the user explicitly unlocks this rule.
+The **landing / onboarding / OTP / legal / location-flag** flow is **production-final** per the BAWAAL V1 Master Frontend Lock. Do **not** modify, restyle, reorder, or “improve” it unless the user explicitly unlocks this rule.
 
 ## Locked files (do not edit)
 
 - `AthleteRegistrationScreen.js` — canonical Entry mount (re-exports RoleSelection)
-- `RoleSelection.js` — Enter the Arena form, demographics, role + sport pills, SEND OTP, OTP modal, Terms
+- `RoleSelection.js` — Create Account form, sticky Continue, OTP modal, Terms
 - `OTPInput.js` — 4-digit boxes only; no auto-submit
 - `OTPModal.js` — OTP shell; verify only via explicit SUBMIT / VERIFY
+- `TermsModal.js` — standalone Terms surface (logo + orange accept + web scrollbar)
+- `src/styles/injectWebScrollbar.js` — web orange/black scrollbar chrome
 - `src/services/authOtp.js` — send/verify + dev phone bypass
 - `src/services/profilesService.js` — `upsertRegisteredProfile` → `public.profiles`
 - `src/utils/locationFlag.js` — location → country flag resolution
 - `src/data/worldCountries.js` — worldwide country/territory flag registry
 
-## Locked product surface
+## Core theme (LOCKED)
 
-- Borderless black-and-white form; hairline underlines only
-- Field order: Handle → Real Name → **Gender + Age (side-by-side)** → Email → Mobile → Location → Role → Sport Interest
-- Gender: Male / Female / Other; Age numeric — 50/50 row under Real Name
-- Sport Interest: single-line **horizontal** `BAWAAL_SPORTS` pills (11 locked categories)
-- Location flag via registration payload + `applyRegisteredProfile`
+| Token | Value |
+|---|---|
+| Global background | Pitch black `#000000` |
+| Primary accent | Electric orange `#FF6600` |
+| Input containers | Dark grey `#1E1E22`, `borderRadius: 12` |
+| Focus border | `1.5px` `#FF6600` |
+| Web inputs | `outlineStyle: 'none'` (no browser outline rings) |
+| Links / checkbox | Orange accent on high-contrast white body text |
 
-## OTP contract (LOCKED)
+## Brand assets (LOCKED)
 
-- Exactly **4** digit boxes (`OTP_LENGTH = 4`) with dark navy fill `#0A192F`
-- **Manual SUBMIT only** — never auto-verify on 4th digit
+- Centered full BAWAAL shattering logo (`BAWAAL_white_full.png`) + `own your chaos` tagline (`BAWAAL_tagline.png`) on registration, Terms, and OTP.
+- Do not reintroduce legacy / small white text icons on these surfaces.
+
+## Registration field order (LOCKED)
+
+1. **User Name** — full width — `"Enter your user name"`
+2. **Real Name** — full width — `"Enter your real name"`
+3. **Row** — Age (`"Enter your age"`) | Gender dropdown (`"Select your gender"` + ▼)
+4. **Email** — full width — `"Enter your email"`
+5. **Phone** — full width — `"+1 (555) 000-0000"`
+6. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
+7. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS_WITHOUT_ALL`) | Role dropdown (`"Select your role"`)
+8. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Continue"`) — **no** login / sign-in redirect links
+
+Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky footer. Max width ~440 centered on web.
+
+## Modal architecture (LOCKED)
+
+### Terms
+- Pitch-black background; custom web scrollbar (track `#0A0A0C` / `#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, `borderRadius: 4`)
+- Central logo + tagline; full-width orange acceptance pill
+
+### OTP
+- Pitch-black; central logo + tagline
+- Exactly **4** boxes: fill `#1E1E22`, focus border `#FF6600`, white digits
+- **Manual SUBMIT / VERIFY only** — never auto-verify on 4th digit
 - Dev bypass: phone `+917993992315` + OTP `1234` → instant session (`authOtp.js`)
 
 ## Profiles sync (LOCKED)
