@@ -52,8 +52,8 @@ const OBSIDIAN = '#000000';
 const VIDEO_QUALITY = '720p';
 const TARGET_FPS = 30;
 
-/** Bundled opponent fallback when Arena does not pass a target URI. */
-const OPPONENT_FALLBACK_ASSET = require('./assets/sample_challenge.mp4');
+/** Remote opponent fallback when Arena does not pass a target URI (local sample removed). */
+const OPPONENT_FALLBACK_ASSET = null;
 const OPPONENT_FALLBACK_REMOTE =
   'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
 

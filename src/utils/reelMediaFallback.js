@@ -3,8 +3,13 @@
  */
 import { Image } from 'react-native';
 
-/** Bundled sample MP4 — used when video_url is mock / invalid / delayed. */
-export const BAWAAL_FALLBACK_MP4 = require('../../assets/sample_challenge.mp4');
+/**
+ * Former bundled sample_challenge.mp4 was removed from assets.
+ * Keep a null placeholder so Metro never resolves a missing require —
+ * feed players use resolveVideoSource → null (black shell), and
+ * recording fallback soft-fails to emulator-mock://.
+ */
+export const BAWAAL_FALLBACK_MP4 = null;
 
 /** Stealth poster while the decoder buffers. */
 export const BAWAAL_REEL_POSTER = require('../../assets/BAWAAL_white_icon.png');
