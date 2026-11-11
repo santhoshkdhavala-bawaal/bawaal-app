@@ -68,7 +68,15 @@ import {
   STOP_SAVE_TIMEOUT_MS,
 } from './src/utils/safeRecordingFallback';
 import VideoPublishModal from './components/VideoPublishModal';
+import {
+  PostDestinationSelector,
+  type ArenaTier,
+} from './src/components/PostDestinationSelector';
 import { getActiveUser } from './src/services/activeUserProfile';
+import {
+  fetchIsProUser,
+  publishToDestination,
+} from './src/services/destinationPublishService';
 import { addNewPostToArenaFeed } from './arenaFeedStore';
 import { showBawaalAlert } from './src/components/BawaalAlert';
 export type { CreationMode, PostCreationPayload };
@@ -842,6 +850,10 @@ export default function UniversalCamera({
   const [showPostSheet, setShowPostSheet] = useState(false);
   /** Opens VideoPublishModal after a successful capture (until Success/Cancel). */
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  /** Destination picker after ClipPreview “NEXT TO POST”. */
+  const [showDestinationSelector, setShowDestinationSelector] = useState(false);
+  const [isProUser, setIsProUser] = useState(false);
+  const [destinationPublishing, setDestinationPublishing] = useState(false);
   /** True while awaiting recordAsync settle + HW release before preview. */
   const [isFinalizingClip, setIsFinalizingClip] = useState(false);
   /** True during stop → compress/save — blocks UI / unmount races. */
@@ -1028,18 +1040,18 @@ export default function UniversalCamera({
     clearElapsedTimer();
   }, [clearElapsedTimer]);
 
-  /** Open VideoPublishModal over looping clip overlay — camera stays mounted. */
-  const openPublishModal = useCallback(
+  /** Open destination picker after preview Next (camera stays mounted). */
+  const openDestinationSelector = useCallback(
     (uri: string) => {
       if (!uri || isOpenerCapture) return;
       console.log('[UniversalCamera] Recorded video URI:', uri);
       setRecordedVideoUri(uri);
       pendingPreviewUriRef.current = uri;
       setShowPostSheet(false);
-      // Keep ClipPreview closed while publish + looping Video overlay are up
       setShowPreview(false);
-      isPublishModalOpenRef.current = true;
-      setIsPublishModalOpen(true);
+      setIsPublishModalOpen(false);
+      isPublishModalOpenRef.current = false;
+      setShowDestinationSelector(true);
       setIsFinalizingClip(false);
       setIsProcessing(false);
       try {
@@ -1050,8 +1062,19 @@ export default function UniversalCamera({
           (err as Error)?.message || err
         );
       }
+      void fetchIsProUser()
+        .then((pro) => setIsProUser(!!pro))
+        .catch(() => setIsProUser(false));
     },
     [isOpenerCapture, onVideoRecorded]
+  );
+
+  /** Legacy publish modal host — prefer destination selector for new drops. */
+  const openPublishModal = useCallback(
+    (uri: string) => {
+      openDestinationSelector(uri);
+    },
+    [openDestinationSelector]
   );
 
   /**
@@ -1080,14 +1103,12 @@ export default function UniversalCamera({
         return;
       }
 
-      if (!isOpenerCapture) {
-        openPublishModal(uri);
-        return;
-      }
-
-      // Opener capture — ClipPreview only (no publish modal)
+      // ClipPreview first — Next opens PostDestinationSelector (opener returns draft)
       if (openPreview) {
+        setShowDestinationSelector(false);
         setShowPreview(true);
+      } else if (!isOpenerCapture) {
+        openDestinationSelector(uri);
       } else {
         setShowPreview(false);
         setShowPostSheet(true);
@@ -1095,7 +1116,7 @@ export default function UniversalCamera({
       setIsFinalizingClip(false);
       setIsProcessing(false);
     },
-    [clearElapsedTimer, isOpenerCapture, openPublishModal]
+    [clearElapsedTimer, isOpenerCapture, openDestinationSelector]
   );
 
   // Camera / recorder lifecycle — stop recording + clear timers / player refs on unmount
@@ -1142,7 +1163,10 @@ export default function UniversalCamera({
       // Never wipe a frozen capture while publish/preview hold is active
       if (
         opts?.remountCamera !== true &&
-        (publishHold || isPublishModalOpen || pendingPreviewUriRef.current)
+        (publishHold ||
+          isPublishModalOpen ||
+          showDestinationSelector ||
+          pendingPreviewUriRef.current)
       ) {
         // Soft unlock recorder flags only — keep recordedVideoUri mounted
         recordingLockRef.current = false;
@@ -1160,6 +1184,8 @@ export default function UniversalCamera({
       recordingHandoffDoneRef.current = false;
       setShowPreview(false);
       setShowPostSheet(false);
+      setShowDestinationSelector(false);
+      setDestinationPublishing(false);
       isPublishModalOpenRef.current = false;
       setIsPublishModalOpen(false);
       setHubOpen(false);
@@ -1190,6 +1216,7 @@ export default function UniversalCamera({
       clearHidePillTimer,
       publishHold,
       isPublishModalOpen,
+      showDestinationSelector,
     ]
   );
 
@@ -1199,10 +1226,18 @@ export default function UniversalCamera({
    */
   const returnToLiveCamera = useCallback(() => {
     // Block remount while parent VideoPublishModal holds the frozen clip
-    if (publishHold || isPublishModalOpenRef.current || isPublishModalOpen) return;
+    if (
+      publishHold ||
+      isPublishModalOpenRef.current ||
+      isPublishModalOpen ||
+      showDestinationSelector
+    ) {
+      return;
+    }
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
     setShowPostSheet(false);
+    setShowDestinationSelector(false);
     isPublishModalOpenRef.current = false;
     setIsPublishModalOpen(false);
     setRecordedVideoUri(null);
@@ -1226,6 +1261,7 @@ export default function UniversalCamera({
     revealTimePill,
     publishHold,
     isPublishModalOpen,
+    showDestinationSelector,
   ]);
 
   const safeNavigateHome = useCallback(
@@ -1234,7 +1270,10 @@ export default function UniversalCamera({
       // `force` is used after Success/Cancel already closed the modal.
       if (
         !opts?.force &&
-        (publishHold || isPublishModalOpenRef.current || navigatingRef.current)
+        (publishHold ||
+          isPublishModalOpenRef.current ||
+          showDestinationSelector ||
+          navigatingRef.current)
       ) {
         return;
       }
@@ -1244,6 +1283,8 @@ export default function UniversalCamera({
       setIsPublishModalOpen(false);
       setShowPreview(false);
       setShowPostSheet(false);
+      setShowDestinationSelector(false);
+      setDestinationPublishing(false);
       setRecordedVideoUri(null);
       pendingPreviewUriRef.current = null;
       setIsFinalizingClip(false);
@@ -1268,7 +1309,7 @@ export default function UniversalCamera({
         }
       }, 300);
     },
-    [navigation, resetCreationSession, publishHold]
+    [navigation, resetCreationSession, publishHold, showDestinationSelector]
   );
 
   const openBattleChallengeForm = useCallback(() => {
@@ -1320,11 +1361,13 @@ export default function UniversalCamera({
       isRecording ||
       publishHold ||
       isPublishModalOpen ||
+      showDestinationSelector ||
       showPreview ||
       showPostSheet ||
       !!recordedVideoUri ||
       isFinalizingClip ||
       isProcessing ||
+      destinationPublishing ||
       recordingLockRef.current ||
       stoppingRef.current
     ) {
@@ -1458,9 +1501,8 @@ export default function UniversalCamera({
       setSlowMoEndSec(clipDur);
 
       // Staged handoff — URI → delay → preview (never sync-unmount camera mid-flush)
-      const openPreview =
-        mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
-      await handoffRecordedClip(stableUri, { openPreview });
+      // Always land on ClipPreview so “NEXT TO POST” opens PostDestinationSelector
+      await handoffRecordedClip(stableUri, { openPreview: true });
     } catch (e) {
       if (recordingHandoffDoneRef.current) {
         setIsFinalizingClip(false);
@@ -1479,9 +1521,7 @@ export default function UniversalCamera({
       setCameraError('');
       recordingHandoffDoneRef.current = true;
       const fallback = coalesceRecordingUri(null).uri;
-      const openPreview =
-        mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
-      await handoffRecordedClip(fallback, { openPreview });
+      await handoffRecordedClip(fallback, { openPreview: true });
     } finally {
       recordAsyncWaitRef.current = null;
     }
@@ -1491,11 +1531,13 @@ export default function UniversalCamera({
     isRecording,
     publishHold,
     isPublishModalOpen,
+    showDestinationSelector,
     showPreview,
     showPostSheet,
     recordedVideoUri,
     isFinalizingClip,
     isProcessing,
+    destinationPublishing,
     isOpenerCapture,
     recordLimit,
     fadeTimePill,
@@ -1522,9 +1564,6 @@ export default function UniversalCamera({
     clearElapsedTimer();
     // Do NOT unmount camera / resetCreationSession / navigate on stop
 
-    const openPreview =
-      mode === 'SPARKS' || mode === 'JOSH' || isOpenerCapture;
-
     const stopTimeoutMs =
       Platform.OS === 'web'
         ? Math.max(STOP_SAVE_TIMEOUT_MS, 4000)
@@ -1536,11 +1575,7 @@ export default function UniversalCamera({
       const staged = pendingPreviewUriRef.current;
       if (staged && !recordingHandoffDoneRef.current) {
         recordingHandoffDoneRef.current = true;
-        if (!isOpenerCapture) openPublishModal(staged);
-        else {
-          setRecordedVideoUri(staged);
-          setShowPreview(true);
-        }
+        void handoffRecordedClip(staged, { openPreview: true });
       }
     }, Math.max(500, stopTimeoutMs));
 
@@ -1583,14 +1618,7 @@ export default function UniversalCamera({
       stoppingRef.current = false;
       recordAsyncWaitRef.current = null;
       setCameraError('');
-      setRecordedVideoUri(recordedUri);
-      pendingPreviewUriRef.current = recordedUri;
-
-      if (!isOpenerCapture) {
-        openPublishModal(recordedUri);
-      } else {
-        await handoffRecordedClip(recordedUri, { openPreview });
-      }
+      await handoffRecordedClip(recordedUri, { openPreview: true });
     } catch (err) {
       if (recordingHandoffDoneRef.current) {
         setIsFinalizingClip(false);
@@ -1607,13 +1635,7 @@ export default function UniversalCamera({
       recordAsyncWaitRef.current = null;
       setCameraError('');
       const fallbackUri = resolveSafeRecordingFallbackUri();
-      setRecordedVideoUri(fallbackUri);
-      pendingPreviewUriRef.current = fallbackUri;
-      if (!isOpenerCapture) {
-        openPublishModal(fallbackUri);
-      } else {
-        await handoffRecordedClip(fallbackUri, { openPreview });
-      }
+      await handoffRecordedClip(fallbackUri, { openPreview: true });
     } finally {
       clearTimeout(savingWatchdog);
       setIsFinalizingClip(false);
@@ -1621,11 +1643,8 @@ export default function UniversalCamera({
     }
   }, [
     isRecording,
-    mode,
-    isOpenerCapture,
     clearElapsedTimer,
     handoffRecordedClip,
-    openPublishModal,
   ]);
 
   const handleShutter = useCallback(() => {
@@ -1637,11 +1656,13 @@ export default function UniversalCamera({
     if (
       publishHold ||
       isPublishModalOpen ||
+      showDestinationSelector ||
       showPreview ||
       showPostSheet ||
       !!recordedVideoUri ||
       isFinalizingClip ||
-      isProcessing
+      isProcessing ||
+      destinationPublishing
     ) {
       return;
     }
@@ -1652,19 +1673,21 @@ export default function UniversalCamera({
     isRecording,
     publishHold,
     isPublishModalOpen,
+    showDestinationSelector,
     showPreview,
     showPostSheet,
     recordedVideoUri,
     isFinalizingClip,
     isProcessing,
+    destinationPublishing,
     openBattleChallengeForm,
     stopRecording,
     startRecording,
   ]);
 
   const handleClose = useCallback(() => {
-    // Stay on camera while VideoPublishModal is up — Cancel/Success own navigation
-    if (publishHold || isPublishModalOpen) return;
+    // Stay on camera while VideoPublishModal / destination picker is up
+    if (publishHold || isPublishModalOpen || showDestinationSelector) return;
     void (async () => {
       if (isRecording || recordingLockRef.current) {
         try {
@@ -1689,6 +1712,7 @@ export default function UniversalCamera({
     navigation,
     publishHold,
     isPublishModalOpen,
+    showDestinationSelector,
     resetCreationSession,
     stopRecording,
   ]);
@@ -1752,11 +1776,9 @@ export default function UniversalCamera({
       setSlowMoEndSec(safeDurationSec(assetDurationSec, recordLimit));
       fadeTimePill(true);
 
-      const openPreview = mode === 'SPARKS' || mode === 'JOSH';
-      await handoffRecordedClip(uri, { openPreview });
+      await handoffRecordedClip(uri, { openPreview: true });
     },
     [
-      mode,
       recordLimit,
       fadeTimePill,
       isFinalizingClip,
@@ -1798,6 +1820,8 @@ export default function UniversalCamera({
     // Cancel — fully clear modal/camera hold then leave (no orphan black layers)
     isPublishModalOpenRef.current = false;
     setIsPublishModalOpen(false);
+    setShowDestinationSelector(false);
+    setDestinationPublishing(false);
     pendingPreviewUriRef.current = null;
     setShowPreview(false);
     setShowPostSheet(false);
@@ -1809,6 +1833,130 @@ export default function UniversalCamera({
     setIsProcessing(false);
     safeNavigateHome({ tab: 'Arena' }, { force: true });
   }, [safeNavigateHome]);
+
+  const handleDestinationCancel = useCallback(() => {
+    setShowDestinationSelector(false);
+    setDestinationPublishing(false);
+    // Return to slow-mo preview with the same clip
+    if (recordedVideoUri) {
+      setShowPreview(true);
+      return;
+    }
+    handlePublishModalCancel();
+  }, [recordedVideoUri, handlePublishModalCancel]);
+
+  const handleDestinationPublish = useCallback(
+    async (payload: { tier: ArenaTier; title: string; hashtag: string }) => {
+      const uri = recordedVideoUri;
+      if (!uri || destinationPublishing) return;
+
+      const battleId =
+        (typeof respondParams.battleId === 'string' && respondParams.battleId) ||
+        (typeof respondParams.challengeId === 'string' &&
+          respondParams.challengeId) ||
+        null;
+
+      setDestinationPublishing(true);
+      try {
+        const activeUser = getActiveUser?.() || {};
+        const result = await publishToDestination({
+          videoUri: uri,
+          tier: payload.tier,
+          title: payload.title,
+          hashtag: payload.hashtag,
+          isChallengeResponse,
+          challengeId: battleId,
+          userId: activeUser.userId || activeUser.id || null,
+        });
+
+        if (!result?.ok) {
+          showBawaalAlert({
+            title: 'PUBLISH FAILED',
+            message:
+              result?.error ||
+              'Could not publish this clip. Your video is still on device.',
+          });
+          return;
+        }
+
+        const post = result.post || {
+          id: `dest-${Date.now()}`,
+          mode,
+          title: payload.title,
+          videoUri: result.publicUrl || uri,
+          uri: result.publicUrl || uri,
+          feedTarget: result.feedTarget || 'ARENA',
+          timestamp: Date.now(),
+          createdAt: Date.now(),
+          _freshPublish: true,
+        };
+
+        if (result.feedTarget !== 'BATTLES' && result.publicUrl) {
+          try {
+            addNewPostToArenaFeed(post);
+          } catch (err) {
+            console.warn(
+              '[UniversalCamera] destination Arena feed soft-fail:',
+              (err as Error)?.message || err
+            );
+          }
+        }
+
+        try {
+          onPublished?.(post as unknown as PostCreationPayload);
+        } catch {
+          /* ignore */
+        }
+
+        setShowDestinationSelector(false);
+        setDestinationPublishing(false);
+        isPublishModalOpenRef.current = false;
+        setIsPublishModalOpen(false);
+        setShowPreview(false);
+        setShowPostSheet(false);
+        pendingPreviewUriRef.current = null;
+        setRecordedVideoUri(null);
+        recordingHandoffDoneRef.current = false;
+        recordingLockRef.current = false;
+        stoppingRef.current = false;
+        setIsFinalizingClip(false);
+        setIsProcessing(false);
+
+        const tab = result.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
+        safeNavigateHome(
+          {
+            tab,
+            ...(tab === 'Arena' ? { newArenaPost: post } : {}),
+            ...(tab === 'Battles' ? { newBattlePost: post } : {}),
+          },
+          { force: true }
+        );
+      } catch (err) {
+        console.warn(
+          '[UniversalCamera] destination publish threw:',
+          (err as Error)?.message || err
+        );
+        showBawaalAlert({
+          title: 'PUBLISH FAILED',
+          message:
+            (err as Error)?.message ||
+            'Network error while publishing. Try again.',
+        });
+      } finally {
+        setDestinationPublishing(false);
+      }
+    },
+    [
+      recordedVideoUri,
+      destinationPublishing,
+      respondParams.battleId,
+      respondParams.challengeId,
+      isChallengeResponse,
+      mode,
+      onPublished,
+      safeNavigateHome,
+    ]
+  );
 
   const handlePublishModalSuccess = useCallback(
     (data: Record<string, unknown> | null | undefined) => {
@@ -1916,11 +2064,13 @@ export default function UniversalCamera({
   const captureHold =
     publishHold ||
     isPublishModalOpen ||
+    showDestinationSelector ||
     showPreview ||
     showPostSheet ||
     !!recordedVideoUri ||
     isFinalizingClip ||
-    isProcessing;
+    isProcessing ||
+    destinationPublishing;
 
   if (permissionsPending) {
     return (
@@ -2158,6 +2308,7 @@ export default function UniversalCamera({
       {showPreview &&
       recordedVideoUri &&
       !isPublishModalOpen &&
+      !showDestinationSelector &&
       !isFinalizingClip &&
       !isProcessing ? (
         <ClipPreviewModal
@@ -2204,7 +2355,7 @@ export default function UniversalCamera({
               return;
             }
             if (recordedVideoUri) {
-              openPublishModal(recordedVideoUri);
+              openDestinationSelector(recordedVideoUri);
               return;
             }
             setShowPreview(false);
@@ -2212,6 +2363,45 @@ export default function UniversalCamera({
           }}
         />
       ) : null}
+
+      <Modal
+        visible={showDestinationSelector && !!recordedVideoUri}
+        animationType="slide"
+        onRequestClose={handleDestinationCancel}
+      >
+        <View style={styles.destinationRoot}>
+          <StatusBar barStyle="light-content" />
+          <View style={styles.destinationTopBar}>
+            <TouchableOpacity
+              onPress={handleDestinationCancel}
+              activeOpacity={0.85}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.destinationBack}>← BACK</Text>
+            </TouchableOpacity>
+            {destinationPublishing ? (
+              <ActivityIndicator color={SHUTTER_RED} />
+            ) : (
+              <View style={styles.destinationSpacer} />
+            )}
+          </View>
+          {recordedVideoUri ? (
+            <PostDestinationSelector
+              videoUri={recordedVideoUri}
+              isProUser={isProUser}
+              onPublish={(payload) => {
+                void handleDestinationPublish(payload);
+              }}
+            />
+          ) : null}
+          {destinationPublishing ? (
+            <View style={styles.destinationBusy} pointerEvents="auto">
+              <ActivityIndicator color={SHUTTER_RED} size="large" />
+              <Text style={styles.destinationBusyText}>Publishing…</Text>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
 
       <Modal
         visible={showPostSheet}
@@ -2358,6 +2548,37 @@ const styles = StyleSheet.create({
     ...ABSOLUTE_FILL,
     zIndex: 9999,
     elevation: 9999,
+  },
+  destinationRoot: {
+    flex: 1,
+    backgroundColor: '#0A0A0A',
+    paddingTop: 48,
+  },
+  destinationTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  destinationBack: {
+    color: '#3B82F6',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  destinationSpacer: { width: 24, height: 24 },
+  destinationBusy: {
+    ...ABSOLUTE_FILL,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  destinationBusyText: {
+    color: '#FF3B30',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: 1,
   },
   camera: { ...ABSOLUTE_FILL },
   viewfinderTap: {
