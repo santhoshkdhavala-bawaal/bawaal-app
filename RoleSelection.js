@@ -66,11 +66,17 @@ function InputCard({
   keyboardType,
   autoCapitalize,
   autoCorrect,
+  leading,
   trailing,
   style,
 }) {
   return (
     <View style={[styles.inputCard, focused && styles.inputCardFocused, style]}>
+      {leading ? (
+        <View style={styles.inputLeading} pointerEvents="none">
+          {leading}
+        </View>
+      ) : null}
       <TextInput
         style={[styles.input, Platform.OS === 'web' && styles.inputWeb]}
         placeholder={placeholder}
@@ -85,7 +91,24 @@ function InputCard({
         underlineColorAndroid="transparent"
         selectionColor={ORANGE}
       />
-      {trailing ? <View style={styles.inputTrailing}>{trailing}</View> : null}
+      {trailing ? (
+        <View style={styles.inputTrailing} pointerEvents="none">
+          {trailing}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Country flag chip shown inside the location field when resolveLocationFlag hits. */
+function LocationFlagBadge({ flag, country }) {
+  if (!flag || flag === '🌐') return null;
+  return (
+    <View
+      style={styles.flagBadge}
+      accessibilityLabel={country ? `Country flag ${country}` : 'Country flag'}
+    >
+      <Text style={styles.flagEmoji}>{flag}</Text>
     </View>
   );
 }
@@ -439,11 +462,21 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 onBlur={() => setFocusedField(null)}
                 trailing={
                   locationFlag && locationFlag !== '🌐' ? (
-                    <Text style={styles.flagEmoji}>{locationFlag}</Text>
+                    <LocationFlagBadge
+                      flag={locationFlag}
+                      country={locationMeta.country}
+                    />
                   ) : null
                 }
                 style={styles.fieldGap}
               />
+              {locationMeta.country ? (
+                <Text style={styles.locationHelper}>
+                  {locationFlag && locationFlag !== '🌐' ? `${locationFlag} ` : ''}
+                  {locationMeta.country}
+                  {' · regional matchmaking'}
+                </Text>
+              ) : null}
 
               <View style={styles.twoColRow}>
                 <SelectCard
@@ -780,8 +813,18 @@ const styles = StyleSheet.create({
     outlineColor: 'transparent',
     boxShadow: 'none',
   },
+  inputLeading: {
+    marginRight: 10,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   inputTrailing: {
-    marginLeft: 8,
+    marginLeft: 10,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 28,
   },
   selectValue: {
     flex: 1,
@@ -799,9 +842,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  flagBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
   flagEmoji: {
-    fontSize: 18,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 24,
+    textAlign: 'center',
+    ...(Platform.OS === 'web'
+      ? { fontFamily: 'Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, sans-serif' }
+      : null),
+  },
+  locationHelper: {
+    marginTop: -4,
+    marginBottom: 12,
+    color: PLACEHOLDER,
+    fontSize: 12,
+    lineHeight: 16,
+    paddingHorizontal: 4,
   },
   stickyFooter: {
     width: '100%',
