@@ -14,7 +14,7 @@ import { ARENA_FEED_TIERS } from '../constants/arenaFeedTiers';
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ORANGE = '#FF5500';
+const ORANGE = '#FF6600';
 
 function ArenaTierFilterBar({
   tiers = ARENA_FEED_TIERS,

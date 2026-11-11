@@ -131,21 +131,23 @@ export async function settleStopRecording(opts = {}) {
 }
 
 /**
- * Resolve bundled `sample_challenge.mp4` to a playable URI.
- * Falls back to emulator-mock scheme if asset resolution fails.
+ * Soft recording fallback URI when native capture fails.
+ * Bundled sample_challenge.mp4 was removed — never require a missing asset.
  * @returns {string}
  */
 export function resolveSafeRecordingFallbackUri() {
-  try {
-    const src = Image.resolveAssetSource(BAWAAL_FALLBACK_MP4);
-    if (src?.uri && typeof src.uri === 'string' && src.uri.trim()) {
-      return src.uri.trim();
+  if (BAWAAL_FALLBACK_MP4 != null) {
+    try {
+      const src = Image.resolveAssetSource(BAWAAL_FALLBACK_MP4);
+      if (src?.uri && typeof src.uri === 'string' && src.uri.trim()) {
+        return src.uri.trim();
+      }
+    } catch (err) {
+      console.warn(
+        '[safeRecordingFallback] asset resolve failed:',
+        err?.message || err
+      );
     }
-  } catch (err) {
-    console.warn(
-      '[safeRecordingFallback] asset resolve failed:',
-      err?.message || err
-    );
   }
   return `emulator-mock://${Date.now()}.mp4`;
 }

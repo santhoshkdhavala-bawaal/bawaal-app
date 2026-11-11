@@ -81,10 +81,11 @@ import { addNewPostToArenaFeed } from './arenaFeedStore';
 import { showBawaalAlert } from './src/components/BawaalAlert';
 export type { CreationMode, PostCreationPayload };
 
-/** Minimalist Black & White */
+/** Live lens chrome stays high-contrast white; hub / sheets use brand orange. */
 const ACCENT = '#FFFFFF';
+const BRAND_ORANGE = '#FF6600';
 const SHUTTER_RED = '#FF3B30';
-const SHEET_BG = 'rgba(10,10,10,0.95)';
+const SHEET_BG = '#000000';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
 const PILL_HIDE_MS = 5000;
 const MIN_TRIM_SPAN = 0.5;
@@ -373,19 +374,19 @@ const hubStyles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderColor: '#FFFFFF',
+    borderColor: BRAND_ORANGE,
   },
   handle: {
     alignSelf: 'center',
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#555555',
+    backgroundColor: BRAND_ORANGE,
     marginBottom: 10,
   },
   logo: { width: 130, height: 44, alignSelf: 'center', marginBottom: 4 },
   title: {
-    color: ACCENT,
+    color: BRAND_ORANGE,
     fontSize: 18,
     fontWeight: '900',
     textAlign: 'center',
@@ -401,13 +402,13 @@ const hubStyles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255, 102, 0, 0.45)',
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 10,
   },
   cardTitle: {
-    color: ACCENT,
+    color: BRAND_ORANGE,
     fontSize: 15,
     fontWeight: '900',
   },
@@ -420,14 +421,14 @@ const hubStyles = StyleSheet.create({
   joshChip: {
     alignSelf: 'flex-start',
     marginTop: 8,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255, 102, 0, 0.12)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255, 102, 0, 0.45)',
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  joshChipText: { color: ACCENT, fontSize: 11, fontWeight: '800' },
+  joshChipText: { color: BRAND_ORANGE, fontSize: 11, fontWeight: '800' },
   galleryCard: {
     borderStyle: 'dashed' as const,
     marginTop: 4,

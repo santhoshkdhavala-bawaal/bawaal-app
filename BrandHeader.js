@@ -11,10 +11,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
-const ACCENT = '#FF5722';
+const ACCENT = '#FF6600';
 const MUTED = '#A0A0A0';
 
-/** Orange brand mark (asset file name kept; file is the orange logo). */
+/** Canonical orange brand mark (filename retained; artwork is orange/black). */
 const BAWAAL_LOGO = require('./assets/BAWAAL_white_full.png');
 
 /**
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(232, 236, 233, 0.18)',
+    borderBottomColor: 'rgba(255, 102, 0, 0.35)',
   },
   topRow: {
     flexDirection: 'row',
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   brand: {
-    color: WHITE,
+    color: ACCENT,
     fontSize: 28,
     fontWeight: '900',
     letterSpacing: 1.2,
@@ -113,4 +113,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export const BRAND = { BG, WHITE, ACCENT, MUTED, CARD: '#121212' };
+export const BRAND = { BG, WHITE, ACCENT, MUTED, CARD: '#000000' };

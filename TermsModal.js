@@ -16,7 +16,7 @@ export default function TermsModal({ visible, onAgree, onBack }) {
             {/* Header Logo */}
             <View style={styles.logoHeader}>
               <Image
-                source={require('./assets/bawaal_bolder_larger.png')}
+                source={require('./assets/BAWAAL_white_full.png')}
                 style={styles.headerLogo}
                 resizeMode="contain"
               />
@@ -96,26 +96,59 @@ export default function TermsModal({ visible, onAgree, onBack }) {
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.95)', padding: 10, justifyContent: 'center' },
-  goldGlowCard: { 
-    flex: 1, 
-    backgroundColor: '#0f172a', 
-    borderRadius: 24, 
-    borderWidth: 2, 
-    borderColor: '#f59e0b', 
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#000000',
+    padding: 10,
+    justifyContent: 'center',
+  },
+  goldGlowCard: {
+    flex: 1,
+    backgroundColor: '#000000',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#FF6600',
     padding: 12,
   },
   scrollContent: { paddingBottom: 30 },
   logoHeader: { alignItems: 'center', marginBottom: 12 },
-  headerLogo: { width: 220, height: 110 },
-  subtitle: { color: '#94a3b8', fontSize: 12, marginTop: 2, fontWeight: '600' },
-  sectionCard: { backgroundColor: '#1e293b', borderRadius: 16, padding: 16, marginBottom: 16 },
-  sectionTitle: { color: '#f59e0b', fontWeight: 'bold', fontSize: 13, marginBottom: 6 },
-  warningTitle: { color: '#ef4444', fontWeight: 'bold', fontSize: 13, marginBottom: 6, marginTop: 10 },
-  bodyText: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
-  highlight: { color: '#f59e0b', fontWeight: 'bold' },
-  divider: { height: 1, backgroundColor: '#334155', marginVertical: 10 },
-  btnRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 4 },
+  headerLogo: { width: 220, height: 64 },
+  subtitle: { color: '#A0A0A0', fontSize: 12, marginTop: 8, fontWeight: '600' },
+  sectionCard: {
+    backgroundColor: '#000000',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 102, 0, 0.35)',
+    padding: 16,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    color: '#FF6600',
+    fontWeight: 'bold',
+    fontSize: 13,
+    marginBottom: 6,
+  },
+  warningTitle: {
+    color: '#ef4444',
+    fontWeight: 'bold',
+    fontSize: 13,
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  bodyText: { color: '#E8ECE9', fontSize: 12, lineHeight: 18 },
+  highlight: { color: '#FF6600', fontWeight: 'bold' },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 102, 0, 0.25)',
+    marginVertical: 10,
+  },
+  btnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 4,
+  },
   backBtn: {
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -125,6 +158,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(59, 130, 246, 0.14)',
   },
   backText: { color: '#3B82F6', fontWeight: '900', fontSize: 13 },
-  agreeBtn: { flex: 1, backgroundColor: '#f59e0b', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  agreeText: { color: '#0f172a', fontWeight: 'bold', fontSize: 13 }
+  agreeBtn: {
+    flex: 1,
+    backgroundColor: '#FF6600',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  agreeText: { color: '#000000', fontWeight: 'bold', fontSize: 13 },
 });

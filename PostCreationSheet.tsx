@@ -130,9 +130,9 @@ export type PostCreationSheetProps = {
   onGalleryAssetDeleted?: () => void;
 };
 
-/** Minimalist Black & White — never neon orange */
-const ACCENT = '#FFFFFF';
-const SHEET_BG = 'rgba(10,10,10,0.95)';
+/** Stealth black + brand orange */
+const ACCENT = '#FF6600';
+const SHEET_BG = '#000000';
 
 const MODE_DISPLAY: Record<CreationMode, string> = {
   SPARKS: '⚡ SPARKS',
@@ -364,7 +364,7 @@ function BawaalSuccessModal({
       <View style={styles.successOverlay}>
         <View style={styles.successCard}>
           <Image
-            source={require('./assets/bawaal-full-logo.png')}
+            source={require('./assets/BAWAAL_white_full.png')}
             style={styles.successLogo}
             resizeMode="contain"
           />
@@ -1057,11 +1057,11 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.3)',
   },
   activeTagChip: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 102, 0, 0.18)',
+    borderColor: ACCENT,
   },
   tagText: { color: '#A3A3A3', fontSize: 11, fontWeight: '700' },
-  activeTagText: { color: '#FFFFFF' },
+  activeTagText: { color: ACCENT },
   battleFieldsRow: { flexDirection: 'row', gap: 12 },
   halfField: { flex: 1 },
   postBtn: {

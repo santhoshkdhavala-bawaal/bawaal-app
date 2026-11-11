@@ -28,7 +28,7 @@ import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
 const LIGHT_YELLOW = '#F4F1DE';
-const FLAME_ORANGE = '#FF5722';
+const FLAME_ORANGE = '#FF6600';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 const BORDER = 'rgba(232,236,233,0.28)';
@@ -351,6 +351,7 @@ export default function BattlesScreen({
       <BrandHeader
         screenName="BATTLES"
         onBrandPress={openProfileGateway}
+        useLogo
       />
 
       <View style={styles.filterRow}>

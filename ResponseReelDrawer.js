@@ -20,7 +20,7 @@ import CustomMatchupViewer from './src/components/CustomMatchupViewer';
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ACCENT = '#FF5722';
+const ACCENT = '#FF6600';
 const CARD = '#121212';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 

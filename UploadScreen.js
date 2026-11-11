@@ -132,8 +132,9 @@ export default function UploadScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <Image
-            source={require('./assets/BAWAAL_text.png')}
+            source={require('./assets/BAWAAL_white_full.png')}
             style={styles.wordmarkLogo}
+            resizeMode="contain"
           />
           <Text style={styles.headerAccent}>
             {videoUri ? 'CREATE CHALLENGE' : 'RECORD'}

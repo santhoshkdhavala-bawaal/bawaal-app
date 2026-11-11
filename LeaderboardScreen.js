@@ -68,7 +68,11 @@ export default function LeaderboardScreen({ navigation }) {
 
       <View style={styles.header}>
         <View style={styles.brandRow}>
-          <Image source={require('./assets/BAWAAL_text.png')} style={styles.wordmarkLogo} />
+          <Image
+            source={require('./assets/BAWAAL_white_full.png')}
+            style={styles.wordmarkLogo}
+            resizeMode="contain"
+          />
           <Text style={styles.headerAccent}>LEADERBOARD</Text>
         </View>
 

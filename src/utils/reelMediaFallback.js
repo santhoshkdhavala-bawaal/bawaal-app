@@ -11,8 +11,8 @@ import { Image } from 'react-native';
  */
 export const BAWAAL_FALLBACK_MP4 = null;
 
-/** Stealth poster while the decoder buffers. */
-export const BAWAAL_REEL_POSTER = require('../../assets/BAWAAL_white_icon.png');
+/** Brand mark for non-feed poster prefetch only (feed players stay black underlay). */
+export const BAWAAL_REEL_POSTER = require('../../assets/BAWAAL_B_solo.png');
 
 export function isUsablePlaybackUri(uri) {
   if (uri == null || typeof uri !== 'string') return false;

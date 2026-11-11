@@ -75,9 +75,10 @@ export default function FanRegistration({ navigation }) {
         <View style={styles.header}>
           <BackLink label="BACK" onPress={handleBack} />
 
-          <Image 
-            source={require('./assets/icon.png')} 
-            style={styles.headerLogo} 
+          <Image
+            source={require('./assets/BAWAAL_B_solo.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
           />
         </View>
 

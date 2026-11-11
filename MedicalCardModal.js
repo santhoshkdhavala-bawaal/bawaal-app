@@ -57,7 +57,7 @@ export default function MedicalCardModal({ visible, selectedLang = 'English', on
           <View style={styles.headerRow}>
             <BackLink label={t.back} onPress={onClose} />
             <Image
-              source={require('./assets/icon.png')}
+              source={require('./assets/BAWAAL_B_solo.png')}
               style={styles.headerLogo}
               resizeMode="contain"
             />

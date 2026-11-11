@@ -3,10 +3,9 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const OBSIDIAN = '#000000';
-const OFF_WHITE = '#E8ECE9';
 const WHITE = '#FFFFFF';
-const ACCENT = '#FFFFFF';
-const BORDER_TOP = '#2A2A2A';
+const ACCENT = '#FF6600';
+const BORDER_TOP = 'rgba(255, 102, 0, 0.35)';
 const MUTED = '#A0A0A0';
 
 const TABS = [
@@ -171,7 +170,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === 'android' ? { fontFamily: 'sans-serif-medium' } : null),
   },
   tabLabelActive: {
-    color: WHITE,
+    color: ACCENT,
     fontSize: 9.5,
     fontWeight: '900',
     letterSpacing: 0.4,
@@ -206,9 +205,9 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: WHITE,
+    backgroundColor: ACCENT,
     borderWidth: 2,
-    borderColor: OFF_WHITE,
+    borderColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     ...Platform.select({
@@ -229,7 +228,7 @@ const styles = StyleSheet.create({
     lineHeight: 36,
   },
   fabCaption: {
-    color: WHITE,
+    color: ACCENT,
     fontSize: 8,
     fontWeight: '900',
     letterSpacing: 0.8,
@@ -241,7 +240,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: OBSIDIAN,
     borderWidth: 1.5,
-    borderColor: WHITE,
+    borderColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 1,

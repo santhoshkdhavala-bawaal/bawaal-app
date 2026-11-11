@@ -73,7 +73,7 @@ const BORDER = 'rgba(232,236,233,0.28)';
 const MUTED = '#A0A0A0';
 const PLATINUM = '#E8ECE9';
 const LIVE_CRIMSON = '#FF0033';
-const FLAME_ORANGE = '#FF5722';
+const FLAME_ORANGE = '#FF6600';
 const CRIMSON = LIVE_CRIMSON;
 const GOLD = FLAME_ORANGE;
 

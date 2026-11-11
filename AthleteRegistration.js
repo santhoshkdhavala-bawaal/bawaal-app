@@ -457,15 +457,10 @@ export default function AthleteRegistration({ navigation }) {
           
           <View style={styles.topHeader}>
             <View style={styles.brandGroup}>
-              <Image 
-                source={require('./assets/bawaal_bolder_larger.png')} 
-                style={styles.logoEmblem} 
-                resizeMode="contain" 
-              />
-              <Image 
-                source={require('./assets/bawaal_line.png')} 
-                style={styles.logoLineText} 
-                resizeMode="contain" 
+              <Image
+                source={require('./assets/BAWAAL_white_full.png')}
+                style={styles.logoEmblem}
+                resizeMode="contain"
               />
             </View>
             <View style={styles.metaGroup}>
