@@ -1,7 +1,7 @@
 /**
- * BAWAAL Landing / Onboarding — production surface.
- * Layout refined for orange/black identity (explicit unlock: mobile form width,
- * larger full logo, dark field cards, ENTER THE ARENA CTA). OTP contract unchanged.
+ * BAWAAL Landing / Onboarding — registration surface (explicit layout unlock).
+ * Field order + dark cards + sticky Continue CTA; OTP / profiles contract unchanged.
+ * Sport categories still import locked `BAWAAL_SPORTS`.
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import React, { useMemo, useState } from 'react';
@@ -18,6 +18,7 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  Pressable,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { resolveLocationFlag } from './src/utils/locationFlag';
@@ -50,80 +51,12 @@ const GENDER_OPTIONS = [
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const OFF_WHITE = '#E8ECE9';
+const PLACEHOLDER = '#9CA3AF';
 const MUTED = '#8A8A8A';
-const CARD = '#141416';
+const CARD = '#1E1E22';
 const ORANGE = '#FF6600';
-const ORANGE_DEEP = '#E85A00';
-const ORANGE_LIGHT = '#FF8533';
-const LINE = 'rgba(255, 255, 255, 0.12)';
-const LINE_FOCUS = ORANGE;
 
-function PillRow({ options, selected, onSelect }) {
-  return (
-    <View style={styles.pillWrap}>
-      {options.map((opt) => {
-        const key = typeof opt === 'string' ? opt : opt.key;
-        const label = typeof opt === 'string' ? opt : opt.label;
-        const active = selected === key;
-        return (
-          <TouchableOpacity
-            key={key}
-            style={[styles.pill, active && styles.pillActive]}
-            onPress={() => onSelect(key)}
-            activeOpacity={0.75}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-          >
-            <Text style={[styles.pillText, active && styles.pillTextActive]}>
-              {label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-
-/** Single-line horizontal sport / filter pills (Game On style). */
-function HorizontalPillScroll({ options, selected, onSelect }) {
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      nestedScrollEnabled
-      keyboardShouldPersistTaps="handled"
-      style={styles.sportScroll}
-      contentContainerStyle={styles.sportScrollContent}
-    >
-      {options.map((opt) => {
-        const key = typeof opt === 'string' ? opt : opt.key;
-        const label = typeof opt === 'string' ? opt : opt.label;
-        const active = selected === key;
-        return (
-          <TouchableOpacity
-            key={key}
-            style={[styles.chipPill, active && styles.chipPillActive]}
-            onPress={() => onSelect(key)}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={`Sport ${label}`}
-          >
-            <Text
-              style={[styles.chipPillText, active && styles.chipPillTextActive]}
-              numberOfLines={1}
-            >
-              {label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
-
-function UnderlineField({
-  label,
+function InputCard({
   value,
   onChangeText,
   placeholder,
@@ -133,31 +66,89 @@ function UnderlineField({
   keyboardType,
   autoCapitalize,
   autoCorrect,
-  leading,
   trailing,
+  style,
 }) {
   return (
-    <View style={styles.formGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <View style={[styles.fieldCard, focused && styles.fieldCardFocused]}>
-        <View style={styles.fieldRow}>
-          {leading ? <View style={styles.fieldLeading}>{leading}</View> : null}
-          <TextInput
-            style={styles.input}
-            placeholder={placeholder}
-            placeholderTextColor={MUTED}
-            value={value}
-            onChangeText={onChangeText}
-            keyboardType={keyboardType}
-            autoCapitalize={autoCapitalize}
-            autoCorrect={autoCorrect}
-            onFocus={onFocus}
-            onBlur={onBlur}
-          />
-          {trailing ? <View style={styles.fieldTrailing}>{trailing}</View> : null}
+    <View style={[styles.inputCard, focused && styles.inputCardFocused, style]}>
+      <TextInput
+        style={styles.input}
+        placeholder={placeholder}
+        placeholderTextColor={PLACEHOLDER}
+        value={value}
+        onChangeText={onChangeText}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        onFocus={onFocus}
+        onBlur={onBlur}
+      />
+      {trailing ? <View style={styles.inputTrailing}>{trailing}</View> : null}
+    </View>
+  );
+}
+
+function SelectCard({ valueLabel, placeholder, onPress, style }) {
+  const empty = !valueLabel;
+  return (
+    <TouchableOpacity
+      style={[styles.inputCard, styles.selectCard, style]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+    >
+      <Text
+        style={[styles.selectValue, empty && styles.selectPlaceholder]}
+        numberOfLines={1}
+      >
+        {empty ? placeholder : valueLabel}
+      </Text>
+      <Text style={styles.chevron}>▼</Text>
+    </TouchableOpacity>
+  );
+}
+
+function OptionPickerModal({ visible, title, options, selectedKey, onSelect, onClose }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.pickerOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.pickerSheet}>
+          <Text style={styles.pickerTitle}>{title}</Text>
+          <ScrollView
+            style={styles.pickerList}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {options.map((opt) => {
+              const key = typeof opt === 'string' ? opt : opt.key;
+              const label = typeof opt === 'string' ? opt : opt.label;
+              const active = selectedKey === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={[styles.pickerRow, active && styles.pickerRowActive]}
+                  onPress={() => {
+                    onSelect(key);
+                    onClose();
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[styles.pickerRowText, active && styles.pickerRowTextActive]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <TouchableOpacity style={styles.pickerCancel} onPress={onClose} activeOpacity={0.85}>
+            <Text style={styles.pickerCancelText}>Cancel</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </View>
+    </Modal>
   );
 }
 
@@ -166,6 +157,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [picker, setPicker] = useState(null); // 'gender' | 'category' | 'role'
 
   const [handle, setHandle] = useState('');
   const [realName, setRealName] = useState('');
@@ -174,8 +166,8 @@ export default function RoleSelection({ onCompleteRegistration }) {
   const [location, setLocation] = useState('');
   const [gender, setGender] = useState(null);
   const [age, setAge] = useState('');
-  const [role, setRole] = useState('fan');
-  const [sportInterest, setSportInterest] = useState(SPORT_INTERESTS[0]);
+  const [role, setRole] = useState(null);
+  const [sportInterest, setSportInterest] = useState(null);
   const [focusedField, setFocusedField] = useState(null);
 
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
@@ -191,6 +183,11 @@ export default function RoleSelection({ onCompleteRegistration }) {
     [location]
   );
   const locationFlag = locationMeta.flag || '';
+
+  const genderLabel =
+    GENDER_OPTIONS.find((g) => g.key === gender)?.label || null;
+  const roleLabel = ROLES.find((r) => r.key === role)?.label || null;
+  const categoryLabel = sportInterest || null;
 
   const handleTermsScroll = ({ nativeEvent }) => {
     const isCloseToBottom =
@@ -243,13 +240,13 @@ export default function RoleSelection({ onCompleteRegistration }) {
       return;
     }
     if (!sportInterest) {
-      showNotice('Sport Interest', 'Pick a sport interest for your feed.');
+      showNotice('Category', 'Pick a sport category for your feed.');
       return;
     }
     if (!agreedToTerms) {
       showNotice(
         'Terms Required',
-        'Please review and accept the Terms of Service & Privacy Policy.'
+        'Please review and accept the Terms and Conditions.'
       );
       return;
     }
@@ -301,7 +298,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
         sport_interests: [sportInterest].filter(Boolean),
       };
 
-      // SUBMIT → public.profiles upsert (id, real_name, gender, age, mobile, …)
       const authUser = result.user || result.session?.user || null;
       const synced = await upsertRegisteredProfile(userData, authUser);
       userData.profileId = synced.id || null;
@@ -324,12 +320,13 @@ export default function RoleSelection({ onCompleteRegistration }) {
     }
   };
 
-  const flagBadge =
-    locationFlag && locationFlag !== '🌐' ? (
-      <Text style={styles.flagEmoji} accessibilityLabel="Location country flag">
-        {locationFlag}
-      </Text>
-    ) : null;
+  const onTermsRowPress = () => {
+    if (agreedToTerms) {
+      setAgreedToTerms(false);
+      return;
+    }
+    setTermsModalVisible(true);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -339,217 +336,201 @@ export default function RoleSelection({ onCompleteRegistration }) {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 24 + Math.max(insets.bottom, 8) },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           bounces
         >
           <View style={styles.formShell}>
-          <View style={styles.brandHeader}>
-            <Image
-              source={require('./assets/BAWAAL_white_full.png')}
-              style={styles.logoImage}
-              resizeMode="contain"
-              accessibilityLabel="BAWAAL — own your chaos"
-            />
-            <Text style={styles.brandSubheader}>
-              The World's Premier Digital Arena for Every Sport, Every Adventure
-            </Text>
-          </View>
-
-          <View style={styles.form}>
-            <Text style={styles.cardTitle}>CLAIM YOUR SPOT</Text>
-            <Text style={styles.cardHint}>Claim your identity. Join the digital arena.</Text>
-
-            <UnderlineField
-              label="DISPLAY NAME / HANDLE"
-              value={handle}
-              onChangeText={setHandle}
-              placeholder="e.g. King of the Ring"
-              autoCapitalize="words"
-              focused={focusedField === 'handle'}
-              onFocus={() => setFocusedField('handle')}
-              onBlur={() => setFocusedField(null)}
-              trailing={flagBadge}
-            />
-
-            <UnderlineField
-              label="REAL NAME"
-              value={realName}
-              onChangeText={setRealName}
-              placeholder="Legal name"
-              autoCapitalize="words"
-              focused={focusedField === 'realName'}
-              onFocus={() => setFocusedField('realName')}
-              onBlur={() => setFocusedField(null)}
-            />
-
-            <View style={styles.demoRow}>
-              <View style={styles.demoCol}>
-                <Text style={styles.fieldLabel}>GENDER</Text>
-                <View style={styles.fieldCard}>
-                  <View style={styles.genderPillRow}>
-                    {GENDER_OPTIONS.map((opt) => {
-                      const active = gender === opt.key;
-                      return (
-                        <TouchableOpacity
-                          key={opt.key}
-                          style={[styles.genderPill, active && styles.genderPillActive]}
-                          onPress={() => setGender(opt.key)}
-                          activeOpacity={0.8}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                        >
-                          <Text
-                            style={[
-                              styles.genderPillText,
-                              active && styles.genderPillTextActive,
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {opt.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              </View>
-
-              <View style={styles.demoCol}>
-                <Text style={styles.fieldLabel}>AGE</Text>
-                <View
-                  style={[
-                    styles.fieldCard,
-                    styles.ageFieldRow,
-                    focusedField === 'age' && styles.fieldCardFocused,
-                  ]}
-                >
-                  <View style={styles.fieldRow}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. 25"
-                      placeholderTextColor={MUTED}
-                      value={age}
-                      onChangeText={(text) =>
-                        setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
-                      }
-                      keyboardType="number-pad"
-                      onFocus={() => setFocusedField('age')}
-                      onBlur={() => setFocusedField(null)}
-                    />
-                  </View>
-                </View>
-              </View>
+            <View style={styles.brandHeader}>
+              <Image
+                source={require('./assets/BAWAAL_white_full.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+              <Text style={styles.title}>Create Your Account</Text>
+              <Text style={styles.subtitle}>
+                Join BAWAAL to follow sports. It only takes a minute.
+              </Text>
             </View>
 
-            <UnderlineField
-              label="EMAIL ADDRESS"
-              value={email}
-              onChangeText={setEmail}
-              placeholder="name@example.com"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              focused={focusedField === 'email'}
-              onFocus={() => setFocusedField('email')}
-              onBlur={() => setFocusedField(null)}
-            />
+            <View style={styles.form}>
+              <InputCard
+                value={handle}
+                onChangeText={setHandle}
+                placeholder="Enter your user name"
+                autoCapitalize="words"
+                focused={focusedField === 'handle'}
+                onFocus={() => setFocusedField('handle')}
+                onBlur={() => setFocusedField(null)}
+                style={styles.fieldGap}
+              />
 
-            <UnderlineField
-              label="MOBILE NUMBER"
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+91 · OTP verification"
-              keyboardType="phone-pad"
-              focused={focusedField === 'phone'}
-              onFocus={() => setFocusedField('phone')}
-              onBlur={() => setFocusedField(null)}
-            />
+              <InputCard
+                value={realName}
+                onChangeText={setRealName}
+                placeholder="Enter your real name"
+                autoCapitalize="words"
+                focused={focusedField === 'realName'}
+                onFocus={() => setFocusedField('realName')}
+                onBlur={() => setFocusedField(null)}
+                style={styles.fieldGap}
+              />
 
-            <UnderlineField
-              label="LOCATION"
-              value={location}
-              onChangeText={setLocation}
-              placeholder="e.g. Mumbai, India / New York, USA"
-              autoCapitalize="words"
-              focused={focusedField === 'location'}
-              onFocus={() => setFocusedField('location')}
-              onBlur={() => setFocusedField(null)}
-              trailing={
-                locationFlag ? (
-                  <Text style={styles.flagEmoji}>{locationFlag}</Text>
-                ) : null
-              }
-            />
-            <Text style={styles.helperText}>
-              Used for regional matchmaking and scouting.
-              {locationMeta.country ? ` · ${locationMeta.country}` : ''}
-            </Text>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>ROLE</Text>
-              <View style={styles.fieldCard}>
-                <PillRow options={ROLES} selected={role} onSelect={setRole} />
+              <View style={styles.twoColRow}>
+                <InputCard
+                  value={age}
+                  onChangeText={(text) =>
+                    setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
+                  }
+                  placeholder="Enter your age"
+                  keyboardType="number-pad"
+                  focused={focusedField === 'age'}
+                  onFocus={() => setFocusedField('age')}
+                  onBlur={() => setFocusedField(null)}
+                  style={[styles.colHalf, styles.fieldGap]}
+                />
+                <SelectCard
+                  valueLabel={genderLabel}
+                  placeholder="Select your gender"
+                  onPress={() => setPicker('gender')}
+                  style={[styles.colHalf, styles.fieldGap]}
+                />
               </View>
-            </View>
 
-            <View style={styles.formGroup}>
-              <Text style={styles.fieldLabel}>SPORT INTEREST</Text>
-              <View style={styles.fieldCard}>
-                <HorizontalPillScroll
-                  options={SPORT_INTERESTS}
-                  selected={sportInterest}
-                  onSelect={setSportInterest}
+              <InputCard
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                focused={focusedField === 'email'}
+                onFocus={() => setFocusedField('email')}
+                onBlur={() => setFocusedField(null)}
+                style={styles.fieldGap}
+              />
+
+              <InputCard
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="+1 (555) 000-0000"
+                keyboardType="phone-pad"
+                focused={focusedField === 'phone'}
+                onFocus={() => setFocusedField('phone')}
+                onBlur={() => setFocusedField(null)}
+                style={styles.fieldGap}
+              />
+
+              <InputCard
+                value={location}
+                onChangeText={setLocation}
+                placeholder="City, Country"
+                autoCapitalize="words"
+                focused={focusedField === 'location'}
+                onFocus={() => setFocusedField('location')}
+                onBlur={() => setFocusedField(null)}
+                trailing={
+                  locationFlag && locationFlag !== '🌐' ? (
+                    <Text style={styles.flagEmoji}>{locationFlag}</Text>
+                  ) : null
+                }
+                style={styles.fieldGap}
+              />
+
+              <View style={styles.twoColRow}>
+                <SelectCard
+                  valueLabel={categoryLabel}
+                  placeholder="Select category"
+                  onPress={() => setPicker('category')}
+                  style={[styles.colHalf, styles.fieldGap]}
+                />
+                <SelectCard
+                  valueLabel={roleLabel}
+                  placeholder="Select your role"
+                  onPress={() => setPicker('role')}
+                  style={[styles.colHalf, styles.fieldGap]}
                 />
               </View>
             </View>
-
-            <TouchableOpacity
-              style={styles.termsContainer}
-              onPress={() => setTermsModalVisible(true)}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-                {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
-              </View>
-              <Text style={styles.termsText}>
-                I agree to the{' '}
-                <Text style={styles.termsLink}>Terms of Service & Privacy Policy</Text>
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.ctaBtn,
-                (!agreedToTerms || otpBusy) && styles.ctaBtnDisabled,
-              ]}
-              onPress={handleSendOtpTrigger}
-              activeOpacity={0.88}
-              disabled={otpBusy}
-              accessibilityRole="button"
-              accessibilityLabel="Enter the Arena"
-            >
-              <View style={styles.ctaGradientTrack} pointerEvents="none">
-                <View style={styles.ctaGradientDeep} />
-                <View style={styles.ctaGradientMid} />
-                <View style={styles.ctaGradientLight} />
-              </View>
-              <Text
-                style={[
-                  styles.ctaBtnText,
-                  (!agreedToTerms || otpBusy) && styles.ctaBtnTextDisabled,
-                ]}
-              >
-                {otpBusy && !otpModalVisible ? 'SENDING…' : 'ENTER THE ARENA'}
-              </Text>
-            </TouchableOpacity>
-          </View>
           </View>
         </ScrollView>
+
+        <View
+          style={[
+            styles.stickyFooter,
+            { paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.termsRow}
+            onPress={onTermsRowPress}
+            activeOpacity={0.85}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: agreedToTerms }}
+          >
+            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+              {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
+            </View>
+            <Text style={styles.termsText}>
+              I agree to{' '}
+              <Text
+                style={styles.termsLink}
+                onPress={() => setTermsModalVisible(true)}
+              >
+                Terms and Conditions
+              </Text>
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.continueBtn,
+              (!agreedToTerms || otpBusy) && styles.continueBtnDisabled,
+            ]}
+            onPress={handleSendOtpTrigger}
+            activeOpacity={0.88}
+            disabled={otpBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Continue"
+          >
+            <Text style={styles.continueBtnText}>
+              {otpBusy && !otpModalVisible ? 'Sending…' : 'Continue'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
 
-      {/* Terms Modal */}
+      <OptionPickerModal
+        visible={picker === 'gender'}
+        title="Select your gender"
+        options={GENDER_OPTIONS}
+        selectedKey={gender}
+        onSelect={setGender}
+        onClose={() => setPicker(null)}
+      />
+      <OptionPickerModal
+        visible={picker === 'category'}
+        title="Select category"
+        options={SPORT_INTERESTS}
+        selectedKey={sportInterest}
+        onSelect={setSportInterest}
+        onClose={() => setPicker(null)}
+      />
+      <OptionPickerModal
+        visible={picker === 'role'}
+        title="Select your role"
+        options={ROLES}
+        selectedKey={role}
+        onSelect={setRole}
+        onClose={() => setPicker(null)}
+      />
+
       <Modal visible={termsModalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.termsModal]}>
@@ -630,7 +611,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
         </View>
       </Modal>
 
-      {/* OTP Modal — stealth black + B solo watermark */}
       <Modal visible={otpModalVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
@@ -678,16 +658,14 @@ export default function RoleSelection({ onCompleteRegistration }) {
               </View>
 
               <TouchableOpacity
-                style={[styles.ctaBtn, otpBusy && styles.ctaBtnDisabled]}
+                style={[styles.otpCtaBtn, otpBusy && styles.continueBtnDisabled]}
                 onPress={handleEnterArena}
                 activeOpacity={0.85}
                 disabled={otpBusy}
                 accessibilityRole="button"
                 accessibilityLabel="Submit verify OTP"
               >
-                <Text
-                  style={[styles.ctaBtnText, otpBusy && styles.ctaBtnTextDisabled]}
-                >
+                <Text style={styles.otpCtaBtnText}>
                   {otpBusy ? 'VERIFYING…' : 'SUBMIT / VERIFY'}
                 </Text>
               </TouchableOpacity>
@@ -713,10 +691,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
+  scroll: {
+    flex: 1,
+    backgroundColor: BG,
+  },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 56,
+    paddingHorizontal: 20,
+    paddingTop: 8,
     alignItems: 'center',
   },
   formShell: {
@@ -726,206 +707,113 @@ const styles = StyleSheet.create({
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 22,
     width: '100%',
   },
   logoImage: {
-    width: 280,
+    width: 260,
     maxWidth: '100%',
-    height: 120,
-    marginBottom: 12,
+    height: 110,
+    marginBottom: 16,
   },
-  brandSubheader: {
-    fontSize: 13,
-    color: OFF_WHITE,
+  title: {
+    color: WHITE,
+    fontSize: 24,
+    fontWeight: '800',
     textAlign: 'center',
-    fontWeight: '400',
-    lineHeight: 19,
-    paddingHorizontal: 12,
-    opacity: 0.85,
+    letterSpacing: 0.2,
+  },
+  subtitle: {
+    marginTop: 8,
+    color: PLACEHOLDER,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 8,
   },
   form: {
     width: '100%',
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: ORANGE,
-    letterSpacing: 2.2,
-    textAlign: 'center',
+  fieldGap: {
+    marginBottom: 12,
   },
-  cardHint: {
-    fontSize: 12,
-    color: MUTED,
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  formGroup: {
-    marginBottom: 16,
-  },
-  fieldLabel: {
-    color: MUTED,
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-  },
-  fieldCard: {
-    backgroundColor: CARD,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  fieldCardFocused: {
-    borderColor: ORANGE,
-  },
-  fieldRow: {
+  twoColRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 12,
+    width: '100%',
   },
-  fieldLeading: {
-    marginRight: 8,
-  },
-  fieldTrailing: {
-    marginLeft: 8,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    paddingVertical: 6,
-    paddingHorizontal: 0,
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  flagEmoji: {
-    fontSize: 20,
-    lineHeight: 24,
-  },
-  helperText: {
-    marginTop: -10,
-    marginBottom: 18,
-    fontSize: 11,
-    color: MUTED,
-    lineHeight: 15,
-  },
-  demoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 18,
-    alignItems: 'flex-start',
-  },
-  demoCol: {
+  colHalf: {
     flex: 1,
     minWidth: 0,
   },
-  genderPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-    alignItems: 'center',
-    gap: 6,
-  },
-  genderPill: {
-    flexShrink: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 999,
+  inputCard: {
+    height: 50,
+    backgroundColor: CARD,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: LINE,
+    borderColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputCardFocused: {
+    borderColor: ORANGE,
+  },
+  selectCard: {
+    justifyContent: 'space-between',
+  },
+  input: {
+    flex: 1,
+    height: '100%',
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '600',
+    paddingVertical: 0,
     backgroundColor: 'transparent',
   },
-  genderPillActive: {
-    borderColor: ORANGE,
-    backgroundColor: ORANGE,
+  inputTrailing: {
+    marginLeft: 8,
   },
-  genderPillText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  genderPillTextActive: {
-    color: BG,
-    fontWeight: '900',
-  },
-  ageFieldRow: {
-    marginTop: 0,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  pillWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  pill: {
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-    marginRight: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'transparent',
-  },
-  pillActive: {
-    borderBottomColor: ORANGE,
-  },
-  pillText: {
-    color: MUTED,
-    fontSize: 13,
+  selectValue: {
+    flex: 1,
+    color: WHITE,
+    fontSize: 14,
     fontWeight: '600',
-    letterSpacing: 0.5,
-  },
-  pillTextActive: {
-    color: ORANGE,
-    fontWeight: '800',
-  },
-  sportScroll: {
-    flexGrow: 0,
-    marginTop: 2,
-  },
-  sportScrollContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingRight: 8,
   },
-  chipPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: 1,
-    borderColor: LINE,
-    marginRight: 8,
+  selectPlaceholder: {
+    color: PLACEHOLDER,
+    fontWeight: '500',
   },
-  chipPillActive: {
-    backgroundColor: ORANGE,
-    borderColor: ORANGE,
+  chevron: {
+    color: PLACEHOLDER,
+    fontSize: 10,
+    fontWeight: '700',
   },
-  chipPillText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  flagEmoji: {
+    fontSize: 18,
+    lineHeight: 22,
   },
-  chipPillTextActive: {
-    color: BG,
+  stickyFooter: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    backgroundColor: BG,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
   },
-  termsContainer: {
+  termsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 22,
-    gap: 12,
+    gap: 10,
+    marginBottom: 12,
   },
   checkbox: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 5,
     borderWidth: 1.5,
     borderColor: ORANGE,
     alignItems: 'center',
@@ -939,75 +827,97 @@ const styles = StyleSheet.create({
   checkmark: {
     color: BG,
     fontWeight: '900',
-    fontSize: 11,
+    fontSize: 12,
   },
   termsText: {
     color: OFF_WHITE,
-    fontSize: 12,
+    fontSize: 13,
     flex: 1,
-    lineHeight: 17,
+    lineHeight: 18,
   },
   termsLink: {
     color: ORANGE,
-    textDecorationLine: 'underline',
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  ctaBtn: {
+  continueBtn: {
     width: '100%',
-    borderRadius: 14,
-    paddingVertical: 18,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: ORANGE,
-    position: 'relative',
-    ...Platform.select({
-      ios: {
-        shadowColor: ORANGE,
-        shadowOpacity: 0.45,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: { elevation: 8 },
-      default: {},
-    }),
   },
-  ctaGradientTrack: {
-    ...StyleSheet.absoluteFillObject,
-    flexDirection: 'row',
-  },
-  ctaGradientDeep: {
-    flex: 1,
-    backgroundColor: ORANGE_DEEP,
-  },
-  ctaGradientMid: {
-    flex: 1.2,
-    backgroundColor: ORANGE,
-  },
-  ctaGradientLight: {
-    flex: 1,
-    backgroundColor: ORANGE_LIGHT,
-  },
-  ctaBtnDisabled: {
+  continueBtnDisabled: {
     opacity: 0.45,
   },
-  ctaBtnText: {
-    color: '#000000',
-    fontWeight: '900',
-    fontSize: 15,
-    letterSpacing: 1.8,
-    zIndex: 1,
+  continueBtnText: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
-  ctaBtnTextDisabled: {
-    color: '#1A1A1A',
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'flex-end',
+  },
+  pickerSheet: {
+    backgroundColor: CARD,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,102,0,0.35)',
+    paddingTop: 16,
+    paddingBottom: 20,
+    maxHeight: '55%',
+  },
+  pickerTitle: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  pickerList: {
+    paddingHorizontal: 12,
+  },
+  pickerRow: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  pickerRowActive: {
+    backgroundColor: 'rgba(255, 102, 0, 0.16)',
+  },
+  pickerRowText: {
+    color: OFF_WHITE,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  pickerRowTextActive: {
+    color: ORANGE,
+    fontWeight: '800',
+  },
+  pickerCancel: {
+    marginTop: 8,
+    marginHorizontal: 12,
+    height: 46,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  pickerCancelText: {
+    color: WHITE,
+    fontWeight: '700',
+    fontSize: 14,
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: BG,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 0,
-    margin: 0,
     paddingHorizontal: 16,
   },
   modalContent: {
@@ -1032,7 +942,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   legalHeading: {
-    color: '#FFFFFF',
+    color: WHITE,
     fontSize: 13,
     fontWeight: '800',
     marginTop: 14,
@@ -1049,23 +959,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   acceptTermsBtn: {
-    backgroundColor: 'transparent',
-    borderRadius: 0,
+    backgroundColor: ORANGE,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
   acceptTermsBtnDisabled: {
-    backgroundColor: 'transparent',
     opacity: 0.45,
   },
   acceptTermsBtnText: {
-    color: '#FFFFFF',
+    color: WHITE,
     fontWeight: '900',
     fontSize: 13,
-    letterSpacing: 1.4,
+    letterSpacing: 1.2,
   },
   acceptTermsBtnTextDisabled: {
-    color: MUTED,
+    color: WHITE,
   },
   otpModalContent: {
     backgroundColor: BG,
@@ -1117,5 +1026,19 @@ const styles = StyleSheet.create({
   otpInputContainer: {
     marginBottom: 28,
     alignItems: 'center',
+  },
+  otpCtaBtn: {
+    width: '100%',
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpCtaBtnText: {
+    color: WHITE,
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 1.4,
   },
 });
