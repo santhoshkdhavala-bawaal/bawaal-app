@@ -29,11 +29,13 @@ function GameOnHub({
   onClose,
   selectedFeedTier = 'all',
   onSelectFeedTier,
+  selectedSportFilter = null,
+  onSelectSportFilter,
   onOpenSportHubMap,
 }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [selectedSport, setSelectedSport] = useState(null);
+  const selectedSport = selectedSportFilter;
 
   const openMap = () => {
     onClose?.();
@@ -175,11 +177,11 @@ function GameOnHub({
                               styles.sportChip,
                               active && styles.sportChipActive,
                             ]}
-                            onPress={() =>
-                              setSelectedSport((prev) =>
-                                prev === sport ? null : sport
-                              )
-                            }
+                            onPress={() => {
+                              const next = selectedSport === sport ? null : sport;
+                              onSelectSportFilter?.(next);
+                              onClose?.();
+                            }}
                             activeOpacity={0.85}
                             accessibilityRole="button"
                             accessibilityState={{ selected: active }}

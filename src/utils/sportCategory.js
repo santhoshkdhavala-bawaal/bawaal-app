@@ -69,7 +69,48 @@ const ALIASES = {
   golf: 'OTHERS',
   baseball: 'OTHERS',
   rugby: 'OTHERS',
+  volleyball: 'COURT KINGS',
+  hockey: 'OTHERS',
+  'table tennis': 'COURT KINGS',
+  pickleball: 'COURT KINGS',
+  kickboxing: 'COMBAT',
+  'muay thai': 'COMBAT',
+  'formula 1': 'THROTTLE',
+  motogp: 'THROTTLE',
+  'supercross / motocross': 'THROTTLE',
+  supercross: 'THROTTLE',
+  motocross: 'THROTTLE',
+  nascar: 'THROTTLE',
+  cycling: 'THROTTLE',
+  bmx: 'THROTTLE',
+  skateboarding: 'THROTTLE',
+  sailing: 'WAVE & BLADE',
+  rowing: 'WAVE & BLADE',
+  'scuba diving': 'WAVE & BLADE',
+  'white water rafting': 'WAVE & BLADE',
+  snowboarding: 'SKY & SUMMIT',
+  skiing: 'SKY & SUMMIT',
+  'rock climbing': 'SKY & SUMMIT',
+  parkour: 'SKY & SUMMIT',
+  paragliding: 'SKY & SUMMIT',
+  skydiving: 'SKY & SUMMIT',
+  'bungee jumping': 'SKY & SUMMIT',
+  weightlifting: 'GYM',
+  powerlifting: 'GYM',
+  crossfit: 'GYM',
+  bodybuilding: 'GYM',
+  archery: 'OTHERS',
+  battles: 'OTHERS',
 };
+
+/** Filter Arena feed cards by GAME ON sport chip / BAWAAL taxonomy key. */
+export function filterArenaFeedBySport(items, sportLabel) {
+  const list = Array.isArray(items) ? items : [];
+  if (sportLabel == null || String(sportLabel).trim() === '') return list;
+  const tab = canonicalizeSport(sportLabel) || 'ALL';
+  if (!tab || tab === 'ALL') return list;
+  return list.filter((item) => matchesSportFilter(item, tab));
+}
 
 /**
  * Normalize any sport/category string → canonical tab key (or null).

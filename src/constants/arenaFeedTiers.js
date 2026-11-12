@@ -3,6 +3,8 @@
  * Keys align with PostDestinationSelector ArenaTier values.
  */
 
+import { filterArenaFeedBySport } from '../utils/sportCategory';
+
 export const ARENA_FEED_TIER_ALL = 'all';
 
 export const ARENA_FEED_TIERS = [
@@ -79,4 +81,13 @@ export function filterArenaFeedByTier(items, tierId) {
   const key = String(tierId || 'all').toLowerCase();
   if (!key || key === 'all') return list;
   return list.filter((item) => resolveArenaFeedTier(item) === key);
+}
+
+/**
+ * Apply battle-tier then sport filters (GAME ON drawer → Arena feed).
+ * Sport filtering uses `filterArenaFeedBySport` from sportCategory.
+ */
+export function applyArenaFeedFilters(items, { tierId, sportLabel } = {}) {
+  const byTier = filterArenaFeedByTier(items, tierId);
+  return filterArenaFeedBySport(byTier, sportLabel);
 }

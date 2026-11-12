@@ -1,0 +1,47 @@
+---
+description: Locked BAWAAL data/sync layer — Supabase tables, feed filters, reel social, local-first hydrate
+alwaysApply: true
+---
+
+# BAWAAL data integration & app logic (LOCKED)
+
+Production contract for cloud sync, feed hydration, GAME ON filters, and reel social actions. Soft-fail offline / schema mismatch — never block Arena UX.
+
+## 1. Tables, auth, media
+
+| Surface | Contract |
+|---|---|
+| Profiles | `public.profiles` uuid → `auth.users`; RLS on; `upsertRegisteredProfile` after OTP (`profilesService.js`, `ENSURE_PROFILES_SPORTS_HUBS.sql`) |
+| Auth | Phone OTP `signInWithOtp` → `verifyOtp` (`authOtp.js`); session via AsyncStorage (`lib/supabase.js` / `sessionStore.js`) |
+| Arena challenges | `public.arena_challenges` — title, sport, video_url, user_id, created_at; RLS select/insert; realtime optional (`ENSURE_ARENA_CHALLENGES.sql`) |
+| Videos / reels | Storage bucket `bawaalvideos` → public HTTPS URLs (`uploadService.js`); rows upsert `public.videos` onConflict `id` (`arenaPostsService.js`) |
+| DMs | `public.direct_messages` (`ENSURE_DIRECT_MESSAGES.sql`) |
+| Reel social | `reel_likes` / `reel_follows` / `reel_reposts` / `reel_tags` / `reel_banter` (`ENSURE_REEL_SOCIAL.sql`) |
+
+## 2. Service layer & feed filters
+
+- Fetch: `fetchArenaChallenges` / ArenaFeed hydrate — newest `created_at` first; soft schema fallbacks.
+- Battle modes: `ARENA_FEED_TIERS` → `filterArenaFeedByTier` / `applyArenaFeedFilters`.
+- Sports chips: `GAME_ON_SPORT_SECTIONS` → canonicalize via `sportCategory.js` → `filterArenaFeedBySport`.
+- Active filters persist in `arenaFilterStore.js` (AsyncStorage + subscribers).
+- Reel ⋮ actions: `dispatchReelSocialAction` (`reelSocialService.js`) — local queue first, cloud insert best-effort.
+
+## 3. Local-first hydrate
+
+- `arenaFeedStore.js`: local AsyncStorage → remote merge; shared `hydratePromise`; never throw.
+- `sessionStore.js`: registration session for Passport / profile.
+- Offline / RLS / missing table → device cache + Storage meta; UI stays responsive.
+
+## Locked files
+
+- `arenaFeedStore.js`, `sessionStore.js`, `src/stores/arenaFilterStore.js`
+- `src/services/{supabase,authOtp,profilesService,uploadService,arenaChallengeService,arenaPostsService,reelSocialService}.js`
+- `src/constants/arenaFeedTiers.js`, `src/utils/sportCategory.js`
+- `supabase/ENSURE_{PROFILES_SPORTS_HUBS,ARENA_CHALLENGES,DIRECT_MESSAGES,REEL_SOCIAL}.sql`
+
+## Related
+
+- UI/drawer: `bawaal-v2-arena-ui-locked.mdc`
+- Playback upsert: `bawaal-arena-video-playback-locked.mdc`
+- Onboarding auth: `bawaal-v1-fullstack-locked.mdc`
+---

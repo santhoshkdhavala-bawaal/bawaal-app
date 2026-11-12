@@ -58,9 +58,16 @@ import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
 import {
   ARENA_FEED_TIER_ALL,
-  filterArenaFeedByTier,
-  resolveArenaFeedTier,
+  applyArenaFeedFilters,
 } from './src/constants/arenaFeedTiers';
+import {
+  getArenaFilters,
+  hydrateArenaFilters,
+  setArenaFeedTier,
+  setArenaSportFilter,
+  subscribeArenaFilters,
+} from './src/stores/arenaFilterStore';
+import { dispatchReelSocialAction } from './src/services/reelSocialService';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -799,11 +806,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setMuted((m) => !m);
   }, []);
 
-  const onReelAction = useCallback((actionId) => {
-    if (actionId === 'banter') {
-      setBanterOpen(true);
-    }
-  }, []);
+  const onReelAction = useCallback(
+    (actionId) => {
+      if (actionId === 'banter') {
+        setBanterOpen(true);
+      }
+      void dispatchReelSocialAction(actionId, item).catch((err) => {
+        console.warn('[ArenaFeed] reel social:', err?.message || err);
+      });
+    },
+    [item]
+  );
 
   return (
     <View style={styles.reelCard}>
@@ -1072,7 +1085,13 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [selectedFeedTier, setSelectedFeedTier] = useState(ARENA_FEED_TIER_ALL);
+  const initialFilters = getArenaFilters();
+  const [selectedFeedTier, setSelectedFeedTier] = useState(
+    initialFilters.tierId || ARENA_FEED_TIER_ALL
+  );
+  const [selectedSportFilter, setSelectedSportFilter] = useState(
+    initialFilters.sportLabel
+  );
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
   const {
     items: videoFeedItems,
@@ -1605,11 +1624,32 @@ export default function ArenaFeed({ navigation, route }) {
     return sortByCreatedAtDesc(out);
   }, [videos, feedItems]);
 
-  /** Tier-filtered infinite feed (All = unfiltered). */
+  /** Tier + sport filtered infinite feed (GAME ON drawer). */
   const filteredChallengeVideoFeed = useMemo(
-    () => filterArenaFeedByTier(challengeVideoFeed, selectedFeedTier),
-    [challengeVideoFeed, selectedFeedTier]
+    () =>
+      applyArenaFeedFilters(challengeVideoFeed, {
+        tierId: selectedFeedTier,
+        sportLabel: selectedSportFilter,
+      }),
+    [challengeVideoFeed, selectedFeedTier, selectedSportFilter]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    hydrateArenaFilters().then((f) => {
+      if (cancelled || !f) return;
+      setSelectedFeedTier(f.tierId || ARENA_FEED_TIER_ALL);
+      setSelectedSportFilter(f.sportLabel);
+    });
+    const unsub = subscribeArenaFilters((f) => {
+      setSelectedFeedTier(f.tierId || ARENA_FEED_TIER_ALL);
+      setSelectedSportFilter(f.sportLabel);
+    });
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
 
   useEffect(() => {
     setActiveIndex(0);
@@ -1620,7 +1660,7 @@ export default function ArenaFeed({ navigation, route }) {
         /* ignore */
       }
     });
-  }, [selectedFeedTier]);
+  }, [selectedFeedTier, selectedSportFilter]);
 
   const openShelfCallout = useCallback(
     (item) => {
@@ -1635,7 +1675,14 @@ export default function ArenaFeed({ navigation, route }) {
   );
 
   const onSelectFeedTier = useCallback((tierId) => {
-    setSelectedFeedTier(tierId || ARENA_FEED_TIER_ALL);
+    const next = tierId || ARENA_FEED_TIER_ALL;
+    setSelectedFeedTier(next);
+    setArenaFeedTier(next);
+  }, []);
+
+  const onSelectSportFilter = useCallback((sportLabel) => {
+    setSelectedSportFilter(sportLabel);
+    setArenaSportFilter(sportLabel);
   }, []);
 
   const openReel = useCallback((item, opts) => {
@@ -1902,7 +1949,7 @@ export default function ArenaFeed({ navigation, route }) {
             Math.max(filteredChallengeVideoFeed.length, 1)
           )}
           getItemLayout={getFeedItemLayout}
-          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${filteredChallengeVideoFeed.length}:${selectedFeedTier}`}
+          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${filteredChallengeVideoFeed.length}:${selectedFeedTier}:${selectedSportFilter || ''}`}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1931,6 +1978,8 @@ export default function ArenaFeed({ navigation, route }) {
         onClose={() => setGameOnOpen(false)}
         selectedFeedTier={selectedFeedTier}
         onSelectFeedTier={onSelectFeedTier}
+        selectedSportFilter={selectedSportFilter}
+        onSelectSportFilter={onSelectSportFilter}
         onOpenSportHubMap={() => navigation?.navigate?.('SportHubMap')}
       />
       <NotificationsDrawer
