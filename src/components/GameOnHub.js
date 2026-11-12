@@ -155,7 +155,12 @@ function GameOnHub({
               {GAME_ON_SPORT_SECTIONS.map((group) => (
                 <View key={group.id} style={styles.sportGroup}>
                   <Text style={styles.sportGroupTitle}>{group.title}</Text>
-                  <View style={styles.chipWrap}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chipRow}
+                    keyboardShouldPersistTaps="handled"
+                  >
                     {group.sports.map((sport) => {
                       const active = selectedSport === sport;
                       return (
@@ -183,7 +188,7 @@ function GameOnHub({
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
                 </View>
               ))}
             </View>
@@ -358,7 +363,6 @@ const styles = StyleSheet.create({
     color: WHITE,
   },
   sportGroup: {
-    paddingHorizontal: 16,
     marginBottom: 14,
   },
   sportGroupTitle: {
@@ -367,11 +371,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.4,
     marginBottom: 8,
+    paddingHorizontal: 16,
   },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  chipRow: {
+    paddingHorizontal: 16,
     gap: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
   },
   sportChip: {
     paddingHorizontal: 12,
@@ -380,6 +386,7 @@ const styles = StyleSheet.create({
     backgroundColor: SURFACE,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.16)',
+    flexShrink: 0,
   },
   sportChipActive: {
     borderColor: ACCENT,

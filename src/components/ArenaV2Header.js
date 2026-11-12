@@ -165,7 +165,7 @@ const styles = StyleSheet.create({
   wordmark: {
     width: 168,
     height: 34,
-    marginLeft: 4,
+    marginLeft: 6,
   },
   arenaLabel: {
     marginTop: 4,
