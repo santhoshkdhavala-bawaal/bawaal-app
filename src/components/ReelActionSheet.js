@@ -1,8 +1,9 @@
 /**
- * Instagram / TikTok-style floating vertical action stack on the video canvas.
+ * LOCKED — Instagram / TikTok-style floating vertical action stack on the video canvas.
  * (DM / Like / Follow·Unfollow / Share / Save / Banter / Comment / Send).
  * Follow lives only here — never as a canvas overlay CTA.
  * Renders inline (no Modal) so the reel keeps playing underneath.
+ * Geometry from `src/constants/arenaReelOverlay.js` — clears top-right mute.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -18,10 +19,14 @@ import {
   isFollowingReelOwner,
   setFollowingReelOwner,
 } from '../services/reelSocialService';
+import {
+  BAWAAL_ORANGE,
+  REEL_ACTION_STACK,
+} from '../constants/arenaReelOverlay';
 
 const WHITE = '#FFFFFF';
-const ACCENT = '#FF5500';
-const ICON_SIZE = 28;
+const ACCENT = BAWAAL_ORANGE;
+const ICON_SIZE = REEL_ACTION_STACK.iconSize;
 
 const BASE_ACTIONS = [
   { id: 'dm', label: 'DM', icon: require('../../assets/bawaal_dm.png') },
@@ -169,18 +174,18 @@ const styles = StyleSheet.create({
   },
   stack: {
     position: 'absolute',
-    right: 16,
-    bottom: 100,
-    // Keep DM below mute / header chrome on the right rail
-    top: 96,
-    zIndex: 20,
+    right: REEL_ACTION_STACK.right,
+    bottom: REEL_ACTION_STACK.bottom,
+    // Clears mute (top:16, h:36) on the same right rail
+    top: REEL_ACTION_STACK.top,
+    zIndex: REEL_ACTION_STACK.zIndex,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingTop: 12,
+    paddingTop: 8,
   },
   item: {
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: REEL_ACTION_STACK.itemGap,
     minWidth: 56,
   },
   icon: {

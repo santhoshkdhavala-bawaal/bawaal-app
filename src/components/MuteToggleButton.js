@@ -1,10 +1,14 @@
 /**
- * Floating mute / unmute — top-right video overlay, flat BAWAAL orange icon.
+ * LOCKED — top-right flat mute / unmute (BAWAAL orange, no backdrop).
+ * Geometry from `src/constants/arenaReelOverlay.js`.
  */
 import React, { memo } from 'react';
 import { Pressable, Image, StyleSheet } from 'react-native';
+import {
+  BAWAAL_ORANGE,
+  REEL_MUTE,
+} from '../constants/arenaReelOverlay';
 
-const BAWAAL_ORANGE = '#FF5500';
 const ICON_MUTED = require('../../assets/bmute.png');
 const ICON_UNMUTED = require('../../assets/bunmute.png');
 
@@ -33,22 +37,22 @@ function MuteToggleButton({ muted, onPress, style }) {
 
 const styles = StyleSheet.create({
   hit: {
-    width: 36,
-    height: 36,
+    width: REEL_MUTE.width,
+    height: REEL_MUTE.height,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
     borderWidth: 0,
-    zIndex: 99,
+    zIndex: REEL_MUTE.zIndex,
   },
   hitPressed: {
     opacity: 0.75,
     transform: [{ scale: 0.94 }],
   },
   icon: {
-    width: 28,
-    height: 28,
+    width: REEL_MUTE.iconSize,
+    height: REEL_MUTE.iconSize,
     tintColor: BAWAAL_ORANGE,
   },
 });

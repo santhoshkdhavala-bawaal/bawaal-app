@@ -62,6 +62,11 @@ import {
   resolveArenaFeedTier,
 } from './src/constants/arenaFeedTiers';
 import {
+  BAWAAL_ORANGE,
+  REEL_MORE,
+  REEL_MUTE,
+} from './src/constants/arenaReelOverlay';
+import {
   getArenaFilters,
   hydrateArenaFilters,
   setArenaFeedTier,
@@ -899,7 +904,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
         reel={item}
         onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
-        style={{ bottom: tabBarHeight + 72 }}
+        style={{ bottom: Math.max(tabBarHeight + 72, 100) }}
       />
       <BanterBottomSheet
         visible={banterOpen}
@@ -2205,41 +2210,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     overflow: 'hidden',
   },
+  /** LOCKED — top-right mute (arenaReelOverlay.REEL_MUTE) */
   challengeMuteBtn: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 99,
+    top: REEL_MUTE.top,
+    right: REEL_MUTE.right,
+    zIndex: REEL_MUTE.zIndex,
   },
+  /** LOCKED — bottom-right ⋮ (arenaReelOverlay.REEL_MORE) */
   challengeMoreBtn: {
     position: 'absolute',
-    bottom: 24,
-    right: 16,
-    zIndex: 40,
-    width: 40,
-    height: 40,
+    bottom: REEL_MORE.bottom,
+    right: REEL_MORE.right,
+    zIndex: REEL_MORE.zIndex,
+    width: REEL_MORE.width,
+    height: REEL_MORE.height,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   reelMuteBtn: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 99,
+    top: REEL_MUTE.top,
+    right: REEL_MUTE.right,
+    zIndex: REEL_MUTE.zIndex,
   },
   reelMoreBtn: {
     position: 'absolute',
-    right: 12,
-    zIndex: 40,
-    width: 40,
-    height: 40,
+    right: REEL_MORE.right,
+    zIndex: REEL_MORE.zIndex,
+    width: REEL_MORE.width,
+    height: REEL_MORE.height,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   reelMoreText: {
-    color: '#FF5500',
+    color: BAWAAL_ORANGE,
     fontSize: 22,
     fontWeight: '900',
     lineHeight: 24,

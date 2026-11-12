@@ -36,7 +36,7 @@ Docs: https://docs.expo.dev/eas/index.md
 
 ## UI baseline (locked)
 
-Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header + GAME ON drawer (search / NEAR ME / battle + sports rows / reel mute+⋮) are locked separately — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc` and `.cursor/rules/bawaal-ui-baseline.mdc`.
+Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header + GAME ON drawer (search / NEAR ME / battle + sports rows) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
 
 ## ChallengeCam / UniversalCamera (locked)
 

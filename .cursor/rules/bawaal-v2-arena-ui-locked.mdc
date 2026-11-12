@@ -25,14 +25,27 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 - Sports chips from `GAME_ON_SPORT_SECTIONS` (`src/constants/gameOnSports.js`) — **7** titled rows, each a **horizontal** `ScrollView` (`horizontal`, `showsHorizontalScrollIndicator={false}`) beside the title
 - **No** live scores / `ScoresSportsPanel` / vertical chip wrap inside the drawer
 
-## 3. Reel player chrome (`VideoItem` + `MuteToggleButton` + `ReelActionSheet`)
+## 3. Arena video feed overlay (FINAL — do not shift)
+
+Canonical tokens: `src/constants/arenaReelOverlay.js` (`REEL_MUTE` · `REEL_MORE` · `REEL_ACTION_STACK` · `BAWAAL_ORANGE`).
+
+| Control | Locked geometry |
+|---|---|
+| Mute / unmute | `position: 'absolute'`, `top: 16`, `right: 16`, `width/height: 36`, `zIndex: 99` |
+| Mute look | Flat `bmute.png` / `bunmute.png` tinted `#FF5500` — **no** backdrop, circle, or border |
+| `⋮` trigger | Bottom-right rail — transparent hit target, orange `#FF5500` glyph (no dark circular patch) |
+| Action stack | `right: 16`, `bottom: 100`, `top: 64` (`justifyContent: 'flex-end'`) — clears mute on the same rail |
+| Stack actions | **DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send** via local `assets/bawaal_*.png` (24–28px) + labels |
+| Stack dismiss | Outside tap / ✕ — **no** Modal sheet; video keeps playing |
+
+Also locked on this surface:
 
 - No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
-- Top-right mute: `bmute.png` / `bunmute.png` tinted `#FF5500` (`position: 'absolute'`, `top: 16`, `right: 16`, `width/height: 36`, `zIndex: 99`) — flat icon, no backdrop patch
-- Bottom-right `⋮` — transparent hit target, orange `#FF5500` glyph (no dark circular patch); toggles on-video floating stack
-- Floating stack (`right: 16`, `bottom: 100`, `top: 96`, `justifyContent: 'flex-end'`): **DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send** with `bawaal_*.png` icons + labels; dismiss via outside tap / ✕; video keeps playing (no Modal sheet)
+- Video shell: `position: 'relative'`, full-bleed `COVER` player, continuous background playback while overlays toggle
 - No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` stack
 - No sport-category pills on clip surfaces (see UI baseline §3)
+
+**Never re-add:** mute backdrop patches, bottom-sheet action modal, canvas Follow button, shifting mute off `top:16`/`right:16`.
 
 ## 4. Onboarding polish (Registration / Terms / OTP)
 
@@ -43,7 +56,7 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 ## Locked files
 
 - `src/components/ArenaV2Header.js`, `GameOnHub.js`, `NotificationsDrawer.js`, `ReelActionSheet.js`, `MuteToggleButton.js`
-- `src/constants/gameOnSports.js`, `src/constants/arenaFeedTiers.js`
+- `src/constants/gameOnSports.js`, `src/constants/arenaFeedTiers.js`, `src/constants/arenaReelOverlay.js`
 - Arena wiring in `ArenaFeed.js` (header + drawer + reel actions)
 - Related: `VideoItem.js`, `src/native/stubs/expo-av.js`
 

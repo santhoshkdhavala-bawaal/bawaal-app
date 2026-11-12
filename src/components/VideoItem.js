@@ -109,6 +109,7 @@ VideoItem.displayName = 'VideoItem';
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    width: '100%',
     backgroundColor: '#000',
     overflow: 'hidden',
   },
@@ -116,9 +117,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   video: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
   },
   missingWrap: {
     ...StyleSheet.absoluteFillObject,
