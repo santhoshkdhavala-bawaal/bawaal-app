@@ -44,7 +44,7 @@ const ROLES = [
 const SPORT_INTERESTS = BAWAAL_SPORTS_WITHOUT_ALL;
 
 const LOGO_FULL = require('./assets/BAWAAL_white_full.png');
-const LOGO_TAGLINE = require('./assets/BAWAAL_tagline.png');
+const LOGO_TAGLINE = require('./assets/BAWAAL_text.png');
 
 const GENDER_OPTIONS = [
   { key: 'male', label: 'Male' },

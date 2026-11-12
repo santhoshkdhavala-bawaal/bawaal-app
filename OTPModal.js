@@ -70,7 +70,7 @@ function OTPModalBody({ onVerify, onNotice }) {
           accessibilityLabel="BAWAAL"
         />
         <Image
-          source={require('./assets/BAWAAL_tagline.png')}
+          source={require('./assets/BAWAAL_text.png')}
           style={styles.tagline}
           resizeMode="contain"
           accessibilityLabel="own your chaos"

@@ -39,7 +39,7 @@ export default function TermsModal({ visible, onAgree, onBack }) {
                 accessibilityLabel="BAWAAL"
               />
               <Image
-                source={require('./assets/BAWAAL_tagline.png')}
+                source={require('./assets/BAWAAL_text.png')}
                 style={styles.taglineLogo}
                 resizeMode="contain"
                 accessibilityLabel="own your chaos"
