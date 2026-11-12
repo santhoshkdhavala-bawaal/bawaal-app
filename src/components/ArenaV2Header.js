@@ -147,8 +147,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   combinedLogo: {
-    height: 40,
-    width: 196,
+    height: 36,
+    width: 180,
     alignSelf: 'flex-start',
   },
   arenaLabel: {

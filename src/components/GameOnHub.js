@@ -159,7 +159,8 @@ function GameOnHub({
                       {group.title}
                     </Text>
                     <ScrollView
-                      horizontal
+                      horizontal={true}
+                      nestedScrollEnabled
                       showsHorizontalScrollIndicator={false}
                       contentContainerStyle={styles.chipRow}
                       keyboardShouldPersistTaps="handled"
@@ -189,6 +190,7 @@ function GameOnHub({
                                 styles.sportChipText,
                                 active && styles.sportChipTextActive,
                               ]}
+                              numberOfLines={1}
                             >
                               {sport}
                             </Text>
@@ -377,29 +379,32 @@ const styles = StyleSheet.create({
   sportGroupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    flexWrap: 'nowrap',
   },
   sportGroupTitle: {
     color: WHITE,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.3,
-    width: 92,
+    width: 96,
+    marginRight: 10,
     flexShrink: 0,
   },
   chipScroll: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
     minWidth: 0,
   },
   chipRow: {
     paddingRight: 16,
-    gap: 8,
     alignItems: 'center',
     flexDirection: 'row',
+    flexWrap: 'nowrap',
   },
   sportChip: {
     paddingHorizontal: 12,
     paddingVertical: 7,
+    marginRight: 8,
     borderRadius: 999,
     backgroundColor: SURFACE,
     borderWidth: 1,
