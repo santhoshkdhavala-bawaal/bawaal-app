@@ -159,11 +159,11 @@ const styles = StyleSheet.create({
     width: 190,
   },
   arenaLabel: {
-    // Align under "BAWAAL" wordmark in the 190px combined mark (B ≈ 55–60px)
+    // Centered under "BAWAAL" wordmark in the 190px combined mark
     marginTop: 4,
-    marginLeft: 60,
+    marginLeft: 72,
     color: MUTED,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800',
     letterSpacing: 3.2,
     textTransform: 'uppercase',
