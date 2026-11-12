@@ -10,8 +10,8 @@ BAWAAL is a high-performance, stealth-black global sports network centered aroun
 
 | Hub | Surface | Role |
 |---|---|---|
-| **ARENA** | Main tab — cinematic single-stream video feed | Header **ARENA** + top-right **GAME ON**. Inline **🔥 LIVE COMMUNITY CHALLENGES** shelf starts at list index **2+** only. No floating toasts. |
-| **GAME ON** | Modal hub from Arena header | Live Scores + locked `BAWAAL_SPORTS` horizontal filter pills only. No Open Callouts. No redundant lower taxonomy grid. No Tennis/Badminton/etc. fallbacks. |
+| **ARENA** | Main tab — cinematic single-stream video feed | V2 combined-logo header + **▶ GAME ON** + bell. Inline **🔥 LIVE COMMUNITY CHALLENGES** shelf starts at list index **2+** only. No floating toasts. |
+| **GAME ON** | Command drawer from Arena header | Search + **NEAR ME** map + battle tiers (`ARENA_FEED_TIERS`) + horizontal sports rows (`gameOnSports.js`). No live-score tickers. No Open Callouts. |
 | **BATTLES** | Bottom tab | Active 1v1 engagements **and** Open Callouts: **OPEN CHALLENGES** + **TIPS & BREAKDOWNS**. Source of truth for callouts; Arena shelf deep-links here. |
 
 Related: Locker Room / Passport / Clinic remain as separately locked product surfaces (see `.cursor/rules/`).

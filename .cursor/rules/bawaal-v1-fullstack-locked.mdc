@@ -16,7 +16,7 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 | Input containers | Dark grey `#1E1E22`, `borderRadius: 12` |
 | Focus state | `1.5px` border `#FF6600`; web `outlineStyle: 'none'` |
 | Typography | Bold white body; orange accents for links / checkboxes |
-| Brand | Centered `BAWAAL_white_full.png` + `BAWAAL_tagline.png` (“own your chaos”) on entry, registration, Terms, OTP |
+| Brand | Centered `BAWAAL_white_full.png` on entry, registration, Terms, OTP (no duplicate wordmark / watermark) |
 
 ## 2. Registration layout (`RoleSelection.js`)
 
@@ -26,7 +26,7 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 4. Email (full width)
 5. Phone (full width)
 6. City, Country + far-right flag badge (**32×24**), regional helper when matched
-7. Category \| Role (2-column) — category from `BAWAAL_SPORTS_WITHOUT_ALL`
+7. Category \| Role (2-column) — category from `BAWAAL_SPORTS` (**ALL** first)
 8. Footer: Terms checkbox (orange link) + full-width orange **pill** **Continue** — **no** login redirect links
 
 ## 3. Modal architecture

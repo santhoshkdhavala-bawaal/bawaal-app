@@ -38,7 +38,7 @@ The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **
 
 ## Brand assets (LOCKED)
 
-- Centered full BAWAAL shattering logo (`BAWAAL_white_full.png`) + `own your chaos` tagline (`BAWAAL_tagline.png`) on registration, Terms, and OTP.
+- Centered full BAWAAL shattering logo (`BAWAAL_white_full.png`) on registration, Terms, and OTP — no duplicate wordmark / faded B watermark under or behind the hero.
 - Do not reintroduce legacy / small white text icons on these surfaces.
 
 ## Registration field order (LOCKED)
@@ -49,7 +49,7 @@ The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **
 4. **Email** — full width — `"Enter your email"`
 5. **Phone** — full width — `"+1 (555) 000-0000"`
 6. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
-7. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS_WITHOUT_ALL`) | Role dropdown (`"Select your role"`)
+7. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS`, **ALL** first) | Role dropdown (`"Select your role"`)
 8. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Continue"`) — **no** login / sign-in redirect links
 
 Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky footer. Max width ~440 centered on web.

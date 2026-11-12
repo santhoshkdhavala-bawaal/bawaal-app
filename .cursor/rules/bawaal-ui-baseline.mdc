@@ -16,14 +16,14 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 - **Never re-add:** zoom preset pills (1× / 2× / 3×), flash toggle, floating speed badges, slow-mo capture overlay/rails, or other redundant viewfinder chrome.
 - Full contract: `.cursor/rules/bawaal-challengecam-locked.mdc`.
 
-## 2. Arena header & tier filters (`ArenaFeed.js` + `ArenaTierFilterBar`)
+## 2. Arena header & feed discovery (`ArenaFeed.js` + V2 chrome)
 
-- **Keep:** Main Arena as a single clutter-free video feed — orange BAWAAL logo header (`BrandHeader` `useLogo`) + horizontal destination-tier pills under the header.
-- **Keep:** Tier pills from `ARENA_FEED_TIERS`: All · Bawaal Battle · Dark Arena · Faceoff · War Cry (`src/constants/arenaFeedTiers.js`) — single-line horizontal scroll; active pill uses subtle orange border.
-- **Keep:** Selecting a pill filters the infinite feed by `tier` / inferred destination (no sport-taxonomy pills on this bar).
+- **Keep:** Main Arena as a single clutter-free video feed.
+- **Keep:** V2 header (`ArenaV2Header`) — combined logo + `ARENA` + `▶ GAME ON` + bell. Full contract: `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`.
+- **Keep:** Battle-tier + sports filters inside the **GAME ON** drawer (not under the header).
 - **Keep:** Inline horizontal **LIVE COMMUNITY CHALLENGES** shelf every 4–5 feed items **after** leading videos (`CommunityChallengesShelf`) deep-linking to BATTLES.
 - **Keep:** Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS) on the **BATTLES** tab via `OpenCalloutsPanel`.
-- **Never re-add:** GAME ON hub, sports score tickers, or `ScoresSportsPanel` / spectator score APIs on Arena.
+- **Never re-add:** header `⋮`, under-header tier pills, live-score tickers / `ScoresSportsPanel` on Arena.
 
 ## 3. Video feed surfaces (`SportsFeedPlaceholder.js` feed variant, Arena reel cards)
 

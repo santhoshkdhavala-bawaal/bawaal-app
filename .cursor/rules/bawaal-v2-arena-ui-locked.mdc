@@ -1,0 +1,53 @@
+---
+description: Locked V2 Arena header, GAME ON drawer, reel chrome, and onboarding polish
+alwaysApply: true
+---
+
+# BAWAAL V2 Arena UI & navigation (LOCKED)
+
+Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+
+## 1. Header (`ArenaV2Header.js` + `ArenaFeed.js`)
+
+| Token | Value |
+|---|---|
+| Combined logo | `assets/BAWAAL_logo_combined.png` only — `resizeMode="contain"`, fixed height (~38) |
+| Brand stack | Column `alignItems: 'flex-start'`; `ARENA` under **BAWAAL** wordmark (`marginLeft: 72`, `fontSize: 12`, bold) |
+| Right chrome | `▶ GAME ON` glow pill + notification bell only |
+| Theme | `#0A0A0A` / `#FF5A00` |
+
+**Never re-add:** split `B_solo` + `BAWAAL_text` header pair, header `⋮` / three-dots, tier pills under the header, `BrandHeader` on Arena.
+
+## 2. GAME ON command drawer (`GameOnHub.js`)
+
+- Opens from `▶ GAME ON` — Search + **NEAR ME** → `SportHubMap`
+- Battle chips from `ARENA_FEED_TIERS` (All · Bawaal Battle · Dark Arena · Faceoff · War Cry) filter Arena feed
+- Sports chips from `GAME_ON_SPORT_SECTIONS` (`src/constants/gameOnSports.js`) — **7** titled rows, each a **horizontal** `ScrollView` (`horizontal`, `showsHorizontalScrollIndicator={false}`) beside the title
+- **No** live scores / `ScoresSportsPanel` / vertical chip wrap inside the drawer
+
+## 3. Reel player chrome (`VideoItem` + `MuteToggleButton` + `ReelActionSheet`)
+
+- No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
+- Top-right mute: `bmute.png` / `bunmute.png`
+- Bottom-right `⋮` → sheet: **DM · Banner Like · Follow · Share · Repost · Tag · Banter**
+- No sport-category pills on clip surfaces (see UI baseline §3)
+
+## 4. Onboarding polish (Registration / Terms / OTP)
+
+- Single hero logo — no duplicate wordmark / faded B watermark on Terms Required / OTP
+- Category dropdown includes **ALL** first (`BAWAAL_SPORTS`)
+- Auth/OTP/profiles contract otherwise unchanged (V1 full-stack lock)
+
+## Locked files
+
+- `src/components/ArenaV2Header.js`, `GameOnHub.js`, `NotificationsDrawer.js`, `ReelActionSheet.js`, `MuteToggleButton.js`
+- `src/constants/gameOnSports.js`, `src/constants/arenaFeedTiers.js`
+- Arena wiring in `ArenaFeed.js` (header + drawer + reel actions)
+- Related: `VideoItem.js`, `src/native/stubs/expo-av.js`
+
+## Related
+
+- Camera / tab bar: `bawaal-ui-baseline.mdc`, `bawaal-challengecam-locked.mdc`
+- Forms taxonomy (`BAWAAL_SPORTS`): `bawaal-sport-taxonomy-locked.mdc`
+- Onboarding/auth: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locked.mdc`
+---
