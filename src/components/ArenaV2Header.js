@@ -86,7 +86,6 @@ function ArenaV2Header({
   onBrandPress,
   onGameOnPress,
   onNotificationsPress,
-  rightExtra = null,
 }) {
   const insets = useSafeAreaInsets();
 
@@ -120,7 +119,6 @@ function ArenaV2Header({
         </TouchableOpacity>
 
         <View style={styles.rightCol}>
-          {rightExtra}
           <GameOnPill onPress={onGameOnPress} />
           <TouchableOpacity
             onPress={onNotificationsPress}
@@ -154,23 +152,23 @@ const styles = StyleSheet.create({
   },
   brandCol: {
     flexShrink: 1,
-    maxWidth: '48%',
+    maxWidth: '54%',
   },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   bLogo: {
-    width: 28,
-    height: 28,
+    width: 40,
+    height: 40,
   },
   wordmark: {
-    width: 110,
-    height: 22,
+    width: 148,
+    height: 30,
   },
   arenaLabel: {
-    marginTop: 4,
+    marginTop: 6,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',

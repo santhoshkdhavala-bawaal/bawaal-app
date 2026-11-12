@@ -1,20 +1,23 @@
 /**
- * GAME ON interactive command drawer — live scores + locked BAWAAL_SPORTS pills.
- * Open Callouts stay on the BATTLES tab.
+ * GAME ON interactive command drawer —
+ * search + Sport Hub Map, battle-tier filters, live scores + BAWAAL_SPORTS pills.
  */
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import {
   Modal,
   View,
   Text,
+  TextInput,
   ScrollView,
   StyleSheet,
   Pressable,
   TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import ScoresSportsPanel from './ScoresSportsPanel';
 import { BAWAAL_SPORTS } from '../constants/sports';
+import { ARENA_FEED_TIERS } from '../constants/arenaFeedTiers';
 
 const WHITE = '#FFFFFF';
 const BG = '#0A0A0A';
@@ -22,8 +25,20 @@ const SURFACE = '#121212';
 const MUTED = '#A9A9A9';
 const ACCENT = '#FF5A00';
 
-function GameOnHub({ visible, onClose }) {
+function GameOnHub({
+  visible,
+  onClose,
+  selectedFeedTier = 'all',
+  onSelectFeedTier,
+  onOpenSportHubMap,
+}) {
   const insets = useSafeAreaInsets();
+  const [query, setQuery] = useState('');
+
+  const openMap = () => {
+    onClose?.();
+    onOpenSportHubMap?.();
+  };
 
   return (
     <Modal
@@ -53,7 +68,7 @@ function GameOnHub({ visible, onClose }) {
             <View style={styles.headerCopy}>
               <Text style={styles.kicker}>COMMAND DRAWER</Text>
               <Text style={styles.title}>▶ GAME ON</Text>
-              <Text style={styles.subtitle}>LIVE SCORES · MATCH UPDATES</Text>
+              <Text style={styles.subtitle}>SEARCH · MAP · FILTERS · SCORES</Text>
             </View>
             <TouchableOpacity
               onPress={onClose}
@@ -66,12 +81,75 @@ function GameOnHub({ visible, onClose }) {
             </TouchableOpacity>
           </View>
 
+          <View style={styles.searchRow}>
+            <View style={styles.searchField}>
+              <Ionicons name="search" size={16} color={MUTED} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search athletes, arenas, battles..."
+                placeholderTextColor={MUTED}
+                style={styles.searchInput}
+                returnKeyType="search"
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+            </View>
+            <TouchableOpacity
+              style={styles.mapBtn}
+              onPress={openMap}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Open Sport Hub Map"
+            >
+              <Ionicons name="map-outline" size={15} color={WHITE} />
+              <Text style={styles.mapBtnText}>SPORT HUB MAP</Text>
+            </TouchableOpacity>
+          </View>
+
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>BATTLE CATEGORIES</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tierRow}
+                keyboardShouldPersistTaps="handled"
+              >
+                {ARENA_FEED_TIERS.map((tier) => {
+                  const active = String(selectedFeedTier) === String(tier.id);
+                  return (
+                    <TouchableOpacity
+                      key={tier.id}
+                      style={[styles.tierPill, active && styles.tierPillActive]}
+                      onPress={() => {
+                        onSelectFeedTier?.(tier.id);
+                        onClose?.();
+                      }}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`Filter ${tier.label}`}
+                    >
+                      <Text
+                        style={[
+                          styles.tierPillText,
+                          active && styles.tierPillTextActive,
+                        ]}
+                      >
+                        {tier.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
             <View style={styles.section}>
               <ScoresSportsPanel sports={BAWAAL_SPORTS} />
             </View>
@@ -115,7 +193,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    marginBottom: 6,
+    marginBottom: 10,
   },
   headerCopy: {
     flex: 1,
@@ -157,6 +235,49 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  searchField: {
+    flex: 1,
+    minWidth: 0,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 0,
+  },
+  mapBtn: {
+    height: 42,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    backgroundColor: ACCENT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mapBtnText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
   scroll: {
     flex: 1,
   },
@@ -165,6 +286,42 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 4,
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  tierRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  tierPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  tierPillActive: {
+    borderColor: ACCENT,
+    backgroundColor: 'rgba(255,90,0,0.16)',
+  },
+  tierPillText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  tierPillTextActive: {
+    color: WHITE,
   },
 });
 

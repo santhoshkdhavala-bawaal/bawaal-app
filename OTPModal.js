@@ -1,5 +1,5 @@
 /**
- * Standalone OTP modal — stealth black, B solo watermark, no white framing.
+ * Standalone OTP modal — stealth black, no white framing.
  * Locked to 4-digit OTPInput; verify only via SUBMIT / VERIFY (no auto-submit).
  */
 import React, { useState } from 'react';
@@ -20,7 +20,6 @@ import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 const BG = '#000000';
 const WHITE = '#FFFFFF';
 const MUTED = 'rgba(255,255,255,0.55)';
-const LOGO_MARK = require('./assets/BAWAAL_B_solo.png');
 const LOGO_FULL = require('./assets/BAWAAL_white_full.png');
 
 function OTPModalBody({ onVerify, onNotice }) {
@@ -54,26 +53,11 @@ function OTPModalBody({ onVerify, onNotice }) {
           { paddingBottom: Math.max(48, insets.bottom + 36) },
         ]}
       >
-        <View style={styles.watermarkClip} pointerEvents="none">
-          <Image
-            source={LOGO_MARK}
-            style={styles.watermark}
-            resizeMode="contain"
-            accessibilityElementsHidden
-            importantForAccessibility="no"
-          />
-        </View>
         <Image
           source={LOGO_FULL}
           style={styles.logo}
           resizeMode="contain"
           accessibilityLabel="BAWAAL"
-        />
-        <Image
-          source={require('./assets/BAWAAL_text.png')}
-          style={styles.tagline}
-          resizeMode="contain"
-          accessibilityLabel="own your chaos"
         />
         <Text style={styles.title}>VERIFY MOBILE NUMBER</Text>
         <Text style={styles.subtitle}>
@@ -159,25 +143,9 @@ const styles = StyleSheet.create({
     elevation: 0,
     shadowOpacity: 0,
   },
-  watermarkClip: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  watermark: {
-    width: 160,
-    height: 160,
-    opacity: 0.06,
-  },
   logo: {
     width: 180,
     height: 56,
-    marginBottom: 4,
-  },
-  tagline: {
-    width: 140,
-    height: 22,
     marginBottom: 16,
   },
   title: {

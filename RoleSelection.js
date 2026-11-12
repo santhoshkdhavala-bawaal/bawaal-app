@@ -1,7 +1,7 @@
 /**
  * BAWAAL Landing / Onboarding — V1 Master Frontend Lock.
  * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
- * OTP / profiles / authOtp contract unchanged. Categories: `BAWAAL_SPORTS_WITHOUT_ALL`.
+ * OTP / profiles / authOtp contract unchanged. Categories: `BAWAAL_SPORTS` (ALL first).
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import React, { useMemo, useState } from 'react';
@@ -32,7 +32,7 @@ import {
   verifyPhoneOtp,
 } from './src/services/authOtp';
 import { upsertRegisteredProfile } from './src/services/profilesService';
-import { BAWAAL_SPORTS_WITHOUT_ALL } from './src/constants/sports';
+import { BAWAAL_SPORTS } from './src/constants/sports';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -41,10 +41,9 @@ const ROLES = [
 ];
 
 /** Locked BAWAAL sport taxonomy (excludes ALL) — single source, no local rename/reorder. */
-const SPORT_INTERESTS = BAWAAL_SPORTS_WITHOUT_ALL;
+const SPORT_INTERESTS = BAWAAL_SPORTS;
 
 const LOGO_FULL = require('./assets/BAWAAL_white_full.png');
-const LOGO_TAGLINE = require('./assets/BAWAAL_text.png');
 
 const GENDER_OPTIONS = [
   { key: 'male', label: 'Male' },
@@ -435,12 +434,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
               />
-              <Image
-                source={LOGO_TAGLINE}
-                style={styles.taglineImage}
-                resizeMode="contain"
-                accessibilityLabel="own your chaos"
-              />
               <Text style={styles.title}>Create Your Account</Text>
               <Text style={styles.subtitle}>
                 Join BAWAAL to follow sports. It only takes a minute.
@@ -640,12 +633,6 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
               />
-              <Image
-                source={LOGO_TAGLINE}
-                style={styles.termsTagline}
-                resizeMode="contain"
-                accessibilityLabel="own your chaos"
-              />
               <Text style={styles.modalTitle}>Terms of Service & Legal Rules</Text>
             </View>
             <ScrollView
@@ -742,26 +729,11 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 { paddingBottom: Math.max(48, insets.bottom + 36) },
               ]}
             >
-              <View style={styles.otpWatermarkClip} pointerEvents="none">
-                <Image
-                  source={require('./assets/BAWAAL_B_solo.png')}
-                  style={styles.otpWatermark}
-                  resizeMode="contain"
-                  accessibilityElementsHidden
-                  importantForAccessibility="no"
-                />
-              </View>
               <Image
                 source={LOGO_FULL}
                 style={styles.otpLogo}
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
-              />
-              <Image
-                source={LOGO_TAGLINE}
-                style={styles.otpTagline}
-                resizeMode="contain"
-                accessibilityLabel="own your chaos"
               />
               <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
               <Text style={styles.otpSubtitle}>
@@ -800,6 +772,7 @@ export default function RoleSelection({ onCompleteRegistration }) {
         mode="notice"
         title={notice?.title || 'BAWAAL'}
         message={notice?.message || ''}
+        hideWatermark
         onCancel={() => setNotice(null)}
       />
     </SafeAreaView>
@@ -835,12 +808,6 @@ const styles = StyleSheet.create({
     width: 260,
     maxWidth: '100%',
     height: 110,
-    marginBottom: 6,
-  },
-  taglineImage: {
-    width: 180,
-    maxWidth: '70%',
-    height: 28,
     marginBottom: 16,
   },
   title: {
@@ -1131,11 +1098,6 @@ const styles = StyleSheet.create({
   termsLogo: {
     width: 200,
     height: 64,
-    marginBottom: 4,
-  },
-  termsTagline: {
-    width: 140,
-    height: 22,
     marginBottom: 10,
   },
   modalTitle: {
@@ -1196,25 +1158,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  otpWatermarkClip: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  otpWatermark: {
-    width: 160,
-    height: 160,
-    opacity: 0.06,
-  },
   otpLogo: {
     width: 180,
     height: 56,
-    marginBottom: 4,
-  },
-  otpTagline: {
-    width: 140,
-    height: 22,
     marginBottom: 16,
   },
   otpTitle: {

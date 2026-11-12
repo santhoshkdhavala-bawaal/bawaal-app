@@ -13,7 +13,6 @@ import {
   FlatList,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  Share,
   RefreshControl,
   ActivityIndicator,
   Platform,
@@ -38,7 +37,6 @@ import {
 } from './src/services/arenaChallengeService';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
-import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
 import VideoItem from './src/components/VideoItem';
@@ -47,7 +45,6 @@ import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
-import ArenaTierFilterBar from './src/components/ArenaTierFilterBar';
 import ArenaV2Header from './src/components/ArenaV2Header';
 import GameOnHub from './src/components/GameOnHub';
 import NotificationsDrawer from './src/components/NotificationsDrawer';
@@ -1036,8 +1033,6 @@ export default function ArenaFeed({ navigation, route }) {
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [headerBanterOpen, setHeaderBanterOpen] = useState(false);
   const [gameOnOpen, setGameOnOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [selectedFeedTier, setSelectedFeedTier] = useState(ARENA_FEED_TIER_ALL);
@@ -1245,16 +1240,6 @@ export default function ArenaFeed({ navigation, route }) {
         }
       });
     }
-  }, []);
-
-  const hypeReel = useCallback((id) => {
-    setFeedItems((prev) =>
-      prev.map((item) =>
-        item.id === id && item.type === 'reel'
-          ? { ...item, hypeCount: (item.hypeCount || 0) + 1 }
-          : item
-      )
-    );
   }, []);
 
   // Live subscription — POST TO ARENA pushes here instantly (no toast)
@@ -1589,13 +1574,6 @@ export default function ArenaFeed({ navigation, route }) {
     [challengeVideoFeed, selectedFeedTier]
   );
 
-  const activeFeedItem = filteredChallengeVideoFeed[activeIndex] || null;
-  const activeSettingsReel = activeFeedItem || null;
-
-  useEffect(() => {
-    setSettingsOpen(false);
-  }, [activeIndex]);
-
   useEffect(() => {
     setActiveIndex(0);
     requestAnimationFrame(() => {
@@ -1606,20 +1584,6 @@ export default function ArenaFeed({ navigation, route }) {
       }
     });
   }, [selectedFeedTier]);
-
-  const shareActiveReel = useCallback(async () => {
-    setSettingsOpen(false);
-    const postId = activeSettingsReel?.id != null ? String(activeSettingsReel.id) : '';
-    if (!postId) return;
-    try {
-      await Share.share({
-        title: 'BAWAAL Arena Reel',
-        message: `Check out this challenge on BAWAAL: https://bawaal.app/reel/${postId}`,
-      });
-    } catch (error) {
-      console.error('[ArenaFeed] share failed:', error);
-    }
-  }, [activeSettingsReel]);
 
   const openShelfCallout = useCallback(
     (item) => {
@@ -1868,61 +1832,7 @@ export default function ArenaFeed({ navigation, route }) {
           onBrandPress={openProfileGateway}
           onGameOnPress={() => setGameOnOpen(true)}
           onNotificationsPress={() => setNotificationsOpen(true)}
-          rightExtra={
-            activeSettingsReel ? (
-              <TouchableOpacity
-                style={styles.settingsPill}
-                onPress={() => setSettingsOpen((open) => !open)}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={
-                  settingsOpen ? 'Close settings' : 'Open settings'
-                }
-              >
-                <Text style={styles.settingsPillText}>
-                  {settingsOpen ? '✕' : '⋮'}
-                </Text>
-              </TouchableOpacity>
-            ) : null
-          }
         />
-        <ArenaTierFilterBar
-          selectedId={selectedFeedTier}
-          onSelect={onSelectFeedTier}
-        />
-        {settingsOpen && activeSettingsReel ? (
-          <View style={styles.headerSettingsMenu}>
-            <TouchableOpacity
-              style={styles.headerSettingsItem}
-              onPress={() => {
-                hypeReel(activeSettingsReel.id);
-                setSettingsOpen(false);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.headerSettingsText}>
-                🔥  {activeSettingsReel.hypeCount || 0}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerSettingsItem}
-              onPress={() => {
-                setSettingsOpen(false);
-                setHeaderBanterOpen(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.headerSettingsText}>BANTER</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerSettingsItem}
-              onPress={shareActiveReel}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.headerSettingsText}>SHARE</Text>
-            </TouchableOpacity>
-          </View>
-        ) : null}
       </View>
 
       <View style={styles.feedList}>
@@ -1979,13 +1889,13 @@ export default function ArenaFeed({ navigation, route }) {
         ) : null}
       </View>
 
-      <BanterBottomSheet
-        visible={headerBanterOpen && !!activeSettingsReel}
-        reel={activeSettingsReel}
-        onClose={() => setHeaderBanterOpen(false)}
+      <GameOnHub
+        visible={gameOnOpen}
+        onClose={() => setGameOnOpen(false)}
+        selectedFeedTier={selectedFeedTier}
+        onSelectFeedTier={onSelectFeedTier}
+        onOpenSportHubMap={() => navigation?.navigate?.('SportHubMap')}
       />
-
-      <GameOnHub visible={gameOnOpen} onClose={() => setGameOnOpen(false)} />
       <NotificationsDrawer
         visible={notificationsOpen}
         onClose={() => setNotificationsOpen(false)}
@@ -2087,47 +1997,6 @@ const styles = StyleSheet.create({
   },
   emptyFeedBtnText: {
     color: DARK_BG,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  settingsPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-    backgroundColor: SURFACE,
-    borderWidth: 1,
-    borderColor: 'rgba(255,85,0,0.55)',
-  },
-  settingsPillText: {
-    color: WHITE,
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerSettingsMenu: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-    marginRight: 16,
-    backgroundColor: '#000000',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  headerSettingsItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
-  },
-  headerSettingsText: {
-    color: WHITE,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 0.8,

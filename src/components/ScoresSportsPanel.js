@@ -452,10 +452,6 @@ function ScoresSportsPanel({ sports = BAWAAL_SPORTS } = {}) {
     <View style={styles.panel}>
       <View style={styles.subheaderRow}>
         <Text style={styles.subheaderTitle}>SCORES & SPORTS</Text>
-        <View style={styles.liveBadge}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveBadgeText}>LIVE</Text>
-        </View>
       </View>
 
       <ScrollView

@@ -43,7 +43,6 @@ export default function ProfileGatewayModal({
   visible,
   onClose,
   onOpenPassport,
-  onOpenSportHubMap,
   onLogOut,
   user = DEFAULT_USER,
 }) {
@@ -232,17 +231,6 @@ export default function ProfileGatewayModal({
                     <Text style={styles.settingChevron}>›</Text>
                   </TouchableOpacity>
                 ))}
-
-                <TouchableOpacity
-                  style={styles.mapBtn}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    onClose?.();
-                    onOpenSportHubMap?.();
-                  }}
-                >
-                  <Text style={styles.mapBtnText}>SPORT HUB MAP</Text>
-                </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.passportBtn}
@@ -473,23 +461,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.0,
   },
-  mapBtn: {
-    marginTop: 16,
-    backgroundColor: 'rgba(59, 130, 246, 0.14)',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#3B82F6',
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  mapBtnText: {
-    color: '#3B82F6',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
   passportBtn: {
-    marginTop: 12,
+    marginTop: 16,
     marginBottom: 0,
     backgroundColor: CARD,
     borderRadius: 12,

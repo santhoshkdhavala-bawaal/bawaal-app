@@ -38,12 +38,6 @@ export default function TermsModal({ visible, onAgree, onBack }) {
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
               />
-              <Image
-                source={require('./assets/BAWAAL_text.png')}
-                style={styles.taglineLogo}
-                resizeMode="contain"
-                accessibilityLabel="own your chaos"
-              />
               <Text style={styles.subtitle}>Arena Philosophy & Terms of Service</Text>
             </View>
 
@@ -139,7 +133,6 @@ const styles = StyleSheet.create({
   scrollContent: { paddingBottom: 30 },
   logoHeader: { alignItems: 'center', marginBottom: 12 },
   headerLogo: { width: 240, height: 72 },
-  taglineLogo: { width: 160, height: 24, marginTop: 4 },
   subtitle: { color: '#A0A0A0', fontSize: 12, marginTop: 8, fontWeight: '600' },
   sectionCard: {
     backgroundColor: '#000000',

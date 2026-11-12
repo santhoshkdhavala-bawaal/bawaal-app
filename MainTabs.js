@@ -433,10 +433,6 @@ export default function MainTabs({ navigation, route }) {
           visible={profileOpen}
           onClose={() => setProfileOpen(false)}
           onOpenPassport={() => setTab('Passport')}
-          onOpenSportHubMap={() => {
-            setProfileOpen(false);
-            navigation?.navigate?.('SportHubMap');
-          }}
           onLogOut={() => {
             navigation?.reset?.({
               index: 0,

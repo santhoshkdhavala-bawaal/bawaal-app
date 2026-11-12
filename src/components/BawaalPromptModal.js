@@ -75,6 +75,7 @@ export default function BawaalPromptModal({
   onCancel,
   busy = false,
   confirmColor,
+  hideWatermark = false,
 }) {
   const [value, setValue] = useState(defaultValue);
   const [briefTitle, setBriefTitle] = useState('');
@@ -181,15 +182,17 @@ export default function BawaalPromptModal({
           <Pressable style={styles.dismissZone} onPress={dismissOutside} />
 
           <View style={styles.card} accessibilityViewIsModal>
-            <View style={styles.watermarkClip} pointerEvents="none">
-              <Image
-                source={LOGO_MARK}
-                style={styles.watermark}
-                resizeMode="contain"
-                accessibilityElementsHidden
-                importantForAccessibility="no"
-              />
-            </View>
+            {hideWatermark ? null : (
+              <View style={styles.watermarkClip} pointerEvents="none">
+                <Image
+                  source={LOGO_MARK}
+                  style={styles.watermark}
+                  resizeMode="contain"
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                />
+              </View>
+            )}
 
             <ScrollView
               ref={scrollRef}
