@@ -1,9 +1,10 @@
 /**
- * Floating mute / unmute — flat icon only (no circle, no drop shadow).
+ * Floating mute / unmute — BAWAAL orange icon, flat hit target.
  */
 import React, { memo } from 'react';
 import { Pressable, Image, StyleSheet } from 'react-native';
 
+const BAWAAL_ORANGE = '#FF5500';
 const ICON_MUTED = require('../../assets/bmute.png');
 const ICON_UNMUTED = require('../../assets/bunmute.png');
 
@@ -24,6 +25,7 @@ function MuteToggleButton({ muted, onPress, style }) {
         source={muted ? ICON_MUTED : ICON_UNMUTED}
         style={styles.icon}
         resizeMode="contain"
+        tintColor={BAWAAL_ORANGE}
       />
     </Pressable>
   );
@@ -31,19 +33,24 @@ function MuteToggleButton({ muted, onPress, style }) {
 
 const styles = StyleSheet.create({
   hit: {
-    backgroundColor: 'transparent',
+    width: 36,
+    height: 36,
+    display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
-    zIndex: 20,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: BAWAAL_ORANGE,
+    zIndex: 99,
   },
   hitPressed: {
     opacity: 0.72,
     transform: [{ scale: 0.92 }],
   },
   icon: {
-    width: 30,
-    height: 30,
+    width: 28,
+    height: 28,
+    tintColor: BAWAAL_ORANGE,
   },
 });
 
