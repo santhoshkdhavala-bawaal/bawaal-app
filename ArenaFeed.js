@@ -1080,6 +1080,79 @@ const BattleCard = memo(function BattleCard({
   );
 });
 
+/**
+ * Primary Arena feed page — full-bleed VideoItem + mute (bmute/bunmute) + ⋮ sheet.
+ */
+const ChallengeFeedCard = memo(function ChallengeFeedCard({
+  item,
+  index,
+  activeIndex,
+  screenHeight,
+  headerHeight = 56,
+}) {
+  const [isMuted, setIsMuted] = useState(true);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [banterOpen, setBanterOpen] = useState(false);
+  const isActive = Math.abs(index - activeIndex) <= 1;
+  const shouldPlay = index === activeIndex;
+
+  const toggleMute = useCallback(() => {
+    setIsMuted((m) => !m);
+  }, []);
+
+  const onReelAction = useCallback(
+    (actionId) => {
+      if (actionId === 'banter') {
+        setBanterOpen(true);
+      }
+      void dispatchReelSocialAction(actionId, item).catch((err) => {
+        console.warn('[ChallengeFeedCard] reel social:', err?.message || err);
+      });
+    },
+    [item]
+  );
+
+  return (
+    <View style={[styles.challengePage, { height: screenHeight }]}>
+      <VideoItem
+        item={item}
+        itemHeight={screenHeight}
+        isActive={isActive}
+        shouldPlay={shouldPlay}
+        muted={isMuted}
+      />
+
+      <MuteToggleButton
+        muted={isMuted}
+        onPress={toggleMute}
+        style={[styles.challengeMuteBtn, { top: Math.max(headerHeight, 56) + 8 }]}
+      />
+
+      <TouchableOpacity
+        style={styles.challengeMoreBtn}
+        onPress={() => setActionsOpen(true)}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Open reel actions"
+      >
+        <Text style={styles.reelMoreText}>⋮</Text>
+      </TouchableOpacity>
+
+      <ReelActionSheet
+        visible={actionsOpen}
+        reel={item}
+        onClose={() => setActionsOpen(false)}
+        onAction={onReelAction}
+      />
+      <BanterBottomSheet
+        visible={banterOpen}
+        reel={item}
+        onClose={() => setBanterOpen(false)}
+      />
+    </View>
+  );
+});
+
 export default function ArenaFeed({ navigation, route }) {
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
@@ -1873,26 +1946,18 @@ export default function ArenaFeed({ navigation, route }) {
     (feedLoading && challengeVideoFeed.length === 0 && !refreshing) ||
     (videoFeedLoading && challengeVideoFeed.length === 0 && !refreshing);
 
-  /** One full-bleed page per challenge — video player + title + @user tag. */
+  /** One full-bleed page per challenge — mute + ⋮ overlays on the video card. */
   const renderChallengeVideo = useCallback(
     ({ item, index }) => (
-      <View
-        style={{
-          height: screenHeight,
-          width: '100%',
-          backgroundColor: '#000000',
-          overflow: 'hidden',
-        }}
-      >
-        <VideoItem
-          item={item}
-          itemHeight={screenHeight}
-          isActive={Math.abs(index - activeIndex) <= 1}
-          shouldPlay={index === activeIndex}
-        />
-      </View>
+      <ChallengeFeedCard
+        item={item}
+        index={index}
+        activeIndex={activeIndex}
+        screenHeight={screenHeight}
+        headerHeight={headerHeight}
+      />
     ),
-    [activeIndex, screenHeight]
+    [activeIndex, screenHeight, headerHeight]
   );
 
   const emptyChallengeList = useMemo(
@@ -2121,6 +2186,30 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: '#000',
+  },
+  challengePage: {
+    width: '100%',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
+  challengeMuteBtn: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 20,
+  },
+  challengeMoreBtn: {
+    position: 'absolute',
+    bottom: 24,
+    right: 16,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
   reelMuteBtn: {
     position: 'absolute',
