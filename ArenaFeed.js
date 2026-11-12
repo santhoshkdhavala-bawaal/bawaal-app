@@ -788,7 +788,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 }) {
   const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [muted, setMuted] = useState(true);
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const handle = item.author?.startsWith('@')
     ? item.author
@@ -805,6 +805,10 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   const toggleMute = useCallback(() => {
     setMuted((m) => !m);
+  }, []);
+
+  const toggleActionStack = useCallback(() => {
+    setShowActionStack((open) => !open);
   }, []);
 
   const onReelAction = useCallback(
@@ -880,20 +884,22 @@ const GeneralReelCard = memo(function GeneralReelCard({
       {!immersiveOpen ? (
         <TouchableOpacity
           style={[styles.reelMoreBtn, { bottom: tabBarHeight + 18 }]}
-          onPress={() => setActionsOpen(true)}
+          onPress={toggleActionStack}
           activeOpacity={0.85}
           accessibilityRole="button"
-          accessibilityLabel="Open reel actions"
+          accessibilityLabel="Toggle reel actions"
         >
           <Text style={styles.reelMoreText}>⋮</Text>
         </TouchableOpacity>
       ) : null}
 
+      {/* Floating Instagram-style stack — video keeps playing underneath */}
       <ReelActionSheet
-        visible={actionsOpen}
+        visible={showActionStack && !immersiveOpen}
         reel={item}
-        onClose={() => setActionsOpen(false)}
+        onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
+        style={{ bottom: tabBarHeight + 72 }}
       />
       <BanterBottomSheet
         visible={banterOpen}
@@ -1082,7 +1088,7 @@ const BattleCard = memo(function BattleCard({
 });
 
 /**
- * Primary Arena feed page — full-bleed VideoItem + mute (bmute/bunmute) + ⋮ sheet.
+ * Primary Arena feed page — full-bleed VideoItem + mute + floating ⋮ action stack.
  */
 const ChallengeFeedCard = memo(function ChallengeFeedCard({
   item,
@@ -1092,13 +1098,17 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   headerHeight = 56,
 }) {
   const [isMuted, setIsMuted] = useState(true);
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
 
   const toggleMute = useCallback(() => {
     setIsMuted((m) => !m);
+  }, []);
+
+  const toggleActionStack = useCallback(() => {
+    setShowActionStack((open) => !open);
   }, []);
 
   const onReelAction = useCallback(
@@ -1131,18 +1141,19 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
 
       <TouchableOpacity
         style={styles.challengeMoreBtn}
-        onPress={() => setActionsOpen(true)}
+        onPress={toggleActionStack}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="Open reel actions"
+        accessibilityLabel="Toggle reel actions"
       >
         <Text style={styles.reelMoreText}>⋮</Text>
       </TouchableOpacity>
 
+      {/* Floating Instagram-style stack — video keeps playing underneath */}
       <ReelActionSheet
-        visible={actionsOpen}
+        visible={showActionStack}
         reel={item}
-        onClose={() => setActionsOpen(false)}
+        onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
       />
       <BanterBottomSheet
@@ -2155,6 +2166,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   reelCard: {
+    position: 'relative',
     flex: 1,
     height: '100%',
     marginHorizontal: 0,
@@ -2189,6 +2201,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   challengePage: {
+    position: 'relative',
     width: '100%',
     backgroundColor: '#000000',
     overflow: 'hidden',
@@ -2196,13 +2209,13 @@ const styles = StyleSheet.create({
   challengeMuteBtn: {
     position: 'absolute',
     right: 16,
-    zIndex: 20,
+    zIndex: 40,
   },
   challengeMoreBtn: {
     position: 'absolute',
     bottom: 24,
     right: 16,
-    zIndex: 20,
+    zIndex: 40,
     width: 40,
     height: 40,
     alignItems: 'center',
@@ -2213,12 +2226,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     right: 14,
-    zIndex: 14,
+    zIndex: 40,
   },
   reelMoreBtn: {
     position: 'absolute',
     right: 12,
-    zIndex: 14,
+    zIndex: 40,
     width: 40,
     height: 40,
     alignItems: 'center',

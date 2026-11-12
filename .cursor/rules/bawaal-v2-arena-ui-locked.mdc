@@ -29,9 +29,9 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 
 - No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
 - Top-right mute: `bmute.png` / `bunmute.png`
-- Bottom-right `⋮` — transparent hit target, orange `#FF5500` glyph (no dark circular patch)
-- `⋮` sheet: **DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send** with 24×24 `bawaal_*.png` icons
-- No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` sheet
+- Bottom-right `⋮` — transparent hit target, orange `#FF5500` glyph (no dark circular patch); toggles on-video floating stack
+- Floating stack (`right: 16`, `bottom: 100`): **DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send** with `bawaal_*.png` icons + labels; dismiss via outside tap / ✕; video keeps playing (no Modal sheet)
+- No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` stack
 - No sport-category pills on clip surfaces (see UI baseline §3)
 
 ## 4. Onboarding polish (Registration / Terms / OTP)

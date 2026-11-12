@@ -108,6 +108,7 @@ VideoItem.displayName = 'VideoItem';
 
 const styles = StyleSheet.create({
   container: {
+    position: 'relative',
     backgroundColor: '#000',
     overflow: 'hidden',
   },

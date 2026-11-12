@@ -1,33 +1,27 @@
 /**
- * Instagram-style reel action sheet
+ * Instagram / TikTok-style floating vertical action stack on the video canvas.
  * (DM / Like / Follow·Unfollow / Share / Save / Banter / Comment / Send).
  * Follow lives only here — never as a canvas overlay CTA.
+ * Renders inline (no Modal) so the reel keeps playing underneath.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Modal,
   View,
   Text,
   Image,
   StyleSheet,
   Pressable,
   TouchableOpacity,
-  Platform,
   Share,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   isFollowingReelOwner,
   setFollowingReelOwner,
 } from '../services/reelSocialService';
 
 const WHITE = '#FFFFFF';
-const BG = '#0A0A0A';
-const SURFACE = '#121212';
-const MUTED = '#A9A9A9';
 const ACCENT = '#FF5500';
-const HAIRLINE = 'rgba(255,255,255,0.12)';
-const ICON_SIZE = 24;
+const ICON_SIZE = 28;
 
 const BASE_ACTIONS = [
   { id: 'dm', label: 'DM', icon: require('../../assets/bawaal_dm.png') },
@@ -67,8 +61,7 @@ async function shareReel(reel) {
   }
 }
 
-function ReelActionSheet({ visible, reel, onClose, onAction }) {
-  const insets = useSafeAreaInsets();
+function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
   const targetKey = followTargetKey(reel);
   const [following, setFollowing] = useState(false);
 
@@ -118,139 +111,99 @@ function ReelActionSheet({ visible, reel, onClose, onAction }) {
     [following, onAction, onClose, reel, targetKey]
   );
 
+  if (!visible) return null;
+
   return (
-    <Modal
-      visible={!!visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <View
-          style={[
-            styles.sheet,
-            { paddingBottom: Math.max(insets.bottom, 14) },
-          ]}
-        >
-          <View style={styles.handle} />
-          <Text style={styles.title}>ACTIONS</Text>
-          {actions.map((action, index) => (
-            <TouchableOpacity
-              key={action.id}
-              style={[
-                styles.row,
-                index === actions.length - 1 && styles.rowLast,
-              ]}
-              onPress={() => run(action.id)}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel={action.label}
-            >
-              <Image
-                source={action.icon}
-                style={styles.rowIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.rowText}>{action.label}</Text>
-            </TouchableOpacity>
-          ))}
+    <View style={styles.root} pointerEvents="box-none">
+      {/* Outside tap dismisses — transparent so video stays visible/playing */}
+      <Pressable
+        style={styles.backdrop}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss actions"
+      />
+
+      <View style={[styles.stack, style]} pointerEvents="box-none">
+        {actions.map((action) => (
           <TouchableOpacity
-            style={styles.cancelBtn}
-            onPress={onClose}
+            key={action.id}
+            style={styles.item}
+            onPress={() => run(action.id)}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
           >
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Image
+              source={action.icon}
+              style={styles.icon}
+              resizeMode="contain"
+            />
+            <Text style={styles.label} numberOfLines={1}>
+              {action.label}
+            </Text>
           </TouchableOpacity>
-        </View>
+        ))}
+
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={onClose}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Close actions"
+        >
+          <Text style={styles.cancelText}>✕</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+  root: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
   },
-  sheet: {
-    backgroundColor: BG,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    borderColor: 'rgba(255,85,0,0.28)',
-    paddingTop: 10,
-    paddingHorizontal: 14,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.4,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: -4 },
-      },
-      android: { elevation: 12 },
-      default: {},
-    }),
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    marginBottom: 12,
-  },
-  title: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.6,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  row: {
-    flexDirection: 'row',
+  stack: {
+    position: 'absolute',
+    right: 16,
+    bottom: 100,
+    zIndex: 20,
     alignItems: 'center',
-    backgroundColor: SURFACE,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: HAIRLINE,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    gap: 14,
   },
-  rowLast: {
-    marginBottom: 12,
+  item: {
+    alignItems: 'center',
+    marginBottom: 14,
+    minWidth: 56,
   },
-  rowIcon: {
+  icon: {
     width: ICON_SIZE,
     height: ICON_SIZE,
   },
-  rowText: {
+  label: {
+    marginTop: 4,
     color: WHITE,
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '800',
     letterSpacing: 0.2,
-    flexShrink: 1,
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   cancelBtn: {
+    marginTop: 4,
+    width: 36,
+    height: 36,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,85,0,0.45)',
+    justifyContent: 'center',
   },
   cancelText: {
     color: ACCENT,
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.6,
+    fontSize: 18,
+    fontWeight: '900',
   },
 });
 
