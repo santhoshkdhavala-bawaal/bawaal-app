@@ -59,6 +59,7 @@ import { isUsablePlaybackUri } from './src/utils/reelMediaFallback';
 import {
   ARENA_FEED_TIER_ALL,
   applyArenaFeedFilters,
+  resolveArenaFeedTier,
 } from './src/constants/arenaFeedTiers';
 import {
   getArenaFilters,
