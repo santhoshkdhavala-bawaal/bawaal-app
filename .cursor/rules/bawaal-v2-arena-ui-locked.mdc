@@ -28,7 +28,7 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 ## 3. Reel player chrome (`VideoItem` + `MuteToggleButton` + `ReelActionSheet`)
 
 - No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
-- Top-left mute: `bmute.png` / `bunmute.png` tinted `#FF5500` (`position: 'absolute'`, `top: 16`, `left: 16`, `width/height: 36`, `zIndex: 99`, dark backdrop + orange border)
+- Top-right mute: `bmute.png` / `bunmute.png` tinted `#FF5500` (`position: 'absolute'`, `top: 16`, `right: 16`, `width/height: 36`, `zIndex: 99`) — flat icon, no backdrop patch
 - Bottom-right `⋮` — transparent hit target, orange `#FF5500` glyph (no dark circular patch); toggles on-video floating stack
 - Floating stack (`right: 16`, `bottom: 100`, `top: 96`, `justifyContent: 'flex-end'`): **DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send** with `bawaal_*.png` icons + labels; dismiss via outside tap / ✕; video keeps playing (no Modal sheet)
 - No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` stack

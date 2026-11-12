@@ -1,5 +1,5 @@
 /**
- * Floating mute / unmute — top-left video overlay, BAWAAL orange.
+ * Floating mute / unmute — top-right video overlay, flat BAWAAL orange icon.
  */
 import React, { memo } from 'react';
 import { Pressable, Image, StyleSheet } from 'react-native';
@@ -12,7 +12,7 @@ function MuteToggleButton({ muted, onPress, style }) {
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={10}
+      hitSlop={12}
       accessibilityRole="button"
       accessibilityLabel={muted ? 'Unmute video' : 'Mute video'}
       style={({ pressed }) => [
@@ -38,19 +38,17 @@ const styles = StyleSheet.create({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    borderWidth: 1,
-    borderColor: BAWAAL_ORANGE,
-    borderRadius: 18,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
     zIndex: 99,
   },
   hitPressed: {
-    opacity: 0.8,
+    opacity: 0.75,
     transform: [{ scale: 0.94 }],
   },
   icon: {
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
     tintColor: BAWAAL_ORANGE,
   },
 });
