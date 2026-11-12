@@ -855,7 +855,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
-      {/* Mute bottom-left, just above creator handle */}
+      {/* Mute top-left of the video overlay */}
       {!immersiveOpen ? (
         <MuteToggleButton
           muted={muted}
@@ -1132,7 +1132,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         muted={isMuted}
       />
 
-      {/* Mute above VideoItem handle/title — fully inside the video overlay */}
+      {/* Mute top-left of the video overlay */}
       <MuteToggleButton
         muted={isMuted}
         onPress={toggleMute}
@@ -2207,8 +2207,8 @@ const styles = StyleSheet.create({
   },
   challengeMuteBtn: {
     position: 'absolute',
-    left: 20,
-    bottom: 120,
+    top: 16,
+    left: 16,
     zIndex: 99,
   },
   challengeMoreBtn: {
@@ -2224,8 +2224,8 @@ const styles = StyleSheet.create({
   },
   reelMuteBtn: {
     position: 'absolute',
-    left: 20,
-    bottom: 120,
+    top: 16,
+    left: 16,
     zIndex: 99,
   },
   reelMoreBtn: {
