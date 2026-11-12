@@ -1,12 +1,14 @@
 /**
  * Reel ⋮ social actions — local-first with soft-fail Supabase sync.
- * Actions: DM · Banner Like · Follow · Share · Repost · Tag · Banter
+ * Actions: DM · Like · Follow/Unfollow · Share · Repost · Tag · Banter
+ * Follow is sheet-only — never a canvas overlay CTA.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
 
 const QUEUE_KEY = '@bawaal/reel_social_queue_v1';
+const FOLLOW_SET_KEY = '@bawaal/reel_following_ids_v1';
 
 function actorId() {
   const u = getActiveUser?.() || {};
@@ -53,6 +55,67 @@ async function softInsert(table, row) {
   }
 }
 
+async function softDeleteFollow(followerId, followingId) {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, fromCloud: false, reason: 'offline' };
+  }
+  try {
+    const { error } = await supabase
+      .from('reel_follows')
+      .delete()
+      .eq('follower_id', followerId)
+      .eq('following_id', followingId);
+    if (error) {
+      console.warn('[reelSocial] reel_follows delete:', error.message || error);
+      return { ok: false, fromCloud: false, error };
+    }
+    return { ok: true, fromCloud: true };
+  } catch (err) {
+    console.warn('[reelSocial] unfollow crashed:', err?.message || err);
+    return { ok: false, fromCloud: false, error: err };
+  }
+}
+
+async function readFollowSet() {
+  try {
+    const raw = await AsyncStorage.getItem(FOLLOW_SET_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+async function writeFollowSet(set) {
+  try {
+    await AsyncStorage.setItem(
+      FOLLOW_SET_KEY,
+      JSON.stringify(Array.from(set).slice(0, 500))
+    );
+  } catch (err) {
+    console.warn('[reelSocial] follow set persist failed:', err?.message || err);
+  }
+}
+
+/** Whether the active user is following this reel owner (local-first). */
+export async function isFollowingReelOwner(ownerKey) {
+  const key = String(ownerKey || '').trim();
+  if (!key) return false;
+  const set = await readFollowSet();
+  return set.has(key);
+}
+
+/** Persist local follow flag for sheet Follow / Unfollow label. */
+export async function setFollowingReelOwner(ownerKey, following) {
+  const key = String(ownerKey || '').trim();
+  if (!key) return false;
+  const set = await readFollowSet();
+  if (following) set.add(key);
+  else set.delete(key);
+  await writeFollowSet(set);
+  return following;
+}
+
 /**
  * Dispatch a reel social action. Always records locally; cloud is best-effort.
  * @param {string} actionId
@@ -76,6 +139,7 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
 
   switch (action) {
     case 'banner_like':
+    case 'like':
       return softInsert('reel_likes', {
         id: event.id,
         user_id: event.actorId,
@@ -83,12 +147,25 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
         created_at: new Date(event.createdAt).toISOString(),
       });
     case 'follow':
+      await setFollowingReelOwner(
+        target.ownerId || target.handle || target.reelId,
+        true
+      );
       return softInsert('reel_follows', {
         id: event.id,
         follower_id: event.actorId,
         following_id: target.ownerId || target.handle || 'unknown',
         created_at: new Date(event.createdAt).toISOString(),
       });
+    case 'unfollow':
+      await setFollowingReelOwner(
+        target.ownerId || target.handle || target.reelId,
+        false
+      );
+      return softDeleteFollow(
+        event.actorId,
+        target.ownerId || target.handle || 'unknown'
+      );
     case 'dm':
       return softInsert('direct_messages', {
         sender_id: event.actorId,

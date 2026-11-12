@@ -860,6 +860,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
+      {/* Profile overlay: handle + caption only — no Follow CTA on canvas */}
       <View
         style={[styles.reelBottomLeft, { bottom: tabBarHeight + 16 }]}
         pointerEvents="none"

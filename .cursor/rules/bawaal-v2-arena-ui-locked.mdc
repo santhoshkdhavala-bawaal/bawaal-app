@@ -29,7 +29,8 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 
 - No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
 - Top-right mute: `bmute.png` / `bunmute.png`
-- Bottom-right `⋮` → sheet: **DM · Banner Like · Follow · Share · Repost · Tag · Banter**
+- Bottom-right `⋮` → sheet: **DM · Like · Follow/Unfollow · Share · Repost · Tag · Banter**
+- No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` sheet
 - No sport-category pills on clip surfaces (see UI baseline §3)
 
 ## 4. Onboarding polish (Registration / Terms / OTP)

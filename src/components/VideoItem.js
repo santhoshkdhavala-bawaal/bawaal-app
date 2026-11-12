@@ -91,6 +91,7 @@ const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, 
           <Text style={styles.missingText}>WAITING FOR CLIP</Text>
         </View>
       ) : null}
+      {/* Profile overlay: handle + title only — Follow lives in the ⋮ sheet */}
       <View style={styles.bottom} pointerEvents="box-none">
         <Text style={styles.user} numberOfLines={1}>
           {handle}

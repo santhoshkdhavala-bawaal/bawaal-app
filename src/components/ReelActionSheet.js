@@ -1,8 +1,9 @@
 /**
  * Instagram-style reel action sheet
- * (DM / Banner Like / Follow / Share / Repost / Tag / Banter).
+ * (DM / Like / Follow·Unfollow / Share / Repost / Tag / Banter).
+ * Follow lives only here — never as a canvas overlay CTA.
  */
-import React, { memo } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -14,6 +15,10 @@ import {
   Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  isFollowingReelOwner,
+  setFollowingReelOwner,
+} from '../services/reelSocialService';
 
 const WHITE = '#FFFFFF';
 const BG = '#0A0A0A';
@@ -22,15 +27,27 @@ const MUTED = '#A9A9A9';
 const ACCENT = '#FF5A00';
 const HAIRLINE = 'rgba(255,255,255,0.12)';
 
-const ACTIONS = [
+const BASE_ACTIONS = [
   { id: 'dm', label: 'DM' },
-  { id: 'banner_like', label: 'Banner Like' },
+  { id: 'banner_like', label: 'Like' },
   { id: 'follow', label: 'Follow' },
   { id: 'share', label: 'Share' },
   { id: 'repost', label: 'Repost' },
   { id: 'tag', label: 'Tag' },
   { id: 'banter', label: 'Banter' },
 ];
+
+function followTargetKey(reel) {
+  return String(
+    reel?.user_id ||
+      reel?.userId ||
+      reel?.hostId ||
+      reel?.author ||
+      reel?.handle ||
+      reel?.id ||
+      ''
+  ).trim();
+}
 
 async function shareReel(reel) {
   const postId = reel?.id != null ? String(reel.id) : '';
@@ -49,18 +66,54 @@ async function shareReel(reel) {
 
 function ReelActionSheet({ visible, reel, onClose, onAction }) {
   const insets = useSafeAreaInsets();
+  const targetKey = followTargetKey(reel);
+  const [following, setFollowing] = useState(false);
 
-  const run = async (actionId) => {
-    if (actionId === 'share') {
-      await shareReel(reel);
+  useEffect(() => {
+    let alive = true;
+    if (!visible || !targetKey) {
+      setFollowing(false);
+      return undefined;
     }
-    try {
-      onAction?.(actionId, reel);
-    } catch (_) {
-      /* ignore */
-    }
-    onClose?.();
-  };
+    void isFollowingReelOwner(targetKey).then((on) => {
+      if (alive) setFollowing(!!on);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [visible, targetKey]);
+
+  const actions = useMemo(
+    () =>
+      BASE_ACTIONS.map((action) =>
+        action.id === 'follow'
+          ? { ...action, label: following ? 'Unfollow' : 'Follow' }
+          : action
+      ),
+    [following]
+  );
+
+  const run = useCallback(
+    async (actionId) => {
+      let resolvedId = actionId;
+      if (actionId === 'follow') {
+        const next = !following;
+        setFollowing(next);
+        resolvedId = next ? 'follow' : 'unfollow';
+        void setFollowingReelOwner(targetKey, next).catch(() => {});
+      }
+      if (resolvedId === 'share') {
+        await shareReel(reel);
+      }
+      try {
+        onAction?.(resolvedId, reel);
+      } catch (_) {
+        /* ignore */
+      }
+      onClose?.();
+    },
+    [following, onAction, onClose, reel, targetKey]
+  );
 
   return (
     <Modal
@@ -79,12 +132,12 @@ function ReelActionSheet({ visible, reel, onClose, onAction }) {
         >
           <View style={styles.handle} />
           <Text style={styles.title}>ACTIONS</Text>
-          {ACTIONS.map((action, index) => (
+          {actions.map((action, index) => (
             <TouchableOpacity
               key={action.id}
               style={[
                 styles.row,
-                index === ACTIONS.length - 1 && styles.rowLast,
+                index === actions.length - 1 && styles.rowLast,
               ]}
               onPress={() => run(action.id)}
               activeOpacity={0.85}
@@ -186,4 +239,4 @@ const styles = StyleSheet.create({
 });
 
 export default memo(ReelActionSheet);
-export { ACTIONS as REEL_ACTIONS };
+export { BASE_ACTIONS as REEL_ACTIONS };
