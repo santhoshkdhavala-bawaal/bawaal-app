@@ -786,7 +786,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   /** When true, this card is open in ArenaReelViewer — hide duplicate mute. */
   immersiveOpen = false,
 }) {
-  const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
+  const { tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [muted, setMuted] = useState(true);
   const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
@@ -853,16 +853,16 @@ const GeneralReelCard = memo(function GeneralReelCard({
         onLongPress={immersiveOpen ? null : openImmersive}
       />
 
-      {/* Top-right mute using bmute / bunmute assets */}
+      <View style={styles.reelScrim} pointerEvents="none" />
+
+      {/* Mute sits above creator info (bottom-left) — clear of header logo + right action rail */}
       {!immersiveOpen ? (
         <MuteToggleButton
           muted={muted}
           onPress={toggleMute}
-          style={[styles.reelMuteBtn, { top: headerHeight + 8 }]}
+          style={[styles.reelMuteBtn, { bottom: tabBarHeight + 88 }]}
         />
       ) : null}
-
-      <View style={styles.reelScrim} pointerEvents="none" />
 
       {/* Profile overlay: handle + caption only — no Follow CTA on canvas */}
       <View
@@ -1095,7 +1095,6 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   index,
   activeIndex,
   screenHeight,
-  headerHeight = 56,
 }) {
   const [isMuted, setIsMuted] = useState(true);
   const [showActionStack, setShowActionStack] = useState(false);
@@ -1133,10 +1132,11 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         muted={isMuted}
       />
 
+      {/* Mute above VideoItem handle/title — fully inside the video overlay */}
       <MuteToggleButton
         muted={isMuted}
         onPress={toggleMute}
-        style={[styles.challengeMuteBtn, { top: Math.max(headerHeight, 56) + 8 }]}
+        style={styles.challengeMuteBtn}
       />
 
       <TouchableOpacity
@@ -1966,10 +1966,9 @@ export default function ArenaFeed({ navigation, route }) {
         index={index}
         activeIndex={activeIndex}
         screenHeight={screenHeight}
-        headerHeight={headerHeight}
       />
     ),
-    [activeIndex, screenHeight, headerHeight]
+    [activeIndex, screenHeight]
   );
 
   const emptyChallengeList = useMemo(
@@ -2209,7 +2208,8 @@ const styles = StyleSheet.create({
   challengeMuteBtn: {
     position: 'absolute',
     left: 16,
-    zIndex: 40,
+    bottom: 168,
+    zIndex: 20,
   },
   challengeMoreBtn: {
     position: 'absolute',
@@ -2224,9 +2224,8 @@ const styles = StyleSheet.create({
   },
   reelMuteBtn: {
     position: 'absolute',
-    top: 14,
     left: 16,
-    zIndex: 40,
+    zIndex: 20,
   },
   reelMoreBtn: {
     position: 'absolute',
