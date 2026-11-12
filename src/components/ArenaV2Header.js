@@ -98,15 +98,17 @@ function ArenaV2Header({
           accessibilityRole="button"
           accessibilityLabel="Open profile gateway"
           hitSlop={{ top: 8, bottom: 4, left: 4, right: 8 }}
-          style={styles.brandCol}
+          style={styles.brandHit}
         >
-          <Image
-            source={COMBINED_LOGO}
-            style={styles.combinedLogo}
-            resizeMode="contain"
-            accessibilityLabel="BAWAAL"
-          />
-          <Text style={styles.arenaLabel}>ARENA</Text>
+          <View style={styles.brandStack}>
+            <Image
+              source={COMBINED_LOGO}
+              style={styles.combinedLogo}
+              resizeMode="contain"
+              accessibilityLabel="BAWAAL"
+            />
+            <Text style={styles.arenaLabel}>ARENA</Text>
+          </View>
         </TouchableOpacity>
 
         <View style={styles.rightCol}>
@@ -141,24 +143,28 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 10,
   },
-  brandCol: {
+  brandHit: {
     flexShrink: 1,
     maxWidth: '58%',
+  },
+  brandStack: {
+    flexDirection: 'column',
     alignItems: 'flex-start',
   },
   combinedLogo: {
     height: 38,
     width: 190,
-    alignSelf: 'flex-start',
   },
   arenaLabel: {
     marginTop: 4,
-    alignSelf: 'flex-start',
+    marginLeft: 0,
+    paddingLeft: 0,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 3.2,
     textTransform: 'uppercase',
+    textAlign: 'left',
   },
   rightCol: {
     flexDirection: 'row',
