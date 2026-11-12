@@ -1,6 +1,6 @@
 /**
  * GAME ON interactive command drawer —
- * search + Sport Hub Map, battle-tier filters, live scores + BAWAAL_SPORTS pills.
+ * search + Near Me map, battle-tier filters.
  */
 import React, { memo, useState } from 'react';
 import {
@@ -15,8 +15,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import ScoresSportsPanel from './ScoresSportsPanel';
-import { BAWAAL_SPORTS } from '../constants/sports';
 import { ARENA_FEED_TIERS } from '../constants/arenaFeedTiers';
 
 const WHITE = '#FFFFFF';
@@ -68,7 +66,7 @@ function GameOnHub({
             <View style={styles.headerCopy}>
               <Text style={styles.kicker}>COMMAND DRAWER</Text>
               <Text style={styles.title}>▶ GAME ON</Text>
-              <Text style={styles.subtitle}>SEARCH · MAP · FILTERS · SCORES</Text>
+              <Text style={styles.subtitle}>SEARCH · NEAR ME · FILTERS</Text>
             </View>
             <TouchableOpacity
               onPress={onClose}
@@ -100,10 +98,10 @@ function GameOnHub({
               onPress={openMap}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="Open Sport Hub Map"
+              accessibilityLabel="Near Me map"
             >
               <Ionicons name="map-outline" size={15} color={WHITE} />
-              <Text style={styles.mapBtnText}>SPORT HUB MAP</Text>
+              <Text style={styles.mapBtnText}>NEAR ME</Text>
             </TouchableOpacity>
           </View>
 
@@ -149,10 +147,6 @@ function GameOnHub({
                 })}
               </ScrollView>
             </View>
-
-            <View style={styles.section}>
-              <ScoresSportsPanel sports={BAWAAL_SPORTS} />
-            </View>
           </ScrollView>
         </View>
       </View>
@@ -170,8 +164,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   drawer: {
-    maxHeight: '92%',
-    minHeight: '72%',
+    maxHeight: '78%',
+    minHeight: '42%',
     backgroundColor: BG,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
@@ -266,7 +260,7 @@ const styles = StyleSheet.create({
   mapBtn: {
     height: 42,
     borderRadius: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     backgroundColor: ACCENT,
     flexDirection: 'row',
     alignItems: 'center',
@@ -274,9 +268,9 @@ const styles = StyleSheet.create({
   },
   mapBtnText: {
     color: WHITE,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   scroll: {
     flex: 1,

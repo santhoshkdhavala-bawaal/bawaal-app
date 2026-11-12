@@ -152,23 +152,23 @@ const styles = StyleSheet.create({
   },
   brandCol: {
     flexShrink: 1,
-    maxWidth: '54%',
+    maxWidth: '58%',
   },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   bLogo: {
-    width: 40,
-    height: 40,
+    width: 52,
+    height: 52,
   },
   wordmark: {
-    width: 148,
-    height: 30,
+    width: 168,
+    height: 34,
   },
   arenaLabel: {
-    marginTop: 6,
+    marginTop: 4,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
