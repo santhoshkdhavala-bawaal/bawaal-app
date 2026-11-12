@@ -101,15 +101,13 @@ function ArenaV2Header({
           style={styles.brandHit}
         >
           <View style={styles.brandStack}>
-            <View style={styles.logoWrap}>
-              <Image
-                source={COMBINED_LOGO}
-                style={styles.combinedLogo}
-                resizeMode="contain"
-                accessibilityLabel="BAWAAL"
-              />
-            </View>
-            {/* Offset matches logoWrap + shard overhang so ARENA sits under the B stem */}
+            <Image
+              source={COMBINED_LOGO}
+              style={styles.combinedLogo}
+              resizeMode="contain"
+              accessibilityLabel="BAWAAL"
+            />
+            {/* Centers under the B emblem (~72px) within the 190px combined mark */}
             <Text style={styles.arenaLabel}>ARENA</Text>
           </View>
         </TouchableOpacity>
@@ -154,8 +152,6 @@ const styles = StyleSheet.create({
   brandStack: {
     flexDirection: 'column',
     alignItems: 'flex-start',
-  },
-  logoWrap: {
     marginLeft: 16,
   },
   combinedLogo: {
@@ -163,9 +159,9 @@ const styles = StyleSheet.create({
     width: 190,
   },
   arenaLabel: {
-    // logoWrap (16) + ~8px to clear left shatter shards → under the B stem
+    // Horizontally centers under the B block (~(72 - labelWidth) / 2)
     marginTop: 4,
-    marginLeft: 24,
+    marginLeft: 12,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
