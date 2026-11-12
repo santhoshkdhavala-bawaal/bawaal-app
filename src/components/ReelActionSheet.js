@@ -1,6 +1,6 @@
 /**
  * Instagram-style reel action sheet
- * (DM / Like / Follow·Unfollow / Share / Repost / Tag / Banter).
+ * (DM / Like / Follow·Unfollow / Share / Save / Banter / Comment / Send).
  * Follow lives only here — never as a canvas overlay CTA.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -8,6 +8,7 @@ import {
   Modal,
   View,
   Text,
+  Image,
   StyleSheet,
   Pressable,
   TouchableOpacity,
@@ -24,17 +25,19 @@ const WHITE = '#FFFFFF';
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
 const MUTED = '#A9A9A9';
-const ACCENT = '#FF5A00';
+const ACCENT = '#FF5500';
 const HAIRLINE = 'rgba(255,255,255,0.12)';
+const ICON_SIZE = 24;
 
 const BASE_ACTIONS = [
-  { id: 'dm', label: 'DM' },
-  { id: 'banner_like', label: 'Like' },
-  { id: 'follow', label: 'Follow' },
-  { id: 'share', label: 'Share' },
-  { id: 'repost', label: 'Repost' },
-  { id: 'tag', label: 'Tag' },
-  { id: 'banter', label: 'Banter' },
+  { id: 'dm', label: 'DM', icon: require('../../assets/bawaal_dm.png') },
+  { id: 'like', label: 'Like', icon: require('../../assets/bawaal_like.png') },
+  { id: 'follow', label: 'Follow', icon: require('../../assets/bawaal_follow.png') },
+  { id: 'share', label: 'Share', icon: require('../../assets/bawaal_share.png') },
+  { id: 'save', label: 'Save', icon: require('../../assets/bawaal_save.png') },
+  { id: 'banter', label: 'Banter', icon: require('../../assets/bawaal_banter.png') },
+  { id: 'comment', label: 'Comment', icon: require('../../assets/bawaal_comment.png') },
+  { id: 'send', label: 'Send', icon: require('../../assets/bawaal_send.png') },
 ];
 
 function followTargetKey(reel) {
@@ -102,7 +105,7 @@ function ReelActionSheet({ visible, reel, onClose, onAction }) {
         resolvedId = next ? 'follow' : 'unfollow';
         void setFollowingReelOwner(targetKey, next).catch(() => {});
       }
-      if (resolvedId === 'share') {
+      if (resolvedId === 'share' || resolvedId === 'send') {
         await shareReel(reel);
       }
       try {
@@ -144,6 +147,11 @@ function ReelActionSheet({ visible, reel, onClose, onAction }) {
               accessibilityRole="button"
               accessibilityLabel={action.label}
             >
+              <Image
+                source={action.icon}
+                style={styles.rowIcon}
+                resizeMode="contain"
+              />
               <Text style={styles.rowText}>{action.label}</Text>
             </TouchableOpacity>
           ))}
@@ -175,7 +183,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     borderWidth: 1,
     borderBottomWidth: 0,
-    borderColor: 'rgba(255,90,0,0.28)',
+    borderColor: 'rgba(255,85,0,0.28)',
     paddingTop: 10,
     paddingHorizontal: 14,
     ...Platform.select({
@@ -206,6 +214,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: SURFACE,
     borderRadius: 12,
     borderWidth: 1,
@@ -213,22 +223,28 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 8,
+    gap: 14,
   },
   rowLast: {
     marginBottom: 12,
+  },
+  rowIcon: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
   },
   rowText: {
     color: WHITE,
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.2,
+    flexShrink: 1,
   },
   cancelBtn: {
     alignItems: 'center',
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,90,0,0.45)',
+    borderColor: 'rgba(255,85,0,0.45)',
   },
   cancelText: {
     color: ACCENT,

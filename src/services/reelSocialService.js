@@ -1,6 +1,6 @@
 /**
  * Reel ⋮ social actions — local-first with soft-fail Supabase sync.
- * Actions: DM · Like · Follow/Unfollow · Share · Repost · Tag · Banter
+ * Actions: DM · Like · Follow/Unfollow · Share · Save · Banter · Comment · Send
  * Follow is sheet-only — never a canvas overlay CTA.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -196,7 +196,11 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
         created_at: new Date(event.createdAt).toISOString(),
       });
     case 'share':
+    case 'send':
       return { ok: true, fromCloud: false, reason: 'client-share' };
+    case 'save':
+    case 'comment':
+      return { ok: true, fromCloud: false, reason: 'local-only' };
     default:
       return { ok: true, fromCloud: false, reason: 'noop' };
   }
