@@ -101,12 +101,15 @@ function ArenaV2Header({
           style={styles.brandHit}
         >
           <View style={styles.brandStack}>
-            <Image
-              source={COMBINED_LOGO}
-              style={styles.combinedLogo}
-              resizeMode="contain"
-              accessibilityLabel="BAWAAL"
-            />
+            <View style={styles.logoWrap}>
+              <Image
+                source={COMBINED_LOGO}
+                style={styles.combinedLogo}
+                resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+            </View>
+            {/* Offset matches logoWrap + shard overhang so ARENA sits under the B stem */}
             <Text style={styles.arenaLabel}>ARENA</Text>
           </View>
         </TouchableOpacity>
@@ -143,33 +146,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
-    paddingLeft: 0,
-    marginLeft: 0,
   },
   brandHit: {
     flexShrink: 1,
     maxWidth: '58%',
-    paddingLeft: 0,
-    marginLeft: 0,
-    left: 0,
   },
   brandStack: {
     flexDirection: 'column',
     alignItems: 'flex-start',
-    paddingLeft: 0,
-    marginLeft: 0,
-    left: 0,
+  },
+  logoWrap: {
+    marginLeft: 16,
   },
   combinedLogo: {
     height: 38,
     width: 190,
-    marginLeft: 0,
-    paddingLeft: 0,
   },
   arenaLabel: {
+    // logoWrap (16) + ~8px to clear left shatter shards → under the B stem
     marginTop: 4,
-    marginLeft: 0,
-    paddingLeft: 0,
+    marginLeft: 24,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
@@ -182,7 +178,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexShrink: 0,
-    marginRight: 0,
   },
   gameOnWrap: {
     position: 'relative',
