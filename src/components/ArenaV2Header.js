@@ -21,7 +21,7 @@ const WHITE = '#FFFFFF';
 const ACCENT = '#FF5A00';
 const MUTED = '#A9A9A9';
 
-const COMBINED_LOGO = require('../../assets/B_BAWAAL_logo_single.png');
+const COMBINED_LOGO = require('../../assets/BAWAAL_logo_combined.png');
 
 function GameOnPill({ onPress }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -147,8 +147,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   combinedLogo: {
-    height: 36,
-    width: 180,
+    height: 38,
+    width: 190,
     alignSelf: 'flex-start',
   },
   arenaLabel: {
