@@ -2208,7 +2208,7 @@ const styles = StyleSheet.create({
   },
   challengeMuteBtn: {
     position: 'absolute',
-    right: 16,
+    left: 16,
     zIndex: 40,
   },
   challengeMoreBtn: {
@@ -2225,7 +2225,7 @@ const styles = StyleSheet.create({
   reelMuteBtn: {
     position: 'absolute',
     top: 14,
-    right: 14,
+    left: 16,
     zIndex: 40,
   },
   reelMoreBtn: {

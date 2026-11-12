@@ -171,12 +171,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 100,
+    // Keep DM below mute / header chrome on the right rail
+    top: 96,
     zIndex: 20,
     alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingTop: 12,
   },
   item: {
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 10,
     minWidth: 56,
   },
   icon: {
