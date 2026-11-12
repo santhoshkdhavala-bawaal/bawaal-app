@@ -18,8 +18,19 @@
  * @property {string|null} country
  * @property {string|null} category — BAWAAL sport taxonomy label
  * @property {BawaalRole|null} role
+ * @property {string|null} [avatar_url]
+ * @property {'White'|'Yellow'|'Blue'|'Purple'|'Gold'|null} [belt_tier]
  * @property {string} [created_at]
  */
+
+/** Belt / ranking tiers shown on Arena + Passport. */
+export const BAWAAL_BELT_TIERS = Object.freeze([
+  'White',
+  'Yellow',
+  'Blue',
+  'Purple',
+  'Gold',
+]);
 
 /** Canonical V1 column names written on registration upsert. */
 export const PROFILE_V1_COLUMNS = Object.freeze([

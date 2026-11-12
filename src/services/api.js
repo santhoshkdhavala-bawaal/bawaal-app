@@ -8,6 +8,10 @@ import {
   seedBattlesOpenCallouts,
   CALLOUT_KIND_CHALLENGE,
 } from '../utils/faceoffCallout';
+import { fetchVideoSocialCounts } from './videoSocialService';
+
+const VIDEOS_WITH_PROFILES_SELECT =
+  '*, profiles(username, avatar_url, avatar_uri, belt_tier, primary_sport)';
 
 /** Offline / cold-start Arena feed cards (api schema shape). */
 export const MOCK_ARENA_FEED = [
@@ -95,8 +99,18 @@ export function mapVideoRowToFeedItem(row) {
     profile?.sport ||
     sport;
 
+  const likeCount = Number(row.like_count ?? row.likeCount ?? 0) || 0;
+  const commentCount = Number(row.comment_count ?? row.commentCount ?? 0) || 0;
+  const beltTier =
+    profile?.belt_tier ||
+    profile?.beltTier ||
+    row.belt_tier ||
+    'White';
+
   return {
     id: String(row.id),
+    user_id: row.user_id || row.userId || profile?.id || null,
+    userId: row.user_id || row.userId || profile?.id || null,
     username,
     handle,
     fullName: profile?.full_name || profile?.display_name || username,
@@ -105,6 +119,7 @@ export function mapVideoRowToFeedItem(row) {
     category: sport,
     sport,
     primarySport,
+    beltTier,
     caption: row.caption || '',
     videoUrl,
     video_url: videoUrl,
@@ -121,12 +136,36 @@ export function mapVideoRowToFeedItem(row) {
     createdAt: Number.isFinite(ts) ? ts : Date.now(),
     timestamp: Number.isFinite(ts) ? ts : Date.now(),
     relativeTime: relativeLabel(createdAt),
-    fireCount: '0',
-    banterCount: '0',
-    hypeCount: 0,
+    likeCount,
+    commentCount,
+    likedByMe: !!row.likedByMe,
+    fireCount: String(likeCount),
+    banterCount: String(commentCount),
+    hypeCount: likeCount,
     aiVerified: false,
     _fromVideosTable: true,
   };
+}
+
+/** Attach live like/comment counts onto mapped feed rows. */
+export async function enrichFeedWithSocialCounts(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return list;
+  const counts = await fetchVideoSocialCounts(list.map((i) => i.id));
+  return list.map((item) => {
+    const c = counts[String(item.id)] || {};
+    const likeCount = Number(c.likeCount ?? item.likeCount ?? 0) || 0;
+    const commentCount = Number(c.commentCount ?? item.commentCount ?? 0) || 0;
+    return {
+      ...item,
+      likeCount,
+      commentCount,
+      likedByMe: !!c.likedByMe,
+      fireCount: String(likeCount),
+      banterCount: String(commentCount),
+      hypeCount: likeCount,
+    };
+  });
 }
 
 /**
@@ -193,10 +232,10 @@ export async function fetchArenaFeed(category = 'ALL') {
   }
 
   try {
-    // Live: videos ⨝ profiles(username, avatar_url)
+    // Live: videos ⨝ profiles (handle / avatar / belt)
     let query = supabase
       .from('videos')
-      .select('*, profiles(username, avatar_url)')
+      .select(VIDEOS_WITH_PROFILES_SELECT)
       .order('created_at', { ascending: false })
       .limit(40);
 
@@ -240,7 +279,7 @@ export async function fetchArenaFeed(category = 'ALL') {
       console.warn('[api] videos empty — soft-fallback mock feed');
       return filterMockByCategory(MOCK_ARENA_FEED, category);
     }
-    return mapped;
+    return enrichFeedWithSocialCounts(mapped);
   } catch (err) {
     console.warn('[api] fetchArenaFeed crashed:', err?.message || err);
     return filterMockByCategory(MOCK_ARENA_FEED, category);

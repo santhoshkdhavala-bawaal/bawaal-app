@@ -47,6 +47,8 @@ alter table public.profiles add column if not exists primary_sport text;
 alter table public.profiles add column if not exists updated_at timestamptz default now();
 alter table public.profiles add column if not exists bio text;
 alter table public.profiles add column if not exists avatar_uri text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists belt_tier text;
 alter table public.profiles add column if not exists status_badge text;
 alter table public.profiles add column if not exists verified boolean default false;
 alter table public.profiles add column if not exists online boolean default false;

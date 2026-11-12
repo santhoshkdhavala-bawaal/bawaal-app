@@ -14,6 +14,10 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
+import {
+  fetchVideoComments,
+  postVideoComment,
+} from './src/services/videoSocialService';
 
 const BG = '#000000';
 const CARD = '#121212';
@@ -31,34 +35,62 @@ const DEMO_BANTER = [
 /**
  * In-place banter / GIF comment sheet — does not switch to immersive reel view.
  */
-export default function BanterBottomSheet({ visible, reel, onClose }) {
+export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) {
   const insets = useSafeAreaInsets();
   const [banter, setBanter] = useState(DEMO_BANTER);
   const [draft, setDraft] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
-    setBanter(reel?.banter?.length ? reel.banter : DEMO_BANTER);
     setDraft('');
-  }, [visible, reel?.id, reel]);
+    let alive = true;
+    setLoading(true);
+    (async () => {
+      const live = await fetchVideoComments(reel);
+      if (!alive) return;
+      if (live.length) {
+        setBanter(live);
+      } else if (reel?.banter?.length) {
+        setBanter(reel.banter);
+      } else {
+        setBanter(DEMO_BANTER);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [visible, reel?.id]);
 
   const handle = reel?.author?.startsWith('@')
     ? reel.author
     : `@${String(reel?.author || 'athlete').replace(/^@/, '')}`;
 
-  const sendBanter = (gif) => {
-    const text = draft.trim();
+  const sendBanter = async (gif) => {
+    const text = draft.trim() || (gif ? `reacted ${gif}` : '');
     if (!text && !gif) return;
-    setBanter((prev) => [
-      {
-        id: `local-${Date.now()}`,
-        handle: '@you',
-        text: text || 'reacted',
-        gif: gif || '💬',
-      },
-      ...prev,
-    ]);
+    const optimistic = {
+      id: `local-${Date.now()}`,
+      handle: '@you',
+      text: text || 'reacted',
+      gif: gif || '💬',
+    };
+    setBanter((prev) => [optimistic, ...prev]);
     setDraft('');
+    const posted = await postVideoComment(reel, text || gif || '💬');
+    if (posted?.comment?.id) {
+      setBanter((prev) =>
+        prev.map((row) =>
+          row.id === optimistic.id ? { ...optimistic, ...posted.comment } : row
+        )
+      );
+    }
+    try {
+      onPosted?.(posted?.comment || optimistic, reel);
+    } catch (_) {
+      /* ignore */
+    }
   };
 
   return (
@@ -110,6 +142,9 @@ export default function BanterBottomSheet({ visible, reel, onClose }) {
           </ScrollView>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+            {loading && banter.length === 0 ? (
+              <Text style={styles.rowText}>Loading banter…</Text>
+            ) : null}
             {banter.map((c) => (
               <View key={c.id} style={styles.row}>
                 <Text style={styles.rowGif}>{c.gif || '💬'}</Text>

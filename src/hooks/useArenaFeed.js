@@ -1,15 +1,18 @@
 /**
- * Arena feed — live Supabase `videos` joined with `profiles(username, avatar_url)`.
+ * Arena feed — live Supabase `videos` joined with profiles + social counts.
  * Soft-falls back to mock rows when offline, misconfigured, or the table is empty.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 import {
   mapVideoRowToFeedItem,
+  enrichFeedWithSocialCounts,
   getMockArenaFeed,
 } from '../services/api';
+import { subscribeVideoSocial } from '../services/videoSocialService';
 
-const VIDEOS_WITH_PROFILES_SELECT = '*, profiles(username, avatar_url)';
+const VIDEOS_WITH_PROFILES_SELECT =
+  '*, profiles(username, avatar_url, avatar_uri, belt_tier, primary_sport)';
 
 /**
  * @param {{ category?: string, enabled?: boolean, limit?: number }} [opts]
@@ -57,7 +60,6 @@ export function useArenaFeed(opts = {}) {
       }
 
       try {
-        // Live query: videos + profile handle / avatar
         let query = supabase
           .from('videos')
           .select(VIDEOS_WITH_PROFILES_SELECT)
@@ -71,7 +73,6 @@ export function useArenaFeed(opts = {}) {
 
         let { data, error: queryError } = await query;
 
-        // FK embed missing / schema cache — lean select, still live
         if (
           queryError &&
           /relationship|embed|schema cache|foreign key|PGRST/i.test(
@@ -118,7 +119,9 @@ export function useArenaFeed(opts = {}) {
           return;
         }
 
-        setItems(mapped);
+        const enriched = await enrichFeedWithSocialCounts(mapped);
+        if (cancelled || !mounted.current) return;
+        setItems(enriched);
         setFromLive(true);
       } catch (err) {
         if (cancelled || !mounted.current) return;
@@ -138,6 +141,43 @@ export function useArenaFeed(opts = {}) {
       cancelled = true;
     };
   }, [category, enabled, limit, refreshKey]);
+
+  // Live like/comment inserts refresh counts without a full feed remount
+  const feedIdKey = items.map((i) => i.id).filter(Boolean).join('|');
+  useEffect(() => {
+    if (!fromLive || !feedIdKey) return undefined;
+    const ids = feedIdKey.split('|').filter(Boolean);
+    return subscribeVideoSocial(ids, ({ videoId, table, payload }) => {
+      const isDelete = payload?.eventType === 'DELETE';
+      const delta = isDelete ? -1 : 1;
+      setItems((prev) =>
+        prev.map((row) => {
+          if (String(row.id) !== String(videoId)) return row;
+          if (table === 'likes') {
+            const likeCount = Math.max(0, Number(row.likeCount || 0) + delta);
+            return {
+              ...row,
+              likeCount,
+              fireCount: String(likeCount),
+              hypeCount: likeCount,
+            };
+          }
+          if (table === 'comments') {
+            const commentCount = Math.max(
+              0,
+              Number(row.commentCount || 0) + delta
+            );
+            return {
+              ...row,
+              commentCount,
+              banterCount: String(commentCount),
+            };
+          }
+          return row;
+        })
+      );
+    });
+  }, [fromLive, feedIdKey]);
 
   const refresh = useCallback(() => {
     setRefreshKey((k) => k + 1);

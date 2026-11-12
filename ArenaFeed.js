@@ -817,13 +817,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
   }, []);
 
   const onReelAction = useCallback(
-    (actionId) => {
-      if (actionId === 'banter') {
+    (actionId, reelSnapshot) => {
+      // Comment / Banter open the live sheet — posts write from BanterBottomSheet
+      if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
+        return;
       }
-      void dispatchReelSocialAction(actionId, item).catch((err) => {
-        console.warn('[ArenaFeed] reel social:', err?.message || err);
-      });
+      void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(
+        (err) => {
+          console.warn('[ArenaFeed] reel social:', err?.message || err);
+        }
+      );
     },
     [item]
   );
@@ -1116,13 +1120,17 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   }, []);
 
   const onReelAction = useCallback(
-    (actionId) => {
-      if (actionId === 'banter') {
+    (actionId, reelSnapshot) => {
+      // Comment / Banter open the live sheet — posts write from BanterBottomSheet
+      if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
+        return;
       }
-      void dispatchReelSocialAction(actionId, item).catch((err) => {
-        console.warn('[ChallengeFeedCard] reel social:', err?.message || err);
-      });
+      void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(
+        (err) => {
+          console.warn('[ChallengeFeedCard] reel social:', err?.message || err);
+        }
+      );
     },
     [item]
   );

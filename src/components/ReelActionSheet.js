@@ -66,9 +66,19 @@ async function shareReel(reel) {
   }
 }
 
+function formatCountLabel(base, count) {
+  const n = Number(count) || 0;
+  return n > 0 ? `${base} · ${n}` : base;
+}
+
 function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
   const targetKey = followTargetKey(reel);
   const [following, setFollowing] = useState(false);
+  const [likeCount, setLikeCount] = useState(Number(reel?.likeCount) || 0);
+  const [commentCount, setCommentCount] = useState(
+    Number(reel?.commentCount) || 0
+  );
+  const [likedByMe, setLikedByMe] = useState(!!reel?.likedByMe);
 
   useEffect(() => {
     let alive = true;
@@ -84,14 +94,34 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
     };
   }, [visible, targetKey]);
 
+  useEffect(() => {
+    if (!visible) return;
+    setLikeCount(Number(reel?.likeCount) || 0);
+    setCommentCount(Number(reel?.commentCount) || 0);
+    setLikedByMe(!!reel?.likedByMe);
+  }, [visible, reel?.id, reel?.likeCount, reel?.commentCount, reel?.likedByMe]);
+
   const actions = useMemo(
     () =>
-      BASE_ACTIONS.map((action) =>
-        action.id === 'follow'
-          ? { ...action, label: following ? 'Unfollow' : 'Follow' }
-          : action
-      ),
-    [following]
+      BASE_ACTIONS.map((action) => {
+        if (action.id === 'follow') {
+          return { ...action, label: following ? 'Unfollow' : 'Follow' };
+        }
+        if (action.id === 'like') {
+          return {
+            ...action,
+            label: formatCountLabel(likedByMe ? 'Liked' : 'Like', likeCount),
+          };
+        }
+        if (action.id === 'comment' || action.id === 'banter') {
+          return {
+            ...action,
+            label: formatCountLabel(action.label, commentCount),
+          };
+        }
+        return action;
+      }),
+    [following, likeCount, commentCount, likedByMe]
   );
 
   const run = useCallback(
@@ -103,17 +133,40 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
         resolvedId = next ? 'follow' : 'unfollow';
         void setFollowingReelOwner(targetKey, next).catch(() => {});
       }
+      if (actionId === 'like') {
+        // Optimistic count — cloud toggle runs via onAction / dispatchReelSocialAction
+        const nextLiked = !likedByMe;
+        setLikedByMe(nextLiked);
+        setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
+      }
       if (resolvedId === 'share' || resolvedId === 'send') {
         await shareReel(reel);
       }
       try {
-        onAction?.(resolvedId, reel);
+        onAction?.(resolvedId, {
+          ...reel,
+          likeCount,
+          commentCount,
+          likedByMe,
+        });
       } catch (_) {
         /* ignore */
       }
-      onClose?.();
+      // Keep stack open for like so count stays visible; close for navigation actions
+      if (resolvedId !== 'like') {
+        onClose?.();
+      }
     },
-    [following, onAction, onClose, reel, targetKey]
+    [
+      following,
+      likedByMe,
+      likeCount,
+      commentCount,
+      onAction,
+      onClose,
+      reel,
+      targetKey,
+    ]
   );
 
   if (!visible) return null;

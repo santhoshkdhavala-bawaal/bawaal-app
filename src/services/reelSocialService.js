@@ -6,6 +6,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
+import {
+  postVideoComment,
+  toggleVideoLike,
+} from './videoSocialService';
 
 const QUEUE_KEY = '@bawaal/reel_social_queue_v1';
 const FOLLOW_SET_KEY = '@bawaal/reel_following_ids_v1';
@@ -139,18 +143,28 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
 
   switch (action) {
     case 'banner_like':
-    case 'like':
-      return softInsert('reel_likes', {
-        id: event.id,
-        user_id: event.actorId,
-        reel_id: target.reelId || null,
-        created_at: new Date(event.createdAt).toISOString(),
-      });
+    case 'like': {
+      const likeResult = await toggleVideoLike(reel);
+      // Soft-compat: also mirror into legacy reel_likes when cloud like table wrote
+      if (likeResult?.liked && likeResult?.delta > 0) {
+        void softInsert('reel_likes', {
+          id: event.id,
+          user_id: event.actorId,
+          reel_id: target.reelId || null,
+          created_at: new Date(event.createdAt).toISOString(),
+        });
+      }
+      return likeResult;
+    }
     case 'follow':
       await setFollowingReelOwner(
         target.ownerId || target.handle || target.reelId,
         true
       );
+      await softInsert('follows', {
+        follower_id: event.actorId,
+        following_id: target.ownerId || target.handle || 'unknown',
+      });
       return softInsert('reel_follows', {
         id: event.id,
         follower_id: event.actorId,
@@ -162,6 +176,17 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
         target.ownerId || target.handle || target.reelId,
         false
       );
+      if (isSupabaseConfigured()) {
+        try {
+          await supabase
+            .from('follows')
+            .delete()
+            .eq('follower_id', event.actorId)
+            .eq('following_id', target.ownerId || target.handle || 'unknown');
+        } catch (_) {
+          /* soft-fail */
+        }
+      }
       return softDeleteFollow(
         event.actorId,
         target.ownerId || target.handle || 'unknown'
@@ -188,18 +213,22 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
         created_at: new Date(event.createdAt).toISOString(),
       });
     case 'banter':
-      return softInsert('reel_banter', {
+    case 'comment': {
+      const body = extras.message || (action === 'banter' ? '🔥' : '💬');
+      const posted = await postVideoComment(reel, body);
+      void softInsert('reel_banter', {
         id: event.id,
         user_id: event.actorId,
         reel_id: target.reelId || null,
-        body: extras.message || '🔥',
+        body,
         created_at: new Date(event.createdAt).toISOString(),
       });
+      return posted;
+    }
     case 'share':
     case 'send':
       return { ok: true, fromCloud: false, reason: 'client-share' };
     case 'save':
-    case 'comment':
       return { ok: true, fromCloud: false, reason: 'local-only' };
     default:
       return { ok: true, fromCloud: false, reason: 'noop' };

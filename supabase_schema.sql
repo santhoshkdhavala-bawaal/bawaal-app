@@ -54,6 +54,7 @@ alter table public.profiles add column if not exists category text;
 alter table public.profiles add column if not exists role text;
 alter table public.profiles add column if not exists full_name text;
 alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists belt_tier text;
 alter table public.profiles add column if not exists primary_sport text;
 alter table public.profiles add column if not exists created_at timestamptz default now();
 alter table public.profiles add column if not exists mobile text;
