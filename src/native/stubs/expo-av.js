@@ -35,12 +35,9 @@ function WebHtml5Video({
 }) {
   const videoRef = useRef(null);
   const uri = resolveSourceUri(source);
-  // Always interactive on web unless explicitly disabled
-  const showControls =
-    controls === true ||
-    useNativeControls === true ||
-    (controls !== false && useNativeControls !== false);
-  // Default muted on autoplay to satisfy browser policies; controls let the user unmute.
+  // Arena feed defaults to no native chrome (mute / ⋮ live outside the <video>)
+  const showControls = controls === true || useNativeControls === true;
+  // Default muted on autoplay to satisfy browser policies.
   const muted = typeof isMuted === 'boolean' ? isMuted : !!shouldPlay;
 
   useEffect(() => {
@@ -88,6 +85,9 @@ function WebHtml5Video({
         ref: videoRef,
         src: uri,
         controls: showControls === true,
+        controlsList: 'nodownload noplaybackrate noremoteplayback',
+        disablePictureInPicture: true,
+        disableRemotePlayback: true,
         autoPlay: !!shouldPlay,
         loop: !!isLooping,
         muted,
@@ -99,6 +99,13 @@ function WebHtml5Video({
           objectFit,
           backgroundColor: '#000',
           display: 'block',
+        },
+        onContextMenu: (e) => {
+          try {
+            e?.preventDefault?.();
+          } catch (_) {
+            /* ignore */
+          }
         },
         onError: (e) => {
           console.warn('[expo-av stub] HTML5 video error:', uri, e);

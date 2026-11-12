@@ -41,6 +41,7 @@ import { useMainTabs } from './mainTabContext';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
 import VideoItem from './src/components/VideoItem';
 import MuteToggleButton from './src/components/MuteToggleButton';
+import ReelActionSheet from './src/components/ReelActionSheet';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
@@ -478,6 +479,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
   item = null,
   shouldPlay = false,
   isActive = false,
+  muted = true,
   style,
   label = null,
   onLongPress = null,
@@ -510,6 +512,7 @@ const FeedVideoItem = memo(function FeedVideoItem({
           }}
           shouldPlay={!!shouldPlay}
           isActive={!!isActive}
+          muted={!!muted}
         />
       </View>
     </TouchableWithoutFeedback>
@@ -524,6 +527,7 @@ const ClipSurface = memo(function ClipSurface({
   style,
   shouldPlay = false,
   isMounted = false,
+  muted = true,
   onLongPress = null,
 }) {
   const playSource = source || {
@@ -541,6 +545,7 @@ const ClipSurface = memo(function ClipSurface({
       item={playSource}
       shouldPlay={shouldPlay}
       isActive={isMounted}
+      muted={muted}
       style={style}
       label={label}
       onLongPress={onLongPress}
@@ -774,6 +779,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 }) {
   const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [muted, setMuted] = useState(true);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
@@ -793,7 +799,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   return (
     <View style={styles.reelCard}>
-      {/* Viewable row autoplays; native controls on the clip; long-press opens immersive */}
+      {/* Viewable row autoplays; mute + ⋮ only — long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
         uri={pickFeedClipUri(item)}
@@ -848,6 +854,23 @@ const GeneralReelCard = memo(function GeneralReelCard({
         </Text>
       </View>
 
+      {!immersiveOpen ? (
+        <TouchableOpacity
+          style={[styles.reelMoreBtn, { bottom: tabBarHeight + 18 }]}
+          onPress={() => setActionsOpen(true)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Open reel actions"
+        >
+          <Text style={styles.reelMoreText}>⋮</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      <ReelActionSheet
+        visible={actionsOpen}
+        reel={item}
+        onClose={() => setActionsOpen(false)}
+      />
     </View>
   );
 });
@@ -2040,6 +2063,25 @@ const styles = StyleSheet.create({
     top: 14,
     right: 14,
     zIndex: 14,
+  },
+  reelMoreBtn: {
+    position: 'absolute',
+    right: 12,
+    zIndex: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  reelMoreText: {
+    color: WHITE,
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 24,
   },
   battleMuteBtn: {
     position: 'absolute',

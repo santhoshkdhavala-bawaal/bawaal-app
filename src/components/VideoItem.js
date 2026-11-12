@@ -57,7 +57,7 @@ function resolveTitle(item) {
   return String(t).trim() || 'Arena drop';
 }
 
-const VideoItem = memo(({ item, shouldPlay, isActive, itemHeight, itemWidth }) => {
+const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, itemWidth }) => {
   const h = Number(itemHeight) > 0 ? Number(itemHeight) : WINDOW_HEIGHT;
   const w = Number(itemWidth) > 0 ? Number(itemWidth) : WINDOW_WIDTH;
   const handle = resolveUserTag(item);
@@ -65,6 +65,9 @@ const VideoItem = memo(({ item, shouldPlay, isActive, itemHeight, itemWidth }) =
   const playUri = resolveItemVideoUri(item);
   // Keep the player mounted for the active row and its neighbor
   const mountPlayer = !!isActive && !!playUri;
+  // Web autoplay still needs mute until the user unmutes via the feed toggle
+  const effectiveMuted =
+    Platform.OS === 'web' ? !!muted || !shouldPlay : !!muted;
 
   return (
     <View style={[styles.container, { width: w, height: h }]}>
@@ -76,10 +79,10 @@ const VideoItem = memo(({ item, shouldPlay, isActive, itemHeight, itemWidth }) =
           resizeMode={ResizeMode.COVER}
           shouldPlay={!!shouldPlay}
           isLooping
-          // Fully interactive player (web stub maps this to HTML5 controls={true})
-          useNativeControls
-          controls={true}
-          isMuted={Platform.OS === 'web' ? !shouldPlay : false}
+          // Feed chrome is mute + ⋮ only — no native play/pause / download / PiP
+          useNativeControls={false}
+          controls={false}
+          isMuted={effectiveMuted}
           onError={(e) => console.log('FAIL', item?.id, playUri, e)}
         />
       ) : null}

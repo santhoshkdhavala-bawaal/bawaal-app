@@ -1,6 +1,6 @@
 /**
  * GAME ON interactive command drawer —
- * search + Near Me map, battle-tier filters.
+ * search + Near Me map, battle-tier filters, sports category chips.
  */
 import React, { memo, useState } from 'react';
 import {
@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ARENA_FEED_TIERS } from '../constants/arenaFeedTiers';
+import { GAME_ON_SPORT_SECTIONS } from '../constants/gameOnSports';
 
 const WHITE = '#FFFFFF';
 const BG = '#0A0A0A';
@@ -32,6 +33,7 @@ function GameOnHub({
 }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
+  const [selectedSport, setSelectedSport] = useState(null);
 
   const openMap = () => {
     onClose?.();
@@ -147,6 +149,44 @@ function GameOnHub({
                 })}
               </ScrollView>
             </View>
+
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>SPORTS CATEGORIES</Text>
+              {GAME_ON_SPORT_SECTIONS.map((group) => (
+                <View key={group.id} style={styles.sportGroup}>
+                  <Text style={styles.sportGroupTitle}>{group.title}</Text>
+                  <View style={styles.chipWrap}>
+                    {group.sports.map((sport) => {
+                      const active = selectedSport === sport;
+                      return (
+                        <TouchableOpacity
+                          key={`${group.id}-${sport}`}
+                          style={[styles.sportChip, active && styles.sportChipActive]}
+                          onPress={() =>
+                            setSelectedSport((prev) =>
+                              prev === sport ? null : sport
+                            )
+                          }
+                          activeOpacity={0.85}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: active }}
+                          accessibilityLabel={sport}
+                        >
+                          <Text
+                            style={[
+                              styles.sportChipText,
+                              active && styles.sportChipTextActive,
+                            ]}
+                          >
+                            {sport}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </View>
           </ScrollView>
         </View>
       </View>
@@ -164,8 +204,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   drawer: {
-    maxHeight: '78%',
-    minHeight: '42%',
+    maxHeight: '92%',
+    minHeight: '58%',
     backgroundColor: BG,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
@@ -280,7 +320,7 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 4,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   sectionLabel: {
     color: MUTED,
@@ -315,6 +355,42 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   tierPillTextActive: {
+    color: WHITE,
+  },
+  sportGroup: {
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  sportGroupTitle: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sportChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  sportChipActive: {
+    borderColor: ACCENT,
+    backgroundColor: 'rgba(255,90,0,0.18)',
+  },
+  sportChipText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sportChipTextActive: {
     color: WHITE,
   },
 });

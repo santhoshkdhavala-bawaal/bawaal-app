@@ -157,7 +157,6 @@ const styles = StyleSheet.create({
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
   },
   bLogo: {
     width: 52,
@@ -166,9 +165,11 @@ const styles = StyleSheet.create({
   wordmark: {
     width: 168,
     height: 34,
+    marginLeft: 4,
   },
   arenaLabel: {
     marginTop: 4,
+    alignSelf: 'flex-start',
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
