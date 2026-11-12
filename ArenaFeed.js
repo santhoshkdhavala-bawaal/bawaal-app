@@ -36,7 +36,6 @@ import {
   fetchArenaChallenges,
   mapArenaChallengeRowToCard,
 } from './src/services/arenaChallengeService';
-import BrandHeader from './BrandHeader';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
 import BanterBottomSheet from './BanterBottomSheet';
@@ -49,6 +48,9 @@ import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
 import ArenaTierFilterBar from './src/components/ArenaTierFilterBar';
+import ArenaV2Header from './src/components/ArenaV2Header';
+import GameOnHub from './src/components/GameOnHub';
+import NotificationsDrawer from './src/components/NotificationsDrawer';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
@@ -1036,6 +1038,8 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [headerBanterOpen, setHeaderBanterOpen] = useState(false);
+  const [gameOnOpen, setGameOnOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [selectedFeedTier, setSelectedFeedTier] = useState(ARENA_FEED_TIER_ALL);
   const { callouts: liveCallouts, refresh: refreshOpenBattles } = useBattles();
   const {
@@ -1860,28 +1864,26 @@ export default function ArenaFeed({ navigation, route }) {
   return (
     <View style={styles.container}>
       <View style={styles.headerBar}>
-        <BrandHeader
-          screenName="ARENA"
-          useLogo
+        <ArenaV2Header
           onBrandPress={openProfileGateway}
-          rightSlot={
-            <View style={styles.headerActions}>
-              {activeSettingsReel ? (
-                <TouchableOpacity
-                  style={styles.settingsPill}
-                  onPress={() => setSettingsOpen((open) => !open)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    settingsOpen ? 'Close settings' : 'Open settings'
-                  }
-                >
-                  <Text style={styles.settingsPillText}>
-                    {settingsOpen ? '✕' : '⋮'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+          onGameOnPress={() => setGameOnOpen(true)}
+          onNotificationsPress={() => setNotificationsOpen(true)}
+          rightExtra={
+            activeSettingsReel ? (
+              <TouchableOpacity
+                style={styles.settingsPill}
+                onPress={() => setSettingsOpen((open) => !open)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  settingsOpen ? 'Close settings' : 'Open settings'
+                }
+              >
+                <Text style={styles.settingsPillText}>
+                  {settingsOpen ? '✕' : '⋮'}
+                </Text>
+              </TouchableOpacity>
+            ) : null
           }
         />
         <ArenaTierFilterBar
@@ -1983,6 +1985,12 @@ export default function ArenaFeed({ navigation, route }) {
         onClose={() => setHeaderBanterOpen(false)}
       />
 
+      <GameOnHub visible={gameOnOpen} onClose={() => setGameOnOpen(false)} />
+      <NotificationsDrawer
+        visible={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+      />
+
       <ArenaReelViewer
         visible={!!activeReel}
         reel={activeReel || warmReel}
@@ -2008,7 +2016,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'black',
   },
   headerBar: {
-    backgroundColor: '#000',
+    backgroundColor: '#0A0A0A',
     zIndex: 10,
   },
   scrollContent: {
