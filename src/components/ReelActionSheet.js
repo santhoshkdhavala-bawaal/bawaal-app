@@ -1,5 +1,6 @@
 /**
- * Instagram-style reel action sheet (DM / Banner Like / Follow / Share / Repost / Tag).
+ * Instagram-style reel action sheet
+ * (DM / Banner Like / Follow / Share / Repost / Tag / Banter).
  */
 import React, { memo } from 'react';
 import {
@@ -28,6 +29,7 @@ const ACTIONS = [
   { id: 'share', label: 'Share' },
   { id: 'repost', label: 'Repost' },
   { id: 'tag', label: 'Tag' },
+  { id: 'banter', label: 'Banter' },
 ];
 
 async function shareReel(reel) {

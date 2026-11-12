@@ -37,6 +37,7 @@ import {
 } from './src/services/arenaChallengeService';
 import ResponseReelDrawer from './ResponseReelDrawer';
 import ArenaReelViewer from './ArenaReelViewer';
+import BanterBottomSheet from './BanterBottomSheet';
 import { useMainTabs } from './mainTabContext';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
 import VideoItem from './src/components/VideoItem';
@@ -780,6 +781,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const { headerHeight, tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [muted, setMuted] = useState(true);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [banterOpen, setBanterOpen] = useState(false);
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
@@ -795,6 +797,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   const toggleMute = useCallback(() => {
     setMuted((m) => !m);
+  }, []);
+
+  const onReelAction = useCallback((actionId) => {
+    if (actionId === 'banter') {
+      setBanterOpen(true);
+    }
   }, []);
 
   return (
@@ -827,7 +835,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
         onLongPress={immersiveOpen ? null : openImmersive}
       />
 
-      {/* Hide feed mute while fullscreen is open — prevents duplicate megaphones */}
+      {/* Top-right mute using bmute / bunmute assets */}
       {!immersiveOpen ? (
         <MuteToggleButton
           muted={muted}
@@ -870,6 +878,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
         visible={actionsOpen}
         reel={item}
         onClose={() => setActionsOpen(false)}
+        onAction={onReelAction}
+      />
+      <BanterBottomSheet
+        visible={banterOpen}
+        reel={item}
+        onClose={() => setBanterOpen(false)}
       />
     </View>
   );

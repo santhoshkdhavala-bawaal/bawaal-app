@@ -24,7 +24,6 @@ function MuteToggleButton({ muted, onPress, style }) {
         source={muted ? ICON_MUTED : ICON_UNMUTED}
         style={styles.icon}
         resizeMode="contain"
-        tintColor="#FFFFFF"
       />
     </Pressable>
   );
@@ -42,9 +41,8 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.92 }],
   },
   icon: {
-    width: 28,
-    height: 28,
-    tintColor: '#FFFFFF',
+    width: 30,
+    height: 30,
   },
 });
 

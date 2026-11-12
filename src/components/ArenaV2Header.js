@@ -1,5 +1,5 @@
 /**
- * V2 Arena top header — B mark + wordmark, ARENA label,
+ * V2 Arena top header — combined BAWAAL mark, ARENA label,
  * glowing ▶ GAME ON pill, notification bell.
  */
 import React, { useEffect, useRef, memo } from 'react';
@@ -21,8 +21,7 @@ const WHITE = '#FFFFFF';
 const ACCENT = '#FF5A00';
 const MUTED = '#A9A9A9';
 
-const B_LOGO = require('../../assets/BAWAAL_B_solo.png');
-const WORDMARK = require('../../assets/BAWAAL_text.png');
+const COMBINED_LOGO = require('../../assets/B_BAWAAL_logo_single.png');
 
 function GameOnPill({ onPress }) {
   const pulse = useRef(new Animated.Value(0)).current;
@@ -101,20 +100,12 @@ function ArenaV2Header({
           hitSlop={{ top: 8, bottom: 4, left: 4, right: 8 }}
           style={styles.brandCol}
         >
-          <View style={styles.logoRow}>
-            <Image
-              source={B_LOGO}
-              style={styles.bLogo}
-              resizeMode="contain"
-              accessibilityLabel="BAWAAL B"
-            />
-            <Image
-              source={WORDMARK}
-              style={styles.wordmark}
-              resizeMode="contain"
-              accessibilityLabel="BAWAAL"
-            />
-          </View>
+          <Image
+            source={COMBINED_LOGO}
+            style={styles.combinedLogo}
+            resizeMode="contain"
+            accessibilityLabel="BAWAAL"
+          />
           <Text style={styles.arenaLabel}>ARENA</Text>
         </TouchableOpacity>
 
@@ -153,19 +144,12 @@ const styles = StyleSheet.create({
   brandCol: {
     flexShrink: 1,
     maxWidth: '58%',
+    alignItems: 'flex-start',
   },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  bLogo: {
-    width: 52,
-    height: 52,
-  },
-  wordmark: {
-    width: 168,
-    height: 34,
-    marginLeft: 6,
+  combinedLogo: {
+    height: 40,
+    width: 196,
+    alignSelf: 'flex-start',
   },
   arenaLabel: {
     marginTop: 4,

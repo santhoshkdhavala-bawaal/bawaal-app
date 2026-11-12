@@ -154,41 +154,49 @@ function GameOnHub({
               <Text style={styles.sectionLabel}>SPORTS CATEGORIES</Text>
               {GAME_ON_SPORT_SECTIONS.map((group) => (
                 <View key={group.id} style={styles.sportGroup}>
-                  <Text style={styles.sportGroupTitle}>{group.title}</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.chipRow}
-                    keyboardShouldPersistTaps="handled"
-                  >
-                    {group.sports.map((sport) => {
-                      const active = selectedSport === sport;
-                      return (
-                        <TouchableOpacity
-                          key={`${group.id}-${sport}`}
-                          style={[styles.sportChip, active && styles.sportChipActive]}
-                          onPress={() =>
-                            setSelectedSport((prev) =>
-                              prev === sport ? null : sport
-                            )
-                          }
-                          activeOpacity={0.85}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          accessibilityLabel={sport}
-                        >
-                          <Text
+                  <View style={styles.sportGroupRow}>
+                    <Text style={styles.sportGroupTitle} numberOfLines={2}>
+                      {group.title}
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.chipRow}
+                      keyboardShouldPersistTaps="handled"
+                      style={styles.chipScroll}
+                    >
+                      {group.sports.map((sport) => {
+                        const active = selectedSport === sport;
+                        return (
+                          <TouchableOpacity
+                            key={`${group.id}-${sport}`}
                             style={[
-                              styles.sportChipText,
-                              active && styles.sportChipTextActive,
+                              styles.sportChip,
+                              active && styles.sportChipActive,
                             ]}
+                            onPress={() =>
+                              setSelectedSport((prev) =>
+                                prev === sport ? null : sport
+                              )
+                            }
+                            activeOpacity={0.85}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: active }}
+                            accessibilityLabel={sport}
                           >
-                            {sport}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
+                            <Text
+                              style={[
+                                styles.sportChipText,
+                                active && styles.sportChipTextActive,
+                              ]}
+                            >
+                              {sport}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
                 </View>
               ))}
             </View>
@@ -363,18 +371,28 @@ const styles = StyleSheet.create({
     color: WHITE,
   },
   sportGroup: {
-    marginBottom: 14,
+    marginBottom: 12,
+    paddingLeft: 16,
+  },
+  sportGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   sportGroupTitle: {
     color: WHITE,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.4,
-    marginBottom: 8,
-    paddingHorizontal: 16,
+    letterSpacing: 0.3,
+    width: 92,
+    flexShrink: 0,
+  },
+  chipScroll: {
+    flex: 1,
+    minWidth: 0,
   },
   chipRow: {
-    paddingHorizontal: 16,
+    paddingRight: 16,
     gap: 8,
     alignItems: 'center',
     flexDirection: 'row',
