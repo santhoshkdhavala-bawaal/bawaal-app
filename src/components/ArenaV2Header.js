@@ -132,7 +132,8 @@ function ArenaV2Header({
 const styles = StyleSheet.create({
   wrap: {
     backgroundColor: BG,
-    paddingHorizontal: 14,
+    paddingLeft: 0,
+    paddingRight: 14,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 90, 0, 0.28)',
@@ -142,18 +143,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
+    paddingLeft: 0,
+    marginLeft: 0,
   },
   brandHit: {
     flexShrink: 1,
     maxWidth: '58%',
+    paddingLeft: 0,
+    marginLeft: 0,
+    left: 0,
   },
   brandStack: {
     flexDirection: 'column',
     alignItems: 'flex-start',
+    paddingLeft: 0,
+    marginLeft: 0,
+    left: 0,
   },
   combinedLogo: {
     height: 38,
     width: 190,
+    marginLeft: 0,
+    paddingLeft: 0,
   },
   arenaLabel: {
     marginTop: 4,
@@ -171,6 +182,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     flexShrink: 0,
+    marginRight: 0,
   },
   gameOnWrap: {
     position: 'relative',
