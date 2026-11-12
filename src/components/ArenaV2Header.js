@@ -107,7 +107,7 @@ function ArenaV2Header({
               resizeMode="contain"
               accessibilityLabel="BAWAAL"
             />
-            {/* Centers under the B emblem (~72px) within the 190px combined mark */}
+            {/* Shifts under the BAWAAL wordmark (right of the B emblem) */}
             <Text style={styles.arenaLabel}>ARENA</Text>
           </View>
         </TouchableOpacity>
@@ -159,9 +159,9 @@ const styles = StyleSheet.create({
     width: 190,
   },
   arenaLabel: {
-    // Horizontally centers under the B block (~(72 - labelWidth) / 2)
+    // Align under "BAWAAL" wordmark in the 190px combined mark (B ≈ 55–60px)
     marginTop: 4,
-    marginLeft: 12,
+    marginLeft: 60,
     color: MUTED,
     fontSize: 10,
     fontWeight: '800',
