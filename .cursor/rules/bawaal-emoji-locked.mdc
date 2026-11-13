@@ -27,9 +27,9 @@ Every one of these **MUST** render `<BawaalEmoji name="…" size={n} />` (or res
 - Generic vector icon packs as reaction glyphs on those surfaces
 - Parallel emoji maps or local sticker arrays that bypass `bawaalEmojiAssets.js`
 
-## Persistence
+## Persistence & inline shortcodes
 
-Store reaction keys (`head_on_fire`, `gold_cup`, …) or `[bawaal:key]` markers — **not** unicode glyphs — on comment / banter payloads.
+Store reaction keys (`head_on_fire`, `gold_cup`, …), `:key:` shortcodes, or `[bawaal:key]` markers — **not** unicode glyphs — on comment / banter payloads. Banter compose inserts `:key:` via `FullEmojiPickerDrawer`; render with `BawaalEmojiText` / `<BawaalEmoji>` (`src/utils/bawaalEmojiText.js`).
 
 ## Out of scope
 

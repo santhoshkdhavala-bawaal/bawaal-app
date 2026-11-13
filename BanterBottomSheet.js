@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -23,6 +23,11 @@ import {
   FullEmojiPickerDrawer,
   ALL_SKELETON_KEYS,
 } from './components/FullEmojiPickerDrawer';
+import {
+  BawaalEmojiText,
+  messageHasBawaalEmoji,
+  toBawaalShortcode,
+} from './src/utils/bawaalEmojiText';
 
 const BG = '#000000';
 const CARD = '#121212';
@@ -40,22 +45,19 @@ const DEMO_BANTER = [
     id: 'b1',
     handle: '@Neha_Lift',
     verified: true,
-    text: 'That pull was filthy',
-    emotion: 'head_on_fire',
+    text: 'That pull was filthy :head_on_fire:',
   },
   {
     id: 'b2',
     handle: '@Dev_Snatch',
     verified: false,
-    text: 'GIF energy only',
-    emotion: 'laughing1',
+    text: 'GIF energy only :laughing1:',
   },
   {
     id: 'b3',
     handle: '@Mia_Torque',
     verified: true,
-    text: 'Send the angle next time',
-    emotion: 'gold_cup',
+    text: 'Send the angle next time :gold_cup:',
   },
 ];
 
@@ -70,14 +72,6 @@ function resolveBanterEmotion(item) {
   return null;
 }
 
-function displayBanterText(text, emotion) {
-  const cleaned = String(text || '')
-    .replace(BAWAAL_MARKER_RE, '')
-    .trim();
-  if (cleaned) return cleaned;
-  return emotion ? 'reacted' : '';
-}
-
 function withResolvedEmotion(row) {
   const emotion = resolveBanterEmotion(row);
   return emotion ? { ...row, emotion } : row;
@@ -88,8 +82,10 @@ function withResolvedEmotion(row) {
  */
 export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) {
   const insets = useSafeAreaInsets();
+  const inputRef = useRef(null);
   const [banter, setBanter] = useState(DEMO_BANTER);
   const [draft, setDraft] = useState('');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [loading, setLoading] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
 
@@ -99,6 +95,7 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
       return;
     }
     setDraft('');
+    setSelection({ start: 0, end: 0 });
     let alive = true;
     setLoading(true);
     (async () => {
@@ -122,24 +119,47 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
     ? reel.author
     : `@${String(reel?.author || 'athlete').replace(/^@/, '')}`;
 
+  const openVaultForInsert = () => {
+    setVaultOpen(true);
+  };
+
+  const insertEmojiShortcode = (key) => {
+    if (!key || !hasBawaalEmoji(key)) return;
+    const token = toBawaalShortcode(key);
+    const start = Math.min(selection.start ?? draft.length, draft.length);
+    const end = Math.min(selection.end ?? start, draft.length);
+    const next = `${draft.slice(0, start)}${token}${draft.slice(end)}`;
+    const cursor = start + token.length;
+    setDraft(next);
+    setSelection({ start: cursor, end: cursor });
+    requestAnimationFrame(() => {
+      try {
+        inputRef.current?.focus?.();
+      } catch (_) {
+        /* ignore */
+      }
+    });
+  };
+
   const sendBanter = async (emotionKey) => {
     const emotion =
       emotionKey && hasBawaalEmoji(emotionKey) ? String(emotionKey).toLowerCase() : null;
     const draftText = draft.trim();
     const text =
       draftText ||
-      (emotion ? `[bawaal:${emotion}]` : '');
+      (emotion ? toBawaalShortcode(emotion).trim() : '');
     if (!text && !emotion) return;
 
     const optimistic = {
       id: `local-${Date.now()}`,
       handle: '@you',
-      text: draftText || (emotion ? 'reacted' : 'reacted'),
-      emotion,
+      text: draftText || (emotion ? toBawaalShortcode(emotion).trim() : 'reacted'),
+      emotion: emotion || null,
       gif: emotion || null,
     };
     setBanter((prev) => [optimistic, ...prev]);
     setDraft('');
+    setSelection({ start: 0, end: 0 });
 
     const posted = await postVideoComment(
       reel,
@@ -152,6 +172,7 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
             ? withResolvedEmotion({
                 ...optimistic,
                 ...posted.comment,
+                text: posted.comment.text || optimistic.text,
                 emotion: optimistic.emotion || resolveBanterEmotion(posted.comment),
                 gif: optimistic.emotion || posted.comment.gif,
               })
@@ -217,7 +238,7 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
               ))}
               <TouchableOpacity
                 style={styles.vaultChip}
-                onPress={() => setVaultOpen(true)}
+                onPress={openVaultForInsert}
                 activeOpacity={0.85}
                 accessibilityRole="button"
                 accessibilityLabel={`Open skeleton vault (${ALL_SKELETON_KEYS.length})`}
@@ -233,14 +254,14 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
               ) : null}
               {banter.map((c) => {
                 const emotion = resolveBanterEmotion(c);
-                const body = displayBanterText(c.text, emotion);
+                const body = String(c.text || '').trim();
+                const hasInline = messageHasBawaalEmoji(body);
+                const showLeading = emotion && !hasInline;
                 return (
                   <View key={c.id} style={styles.row}>
-                    <BawaalEmoji
-                      name={emotion || 'laughing1'}
-                      size={22}
-                      style={styles.rowEmoji}
-                    />
+                    {showLeading ? (
+                      <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
+                    ) : null}
                     <View style={styles.rowBody}>
                       <UserHandle
                         handle={c.handle}
@@ -249,7 +270,16 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
                         color={WHITE}
                         badgeSize={12}
                       />
-                      {body ? <Text style={styles.rowText}>{body}</Text> : null}
+                      {body ? (
+                        <BawaalEmojiText
+                          text={body}
+                          emojiSize={18}
+                          textStyle={styles.rowText}
+                          style={styles.rowRich}
+                        />
+                      ) : showLeading ? (
+                        <Text style={styles.rowText}>reacted</Text>
+                      ) : null}
                     </View>
                   </View>
                 );
@@ -259,21 +289,39 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
             <View style={styles.compose}>
               <TouchableOpacity
                 style={styles.vaultComposeBtn}
-                onPress={() => setVaultOpen(true)}
+                onPress={openVaultForInsert}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel="Browse all skeleton emojis"
+                accessibilityLabel="Insert skeleton emoji into message"
               >
-                <BawaalEmoji name="laughing1" size={22} style={styles.chipEmoji} />
+                <BawaalEmoji name="crown" size={22} style={styles.chipEmoji} />
               </TouchableOpacity>
               <TextInput
+                ref={inputRef}
                 style={styles.input}
-                placeholder="Drop banter…"
+                placeholder="Drop banter… use :gym: or vault"
                 placeholderTextColor={MUTED}
                 value={draft}
-                onChangeText={setDraft}
+                onChangeText={(value) => {
+                  setDraft(value);
+                  const tip = value.length;
+                  setSelection((prev) => {
+                    if (prev.start > tip || prev.end > tip) {
+                      return { start: tip, end: tip };
+                    }
+                    return prev;
+                  });
+                }}
+                onSelectionChange={(e) => {
+                  const next = e?.nativeEvent?.selection;
+                  if (next && typeof next.start === 'number') {
+                    setSelection(next);
+                  }
+                }}
+                selection={selection}
                 onSubmitEditing={() => sendBanter()}
                 returnKeyType="send"
+                blurOnSubmit={false}
               />
               <TouchableOpacity
                 style={styles.sendBtn}
@@ -291,7 +339,7 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
         visible={vaultOpen}
         onClose={() => setVaultOpen(false)}
         onSelectEmoji={(key) => {
-          sendBanter(key);
+          insertEmojiShortcode(key);
         }}
       />
     </>
@@ -413,7 +461,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
   },
   rowBody: { flex: 1 },
-  rowText: { color: WHITE, fontSize: 12, marginTop: 1 },
+  rowRich: { marginTop: 1 },
+  rowText: { color: WHITE, fontSize: 12 },
   compose: {
     flexDirection: 'row',
     alignItems: 'center',
