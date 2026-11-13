@@ -143,7 +143,7 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
 
     const posted = await postVideoComment(
       reel,
-      draftText || (emotion ? `[bawaal:${emotion}]` : '💬')
+      draftText || (emotion ? `[bawaal:${emotion}]` : '[bawaal:laughing1]')
     );
     if (posted?.comment?.id) {
       setBanter((prev) =>
@@ -236,11 +236,11 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
                 const body = displayBanterText(c.text, emotion);
                 return (
                   <View key={c.id} style={styles.row}>
-                    {emotion ? (
-                      <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
-                    ) : (
-                      <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
-                    )}
+                    <BawaalEmoji
+                      name={emotion || 'laughing1'}
+                      size={22}
+                      style={styles.rowEmoji}
+                    />
                     <View style={styles.rowBody}>
                       <UserHandle
                         handle={c.handle}
@@ -408,7 +408,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
-  rowGif: { fontSize: 16, marginTop: 1 },
   rowEmoji: {
     marginTop: 1,
     marginHorizontal: 0,

@@ -1,0 +1,37 @@
+---
+description: Locked exclusive BawaalEmoji skeleton reaction system for chat, banter, DMs, comments
+alwaysApply: true
+---
+
+# BAWAAL custom emoji / reactions (LOCKED — exclusive)
+
+The ~106 skeleton PNGs (`assets/skel_*.png` and/or `assets/skeletons/`) mapped through **`BawaalEmoji`** are the **official and exclusive** emoji / reaction system for BAWAAL.
+
+## Canonical files
+
+| File | Role |
+|---|---|
+| `components/BawaalEmoji.js` | `<BawaalEmoji name size />` — uniform 1:1 `Image` (`resizeMode="contain"`) |
+| `src/constants/bawaalEmojiAssets.js` | Full key → `require` map + aliases + `getBawaalEmojiSource` |
+| `components/FullEmojiPickerDrawer.js` | Full vault grid for browsing all keys |
+
+## Mandatory surfaces
+
+Chat bubbles · comment / banter rows · DM reactions · Banter reaction tray · emotion / reaction pills · floating banter reactions.
+
+Every one of these **MUST** render `<BawaalEmoji name="…" size={n} />` (or resolve via `getBawaalEmojiSource` / `hasBawaalEmoji`). Default / missing key → `laughing1` (`skel_laughing1.png`).
+
+## Never re-add
+
+- Unicode / system emoji stickers in reaction pickers (e.g. 🔥 💀 🐐 💪 🚀 😂 ⚡ 🏆 💬)
+- Generic vector icon packs as reaction glyphs on those surfaces
+- Parallel emoji maps or local sticker arrays that bypass `bawaalEmojiAssets.js`
+
+## Persistence
+
+Store reaction keys (`head_on_fire`, `gold_cup`, …) or `[bawaal:key]` markers — **not** unicode glyphs — on comment / banter payloads.
+
+## Out of scope
+
+Marketing / mode **labels** in non-reaction chrome (e.g. SPARKS / JOSH titles) are unrelated; do not use that as a reason to put unicode into chat or banter pickers.
+---

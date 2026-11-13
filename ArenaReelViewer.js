@@ -28,6 +28,7 @@ import {
   prefetchReelPoster,
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
+import { BawaalEmoji, hasBawaalEmoji, SKELETON_EMOJIS } from './components/BawaalEmoji';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -36,12 +37,13 @@ const ACCENT = '#FF5722';
 const CARD = '#121212';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-const GIF_STICKERS = ['🔥', '💀', '🐐', '💪', '🚀', '😂', '⚡', '🏆'];
+/** Banter / floating reactions — BawaalEmoji keys only (never unicode). */
+const BANTER_REACTIONS = Object.keys(SKELETON_EMOJIS);
 
 const DEMO_BANTER = [
-  { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy 🔥', gif: '🔥' },
-  { id: 'b2', handle: '@Dev_Snatch', verified: false, text: 'GIF energy only', gif: '💀' },
-  { id: 'b3', handle: '@Mia_Torque', verified: true, text: 'Send the angle next time', gif: '🐐' },
+  { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy', emotion: 'head_on_fire' },
+  { id: 'b2', handle: '@Dev_Snatch', verified: false, text: 'GIF energy only', emotion: 'laughing1' },
+  { id: 'b3', handle: '@Mia_Torque', verified: true, text: 'Send the angle next time', emotion: 'gold_cup' },
 ];
 
 /**
@@ -67,8 +69,8 @@ export default function ArenaReelViewer({
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(!!initialMuted);
   const [activeGifs, setActiveGifs] = useState([
-    { id: 'g1', emoji: '🔥', x: 0.72, y: 0.28 },
-    { id: 'g2', emoji: '💪', x: 0.18, y: 0.42 },
+    { id: 'g1', emoji: 'head_on_fire', x: 0.72, y: 0.28 },
+    { id: 'g2', emoji: 'gym', x: 0.18, y: 0.42 },
   ]);
   const toastTimerRef = useRef(null);
 
@@ -149,7 +151,9 @@ export default function ArenaReelViewer({
     ? reel.author
     : `@${String(reel.author || 'athlete').replace(/^@/, '')}`;
 
-  const dropGif = (emoji) => {
+  const dropGif = (emotionKey) => {
+    const emoji =
+      emotionKey && hasBawaalEmoji(emotionKey) ? String(emotionKey).toLowerCase() : 'laughing1';
     setActiveGifs((prev) => [
       ...prev,
       {
@@ -161,11 +165,19 @@ export default function ArenaReelViewer({
     ]);
   };
 
-  const sendBanter = () => {
+  const sendBanter = (emotionKey) => {
+    const emotion =
+      emotionKey && hasBawaalEmoji(emotionKey) ? String(emotionKey).toLowerCase() : null;
     const text = draft.trim();
-    if (!text) return;
+    if (!text && !emotion) return;
     setBanter((prev) => [
-      { id: `local-${Date.now()}`, handle: '@you', text, gif: '💬' },
+      {
+        id: `local-${Date.now()}`,
+        handle: '@you',
+        text: text || 'reacted',
+        emotion: emotion || 'laughing1',
+        gif: emotion || 'laughing1',
+      },
       ...prev,
     ]);
     setDraft('');
@@ -282,15 +294,16 @@ export default function ArenaReelViewer({
         </View>
 
         {activeGifs.map((g) => (
-          <Text
+          <View
             key={g.id}
+            pointerEvents="none"
             style={[
               styles.gifFloat,
               { left: g.x * SCREEN_W, top: g.y * SCREEN_H },
             ]}
           >
-            {g.emoji}
-          </Text>
+            <BawaalEmoji name={g.emoji || 'laughing1'} size={36} style={styles.gifFloatEmoji} />
+          </View>
         ))}
 
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
@@ -347,10 +360,13 @@ export default function ArenaReelViewer({
 
           <TouchableOpacity
             style={styles.actionBtn}
-            onPress={() => setHype((n) => n + 1)}
+            onPress={() => {
+              setHype((n) => n + 1);
+              dropGif('head_on_fire');
+            }}
             activeOpacity={0.85}
           >
-            <Text style={styles.actionEmoji}>🔥</Text>
+            <BawaalEmoji name="head_on_fire" size={28} style={styles.actionEmojiImg} />
             <Text style={styles.actionCount}>{hype}</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -358,7 +374,7 @@ export default function ArenaReelViewer({
             onPress={() => setShowBanter((v) => !v)}
             activeOpacity={0.85}
           >
-            <Text style={styles.actionEmoji}>💬</Text>
+            <BawaalEmoji name="laughing1" size={28} style={styles.actionEmojiImg} />
             <Text style={styles.actionCount}>BANTER</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -385,14 +401,16 @@ export default function ArenaReelViewer({
               contentContainerStyle={styles.gifTray}
               keyboardShouldPersistTaps="handled"
             >
-              {GIF_STICKERS.map((emoji) => (
+              {BANTER_REACTIONS.map((key) => (
                 <TouchableOpacity
-                  key={emoji}
+                  key={key}
                   style={styles.gifChip}
-                  onPress={() => dropGif(emoji)}
+                  onPress={() => dropGif(key)}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React with ${key}`}
                 >
-                  <Text style={styles.gifChipText}>{emoji}</Text>
+                  <BawaalEmoji name={key} size={26} style={styles.gifChipEmoji} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -407,22 +425,28 @@ export default function ArenaReelViewer({
           {showBanter ? (
             <View style={styles.banterPanel}>
               <ScrollView style={styles.banterList} showsVerticalScrollIndicator={false}>
-                {banter.map((c) => (
-                  <View key={c.id} style={styles.banterRow}>
-                    <Text style={styles.banterGif}>{c.gif || '💬'}</Text>
-                    <View style={styles.banterBody}>
-                      <UserHandle
-                        handle={c.handle}
-                        verified={c.verified ?? isHandleVerified(c.handle)}
-                        size={11}
-                        color={WHITE}
-                        textStyle={styles.banterHandle}
-                        badgeSize={12}
-                      />
-                      <Text style={styles.banterText}>{c.text}</Text>
+                {banter.map((c) => {
+                  const emotion =
+                    (c.emotion && hasBawaalEmoji(c.emotion) && c.emotion) ||
+                    (c.gif && hasBawaalEmoji(c.gif) && c.gif) ||
+                    'laughing1';
+                  return (
+                    <View key={c.id} style={styles.banterRow}>
+                      <BawaalEmoji name={emotion} size={22} style={styles.banterEmoji} />
+                      <View style={styles.banterBody}>
+                        <UserHandle
+                          handle={c.handle}
+                          verified={c.verified ?? isHandleVerified(c.handle)}
+                          size={11}
+                          color={WHITE}
+                          textStyle={styles.banterHandle}
+                          badgeSize={12}
+                        />
+                        <Text style={styles.banterText}>{c.text}</Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </ScrollView>
               <View style={styles.composeRow}>
                 <TextInput
@@ -585,8 +609,10 @@ const styles = StyleSheet.create({
   },
   gifFloat: {
     position: 'absolute',
-    fontSize: 36,
     zIndex: 5,
+  },
+  gifFloatEmoji: {
+    marginHorizontal: 0,
   },
   topSafe: {
     position: 'absolute',
@@ -664,6 +690,9 @@ const styles = StyleSheet.create({
   actionEmoji: {
     fontSize: 28,
   },
+  actionEmojiImg: {
+    marginHorizontal: 0,
+  },
   moreDots: {
     color: WHITE,
     fontSize: 28,
@@ -711,7 +740,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-  gifChipText: { fontSize: 20 },
+  gifChipEmoji: {
+    marginHorizontal: 0,
+  },
   banterPanel: {
     marginHorizontal: 12,
     backgroundColor: 'rgba(18, 18, 18,0.92)',
@@ -728,7 +759,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 8,
   },
-  banterGif: { fontSize: 16, marginTop: 1 },
+  banterEmoji: {
+    marginTop: 1,
+    marginHorizontal: 0,
+  },
   banterBody: { flex: 1 },
   banterHandle: {
     color: ACCENT,

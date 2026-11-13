@@ -78,6 +78,10 @@ Supabase profiles + OTP, `arena_challenges` / `bawaalvideos` streaming, GAME ON 
 
 Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.
 
+## Custom emoji / reactions (locked — exclusive)
+
+The ~106 skeleton assets (`assets/skel_*.png` / `assets/skeletons/`) via `BawaalEmoji` + `bawaalEmojiAssets.js` are the **only** emoji/reaction system for chat, banter, DMs, and comments. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Full vault: `FullEmojiPickerDrawer`. See `.cursor/rules/bawaal-emoji-locked.mdc`.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.

@@ -151,7 +151,8 @@ export async function fetchVideoComments(reel, limit = 40) {
         id: String(row.id),
         handle: `@${String(row.user_id || 'athlete').replace(/^@/, '')}`,
         text: row.body || '',
-        gif: '💬',
+        emotion: 'laughing1',
+        gif: 'laughing1',
         createdAt: row.created_at,
       }));
     }
@@ -160,7 +161,8 @@ export async function fetchVideoComments(reel, limit = 40) {
       id: String(row.id),
       handle: `@${String(row.user_id || 'athlete').replace(/^@/, '')}`,
       text: row.body || '',
-      gif: '💬',
+      emotion: 'laughing1',
+      gif: 'laughing1',
       createdAt: row.created_at,
     }));
   } catch (err) {
@@ -180,7 +182,8 @@ export async function postVideoComment(reel, body) {
     id: `local-${Date.now()}`,
     handle: '@you',
     text,
-    gif: '💬',
+    emotion: 'laughing1',
+    gif: 'laughing1',
     createdAt: new Date().toISOString(),
   };
 
@@ -213,7 +216,8 @@ export async function postVideoComment(reel, body) {
         id: String(data?.id || local.id),
         handle: '@you',
         text: data?.body || text,
-        gif: '💬',
+        emotion: 'laughing1',
+        gif: 'laughing1',
         createdAt: data?.created_at || local.createdAt,
       },
     };

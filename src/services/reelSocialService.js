@@ -214,7 +214,9 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
       });
     case 'banter':
     case 'comment': {
-      const body = extras.message || (action === 'banter' ? '🔥' : '💬');
+      const body =
+        extras.message ||
+        (action === 'banter' ? '[bawaal:head_on_fire]' : '[bawaal:laughing1]');
       const posted = await postVideoComment(reel, body);
       void softInsert('reel_banter', {
         id: event.id,
