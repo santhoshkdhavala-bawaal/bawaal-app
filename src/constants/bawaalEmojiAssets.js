@@ -123,8 +123,10 @@ export const BAWAAL_EMOJI_ASSETS = {
  */
 const BAWAAL_EMOJI_ALIASES = {
   laughing: 'laughing1',
-  crown: 'olive_crown',
+  // Matches chat/banter shortcut: crown → gold skull crown asset
+  crown: 'holding_skull_high_gold_crown',
   gold_crown: 'holding_skull_high_gold_crown',
+  olive: 'olive_crown',
   boxing: 'boxing_glove_punching',
   punch: 'boxing_glove_punching',
   kickboxing: 'kickboxing_kick',
