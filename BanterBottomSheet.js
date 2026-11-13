@@ -19,11 +19,16 @@ import {
   postVideoComment,
 } from './src/services/videoSocialService';
 import { BawaalEmoji, hasBawaalEmoji, SKELETON_EMOJIS } from './components/BawaalEmoji';
+import {
+  FullEmojiPickerDrawer,
+  ALL_SKELETON_KEYS,
+} from './components/FullEmojiPickerDrawer';
 
 const BG = '#000000';
 const CARD = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
+const BAWAAL_ORANGE = '#FF5500';
 
 /** Horizontal Banter reaction tray — custom skeleton keys. */
 const BANTER_REACTIONS = Object.keys(SKELETON_EMOJIS);
@@ -86,9 +91,13 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
   const [banter, setBanter] = useState(DEMO_BANTER);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setVaultOpen(false);
+      return;
+    }
     setDraft('');
     let alive = true;
     setLoading(true);
@@ -158,105 +167,134 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}
-        >
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View style={styles.headerMeta}>
-              <Text style={styles.title}>BANTER</Text>
-              <View style={styles.subRow}>
-                <UserHandle
-                  handle={handle}
-                  verified={reel?.verified ?? isHandleVerified(handle)}
-                  size={11}
-                  color={MUTED}
-                  badgeSize={12}
-                />
-                <Text style={styles.sub} numberOfLines={1}>
-                  {' '}
-                  · {reel?.caption || 'Arena reel'}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={12}>
-              <Text style={styles.close}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.gifTray}
+    <>
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+        <View style={styles.overlay}>
+          <Pressable style={styles.backdrop} onPress={onClose} />
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}
           >
-            {BANTER_REACTIONS.map((key) => (
+            <View style={styles.handle} />
+            <View style={styles.header}>
+              <View style={styles.headerMeta}>
+                <Text style={styles.title}>BANTER</Text>
+                <View style={styles.subRow}>
+                  <UserHandle
+                    handle={handle}
+                    verified={reel?.verified ?? isHandleVerified(handle)}
+                    size={11}
+                    color={MUTED}
+                    badgeSize={12}
+                  />
+                  <Text style={styles.sub} numberOfLines={1}>
+                    {' '}
+                    · {reel?.caption || 'Arena reel'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={onClose} hitSlop={12}>
+                <Text style={styles.close}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.gifTray}
+            >
+              {BANTER_REACTIONS.map((key) => (
+                <TouchableOpacity
+                  key={key}
+                  style={styles.gifChip}
+                  onPress={() => sendBanter(key)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React with ${key}`}
+                >
+                  <BawaalEmoji name={key} size={26} style={styles.chipEmoji} />
+                </TouchableOpacity>
+              ))}
               <TouchableOpacity
-                key={key}
-                style={styles.gifChip}
-                onPress={() => sendBanter(key)}
+                style={styles.vaultChip}
+                onPress={() => setVaultOpen(true)}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel={`React with ${key}`}
+                accessibilityLabel={`Open skeleton vault (${ALL_SKELETON_KEYS.length})`}
               >
-                <BawaalEmoji name={key} size={26} style={styles.chipEmoji} />
+                <Text style={styles.vaultChipText}>VAULT</Text>
+                <Text style={styles.vaultChipCount}>{ALL_SKELETON_KEYS.length}</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </ScrollView>
 
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {loading && banter.length === 0 ? (
-              <Text style={styles.rowText}>Loading banter…</Text>
-            ) : null}
-            {banter.map((c) => {
-              const emotion = resolveBanterEmotion(c);
-              const body = displayBanterText(c.text, emotion);
-              return (
-                <View key={c.id} style={styles.row}>
-                  {emotion ? (
-                    <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
-                  ) : (
-                    <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
-                  )}
-                  <View style={styles.rowBody}>
-                    <UserHandle
-                      handle={c.handle}
-                      verified={c.verified ?? isHandleVerified(c.handle)}
-                      size={11}
-                      color={WHITE}
-                      badgeSize={12}
-                    />
-                    {body ? <Text style={styles.rowText}>{body}</Text> : null}
+            <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+              {loading && banter.length === 0 ? (
+                <Text style={styles.rowText}>Loading banter…</Text>
+              ) : null}
+              {banter.map((c) => {
+                const emotion = resolveBanterEmotion(c);
+                const body = displayBanterText(c.text, emotion);
+                return (
+                  <View key={c.id} style={styles.row}>
+                    {emotion ? (
+                      <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
+                    ) : (
+                      <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
+                    )}
+                    <View style={styles.rowBody}>
+                      <UserHandle
+                        handle={c.handle}
+                        verified={c.verified ?? isHandleVerified(c.handle)}
+                        size={11}
+                        color={WHITE}
+                        badgeSize={12}
+                      />
+                      {body ? <Text style={styles.rowText}>{body}</Text> : null}
+                    </View>
                   </View>
-                </View>
-              );
-            })}
-          </ScrollView>
+                );
+              })}
+            </ScrollView>
 
-          <View style={styles.compose}>
-            <TextInput
-              style={styles.input}
-              placeholder="Drop banter…"
-              placeholderTextColor={MUTED}
-              value={draft}
-              onChangeText={setDraft}
-              onSubmitEditing={() => sendBanter()}
-              returnKeyType="send"
-            />
-            <TouchableOpacity
-              style={styles.sendBtn}
-              onPress={() => sendBanter()}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.sendText}>SEND</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+            <View style={styles.compose}>
+              <TouchableOpacity
+                style={styles.vaultComposeBtn}
+                onPress={() => setVaultOpen(true)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Browse all skeleton emojis"
+              >
+                <BawaalEmoji name="laughing1" size={22} style={styles.chipEmoji} />
+              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Drop banter…"
+                placeholderTextColor={MUTED}
+                value={draft}
+                onChangeText={setDraft}
+                onSubmitEditing={() => sendBanter()}
+                returnKeyType="send"
+              />
+              <TouchableOpacity
+                style={styles.sendBtn}
+                onPress={() => sendBanter()}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.sendText}>SEND</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      <FullEmojiPickerDrawer
+        visible={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        onSelectEmoji={(key) => {
+          sendBanter(key);
+        }}
+      />
+    </>
   );
 }
 
@@ -328,6 +366,40 @@ const styles = StyleSheet.create({
   },
   chipEmoji: {
     marginHorizontal: 0,
+  },
+  vaultChip: {
+    minWidth: 52,
+    height: 40,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BAWAAL_ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  vaultChipText: {
+    color: BAWAAL_ORANGE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  vaultChipCount: {
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  vaultComposeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BAWAAL_ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   list: { maxHeight: 180, marginBottom: 8 },
   row: {
