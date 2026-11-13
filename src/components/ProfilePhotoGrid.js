@@ -11,7 +11,10 @@ import {
   View,
 } from 'react-native';
 import SafeRemoteImage from './SafeRemoteImage';
-import { DEFAULT_MEDIA_PLACEHOLDER } from '../constants/mediaFallbacks';
+import {
+  DEFAULT_MEDIA_PLACEHOLDER,
+  isUsableRemoteImageUri,
+} from '../constants/mediaFallbacks';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -45,7 +48,7 @@ function ProfilePhotoGrid({ photos = [], onPressPhoto }) {
           onPress={() => onPressPhoto?.(photo, index)}
           style={[styles.tile, { width: tile, height: tile }]}
         >
-          {photo.uri ? (
+          {isUsableRemoteImageUri(photo.uri) ? (
             <SafeRemoteImage
               uri={photo.uri}
               style={styles.image}

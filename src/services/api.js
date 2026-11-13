@@ -9,6 +9,7 @@ import {
   CALLOUT_KIND_CHALLENGE,
 } from '../utils/faceoffCallout';
 import { fetchVideoSocialCounts } from './videoSocialService';
+import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
 
 const VIDEOS_WITH_PROFILES_SELECT =
   '*, profiles(username, avatar_url)';
@@ -65,7 +66,11 @@ function profileHandle(profile) {
 function profileAvatar(profile) {
   if (!profile || typeof profile !== 'object') return null;
   // Canonical profiles column is `avatar_url` (avatar_uri is legacy soft-read only)
-  return profile.avatar_url || profile.avatar_uri || null;
+  return (
+    normalizeRemoteImageUri(profile.avatar_url) ||
+    normalizeRemoteImageUri(profile.avatar_uri) ||
+    null
+  );
 }
 
 function relativeLabel(iso) {

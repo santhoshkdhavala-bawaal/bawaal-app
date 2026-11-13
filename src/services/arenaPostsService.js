@@ -11,6 +11,7 @@ import {
   sanitizePlayableFeedUri,
 } from './uploadService';
 import { resolvePostSport } from '../utils/sportCategory';
+import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
 
 /** Canonical Arena feed table (joined with profiles on user_id). */
 const TABLE = 'videos';
@@ -171,10 +172,10 @@ export function mapDbRowToArenaPost(row) {
         ? `@${String(row.creator).replace(/^@/, '')}`
         : '@athlete';
   const avatarUrl =
-    profile?.avatar_url ||
-    profile?.avatar_uri ||
-    row.avatar_url ||
-    row.avatarUrl ||
+    normalizeRemoteImageUri(profile?.avatar_url) ||
+    normalizeRemoteImageUri(profile?.avatar_uri) ||
+    normalizeRemoteImageUri(row.avatar_url) ||
+    normalizeRemoteImageUri(row.avatarUrl) ||
     null;
 
   return {

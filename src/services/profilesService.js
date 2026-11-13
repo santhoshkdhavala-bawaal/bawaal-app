@@ -6,6 +6,7 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { CURRENT_USER, FOLLOWING, SUGGESTED } from '../data/athleteSocial';
 import { normalizePhoneE164 } from './authOtp';
+import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
 
 export const PROFILES_SETUP_HINT =
   'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql (or supabase_schema.sql)';
@@ -222,7 +223,10 @@ function mapProfileRow(row) {
       : row.category || row.sport
         ? [String(row.category || row.sport).toUpperCase()]
         : [],
-    avatarUri: row.avatar_url || row.avatar_uri || null,
+    avatarUri:
+      normalizeRemoteImageUri(row.avatar_url) ||
+      normalizeRemoteImageUri(row.avatar_uri) ||
+      null,
     verified: Boolean(row.verified),
     role: row.role || 'athlete',
     statusBadge: row.status_badge || null,

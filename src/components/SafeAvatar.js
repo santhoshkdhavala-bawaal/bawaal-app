@@ -1,9 +1,13 @@
 /**
  * Profile avatar — remote Supabase URL with silent fallback to initials / local mark.
+ * Never fetches when URI is null / empty / invalid — skips straight to placeholder.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import { DEFAULT_AVATAR_ASSET } from '../constants/mediaFallbacks';
+import {
+  DEFAULT_AVATAR_ASSET,
+  normalizeRemoteImageUri,
+} from '../constants/mediaFallbacks';
 
 const SURFACE = '#0A0A0A';
 const WHITE = '#FFFFFF';
@@ -36,7 +40,7 @@ const SafeAvatar = memo(function SafeAvatar({
   style,
 }) {
   const ring = ringColor || BORDER;
-  const remote = typeof uri === 'string' && uri.trim() ? uri.trim() : null;
+  const remote = useMemo(() => normalizeRemoteImageUri(uri), [uri]);
   const [failed, setFailed] = useState(false);
   const initials = useMemo(() => initialsFromName(name), [name]);
 
@@ -57,6 +61,7 @@ const SafeAvatar = memo(function SafeAvatar({
     borderColor: ringColor ? ring : WHITE,
   };
 
+  // Only hit the network when we have a real non-empty URI
   if (remote && !failed) {
     return (
       <Image

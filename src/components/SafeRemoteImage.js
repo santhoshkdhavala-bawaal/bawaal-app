@@ -1,16 +1,20 @@
 /**
- * Remote Image with silent local fallback on load / 404 failure.
+ * Remote Image with silent local fallback.
+ * Skips network entirely when URI is null / empty / invalid.
  * Pass `fallbackSource={null}` for black underlay (Arena posters — no logo blink).
  */
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, View } from 'react-native';
-import { DEFAULT_MEDIA_PLACEHOLDER } from '../constants/mediaFallbacks';
+import {
+  DEFAULT_MEDIA_PLACEHOLDER,
+  normalizeRemoteImageUri,
+} from '../constants/mediaFallbacks';
 
 function resolveRemoteUri(uri, source) {
-  if (typeof uri === 'string' && uri.trim()) return uri.trim();
-  if (source && typeof source === 'object' && typeof source.uri === 'string') {
-    const u = source.uri.trim();
-    return u || null;
+  const fromProp = normalizeRemoteImageUri(uri);
+  if (fromProp) return fromProp;
+  if (source && typeof source === 'object') {
+    return normalizeRemoteImageUri(source.uri);
   }
   return null;
 }
@@ -32,7 +36,7 @@ const SafeRemoteImage = memo(function SafeRemoteImage({
   silent = true,
   ...rest
 }) {
-  const remoteUri = resolveRemoteUri(uri, source);
+  const remoteUri = useMemo(() => resolveRemoteUri(uri, source), [uri, source]);
   const isLocalRequire = typeof source === 'number';
   const [failed, setFailed] = useState(false);
 
@@ -48,24 +52,38 @@ const SafeRemoteImage = memo(function SafeRemoteImage({
     [failed, onError, silent]
   );
 
-  if (failed && fallbackSource == null) {
-    return <View style={[style, { backgroundColor: '#000000' }]} {...rest} />;
+  const renderBlack = () => (
+    <View style={[style, { backgroundColor: '#000000' }]} {...rest} />
+  );
+
+  // No usable URI and not a bundled require → never fetch; show placeholder
+  if (!remoteUri && !isLocalRequire) {
+    if (fallbackSource == null) return renderBlack();
+    return (
+      <Image
+        source={fallbackSource}
+        style={style}
+        resizeMode={resizeMode}
+        fadeDuration={0}
+        {...rest}
+      />
+    );
   }
 
-  let resolved;
   if (failed) {
-    resolved = fallbackSource;
-  } else if (isLocalRequire) {
-    resolved = source;
-  } else if (remoteUri) {
-    resolved = { uri: remoteUri };
-  } else if (source && typeof source === 'object' && !source.uri) {
-    resolved = source;
-  } else if (fallbackSource != null) {
-    resolved = fallbackSource;
-  } else {
-    return <View style={[style, { backgroundColor: '#000000' }]} {...rest} />;
+    if (fallbackSource == null) return renderBlack();
+    return (
+      <Image
+        source={fallbackSource}
+        style={style}
+        resizeMode={resizeMode}
+        fadeDuration={0}
+        {...rest}
+      />
+    );
   }
+
+  const resolved = isLocalRequire ? source : { uri: remoteUri };
 
   return (
     <Image
