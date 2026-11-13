@@ -19,14 +19,20 @@ import {
 } from '../src/constants/bawaalEmojiAssets';
 
 /**
- * Official full registry — every `skel_*.png` keyed by filename stem
- * (e.g. love → skel_love.png). Same object as `BAWAAL_EMOJI_ASSETS`.
+ * Official full registry — every `skel_*.png` keyed by filename stem.
+ * `love` is required explicitly so it always appears in the vault grid.
  */
-export const SKELETON_EMOJIS = BAWAAL_EMOJI_ASSETS;
+export const SKELETON_EMOJIS = {
+  ...BAWAAL_EMOJI_ASSETS,
+  love: require('../assets/skel_love.png'),
+};
+
+/** Vault grid keys (includes `love` + all other skel_* stems). */
+export const ALL_SKELETON_KEYS = Object.keys(SKELETON_EMOJIS);
 
 /**
  * Compact banter-tray shortcuts (aliases allowed). Full vault still uses
- * `SKELETON_EMOJIS` / `BAWAAL_EMOJI_KEYS` (~106).
+ * `SKELETON_EMOJIS` / `ALL_SKELETON_KEYS` (~106).
  */
 export const BANTER_QUICK_EMOJIS = {
   head_on_fire: require('../assets/skel_head_on_fire.png'),

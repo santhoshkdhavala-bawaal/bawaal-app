@@ -12,12 +12,12 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BawaalEmoji, SKELETON_EMOJIS } from './BawaalEmoji';
+import { BawaalEmoji, ALL_SKELETON_KEYS as VAULT_KEYS } from './BawaalEmoji';
 
 const BAWAAL_ORANGE = '#FF5500';
 
-/** All unique skeleton asset keys (full 106 registry via SKELETON_EMOJIS). */
-export const ALL_SKELETON_KEYS = Object.keys(SKELETON_EMOJIS);
+/** All unique skeleton asset keys (full registry — includes `love`). */
+export const ALL_SKELETON_KEYS = VAULT_KEYS;
 
 export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
   visible,
