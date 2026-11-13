@@ -1966,12 +1966,23 @@ export default function UniversalCamera({
         : 'RESPOND'
       : hubModeTitle(mode);
 
-  const modeHudText = useMemo(() => {
-    // Hub tap wins — keep selected mode object on the viewfinder after modal close
+  /** Single top broadcast pill: `[MODE] • [DETAILS]` — idle rules or live clock. */
+  const broadcastHudText = useMemo(() => {
+    const activeMode = hubHandoff?.mode ?? mode;
+    const title = hubHandoff
+      ? hubModeTitle(hubHandoff.mode)
+      : isOpenerCapture || isChallengeResponse
+        ? modeLabel
+        : hubModeTitle(mode);
+
+    if (isFinalizingClip || isProcessing) {
+      return `${title} • SAVING…`;
+    }
+    if (isRecording) {
+      return `${title} • ${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`;
+    }
     if (hubHandoff) {
-      const activeMode = hubHandoff.mode;
-      const rule = hubModeRule(activeMode, selectedDuration, joshUnlocked3m);
-      return `${hubModeTitle(activeMode)} • ${rule}`;
+      return `${hubModeTitle(activeMode)} • ${hubModeRule(activeMode, selectedDuration, joshUnlocked3m)}`;
     }
     if (isOpenerCapture || isChallengeResponse) {
       return `${modeLabel} • ${Math.max(1, Math.floor(recordLimit))}s`;
@@ -1986,6 +1997,10 @@ export default function UniversalCamera({
     selectedDuration,
     joshUnlocked3m,
     recordLimit,
+    isFinalizingClip,
+    isProcessing,
+    isRecording,
+    elapsedSec,
   ]);
 
   const handlePublishModalCancel = useCallback(() => {
@@ -2345,31 +2360,33 @@ export default function UniversalCamera({
         pointerEvents="box-none"
         style={[styles.absoluteFill, styles.overlayRoot]}
       >
-        {/* Glassmorphic CANCEL / FLIP */}
+        {/* CANCEL · single broadcast HUD · FLIP — one centered pill only */}
         <View
           style={[styles.topBar, { paddingTop: Math.max(insets.top, 12) }]}
         >
-          <TouchableOpacity
-            onPress={handleClose}
-            style={styles.glassPill}
-            accessibilityLabel="Cancel"
-          >
-            <Text style={styles.glassPillText}>✕ CANCEL</Text>
-          </TouchableOpacity>
-
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerText}>
-              {isLiveHubMode(mode)
-                ? 'WAR CRY LIVE'
-                : isFinalizingClip || isProcessing
-                  ? 'SAVING…'
-                  : isRecording
-                    ? `${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
-                    : formatClock(recordLimit)}
-            </Text>
+          <View style={styles.topBarSide}>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.glassPill}
+              accessibilityLabel="Cancel"
+            >
+              <Text style={styles.glassPillText}>✕ CANCEL</Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.topRightControls}>
+          {!showPreview && !showPostSheet ? (
+            <View style={styles.topBarCenter} pointerEvents="none">
+              <View style={styles.modeHudPill}>
+                <Text style={styles.modeHudText} numberOfLines={1}>
+                  {broadcastHudText}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.topBarCenter} />
+          )}
+
+          <View style={[styles.topBarSide, styles.topBarSideEnd]}>
             <TouchableOpacity
               onPress={flipCamera}
               style={styles.flipPill}
@@ -2380,23 +2397,6 @@ export default function UniversalCamera({
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Active Hub mode HUD — updates on Hub tap; stays while framing + recording */}
-        {!showPreview && !showPostSheet ? (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.modeHudWrap,
-              { top: Math.max(insets.top, 12) + 52 },
-            ]}
-          >
-            <View style={styles.modeHudPill}>
-              <Text style={styles.modeHudText} numberOfLines={1}>
-                {modeHudText}
-              </Text>
-            </View>
-          </View>
-        ) : null}
 
         {!!cameraError && (
           <TouchableOpacity
@@ -2813,9 +2813,23 @@ const styles = StyleSheet.create({
   btnText: { color: '#000000', fontWeight: '800' },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 14,
+    gap: 8,
+  },
+  topBarSide: {
+    width: 96,
+    flexShrink: 0,
+    justifyContent: 'center',
+  },
+  topBarSideEnd: {
+    alignItems: 'flex-end',
+  },
+  topBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
   },
   glassPill: {
     backgroundColor: 'rgba(10, 14, 26, 0.72)',
@@ -2830,11 +2844,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  topRightControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
   },
   flipPill: {
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -2860,35 +2869,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  timerBadge: {
-    backgroundColor: 'rgba(10, 10, 10, 0.82)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
-    maxWidth: '42%',
-  },
-  timerText: {
-    color: ACCENT,
-    fontWeight: '800',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  modeHudWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 20,
-  },
   modeHudPill: {
-    maxWidth: '88%',
+    maxWidth: '100%',
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: BRAND_ORANGE,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
   },
   modeHudText: {
