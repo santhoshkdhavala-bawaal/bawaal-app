@@ -218,6 +218,27 @@ function formatClock(totalSec: number): string {
   return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
+function hubModeTitle(mode: CreationMode): string {
+  const hit = HUB_MODES.find((m) => m.id === mode);
+  if (hit) return hit.title;
+  if (mode === 'BATTLE_REWIND') return 'BAWAAL BATTLE';
+  if (mode === 'BATTLE_BAWAAL') return 'WAR CRY';
+  return 'SPARKS';
+}
+
+/** HUD rule chip: selected duration / live rule for the active Hub mode. */
+function hubModeRule(
+  mode: CreationMode,
+  selectedDuration: number,
+  joshUnlocked3m: boolean
+): string {
+  if (isLiveHubMode(mode)) return 'LIVE 1v1';
+  const secs = Math.max(1, Math.floor(selectedDuration || defaultDuration(mode)));
+  if (mode === 'SPARKS') return `${secs}s · 24h`;
+  if (mode === 'JOSH' && joshUnlocked3m) return `${secs}s · max 3m`;
+  return `${secs}s`;
+}
+
 const ABSOLUTE_FILL = {
   position: 'absolute' as const,
   top: 0,
@@ -1888,7 +1909,22 @@ export default function UniversalCamera({
       ? challengeTitle
         ? `RESPOND · ${challengeTitle}`.slice(0, 36)
         : 'RESPOND'
-      : HUB_MODES.find((m) => m.id === mode)?.title || 'SPARKS';
+      : hubModeTitle(mode);
+
+  const modeHudText = useMemo(() => {
+    if (isOpenerCapture || isChallengeResponse) {
+      return `${modeLabel} • ${Math.max(1, Math.floor(recordLimit))}s`;
+    }
+    return `${hubModeTitle(mode)} • ${hubModeRule(mode, selectedDuration, joshUnlocked3m)}`;
+  }, [
+    isOpenerCapture,
+    isChallengeResponse,
+    modeLabel,
+    mode,
+    selectedDuration,
+    joshUnlocked3m,
+    recordLimit,
+  ]);
 
   const handlePublishModalCancel = useCallback(() => {
     // Cancel — fully clear modal/camera hold then leave (no orphan black layers)
@@ -2267,7 +2303,7 @@ export default function UniversalCamera({
                   ? 'SAVING…'
                   : isRecording
                     ? `${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
-                    : modeLabel}
+                    : formatClock(recordLimit)}
             </Text>
           </View>
 
@@ -2282,6 +2318,23 @@ export default function UniversalCamera({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* Active Hub mode HUD — stays on while framing + recording */}
+        {!showPreview && !showPostSheet && !hubOpen ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.modeHudWrap,
+              { top: Math.max(insets.top, 12) + 52 },
+            ]}
+          >
+            <View style={styles.modeHudPill}>
+              <Text style={styles.modeHudText} numberOfLines={1}>
+                {modeHudText}
+              </Text>
+            </View>
+          </View>
+        ) : null}
 
         {!!cameraError && (
           <TouchableOpacity
@@ -2758,6 +2811,29 @@ const styles = StyleSheet.create({
     color: ACCENT,
     fontWeight: '800',
     fontSize: 11,
+    textAlign: 'center',
+  },
+  modeHudWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  modeHudPill: {
+    maxWidth: '88%',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: BRAND_ORANGE,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  modeHudText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
     textAlign: 'center',
   },
   errorBanner: {
