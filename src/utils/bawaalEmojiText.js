@@ -3,15 +3,15 @@
  * Forms: `:gym:`  ·  `[bawaal:gym]`
  *
  * Size rules (LOCKED visual impact):
- * - Emoji-only message → size 60 (sticker punch)
- * - Mixed text + emoji → text normal, inline emoji size 24
+ * - Emoji-only message → size 64 (sticker punch)
+ * - Mixed text + emoji → text normal size, inline emoji size 32 (pops vs letters)
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-export const BAWAAL_EMOJI_INLINE_SIZE = 24;
-export const BAWAAL_EMOJI_HERO_SIZE = 60;
+export const BAWAAL_EMOJI_INLINE_SIZE = 32;
+export const BAWAAL_EMOJI_HERO_SIZE = 64;
 
 /** Matches `:key:` or legacy `[bawaal:key]` tokens. */
 export const BAWAAL_EMOJI_TOKEN_RE = /(:([a-z0-9_]+):|\[bawaal:([a-z0-9_]+)\])/gi;
@@ -81,7 +81,7 @@ export function isEmojiOnlyMessage(textOrSegments) {
 
 /**
  * Inline / hero text + BawaalEmoji for chat / banter bubbles.
- * Auto-sizes: sticker 60 for emoji-only, inline 24 when mixed with text.
+ * Auto-sizes: sticker 64 for emoji-only, inline 32 when mixed with text.
  */
 export const BawaalEmojiText = memo(function BawaalEmojiText({
   text,
@@ -165,8 +165,8 @@ const styles = StyleSheet.create({
       : null),
   },
   baseText: {
-    // Baseline-friendly with 24px emoji; RN Text wraps beside Image siblings
-    lineHeight: 22,
+    // Keep body text normal; 32px emoji sits taller beside it
+    lineHeight: 28,
     ...(Platform.OS === 'web'
       ? {
           display: 'inline',
@@ -181,8 +181,8 @@ const styles = StyleSheet.create({
   inlineEmoji: {
     marginHorizontal: 2,
     marginVertical: 0,
-    // Nudge toward text baseline on both web + native
-    transform: [{ translateY: 1 }],
+    // Slight lift so 32px stickers sit cleanly against text baseline
+    transform: [{ translateY: 2 }],
   },
   heroEmoji: {
     marginHorizontal: 1,
