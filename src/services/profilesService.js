@@ -196,45 +196,94 @@ export function buildRegistrationProfilePayload(userData = {}, authUser = null) 
   return { id, v1, soft };
 }
 
+/** V1 `public.profiles` identity columns safe for `.eq` lookups (see ENSURE_PROFILES). */
+const PROFILE_LOOKUP_COLUMNS = Object.freeze(['phone', 'username', 'email', 'id']);
+
 /**
- * Find an existing profiles row without forcing a non-UUID into uuid `id` filters.
+ * Soft `.eq` lookup on a single V1 column. Never throws — logs and returns null on 400/miss.
+ * @param {'phone'|'username'|'email'|'id'} column
+ * @param {unknown} value
+ */
+async function safeLookupProfileByColumn(column, value) {
+  if (!PROFILE_LOOKUP_COLUMNS.includes(column)) {
+    console.warn('[profilesService] profiles lookup skipped — unknown column', { column });
+    return null;
+  }
+
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return null;
+
+  // `id` is uuid in V1 schema — never filter with phone:/local: fallbacks
+  if (column === 'id' && !isUuid(raw)) {
+    console.warn(
+      '[profilesService] profiles lookup skipped — id filter requires auth UUID',
+      { value: raw }
+    );
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq(column, raw)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[profilesService] profiles lookup query failed', {
+        column,
+        message: error.message || String(error),
+        code: error.code || null,
+        details: error.details || null,
+        hint: error.hint || null,
+      });
+      return null;
+    }
+
+    return data?.id ? { id: String(data.id) } : null;
+  } catch (err) {
+    console.warn('[profilesService] profiles lookup threw', {
+      column,
+      message: err?.message || String(err),
+    });
+    return null;
+  }
+}
+
+/**
+ * Find an existing profiles row using V1 schema columns only.
+ * Order: phone → username → email → uuid id. Never `.eq('id', nonUuid)`.
  * @param {{ id?: string, phone?: string, username?: string, email?: string }} keys
  */
 async function findExistingProfileRow(keys = {}) {
-  if (keys.phone) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('phone', keys.phone)
-      .maybeSingle();
-    if (!error && data?.id) return data;
+  try {
+    const phone = typeof keys.phone === 'string' ? keys.phone.trim() : '';
+    const username = typeof keys.username === 'string' ? keys.username.trim() : '';
+    const email = typeof keys.email === 'string' ? keys.email.trim() : '';
+    const id = typeof keys.id === 'string' ? keys.id.trim() : '';
+
+    const byPhone = phone ? await safeLookupProfileByColumn('phone', phone) : null;
+    if (byPhone) return byPhone;
+
+    const byUsername = username
+      ? await safeLookupProfileByColumn('username', username)
+      : null;
+    if (byUsername) return byUsername;
+
+    const byEmail = email ? await safeLookupProfileByColumn('email', email) : null;
+    if (byEmail) return byEmail;
+
+    if (id && isUuid(id)) {
+      return safeLookupProfileByColumn('id', id);
+    }
+
+    return null;
+  } catch (err) {
+    console.warn('[profilesService] findExistingProfileRow failed', {
+      message: err?.message || String(err),
+    });
+    return null;
   }
-  if (keys.username) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', keys.username)
-      .maybeSingle();
-    if (!error && data?.id) return data;
-  }
-  if (keys.email) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', keys.email)
-      .maybeSingle();
-    if (!error && data?.id) return data;
-  }
-  // Only probe by id when it is a real auth UUID (avoids 400 on uuid columns)
-  if (keys.id && isUuid(keys.id)) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', keys.id)
-      .maybeSingle();
-    if (!error && data?.id) return data;
-  }
-  return null;
 }
 
 /**
@@ -243,69 +292,129 @@ async function findExistingProfileRow(keys = {}) {
  * - Legacy / local id → never use onConflict id; `.update` if found else `.insert`
  *
  * @param {Record<string, unknown>} row
- * @returns {Promise<{ data: { id?: string }|null, error: any }>}
+ * @returns {Promise<{ data: { id?: string }|null, error: any, legacySkipped?: boolean }>}
  */
 async function persistProfileRow(row) {
-  const payload = compactProfilePayload(row);
-  if (!payload || typeof payload !== 'object') {
-    return { data: null, error: new Error('empty profiles payload') };
-  }
-
-  const id = payload.id != null ? String(payload.id) : null;
-  const authUuid = id && isUuid(id);
-
-  if (authUuid) {
-    return supabase
-      .from('profiles')
-      .upsert(payload, { onConflict: 'id' })
-      .select('id')
-      .maybeSingle();
-  }
-
-  // Legacy / local fallback — do NOT call upsert onConflict id (400 on uuid PKs)
-  console.warn(
-    '[profilesService] non-UUID profiles.id — using insert/update branch (no onConflict).',
-    { id }
-  );
-
-  const existing = await findExistingProfileRow({
-    id,
-    phone: typeof payload.phone === 'string' ? payload.phone : null,
-    username: typeof payload.username === 'string' ? payload.username : null,
-    email: typeof payload.email === 'string' ? payload.email : null,
-  });
-
-  if (existing?.id) {
-    const patch = omitKeys(payload, ['id']);
-    if (!Object.keys(patch).length) {
-      return { data: { id: existing.id }, error: null };
+  try {
+    const payload = compactProfilePayload(row);
+    if (!payload || typeof payload !== 'object') {
+      return { data: null, error: new Error('empty profiles payload') };
     }
-    return supabase
-      .from('profiles')
-      .update(patch)
-      .eq('id', existing.id)
-      .select('id')
-      .maybeSingle();
+
+    const id = payload.id != null ? String(payload.id) : null;
+    const authUuid = id && isUuid(id);
+
+    if (authUuid) {
+      try {
+        return await supabase
+          .from('profiles')
+          .upsert(payload, { onConflict: 'id' })
+          .select('id')
+          .maybeSingle();
+      } catch (err) {
+        console.warn('[profilesService] uuid upsert threw', {
+          message: err?.message || String(err),
+        });
+        return { data: null, error: err };
+      }
+    }
+
+    // Legacy / local fallback — do NOT call upsert onConflict id (400 on uuid PKs)
+    console.warn(
+      '[profilesService] non-UUID profiles.id — using insert/update branch (no onConflict).',
+      { id }
+    );
+
+    const existing = await findExistingProfileRow({
+      // Never pass non-UUID id into lookup — findExistingProfileRow guards anyway
+      id: authUuid ? id : null,
+      phone: typeof payload.phone === 'string' ? payload.phone : null,
+      username: typeof payload.username === 'string' ? payload.username : null,
+      email: typeof payload.email === 'string' ? payload.email : null,
+    });
+
+    if (existing?.id) {
+      const patch = omitKeys(payload, ['id']);
+      if (!Object.keys(patch).length) {
+        return { data: { id: existing.id }, error: null };
+      }
+      try {
+        // Update target id is always a real DB id from select — safe for uuid PK
+        const result = await supabase
+          .from('profiles')
+          .update(patch)
+          .eq('id', existing.id)
+          .select('id')
+          .maybeSingle();
+        if (result.error) {
+          console.warn('[profilesService] legacy update failed', {
+            message: result.error.message || String(result.error),
+            code: result.error.code || null,
+            targetId: existing.id,
+          });
+        }
+        return result;
+      } catch (err) {
+        console.warn('[profilesService] legacy update threw', {
+          message: err?.message || String(err),
+          targetId: existing.id,
+        });
+        return { data: null, error: err };
+      }
+    }
+
+    // Insert: keep legacy text id only for text-PK tables; soft-skip uuid syntax errors
+    try {
+      let insertPayload = { ...payload };
+      // Prefer omitting non-UUID id on V1 uuid PK to avoid immediate 400
+      if (insertPayload.id && !isUuid(String(insertPayload.id))) {
+        insertPayload = omitKeys(insertPayload, ['id']);
+      }
+
+      if (!Object.keys(insertPayload).length) {
+        return {
+          data: null,
+          error: new Error('legacy insert skipped — empty payload after id strip'),
+          legacySkipped: true,
+        };
+      }
+
+      const result = await supabase
+        .from('profiles')
+        .insert(insertPayload)
+        .select('id')
+        .maybeSingle();
+
+      if (result.error && isInvalidUuidError(result.error)) {
+        logUpsertFailure('legacy-insert-uuid-pk', result.error, insertPayload);
+        return {
+          data: null,
+          error: result.error,
+          legacySkipped: true,
+        };
+      }
+
+      if (result.error) {
+        console.warn('[profilesService] legacy insert failed', {
+          message: result.error.message || String(result.error),
+          code: result.error.code || null,
+          details: result.error.details || null,
+        });
+      }
+
+      return result;
+    } catch (err) {
+      console.warn('[profilesService] legacy insert threw', {
+        message: err?.message || String(err),
+      });
+      return { data: null, error: err, legacySkipped: true };
+    }
+  } catch (err) {
+    console.warn('[profilesService] persistProfileRow failed', {
+      message: err?.message || String(err),
+    });
+    return { data: null, error: err };
   }
-
-  // Insert: keep legacy text id only for text-PK tables; strip id on uuid syntax errors
-  let result = await supabase
-    .from('profiles')
-    .insert(payload)
-    .select('id')
-    .maybeSingle();
-
-  if (result.error && isInvalidUuidError(result.error) && 'id' in payload) {
-    logUpsertFailure('legacy-insert-uuid-pk', result.error, payload);
-    // Cannot write phone:/local: into uuid PK without an auth session — soft skip
-    return {
-      data: null,
-      error: result.error,
-      legacySkipped: true,
-    };
-  }
-
-  return result;
 }
 
 /**
