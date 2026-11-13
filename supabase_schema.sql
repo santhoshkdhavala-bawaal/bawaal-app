@@ -59,11 +59,13 @@ alter table public.profiles add column if not exists primary_sport text;
 alter table public.profiles add column if not exists created_at timestamptz default now();
 alter table public.profiles add column if not exists mobile text;
 alter table public.profiles add column if not exists location text;
+alter table public.profiles add column if not exists city_country text;
 alter table public.profiles add column if not exists sport_interests text[];
 alter table public.profiles add column if not exists handle text;
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists sport text;
 alter table public.profiles add column if not exists city text;
+alter table public.profiles add column if not exists avatar_uri text;
 alter table public.profiles add column if not exists updated_at timestamptz default now();
 
 create unique index if not exists profiles_username_unique_idx

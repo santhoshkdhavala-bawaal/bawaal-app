@@ -37,6 +37,7 @@ alter table public.profiles add column if not exists role text;
 alter table public.profiles add column if not exists created_at timestamptz default now();
 alter table public.profiles add column if not exists mobile text;
 alter table public.profiles add column if not exists location text;
+alter table public.profiles add column if not exists city_country text;
 alter table public.profiles add column if not exists sport_interests text[];
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists handle text;
@@ -71,6 +72,7 @@ create unique index if not exists profiles_phone_unique_idx
 create index if not exists profiles_mobile_idx on public.profiles (mobile);
 create index if not exists profiles_list_bucket_idx on public.profiles (list_bucket);
 create index if not exists profiles_category_idx on public.profiles (category);
+create index if not exists profiles_city_country_idx on public.profiles (city_country);
 create index if not exists profiles_created_at_idx on public.profiles (created_at desc);
 
 alter table public.profiles enable row level security;
