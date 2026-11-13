@@ -1,13 +1,16 @@
 /**
- * Passport ↔ Supabase `profiles` (+ V1 registration upsert).
- * V1 columns: id, username, real_name, age, gender, email, phone, country,
- * category, role, created_at — see `src/types/profile.js`.
+ * Passport ↔ Supabase `profiles` (+ registration save).
+ * Live writes use PROFILE_SAFE_WRITE_COLUMNS only (base schema cache).
+ * See `src/types/profile.js` + `supabase_schema.sql`.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { CURRENT_USER, FOLLOWING, SUGGESTED } from '../data/athleteSocial';
 import { normalizePhoneE164 } from './authOtp';
 import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
-import { PROFILE_V1_COLUMNS } from '../types/profile';
+import {
+  PROFILE_PAYLOAD_DENYLIST,
+  PROFILE_SAFE_WRITE_COLUMNS,
+} from '../types/profile';
 
 export const PROFILES_SETUP_HINT =
   'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql (or supabase_schema.sql)';
@@ -15,22 +18,7 @@ export const PROFILES_SETUP_HINT =
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * Only these keys may be sent on registration upsert.
- * Explicitly excludes `list_bucket` and other Passport-only / missing-cache fields.
- * `created_at` is DB-defaulted — never client-written on upsert.
- */
-const PROFILE_UPSERT_ALLOWLIST = Object.freeze(
-  PROFILE_V1_COLUMNS.filter((key) => key !== 'created_at')
-);
-
-/** Soft-compat extras — tried only after a successful V1 upsert is not required; stripped on miss. */
-const PROFILE_SOFT_COMPAT_KEYS = Object.freeze([
-  'display_name',
-  'full_name',
-  'primary_sport',
-  'updated_at',
-]);
+const PROFILE_DENYLIST_SET = new Set(PROFILE_PAYLOAD_DENYLIST);
 
 function isSchemaCacheError(error) {
   const msg = String(error?.message || error?.details || error?.hint || error || '');
@@ -68,8 +56,8 @@ function omitKeys(row, keys) {
 }
 
 /**
- * Drop undefined / null / empty-string values so PostgREST never sees junk keys.
- * `id` is always retained when present.
+ * Drop undefined / null / empty-string values. Optionally restrict to an allowlist.
+ * Always strips PROFILE_PAYLOAD_DENYLIST keys (real_name, age, location, list_bucket, …).
  * @param {Record<string, unknown>} row
  * @param {readonly string[]} [allowlist]
  */
@@ -81,8 +69,7 @@ export function compactProfilePayload(row, allowlist) {
   const out = {};
   for (const key of keys) {
     if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
-    // Never allow known non-schema / Passport-only keys through
-    if (key === 'list_bucket' || key === 'listBucket') continue;
+    if (PROFILE_DENYLIST_SET.has(key)) continue;
     const value = src[key];
     if (value === undefined || value === null) continue;
     if (typeof value === 'string' && !value.trim()) continue;
@@ -90,6 +77,40 @@ export function compactProfilePayload(row, allowlist) {
     out[key] = typeof value === 'string' ? value.trim() : value;
   }
   return out;
+}
+
+/**
+ * Final sanitizer before every profiles insert / update / upsert.
+ * Maps form aliases onto base schema columns, then allowlists + denylists.
+ *
+ * @param {Record<string, unknown>} row
+ * @returns {Record<string, unknown>}
+ */
+export function sanitizeProfileWritePayload(row = {}) {
+  const src = row && typeof row === 'object' ? { ...row } : {};
+
+  // Map extended / form keys → base schema columns (then drop the form keys)
+  if (src.full_name == null || src.full_name === '') {
+    const mappedName =
+      src.real_name || src.realName || src.display_name || src.displayName || src.name;
+    if (mappedName != null && String(mappedName).trim()) {
+      src.full_name = String(mappedName).trim();
+    }
+  }
+  if (src.primary_sport == null || src.primary_sport === '') {
+    const mappedSport = src.category || src.sport || src.sportInterest || src.primarySport;
+    if (mappedSport != null && String(mappedSport).trim()) {
+      src.primary_sport = String(mappedSport).trim();
+    }
+  }
+  if (src.avatar_url == null || src.avatar_url === '') {
+    const mappedAvatar = src.avatarUri || src.avatar_uri || src.avatarUrl;
+    if (mappedAvatar != null && String(mappedAvatar).trim()) {
+      src.avatar_url = String(mappedAvatar).trim();
+    }
+  }
+
+  return compactProfilePayload(src, PROFILE_SAFE_WRITE_COLUMNS);
 }
 
 function logUpsertFailure(stage, error, payload) {
@@ -132,8 +153,8 @@ export function resolveProfileId(userData = {}, authUser = null) {
 }
 
 /**
- * Build a compact, allowlisted profiles upsert row from registration form data.
- * Omits null / undefined / empty strings and never includes `list_bucket`.
+ * Build a sanitized profiles write row from registration form data.
+ * Maps form fields onto base schema columns only (no real_name / age / location / …).
  *
  * @param {object} userData
  * @param {{ id?: string } | null} [authUser]
@@ -148,9 +169,6 @@ export function buildRegistrationProfilePayload(userData = {}, authUser = null) 
   ).trim();
   const phone = normalizePhoneE164(userData.phone || userData.mobile || '') || null;
   const email = String(userData.email || '').trim().toLowerCase() || null;
-  const country =
-    String(userData.country || userData.location || userData.city || '').trim() || null;
-  const role = String(userData.role || 'fan').toLowerCase() || null;
   const category =
     String(
       userData.category ||
@@ -160,44 +178,41 @@ export function buildRegistrationProfilePayload(userData = {}, authUser = null) 
         ''
     ).trim() || null;
   const sport = category || 'OTHERS';
-  const ageRaw = userData.age;
-  const ageNum = Number(ageRaw);
-  const age = Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
-  const gender = userData.gender ? String(userData.gender).trim() : null;
-  const displayName = String(
-    userData.displayName || userData.handle || username || realName || 'Athlete'
-  ).trim();
+  const avatarUrl =
+    normalizeRemoteImageUri(userData.avatar_url) ||
+    normalizeRemoteImageUri(userData.avatarUrl) ||
+    normalizeRemoteImageUri(userData.avatarUri) ||
+    null;
 
-  /** Canonical V1 fields only — primary upsert path. */
-  const v1Raw = {
+  /** Raw mapped row — sanitizer strips denylist + non-schema keys. */
+  const mapped = {
     id,
     username,
-    real_name: realName || null,
-    age,
-    gender,
-    email,
-    phone,
-    country,
-    category: sport,
-    role,
-  };
-
-  const v1 = compactProfilePayload(v1Raw, PROFILE_UPSERT_ALLOWLIST);
-
-  /** Optional soft-compat — never includes list_bucket / mobile / handle arrays. */
-  const softRaw = {
-    display_name: displayName || null,
     full_name: realName || null,
-    primary_sport: sport || null,
-    updated_at: new Date().toISOString(),
+    email,
+    avatar_url: avatarUrl,
+    primary_sport: sport,
+    // Kept for local lookup helpers only — stripped from wire payload by sanitizer
+    phone,
   };
-  const soft = compactProfilePayload(softRaw, PROFILE_SOFT_COMPAT_KEYS);
 
-  return { id, v1, soft };
+  const v1 = sanitizeProfileWritePayload(mapped);
+  // Soft patch uses the same safe columns (no-op extras already stripped)
+  const soft = sanitizeProfileWritePayload({
+    full_name: realName || null,
+    primary_sport: sport,
+    avatar_url: avatarUrl,
+    email,
+  });
+
+  return { id, v1, soft, lookup: { phone, username, email } };
 }
 
-/** V1 `public.profiles` identity columns safe for `.eq` lookups (see ENSURE_PROFILES). */
-const PROFILE_LOOKUP_COLUMNS = Object.freeze(['phone', 'username', 'email', 'id']);
+/**
+ * Lookup columns that exist on most deployments.
+ * Prefer username / uuid id (base schema). phone/email are soft-tried and may 400.
+ */
+const PROFILE_LOOKUP_COLUMNS = Object.freeze(['username', 'id', 'email', 'phone']);
 
 /**
  * Soft `.eq` lookup on a single V1 column. Never throws — logs and returns null on 400/miss.
@@ -262,20 +277,22 @@ async function findExistingProfileRow(keys = {}) {
     const email = typeof keys.email === 'string' ? keys.email.trim() : '';
     const id = typeof keys.id === 'string' ? keys.id.trim() : '';
 
-    const byPhone = phone ? await safeLookupProfileByColumn('phone', phone) : null;
-    if (byPhone) return byPhone;
-
+    // Prefer base-schema columns first (username / uuid id), then optional email/phone
     const byUsername = username
       ? await safeLookupProfileByColumn('username', username)
       : null;
     if (byUsername) return byUsername;
 
+    if (id && isUuid(id)) {
+      const byId = await safeLookupProfileByColumn('id', id);
+      if (byId) return byId;
+    }
+
     const byEmail = email ? await safeLookupProfileByColumn('email', email) : null;
     if (byEmail) return byEmail;
 
-    if (id && isUuid(id)) {
-      return safeLookupProfileByColumn('id', id);
-    }
+    const byPhone = phone ? await safeLookupProfileByColumn('phone', phone) : null;
+    if (byPhone) return byPhone;
 
     return null;
   } catch (err) {
@@ -292,13 +309,15 @@ async function findExistingProfileRow(keys = {}) {
  * - Legacy / local id → never use onConflict id; `.update` if found else `.insert`
  *
  * @param {Record<string, unknown>} row
+ * @param {{ phone?: string|null, username?: string|null, email?: string|null }} [lookupHints]
  * @returns {Promise<{ data: { id?: string }|null, error: any, legacySkipped?: boolean }>}
  */
-async function persistProfileRow(row) {
+async function persistProfileRow(row, lookupHints = {}) {
   try {
-    const payload = compactProfilePayload(row);
-    if (!payload || typeof payload !== 'object') {
-      return { data: null, error: new Error('empty profiles payload') };
+    // Always sanitize — only PROFILE_SAFE_WRITE_COLUMNS leave this function
+    const payload = sanitizeProfileWritePayload(row);
+    if (!payload || typeof payload !== 'object' || !Object.keys(payload).length) {
+      return { data: null, error: new Error('empty profiles payload after sanitize') };
     }
 
     const id = payload.id != null ? String(payload.id) : null;
@@ -326,11 +345,16 @@ async function persistProfileRow(row) {
     );
 
     const existing = await findExistingProfileRow({
-      // Never pass non-UUID id into lookup — findExistingProfileRow guards anyway
-      id: authUuid ? id : null,
-      phone: typeof payload.phone === 'string' ? payload.phone : null,
-      username: typeof payload.username === 'string' ? payload.username : null,
-      email: typeof payload.email === 'string' ? payload.email : null,
+      id: null,
+      phone: lookupHints.phone || null,
+      username:
+        (typeof payload.username === 'string' && payload.username) ||
+        lookupHints.username ||
+        null,
+      email:
+        (typeof payload.email === 'string' && payload.email) ||
+        lookupHints.email ||
+        null,
     });
 
     if (existing?.id) {
@@ -428,20 +452,26 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
     return { ok: false, fromCloud: false, error: new Error('Supabase not configured') };
   }
 
-  const { id, v1, soft } = buildRegistrationProfilePayload(userData, authUser);
+  const { id, v1, soft, lookup } = buildRegistrationProfilePayload(userData, authUser);
 
-  if (!v1.id) {
-    const error = new Error('profiles upsert requires a stable id');
+  if (!v1.id && !isUuid(id)) {
+    // Legacy ids are stripped by sanitizer — still OK to attempt lookup/update path
+  }
+  if (!v1.id && isUuid(id)) {
+    v1.id = id;
+  }
+  if (!v1.id && !lookup?.username && !lookup?.email && !lookup?.phone) {
+    const error = new Error('profiles upsert requires id or username/email/phone');
     logUpsertFailure('missing-id', error, v1);
     return { ok: false, fromCloud: false, id: null, error };
   }
 
   try {
-    // 1) Lean V1 allowlist only (no list_bucket / null junk)
-    let payload = { ...v1 };
-    let { data, error, legacySkipped } = await persistProfileRow(payload);
+    // 1) Sanitized base-schema payload only
+    let payload = sanitizeProfileWritePayload({ ...v1, id: isUuid(id) ? id : v1.id });
+    let { data, error, legacySkipped } = await persistProfileRow(payload, lookup);
 
-    // 2) Schema-cache soft strip (e.g. missing `age`)
+    // 2) Schema-cache soft strip if a safe column is still missing from API cache
     let guard = 0;
     while (error && isSchemaCacheError(error) && !legacySkipped && guard < 6) {
       guard += 1;
@@ -449,13 +479,12 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
       logUpsertFailure(`schema-strip-${guard}${missing ? `:${missing}` : ''}`, error, payload);
       if (missing && missing in payload && missing !== 'id') {
         payload = omitKeys(payload, [missing]);
-      } else if ('age' in payload) {
-        payload = omitKeys(payload, ['age']);
       } else {
         break;
       }
       if (!payload.id && isUuid(id)) break;
-      ({ data, error, legacySkipped } = await persistProfileRow(payload));
+      payload = sanitizeProfileWritePayload(payload);
+      ({ data, error, legacySkipped } = await persistProfileRow(payload, lookup));
     }
 
     if (legacySkipped) {
@@ -475,22 +504,22 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
       throw error;
     }
 
-    const savedId = data?.id || (isUuid(id) ? id : null) || id;
+    const savedId = data?.id || (isUuid(id) ? id : null) || data?.id;
 
-    // 3) Best-effort soft-compat UPDATE only (never insert / never onConflict)
-    const softPatch = compactProfilePayload(soft, PROFILE_SOFT_COMPAT_KEYS);
+    // 3) Best-effort soft UPDATE with the same sanitized columns only
+    const softPatch = sanitizeProfileWritePayload(soft);
     if (Object.keys(softPatch).length > 0) {
-      let targetId = isUuid(savedId) ? savedId : null;
+      let targetId = savedId && isUuid(String(savedId)) ? String(savedId) : null;
       if (!targetId) {
         const found = await findExistingProfileRow({
-          phone: v1.phone,
-          username: v1.username,
-          email: v1.email,
+          phone: lookup?.phone,
+          username: lookup?.username || v1.username,
+          email: lookup?.email || v1.email,
         });
         targetId = found?.id || null;
       }
       if (targetId) {
-        let softRow = softPatch;
+        let softRow = omitKeys(softPatch, ['id']);
         let softResult = await supabase
           .from('profiles')
           .update(softRow)
@@ -515,7 +544,7 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
       }
     }
 
-    return { ok: true, fromCloud: true, id: savedId, error: null };
+    return { ok: true, fromCloud: true, id: savedId || id, error: null };
   } catch (error) {
     logUpsertFailure('catch', error, v1);
     return { ok: false, fromCloud: false, id, error };
