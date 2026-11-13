@@ -3,7 +3,6 @@ import {
   Modal,
   View,
   Text,
-  Image,
   TouchableOpacity,
   Pressable,
   StyleSheet,
@@ -31,6 +30,7 @@ import {
 } from './src/utils/reelMediaFallback';
 import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_EMOJIS } from './components/BawaalEmoji';
 import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
+import SafeRemoteImage from './src/components/SafeRemoteImage';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -321,10 +321,11 @@ export default function ArenaReelViewer({
             <View style={styles.posterCard} pointerEvents="none">
               <View style={[styles.posterCardImage, { backgroundColor: BG }]} />
               {posterSource ? (
-                <Image
+                <SafeRemoteImage
                   source={posterSource}
                   style={styles.posterCardImage}
                   resizeMode="cover"
+                  fallbackSource={null}
                 />
               ) : null}
               <View style={styles.posterCardScrim} />
@@ -360,11 +361,12 @@ export default function ArenaReelViewer({
                 pointerEvents="none"
               />
               {posterSource ? (
-                <Image
+                <SafeRemoteImage
                   source={posterSource}
                   style={styles.posterFill}
                   resizeMode="cover"
                   pointerEvents="none"
+                  fallbackSource={null}
                 />
               ) : null}
               <SafeFeedVideo

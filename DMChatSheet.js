@@ -6,7 +6,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import UserHandle from './src/components/UserHandle';
+import SafeAvatar from './src/components/SafeAvatar';
 import { isHandleVerified } from './src/data/athleteSocial';
 import {
   fetchMessageHistory,
@@ -39,48 +39,14 @@ const RECV_GREY = '#1A1A1A';
 const RECV_BORDER = 'rgba(255,255,255,0.12)';
 
 function peerAvatar(peer, size = 36) {
-  const name = peer?.displayName || peer?.handle || '?';
-  const initials = String(name)
-    .replace(/^@/, '')
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-  if (peer?.avatarUri) {
-    return (
-      <Image
-        source={{ uri: peer.avatarUri }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: SURFACE,
-          borderWidth: 1,
-          borderColor: WHITE,
-        }}
-      />
-    );
-  }
-
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: SURFACE,
-        borderWidth: 1,
-        borderColor: WHITE,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={{ color: WHITE, fontWeight: '900', fontSize: size * 0.34 }}>
-        {initials}
-      </Text>
-    </View>
+    <SafeAvatar
+      uri={peer?.avatarUri}
+      name={peer?.displayName || peer?.handle || '?'}
+      size={size}
+      ringColor={WHITE}
+      fallback="initials"
+    />
   );
 }
 

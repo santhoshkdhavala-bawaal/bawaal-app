@@ -9,7 +9,6 @@
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -29,6 +28,7 @@ import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
 import VerifiedBadge from './src/components/VerifiedBadge';
 import BackLink from './src/components/BackLink';
+import SafeAvatar from './src/components/SafeAvatar';
 import { refreshArenaPostsFromSupabase } from './arenaFeedStore';
 import { fetchPassportGraph } from './src/services/profilesService';
 import { fetchPassportSquads } from './src/services/lockerService';
@@ -46,43 +46,14 @@ const FOLLOW_BLUE = '#3B82F6';
 const SUGGEST_RED = '#FF3366';
 
 function Avatar({ uri, name, size = 56, ringColor }) {
-  const ring = ringColor || BORDER;
-  const initials = String(name || '?')
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-  if (uri) {
-    return (
-      <Image
-        source={{ uri }}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: SURFACE,
-          borderWidth: ringColor ? 2 : 1,
-          borderColor: ring,
-        }}
-      />
-    );
-  }
   return (
-    <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: SURFACE,
-        borderWidth: ringColor ? 2 : 1,
-        borderColor: ringColor || WHITE,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <Text style={[styles.avatarText, { fontSize: size * 0.34 }]}>{initials}</Text>
-    </View>
+    <SafeAvatar
+      uri={uri}
+      name={name}
+      size={size}
+      ringColor={ringColor}
+      fallback="initials"
+    />
   );
 }
 

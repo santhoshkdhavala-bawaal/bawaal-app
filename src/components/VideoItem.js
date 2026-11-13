@@ -83,7 +83,9 @@ const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, 
           useNativeControls={false}
           controls={false}
           isMuted={effectiveMuted}
-          onError={(e) => console.log('FAIL', item?.id, playUri, e)}
+          onError={() => {
+            /* soft-fail — avoid console spam on bad / 404 media URLs */
+          }}
         />
       ) : null}
       {!playUri ? (

@@ -6,9 +6,9 @@ import {
   View,
 } from 'react-native';
 import { ResizeMode, Video } from 'expo-av';
-import { Image } from 'expo-image';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
 import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
+import SafeRemoteImage from './SafeRemoteImage';
 
 function firstPlayableUri(candidates) {
   for (const candidate of candidates) {
@@ -52,10 +52,11 @@ function ActiveClip({
     >
       <View style={styles.container}>
         {thumbnailUri ? (
-          <Image
-            source={{ uri: thumbnailUri }}
+          <SafeRemoteImage
+            uri={thumbnailUri}
             style={StyleSheet.absoluteFill}
-            contentFit="cover"
+            resizeMode="cover"
+            fallbackSource={null}
           />
         ) : null}
         <Video
@@ -68,7 +69,6 @@ function ActiveClip({
           isMuted={!!muted}
           useNativeControls={false}
           onError={(err) => {
-            console.log('VIDEO ERROR:', err, 'URL:', videoUri);
             onError?.(err);
           }}
         />
@@ -108,10 +108,11 @@ const SafeVideoPlayer = memo(function SafeVideoPlayer({
     return (
       <View style={[styles.container, style]}>
         {thumbnailUri ? (
-          <Image
-            source={{ uri: thumbnailUri }}
+          <SafeRemoteImage
+            uri={thumbnailUri}
             style={StyleSheet.absoluteFill}
-            contentFit="cover"
+            resizeMode="cover"
+            fallbackSource={null}
           />
         ) : null}
       </View>

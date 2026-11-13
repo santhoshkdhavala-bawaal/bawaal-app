@@ -2,15 +2,16 @@
  * Instagram-style 3-column photo gallery for Passport profiles.
  * B&W chrome; tiles are media only (no colored frames).
  */
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   Dimensions,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import SafeRemoteImage from './SafeRemoteImage';
+import { DEFAULT_MEDIA_PLACEHOLDER } from '../constants/mediaFallbacks';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -20,7 +21,6 @@ const BORDER = 'rgba(255,255,255,0.18)';
 const GAP = 2;
 
 function ProfilePhotoGrid({ photos = [], onPressPhoto }) {
-  const [failed, setFailed] = useState(() => new Set());
   const tile = useMemo(() => {
     const w = Dimensions.get('window').width;
     // Parent usually pads 16; grid is full bleed within content — use ~ content width
@@ -38,38 +38,30 @@ function ProfilePhotoGrid({ photos = [], onPressPhoto }) {
 
   return (
     <View style={styles.grid}>
-      {photos.map((photo, index) => {
-        const broken = failed.has(photo.id);
-        return (
-          <TouchableOpacity
-            key={photo.id}
-            activeOpacity={0.88}
-            onPress={() => onPressPhoto?.(photo, index)}
-            style={[styles.tile, { width: tile, height: tile }]}
-          >
-            {photo.uri && !broken ? (
-              <Image
-                source={{ uri: photo.uri }}
-                style={styles.image}
-                onError={() =>
-                  setFailed((prev) => {
-                    const next = new Set(prev);
-                    next.add(photo.id);
-                    return next;
-                  })
-                }
-              />
-            ) : (
-              <View style={styles.fallback}>
-                <Text style={styles.fallbackIcon}>▣</Text>
-                <Text style={styles.fallbackLabel} numberOfLines={2}>
-                  {photo.caption || 'PHOTO'}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        );
-      })}
+      {photos.map((photo, index) => (
+        <TouchableOpacity
+          key={photo.id}
+          activeOpacity={0.88}
+          onPress={() => onPressPhoto?.(photo, index)}
+          style={[styles.tile, { width: tile, height: tile }]}
+        >
+          {photo.uri ? (
+            <SafeRemoteImage
+              uri={photo.uri}
+              style={styles.image}
+              fallbackSource={DEFAULT_MEDIA_PLACEHOLDER}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.fallback}>
+              <Text style={styles.fallbackIcon}>▣</Text>
+              <Text style={styles.fallbackLabel} numberOfLines={2}>
+                {photo.caption || 'PHOTO'}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      ))}
     </View>
   );
 }
