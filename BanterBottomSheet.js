@@ -18,7 +18,11 @@ import {
   fetchVideoComments,
   postVideoComment,
 } from './src/services/videoSocialService';
-import { BawaalEmoji, hasBawaalEmoji, SKELETON_EMOJIS } from './components/BawaalEmoji';
+import {
+  BawaalEmoji,
+  hasBawaalEmoji,
+  BANTER_QUICK_EMOJIS,
+} from './components/BawaalEmoji';
 import {
   FullEmojiPickerDrawer,
   ALL_SKELETON_KEYS,
@@ -35,8 +39,8 @@ const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 const BAWAAL_ORANGE = '#FF5500';
 
-/** Horizontal Banter reaction tray — custom skeleton keys. */
-const BANTER_REACTIONS = Object.keys(SKELETON_EMOJIS);
+/** Horizontal Banter reaction tray — quick skeleton shortcuts. */
+const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
 
 const BAWAAL_MARKER_RE = /\[bawaal:([a-z0-9_]+)\]/i;
 

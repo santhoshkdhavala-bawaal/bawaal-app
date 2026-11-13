@@ -28,7 +28,7 @@ import {
   prefetchReelPoster,
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
-import { BawaalEmoji, hasBawaalEmoji, SKELETON_EMOJIS } from './components/BawaalEmoji';
+import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_EMOJIS } from './components/BawaalEmoji';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -38,7 +38,7 @@ const CARD = '#121212';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 /** Banter / floating reactions — BawaalEmoji keys only (never unicode). */
-const BANTER_REACTIONS = Object.keys(SKELETON_EMOJIS);
+const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
 
 const DEMO_BANTER = [
   { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy', emotion: 'head_on_fire' },
