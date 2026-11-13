@@ -273,7 +273,6 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
                       {body ? (
                         <BawaalEmojiText
                           text={body}
-                          emojiSize={18}
                           textStyle={styles.rowText}
                           style={styles.rowRich}
                         />
