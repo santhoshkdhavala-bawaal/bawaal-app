@@ -3,7 +3,7 @@
  * Forms: `:gym:`  ·  `[bawaal:gym]`
  *
  * Size rules (LOCKED visual impact):
- * - Emoji-only message → size 44 (hero)
+ * - Emoji-only message → size 60 (sticker punch)
  * - Mixed text + emoji → text normal, inline emoji size 24
  */
 import React, { memo, useMemo } from 'react';
@@ -11,7 +11,7 @@ import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
 export const BAWAAL_EMOJI_INLINE_SIZE = 24;
-export const BAWAAL_EMOJI_HERO_SIZE = 44;
+export const BAWAAL_EMOJI_HERO_SIZE = 60;
 
 /** Matches `:key:` or legacy `[bawaal:key]` tokens. */
 export const BAWAAL_EMOJI_TOKEN_RE = /(:([a-z0-9_]+):|\[bawaal:([a-z0-9_]+)\])/gi;
@@ -81,7 +81,7 @@ export function isEmojiOnlyMessage(textOrSegments) {
 
 /**
  * Inline / hero text + BawaalEmoji for chat / banter bubbles.
- * Auto-sizes: hero 44 for emoji-only, inline 24 when mixed with text.
+ * Auto-sizes: sticker 60 for emoji-only, inline 24 when mixed with text.
  */
 export const BawaalEmojiText = memo(function BawaalEmojiText({
   text,
@@ -154,9 +154,10 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    gap: 8,
+    gap: 4,
     maxWidth: '100%',
-    paddingVertical: 4,
+    paddingVertical: 0,
+    marginVertical: 0,
     ...(Platform.OS === 'web'
       ? {
           alignSelf: 'flex-start',
@@ -184,7 +185,7 @@ const styles = StyleSheet.create({
     transform: [{ translateY: 1 }],
   },
   heroEmoji: {
-    marginHorizontal: 2,
-    marginVertical: 2,
+    marginHorizontal: 1,
+    marginVertical: 0,
   },
 });
