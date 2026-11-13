@@ -48,7 +48,13 @@ export const BANTER_QUICK_EMOJIS = {
 
 export const BawaalEmoji = memo(function BawaalEmoji({ name, size = 28, style, ...rest }) {
   const dimension = typeof size === 'number' && size > 0 ? size : 28;
-  const source = getBawaalEmojiSource(name);
+  const key = String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^skel_/, '')
+    .replace(/^:+|:+$/g, '');
+  // Prefer the full vault registry (includes explicit `love`) before fallbacks.
+  const source = SKELETON_EMOJIS[key] || getBawaalEmojiSource(name);
 
   return (
     <Image

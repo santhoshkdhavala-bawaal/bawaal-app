@@ -4,13 +4,15 @@
  *
  * Size rules (LOCKED visual impact):
  * - Emoji-only message → size 64 (sticker punch)
- * - Mixed text + emoji → text normal size, inline emoji size 32 (pops vs letters)
+ * - Mixed text + emoji → text normal size; emoji stays LARGE (size 60), never shrunk to text height
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-export const BAWAAL_EMOJI_INLINE_SIZE = 32;
+/** Mixed messages keep sticker-scale impact beside text (not text-height). */
+export const BAWAAL_EMOJI_INLINE_SIZE = 60;
+/** Pure emoji / reaction stickers. */
 export const BAWAAL_EMOJI_HERO_SIZE = 64;
 
 /** Matches `:key:` or legacy `[bawaal:key]` tokens. */
@@ -80,8 +82,9 @@ export function isEmojiOnlyMessage(textOrSegments) {
 }
 
 /**
- * Inline / hero text + BawaalEmoji for chat / banter bubbles.
- * Auto-sizes: sticker 64 for emoji-only, inline 32 when mixed with text.
+ * Text + BawaalEmoji for chat / banter bubbles.
+ * Mixed: large 60 stickers next to / wrapping with normal text.
+ * Emoji-only: 64 sticker row.
  */
 export const BawaalEmojiText = memo(function BawaalEmojiText({
   text,
@@ -107,7 +110,7 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
   return (
     <View
       style={[
-        emojiOnly ? styles.heroRow : styles.inlineRow,
+        emojiOnly ? styles.heroRow : styles.mixedRow,
         style,
       ]}
     >
@@ -117,7 +120,7 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
             key={`e-${i}-${seg.value}`}
             name={seg.value}
             size={size}
-            style={emojiOnly ? styles.heroEmoji : styles.inlineEmoji}
+            style={emojiOnly ? styles.heroEmoji : styles.mixedEmoji}
           />
         ) : String(seg.value || '').length ? (
           <Text
@@ -137,14 +140,14 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
 });
 
 const styles = StyleSheet.create({
-  inlineRow: {
+  mixedRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
+    alignItems: 'flex-end',
+    gap: 6,
     maxWidth: '100%',
     ...(Platform.OS === 'web'
       ? {
-          // Keep web bubbles from stretching full desktop width awkwardly
           alignSelf: 'flex-start',
         }
       : null),
@@ -165,8 +168,9 @@ const styles = StyleSheet.create({
       : null),
   },
   baseText: {
-    // Keep body text normal; 32px emoji sits taller beside it
-    lineHeight: 28,
+    // Body copy stays normal; large stickers sit beside / wrap under
+    fontSize: 12,
+    lineHeight: 20,
     ...(Platform.OS === 'web'
       ? {
           display: 'inline',
@@ -178,11 +182,9 @@ const styles = StyleSheet.create({
     height: 0,
     opacity: 0,
   },
-  inlineEmoji: {
-    marginHorizontal: 2,
-    marginVertical: 0,
-    // Slight lift so 32px stickers sit cleanly against text baseline
-    transform: [{ translateY: 2 }],
+  mixedEmoji: {
+    marginHorizontal: 0,
+    marginVertical: 2,
   },
   heroEmoji: {
     marginHorizontal: 1,
