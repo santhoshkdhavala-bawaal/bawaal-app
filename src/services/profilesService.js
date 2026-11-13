@@ -143,7 +143,6 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
     city: location,
     full_name: realName || null,
     primary_sport: String(sport),
-    list_bucket: 'self',
     updated_at: new Date().toISOString(),
   };
 
@@ -185,7 +184,6 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
           'city',
           'full_name',
           'primary_sport',
-          'list_bucket',
           'updated_at',
         ]);
         if (Object.keys(payload).length <= 2) break;
