@@ -1,6 +1,6 @@
 /**
- * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* emoji.
- * Always includes `love` (skel_love.png) as the first tile.
+ * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* + skull_* emoji.
+ * Always includes `love` (skel_love.png) as the first tile, plus the 15 skull expressions.
  */
 import React, { memo, useMemo } from 'react';
 import {
@@ -14,15 +14,24 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BawaalEmoji, SKELETON_EMOJIS } from './BawaalEmoji';
-import { ALL_SKELETON_KEYS as CONST_VAULT_KEYS } from '../src/constants/bawaalEmojiAssets';
+import {
+  ALL_SKELETON_KEYS as CONST_VAULT_KEYS,
+  SKULL_EMOJI_KEYS,
+} from '../src/constants/bawaalEmojiAssets';
 
 const BAWAAL_ORANGE = '#FF5500';
 
 /**
- * Grid population list — merges constants + SKELETON_EMOJIS and force-includes `love`.
+ * Grid population list — merges constants + SKELETON_EMOJIS and force-includes
+ * `love` + all `skull_*` keys so the Vault always shows the new expression set.
  */
 function buildVaultKeys() {
-  const merged = new Set(['love', ...CONST_VAULT_KEYS, ...Object.keys(SKELETON_EMOJIS || {})]);
+  const merged = new Set([
+    'love',
+    ...SKULL_EMOJI_KEYS,
+    ...CONST_VAULT_KEYS,
+    ...Object.keys(SKELETON_EMOJIS || {}),
+  ]);
   const rest = Array.from(merged)
     .filter((key) => key !== 'love')
     .sort();

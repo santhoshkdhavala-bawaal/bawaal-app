@@ -92,6 +92,22 @@ export const BAWAAL_EMOJI_ASSETS = {
   skateboard: require('../../assets/skel_skateboard.png'),
   skateboard1: require('../../assets/skel_skateboard1.png'),
   skiing: require('../../assets/skel_skiing.png'),
+  /** New skull expression set — shortcodes `:skull_angry:` … `:skull_worried:` */
+  skull_angry: require('../../assets/skull_angry.png'),
+  skull_cool: require('../../assets/skull_cool.png'),
+  skull_crying: require('../../assets/skull_crying.png'),
+  skull_doubt: require('../../assets/skull_doubt.png'),
+  skull_laugh: require('../../assets/skull_laugh.png'),
+  skull_love_red_hearts: require('../../assets/skull_love_red_hearts.png'),
+  skull_mindblown_fire_v2: require('../../assets/skull_mindblown_fire_v2.png'),
+  skull_sad: require('../../assets/skull_sad.png'),
+  skull_scared: require('../../assets/skull_scared.png'),
+  skull_shame: require('../../assets/skull_shame.png'),
+  skull_shouting: require('../../assets/skull_shouting.png'),
+  skull_surprised: require('../../assets/skull_surprised.png'),
+  skull_very_happy: require('../../assets/skull_very_happy.png'),
+  skull_wink: require('../../assets/skull_wink.png'),
+  skull_worried: require('../../assets/skull_worried.png'),
   skydiving: require('../../assets/skel_skydiving.png'),
   sleepy: require('../../assets/skel_sleepy.png'),
   speedskating: require('../../assets/skel_speedskating.png'),
@@ -148,18 +164,46 @@ const BAWAAL_EMOJI_ALIASES = {
 
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
+/** New skull expression keys — also listed in ALL_SKELETON_KEYS for the Vault grid. */
+export const SKULL_EMOJI_KEYS = Object.freeze([
+  'skull_angry',
+  'skull_cool',
+  'skull_crying',
+  'skull_doubt',
+  'skull_laugh',
+  'skull_love_red_hearts',
+  'skull_mindblown_fire_v2',
+  'skull_sad',
+  'skull_scared',
+  'skull_shame',
+  'skull_shouting',
+  'skull_surprised',
+  'skull_very_happy',
+  'skull_wink',
+  'skull_worried',
+]);
+
 /**
  * Static vault key list that populates FullEmojiPickerDrawer.
  * `'love'` is always first so skel_love.png (heart-eyed skeleton) renders in the grid.
+ * Skull keys are force-included so the 106+ Vault always shows the new set.
  */
 export const ALL_SKELETON_KEYS = Object.freeze([
   'love',
-  ...BAWAAL_EMOJI_KEYS.filter((key) => key !== 'love'),
+  ...SKULL_EMOJI_KEYS,
+  ...BAWAAL_EMOJI_KEYS.filter(
+    (key) => key !== 'love' && !SKULL_EMOJI_KEYS.includes(key)
+  ),
 ]);
 
 if (!ALL_SKELETON_KEYS.includes('love') || !BAWAAL_EMOJI_ASSETS.love) {
   // eslint-disable-next-line no-console
   console.warn('[bawaalEmojiAssets] Vault missing love / skel_love.png');
+}
+
+if (SKULL_EMOJI_KEYS.some((key) => !BAWAAL_EMOJI_ASSETS[key])) {
+  // eslint-disable-next-line no-console
+  console.warn('[bawaalEmojiAssets] Vault missing one or more skull_*.png assets');
 }
 
 function normalizeEmojiKey(name) {
