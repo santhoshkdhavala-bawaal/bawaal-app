@@ -1,12 +1,14 @@
 /**
- * Profile avatar — remote Supabase URL with silent fallback to initials / local mark.
- * Never fetches when URI is null / empty / invalid — skips straight to placeholder.
+ * Profile avatar — remote Supabase URL with silent fallback to local require(...)
+ * or initials. Never fetches when URI is null / empty / invalid / previously 404'd.
  */
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import {
   DEFAULT_AVATAR_ASSET,
+  hasFailedRemoteImageUri,
   normalizeRemoteImageUri,
+  rememberFailedRemoteImageUri,
 } from '../constants/mediaFallbacks';
 
 const SURFACE = '#0A0A0A';
@@ -29,7 +31,7 @@ function initialsFromName(name) {
  * @param {string} [props.name]
  * @param {number} [props.size]
  * @param {string} [props.ringColor]
- * @param {'initials'|'mark'} [props.fallback] — initials (default) or BAWAAL B mark
+ * @param {'initials'|'mark'} [props.fallback] — empty-URI fallback; onError always uses mark asset
  */
 const SafeAvatar = memo(function SafeAvatar({
   uri,
@@ -41,16 +43,19 @@ const SafeAvatar = memo(function SafeAvatar({
 }) {
   const ring = ringColor || BORDER;
   const remote = useMemo(() => normalizeRemoteImageUri(uri), [uri]);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState(() =>
+    Boolean(remote && hasFailedRemoteImageUri(remote))
+  );
   const initials = useMemo(() => initialsFromName(name), [name]);
 
   useEffect(() => {
-    setFailed(false);
+    setFailed(Boolean(remote && hasFailedRemoteImageUri(remote)));
   }, [remote]);
 
   const handleError = useCallback(() => {
+    if (remote) rememberFailedRemoteImageUri(remote);
     setFailed(true);
-  }, []);
+  }, [remote]);
 
   const frame = {
     width: size,
@@ -61,7 +66,7 @@ const SafeAvatar = memo(function SafeAvatar({
     borderColor: ringColor ? ring : WHITE,
   };
 
-  // Only hit the network when we have a real non-empty URI
+  // Only hit the network when we have a real non-empty URI that has not 404'd
   if (remote && !failed) {
     return (
       <Image
@@ -76,7 +81,8 @@ const SafeAvatar = memo(function SafeAvatar({
     );
   }
 
-  if (fallback === 'mark') {
+  // Storage 404 / explicit mark fallback → local require(...) (no further network)
+  if (failed || fallback === 'mark') {
     return (
       <View style={[frame, styles.markWrap, style]}>
         <Image

@@ -2,6 +2,10 @@
  * Shared poster / sample-clip fallbacks so Arena never paints a dead black frame.
  */
 import { Image } from 'react-native';
+import {
+  hasFailedRemoteImageUri,
+  normalizeRemoteImageUri,
+} from '../constants/mediaFallbacks';
 
 /**
  * Former bundled sample_challenge.mp4 was removed from assets.
@@ -49,16 +53,17 @@ export function resolveVideoSource(uri) {
 
 /**
  * Poster image source from a real thumbnail URL only.
- * Returns null when missing — callers must use a solid black underlay
- * (never the BAWAAL logo, which blinks during feed recycle / buffer).
+ * Returns null when missing / invalid / previously 404'd — callers must use a
+ * solid black underlay (never the BAWAAL logo, which blinks during feed recycle).
  * @param {string|null|undefined} thumbnailUrl
  * @returns {{ uri: string } | null}
  */
 export function resolvePosterSource(thumbnailUrl) {
-  if (isUsablePlaybackUri(thumbnailUrl) && /^https?:\/\//i.test(thumbnailUrl)) {
-    return { uri: String(thumbnailUrl).trim() };
-  }
-  return null;
+  const uri = normalizeRemoteImageUri(thumbnailUrl);
+  if (!uri || !/^https?:\/\//i.test(uri)) return null;
+  if (hasFailedRemoteImageUri(uri)) return null;
+  if (!isUsablePlaybackUri(uri)) return null;
+  return { uri };
 }
 
 /** Prefetch brand poster once so first open is never blank. */

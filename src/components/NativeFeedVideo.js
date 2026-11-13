@@ -17,7 +17,6 @@ import React, {
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -27,6 +26,7 @@ import {
   resolvePosterSource,
 } from '../utils/reelMediaFallback';
 import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
+import SafeRemoteImage from './SafeRemoteImage';
 
 function isPlayableFeedUri(uri) {
   return isUsablePlaybackUri(uri);
@@ -175,10 +175,12 @@ function NativeFeedVideo({
       <View style={[styles.shell, style]}>
         <View style={styles.blackUnderlay} />
         {posterSource ? (
-          <Image
+          <SafeRemoteImage
             source={posterSource}
             style={styles.poster}
             resizeMode="cover"
+            fallbackSource={null}
+            silent
           />
         ) : null}
         <Text style={styles.placeholderText}>
@@ -196,10 +198,12 @@ function NativeFeedVideo({
         <View style={[styles.shell, style]}>
           <View style={styles.blackUnderlay} />
           {posterSource ? (
-            <Image
+            <SafeRemoteImage
               source={posterSource}
               style={styles.poster}
               resizeMode="contain"
+              fallbackSource={null}
+              silent
             />
           ) : null}
           <SportsFeedPlaceholder
@@ -215,11 +219,13 @@ function NativeFeedVideo({
         {/* Solid black underlay — avoid BAWAAL logo blink while buffering */}
         <View style={styles.blackUnderlay} pointerEvents="none" />
         {posterSource ? (
-          <Image
+          <SafeRemoteImage
             source={posterSource}
             style={styles.poster}
             resizeMode="cover"
             pointerEvents="none"
+            fallbackSource={null}
+            silent
           />
         ) : null}
 
@@ -233,8 +239,7 @@ function NativeFeedVideo({
           isMuted={!!muted}
           volume={muted ? 0 : 1}
           useNativeControls={!!nativeControls}
-          usePoster={!!posterSource}
-          posterSource={posterSource || undefined}
+          usePoster={false}
           posterStyle={styles.poster}
           progressUpdateIntervalMillis={1000}
           onLoadStart={() => {

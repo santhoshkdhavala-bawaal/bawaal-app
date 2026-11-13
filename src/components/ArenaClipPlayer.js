@@ -5,7 +5,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +19,7 @@ import {
   isUsablePlaybackUri,
   resolvePosterSource,
 } from '../utils/reelMediaFallback';
+import SafeRemoteImage from './SafeRemoteImage';
 
 function loadRealExpoAv() {
   try {
@@ -164,11 +164,13 @@ function ExpoAvClipPlayer({
       {/* Solid black underlay — never BAWAAL logo (avoids blink on recycle) */}
       <View style={styles.blackUnderlay} pointerEvents="none" />
       {posterSource ? (
-        <Image
+        <SafeRemoteImage
           source={posterSource}
           style={styles.poster}
           resizeMode="cover"
           pointerEvents="none"
+          fallbackSource={null}
+          silent
         />
       ) : null}
       <AvVideo
@@ -181,8 +183,7 @@ function ExpoAvClipPlayer({
         isMuted={!!muted}
         volume={muted ? 0 : 1}
         useNativeControls={false}
-        usePoster={!!posterSource}
-        posterSource={posterSource || undefined}
+        usePoster={false}
         posterStyle={styles.poster}
         progressUpdateIntervalMillis={1000}
         onLoadStart={() => {
@@ -264,10 +265,12 @@ function ArenaClipPlayer({
       <View style={[styles.shell, style, styles.idle]}>
         <View style={styles.blackUnderlay} />
         {idlePoster ? (
-          <Image
+          <SafeRemoteImage
             source={idlePoster}
             style={styles.poster}
             resizeMode="cover"
+            fallbackSource={null}
+            silent
           />
         ) : null}
       </View>
