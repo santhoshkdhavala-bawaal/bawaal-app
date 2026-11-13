@@ -34,8 +34,18 @@ const PROFILE_SOFT_COMPAT_KEYS = Object.freeze([
 
 function isSchemaCacheError(error) {
   const msg = String(error?.message || error?.details || error?.hint || error || '');
-  return /schema cache|PGRST204|Could not find .* column|column .* does not exist|400/i.test(
+  return /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
     msg
+  );
+}
+
+/** PostgREST / Postgres reject non-UUID into uuid `profiles.id`. */
+function isInvalidUuidError(error) {
+  const msg = String(error?.message || error?.details || error?.hint || error || '');
+  const code = String(error?.code || '');
+  return (
+    code === '22P02' ||
+    /invalid input syntax for type uuid/i.test(msg)
   );
 }
 
@@ -187,7 +197,119 @@ export function buildRegistrationProfilePayload(userData = {}, authUser = null) 
 }
 
 /**
- * OTP SUBMIT / registration → `public.profiles` upsert (V1 allowlist + soft strip).
+ * Find an existing profiles row without forcing a non-UUID into uuid `id` filters.
+ * @param {{ id?: string, phone?: string, username?: string, email?: string }} keys
+ */
+async function findExistingProfileRow(keys = {}) {
+  if (keys.phone) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('phone', keys.phone)
+      .maybeSingle();
+    if (!error && data?.id) return data;
+  }
+  if (keys.username) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', keys.username)
+      .maybeSingle();
+    if (!error && data?.id) return data;
+  }
+  if (keys.email) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('email', keys.email)
+      .maybeSingle();
+    if (!error && data?.id) return data;
+  }
+  // Only probe by id when it is a real auth UUID (avoids 400 on uuid columns)
+  if (keys.id && isUuid(keys.id)) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', keys.id)
+      .maybeSingle();
+    if (!error && data?.id) return data;
+  }
+  return null;
+}
+
+/**
+ * Persist a compact profiles row.
+ * - Auth UUID → `.upsert(..., { onConflict: 'id' })`
+ * - Legacy / local id → never use onConflict id; `.update` if found else `.insert`
+ *
+ * @param {Record<string, unknown>} row
+ * @returns {Promise<{ data: { id?: string }|null, error: any }>}
+ */
+async function persistProfileRow(row) {
+  const payload = compactProfilePayload(row);
+  if (!payload || typeof payload !== 'object') {
+    return { data: null, error: new Error('empty profiles payload') };
+  }
+
+  const id = payload.id != null ? String(payload.id) : null;
+  const authUuid = id && isUuid(id);
+
+  if (authUuid) {
+    return supabase
+      .from('profiles')
+      .upsert(payload, { onConflict: 'id' })
+      .select('id')
+      .maybeSingle();
+  }
+
+  // Legacy / local fallback — do NOT call upsert onConflict id (400 on uuid PKs)
+  console.warn(
+    '[profilesService] non-UUID profiles.id — using insert/update branch (no onConflict).',
+    { id }
+  );
+
+  const existing = await findExistingProfileRow({
+    id,
+    phone: typeof payload.phone === 'string' ? payload.phone : null,
+    username: typeof payload.username === 'string' ? payload.username : null,
+    email: typeof payload.email === 'string' ? payload.email : null,
+  });
+
+  if (existing?.id) {
+    const patch = omitKeys(payload, ['id']);
+    if (!Object.keys(patch).length) {
+      return { data: { id: existing.id }, error: null };
+    }
+    return supabase
+      .from('profiles')
+      .update(patch)
+      .eq('id', existing.id)
+      .select('id')
+      .maybeSingle();
+  }
+
+  // Insert: keep legacy text id only for text-PK tables; strip id on uuid syntax errors
+  let result = await supabase
+    .from('profiles')
+    .insert(payload)
+    .select('id')
+    .maybeSingle();
+
+  if (result.error && isInvalidUuidError(result.error) && 'id' in payload) {
+    logUpsertFailure('legacy-insert-uuid-pk', result.error, payload);
+    // Cannot write phone:/local: into uuid PK without an auth session — soft skip
+    return {
+      data: null,
+      error: result.error,
+      legacySkipped: true,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * OTP SUBMIT / registration → `public.profiles` save (V1 allowlist + soft strip).
  *
  * @param {object} userData — registration payload from RoleSelection
  * @param {{ id?: string } | null} [authUser] — supabase.auth user after verifyOtp
@@ -205,24 +327,14 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
     return { ok: false, fromCloud: false, id: null, error };
   }
 
-  const runUpsert = (row) =>
-    supabase.from('profiles').upsert(row, { onConflict: 'id' }).select('id').maybeSingle();
-
   try {
-    if (!isUuid(id)) {
-      console.warn(
-        '[profilesService] profiles.id is not an auth uuid — attempting legacy upsert. Live V1 requires verifyOtp session.',
-        { id }
-      );
-    }
-
     // 1) Lean V1 allowlist only (no list_bucket / null junk)
     let payload = { ...v1 };
-    let { data, error } = await runUpsert(payload);
+    let { data, error, legacySkipped } = await persistProfileRow(payload);
 
     // 2) Schema-cache soft strip (e.g. missing `age`)
     let guard = 0;
-    while (error && isSchemaCacheError(error) && guard < 6) {
+    while (error && isSchemaCacheError(error) && !legacySkipped && guard < 6) {
       guard += 1;
       const missing = extractMissingColumn(error);
       logUpsertFailure(`schema-strip-${guard}${missing ? `:${missing}` : ''}`, error, payload);
@@ -233,36 +345,68 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
       } else {
         break;
       }
-      if (!payload.id) break;
-      ({ data, error } = await runUpsert(payload));
+      if (!payload.id && isUuid(id)) break;
+      ({ data, error, legacySkipped } = await persistProfileRow(payload));
+    }
+
+    if (legacySkipped) {
+      // Local/legacy id on uuid PK — registration continues offline without 400 spam
+      logUpsertFailure('legacy-skip', error, payload);
+      return {
+        ok: false,
+        fromCloud: false,
+        id,
+        error,
+        legacySkipped: true,
+      };
     }
 
     if (error) {
-      logUpsertFailure('v1-upsert', error, payload);
+      logUpsertFailure('v1-persist', error, payload);
       throw error;
     }
 
-    // 3) Best-effort soft-compat patch (never fails registration)
-    const softPayload = compactProfilePayload({ id: data?.id || id, ...soft });
-    if (Object.keys(softPayload).length > 1) {
-      const softResult = await runUpsert(softPayload);
-      if (softResult.error) {
-        // Strip unknown soft keys once; ignore residual soft failures
-        let softRow = softPayload;
-        const miss = extractMissingColumn(softResult.error);
-        if (miss && miss !== 'id' && miss in softRow) {
-          softRow = omitKeys(softRow, [miss]);
-          const retry = await runUpsert(softRow);
-          if (retry.error) {
-            logUpsertFailure('soft-compat', softResult.error, softPayload);
+    const savedId = data?.id || (isUuid(id) ? id : null) || id;
+
+    // 3) Best-effort soft-compat UPDATE only (never insert / never onConflict)
+    const softPatch = compactProfilePayload(soft, PROFILE_SOFT_COMPAT_KEYS);
+    if (Object.keys(softPatch).length > 0) {
+      let targetId = isUuid(savedId) ? savedId : null;
+      if (!targetId) {
+        const found = await findExistingProfileRow({
+          phone: v1.phone,
+          username: v1.username,
+          email: v1.email,
+        });
+        targetId = found?.id || null;
+      }
+      if (targetId) {
+        let softRow = softPatch;
+        let softResult = await supabase
+          .from('profiles')
+          .update(softRow)
+          .eq('id', targetId)
+          .select('id')
+          .maybeSingle();
+        if (softResult.error && isSchemaCacheError(softResult.error)) {
+          const miss = extractMissingColumn(softResult.error);
+          if (miss && miss in softRow) {
+            softRow = omitKeys(softRow, [miss]);
+            softResult = await supabase
+              .from('profiles')
+              .update(softRow)
+              .eq('id', targetId)
+              .select('id')
+              .maybeSingle();
           }
-        } else {
-          logUpsertFailure('soft-compat', softResult.error, softPayload);
+        }
+        if (softResult.error) {
+          logUpsertFailure('soft-compat', softResult.error, softPatch);
         }
       }
     }
 
-    return { ok: true, fromCloud: true, id: data?.id || id, error: null };
+    return { ok: true, fromCloud: true, id: savedId, error: null };
   } catch (error) {
     logUpsertFailure('catch', error, v1);
     return { ok: false, fromCloud: false, id, error };
