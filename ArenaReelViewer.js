@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -14,6 +14,7 @@ import {
   Dimensions,
   StatusBar,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeFeedVideo, {
@@ -29,6 +30,7 @@ import {
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
 import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_EMOJIS } from './components/BawaalEmoji';
+import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -36,9 +38,81 @@ const MUTED = '#A0A0A0';
 const ACCENT = '#FF5722';
 const CARD = '#121212';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const TAP_REACT_SIZE = 64;
+const TAP_REACT_MS = 800;
+const TAP_REACT_MAX = 14;
 
 /** Banter / floating reactions — BawaalEmoji keys only (never unicode). */
 const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
+
+function pickRandomVaultKey() {
+  const keys = ALL_SKELETON_KEYS;
+  if (!keys || keys.length === 0) return 'love';
+  return keys[Math.floor(Math.random() * keys.length)] || 'love';
+}
+
+/**
+ * One-shot floating vault react at tap (x,y) — scale 0.3→1.2, rise −120, fade out.
+ * Self-removes via onDone when the 800ms sequence finishes.
+ */
+const FloatingTapReact = memo(function FloatingTapReact({
+  id,
+  emojiKey,
+  x,
+  y,
+  onDone,
+}) {
+  const progress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    progress.setValue(0);
+    const anim = Animated.timing(progress, {
+      toValue: 1,
+      duration: TAP_REACT_MS,
+      useNativeDriver: true,
+    });
+    anim.start(({ finished }) => {
+      if (finished) onDone?.(id);
+    });
+    return () => {
+      anim.stop();
+    };
+  }, [progress, id, onDone]);
+
+  const scale = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.3, 1.2],
+  });
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -120],
+  });
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.55, 1],
+    outputRange: [1, 1, 0],
+  });
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.tapReactFloat,
+        {
+          left: x - TAP_REACT_SIZE / 2,
+          top: y - TAP_REACT_SIZE / 2,
+          opacity,
+          transform: [{ translateY }, { scale }],
+        },
+      ]}
+    >
+      <BawaalEmoji
+        name={emojiKey || 'love'}
+        size={TAP_REACT_SIZE}
+        style={styles.tapReactEmoji}
+      />
+    </Animated.View>
+  );
+});
 
 const DEMO_BANTER = [
   { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy', emotion: 'head_on_fire' },
@@ -68,11 +142,10 @@ export default function ArenaReelViewer({
   const [moreOpen, setMoreOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(!!initialMuted);
-  const [activeGifs, setActiveGifs] = useState([
-    { id: 'g1', emoji: 'head_on_fire', x: 0.72, y: 0.28 },
-    { id: 'g2', emoji: 'gym', x: 0.18, y: 0.42 },
-  ]);
+  /** Tap-to-react bursts — absolute (x,y) + vault key; removed after animation. */
+  const [tapReacts, setTapReacts] = useState([]);
   const toastTimerRef = useRef(null);
+  const tapSeqRef = useRef(0);
 
   const flashToast = useCallback((msg) => {
     setToast(msg);
@@ -129,6 +202,7 @@ export default function ArenaReelViewer({
     setMuted(!!initialMuted);
     setBuffering(!!uri);
     setPlaybackFailed(false);
+    setTapReacts([]);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!uri) return undefined;
     const t = setTimeout(() => setBuffering(false), 1600);
@@ -144,6 +218,47 @@ export default function ArenaReelViewer({
     setMuted((m) => !m);
   }, []);
 
+  const removeTapReact = useCallback((id) => {
+    setTapReacts((prev) => prev.filter((r) => r.id !== id));
+  }, []);
+
+  const spawnTapReactAt = useCallback((x, y, emojiKey) => {
+    const nx = Number(x);
+    const ny = Number(y);
+    if (!Number.isFinite(nx) || !Number.isFinite(ny)) return;
+    tapSeqRef.current += 1;
+    const id = `tap-${Date.now()}-${tapSeqRef.current}`;
+    const key =
+      emojiKey && hasBawaalEmoji(emojiKey)
+        ? String(emojiKey).toLowerCase()
+        : pickRandomVaultKey();
+    setTapReacts((prev) => {
+      const next = [...prev, { id, key, x: nx, y: ny }];
+      return next.length > TAP_REACT_MAX ? next.slice(-TAP_REACT_MAX) : next;
+    });
+  }, []);
+
+  const handleVideoTap = useCallback(
+    (e) => {
+      const ne = e?.nativeEvent || {};
+      // Prefer local coords on the full-bleed video container
+      const x =
+        typeof ne.locationX === 'number'
+          ? ne.locationX
+          : typeof ne.pageX === 'number'
+            ? ne.pageX
+            : SCREEN_W / 2;
+      const y =
+        typeof ne.locationY === 'number'
+          ? ne.locationY
+          : typeof ne.pageY === 'number'
+            ? ne.pageY
+            : SCREEN_H / 2;
+      spawnTapReactAt(x, y);
+    },
+    [spawnTapReactAt]
+  );
+
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly
   if (!reel) return null;
 
@@ -153,16 +268,15 @@ export default function ArenaReelViewer({
 
   const dropGif = (emotionKey) => {
     const emoji =
-      emotionKey && hasBawaalEmoji(emotionKey) ? String(emotionKey).toLowerCase() : 'laughing1';
-    setActiveGifs((prev) => [
-      ...prev,
-      {
-        id: `g-${Date.now()}`,
-        emoji,
-        x: 0.15 + Math.random() * 0.55,
-        y: 0.2 + Math.random() * 0.4,
-      },
-    ]);
+      emotionKey && hasBawaalEmoji(emotionKey)
+        ? String(emotionKey).toLowerCase()
+        : 'laughing1';
+    // Tray picks use the same floating burst at a random canvas point
+    spawnTapReactAt(
+      SCREEN_W * (0.2 + Math.random() * 0.6),
+      SCREEN_H * (0.25 + Math.random() * 0.4),
+      emoji
+    );
   };
 
   const sendBanter = (emotionKey) => {
@@ -274,10 +388,13 @@ export default function ArenaReelViewer({
                   <ActivityIndicator color={WHITE} size="large" />
                 </View>
               ) : null}
+              {/* Full-bleed tap layer — spawn vault skull/skel reacts at (x,y) */}
               <Pressable
                 style={styles.videoTapLayer}
-                onPress={togglePlayPause}
-                accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+                onPress={handleVideoTap}
+                onLongPress={togglePlayPause}
+                delayLongPress={280}
+                accessibilityLabel="Tap to react · long-press to pause"
               />
               <MuteToggleButton
                 muted={muted}
@@ -291,19 +408,26 @@ export default function ArenaReelViewer({
               ) : null}
             </>
           )}
+
+          {/* Poster / no-video: still allow tap-to-react on the shell */}
+          {showPosterCard ? (
+            <Pressable
+              style={styles.videoTapLayer}
+              onPress={handleVideoTap}
+              accessibilityLabel="Tap to react"
+            />
+          ) : null}
         </View>
 
-        {activeGifs.map((g) => (
-          <View
-            key={g.id}
-            pointerEvents="none"
-            style={[
-              styles.gifFloat,
-              { left: g.x * SCREEN_W, top: g.y * SCREEN_H },
-            ]}
-          >
-            <BawaalEmoji name={g.emoji || 'laughing1'} size={36} style={styles.gifFloatEmoji} />
-          </View>
+        {tapReacts.map((rx) => (
+          <FloatingTapReact
+            key={rx.id}
+            id={rx.id}
+            emojiKey={rx.key}
+            x={rx.x}
+            y={rx.y}
+            onDone={removeTapReact}
+          />
         ))}
 
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
@@ -564,12 +688,19 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   videoTapLayer: {
-    position: 'absolute',
-    top: '18%',
-    bottom: '32%',
-    left: '10%',
-    right: '22%',
+    ...StyleSheet.absoluteFillObject,
     zIndex: 4,
+  },
+  tapReactFloat: {
+    position: 'absolute',
+    width: TAP_REACT_SIZE,
+    height: TAP_REACT_SIZE,
+    zIndex: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tapReactEmoji: {
+    marginHorizontal: 0,
   },
   muteBtn: {
     position: 'absolute',
@@ -606,13 +737,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 1.2,
-  },
-  gifFloat: {
-    position: 'absolute',
-    zIndex: 5,
-  },
-  gifFloatEmoji: {
-    marginHorizontal: 0,
   },
   topSafe: {
     position: 'absolute',
