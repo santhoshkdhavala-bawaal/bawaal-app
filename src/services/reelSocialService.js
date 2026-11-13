@@ -42,19 +42,54 @@ async function pushLocalEvent(event) {
   }
 }
 
+/** Session short-circuit for missing / 404 tables (reel_likes, reel_banter, …). */
+const missingSocialTables = new Set();
+
+function isMissingRelationError(error) {
+  if (!error) return false;
+  const status = Number(error.status || error.statusCode || 0);
+  const code = String(error.code || '');
+  const msg = String(error.message || error.details || error.hint || error || '');
+  return (
+    status === 404 ||
+    status === 400 ||
+    code === '42P01' ||
+    code === 'PGRST116' ||
+    code === 'PGRST205' ||
+    code === 'PGRST204' ||
+    /does not exist|relation .* not found|Could not find the table|schema cache|not found|404/i.test(
+      msg
+    )
+  );
+}
+
 async function softInsert(table, row) {
   if (!isSupabaseConfigured()) {
     return { ok: false, fromCloud: false, reason: 'offline' };
   }
+  if (missingSocialTables.has(table)) {
+    return { ok: false, fromCloud: false, reason: 'table-missing' };
+  }
   try {
     const { error } = await supabase.from(table).insert(row);
     if (error) {
-      console.warn(`[reelSocial] ${table} insert:`, error.message || error);
+      if (isMissingRelationError(error)) {
+        if (!missingSocialTables.has(table)) {
+          missingSocialTables.add(table);
+          console.warn(
+            `[reelSocial] ${table} unavailable — local fallback only`,
+            { reason: error.message || error.code }
+          );
+        }
+        return { ok: false, fromCloud: false, reason: 'table-missing' };
+      }
       return { ok: false, fromCloud: false, error };
     }
     return { ok: true, fromCloud: true };
   } catch (err) {
-    console.warn(`[reelSocial] ${table} crashed:`, err?.message || err);
+    if (isMissingRelationError(err)) {
+      missingSocialTables.add(table);
+    }
     return { ok: false, fromCloud: false, error: err };
   }
 }
@@ -63,6 +98,9 @@ async function softDeleteFollow(followerId, followingId) {
   if (!isSupabaseConfigured()) {
     return { ok: false, fromCloud: false, reason: 'offline' };
   }
+  if (missingSocialTables.has('reel_follows')) {
+    return { ok: false, fromCloud: false, reason: 'table-missing' };
+  }
   try {
     const { error } = await supabase
       .from('reel_follows')
@@ -70,12 +108,16 @@ async function softDeleteFollow(followerId, followingId) {
       .eq('follower_id', followerId)
       .eq('following_id', followingId);
     if (error) {
-      console.warn('[reelSocial] reel_follows delete:', error.message || error);
+      if (isMissingRelationError(error)) {
+        missingSocialTables.add('reel_follows');
+      }
       return { ok: false, fromCloud: false, error };
     }
     return { ok: true, fromCloud: true };
   } catch (err) {
-    console.warn('[reelSocial] unfollow crashed:', err?.message || err);
+    if (isMissingRelationError(err)) {
+      missingSocialTables.add('reel_follows');
+    }
     return { ok: false, fromCloud: false, error: err };
   }
 }
