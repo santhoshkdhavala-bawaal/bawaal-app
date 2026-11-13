@@ -13,7 +13,10 @@ import {
   hasBawaalEmoji,
 } from '../src/constants/bawaalEmojiAssets';
 
-/** Heart-eyed skeleton — Vault key `love` → assets/skel_love.png */
+/**
+ * MASTER LOCK: heart-eyed skeleton must stay registered for Vault + Banter.
+ * love: require('../assets/skel_love.png')
+ */
 const LOVE_ASSET = require('../assets/skel_love.png');
 
 /**
@@ -22,7 +25,7 @@ const LOVE_ASSET = require('../assets/skel_love.png');
  */
 export const SKELETON_EMOJIS = {
   ...BAWAAL_EMOJI_ASSETS,
-  love: LOVE_ASSET,
+  love: LOVE_ASSET, // skel_love.png — do not remove
 };
 
 // Keep constants map in sync for getBawaalEmojiSource / hasBawaalEmoji

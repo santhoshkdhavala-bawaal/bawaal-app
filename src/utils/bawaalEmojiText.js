@@ -2,18 +2,18 @@
  * Banter / chat shortcodes for BAWAAL skeleton emojis.
  * Forms: `:gym:`  ·  `[bawaal:gym]` · `:love:`
  *
- * Size rules:
- * - Emoji-only → size 64 (sticker)
+ * LOCKED size rules (bawaal-emoji-locked):
+ * - Emoji-only → size 60 (signature sticker, 56–64 band)
  * - Mixed text + emoji → size 36 in one flex row (side-by-side, natural wrap)
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-/** Clean inline height alongside body text (same flex row). */
+/** Clean ~36px inline height alongside body text (same flex row). */
 export const BAWAAL_EMOJI_INLINE_SIZE = 36;
-/** Pure emoji / reaction stickers. */
-export const BAWAAL_EMOJI_HERO_SIZE = 64;
+/** Signature sticker size for emoji-only messages (56–64 band). */
+export const BAWAAL_EMOJI_HERO_SIZE = 60;
 
 /** Matches `:key:` or legacy `[bawaal:key]` tokens. */
 export const BAWAAL_EMOJI_TOKEN_RE = /(:([a-z0-9_]+):|\[bawaal:([a-z0-9_]+)\])/gi;
