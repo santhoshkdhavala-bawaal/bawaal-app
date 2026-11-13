@@ -92,11 +92,13 @@ export const BAWAAL_EMOJI_ASSETS = {
   skateboard: require('../../assets/skel_skateboard.png'),
   skateboard1: require('../../assets/skel_skateboard1.png'),
   skiing: require('../../assets/skel_skiing.png'),
-  /** New skull expression set — shortcodes `:skull_angry:` … `:skull_worried:` */
+  /** Skull expression set — shortcodes `:skull_angry:` … `:skull_fire:` */
   skull_angry: require('../../assets/skull_angry.png'),
+  skull_burning: require('../../assets/skull_burning.png'),
   skull_cool: require('../../assets/skull_cool.png'),
   skull_crying: require('../../assets/skull_crying.png'),
   skull_doubt: require('../../assets/skull_doubt.png'),
+  skull_fire: require('../../assets/skull_fire.png'),
   skull_laugh: require('../../assets/skull_laugh.png'),
   skull_love_red_hearts: require('../../assets/skull_love_red_hearts.png'),
   skull_mindblown_fire_v2: require('../../assets/skull_mindblown_fire_v2.png'),
@@ -167,9 +169,11 @@ export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 /** New skull expression keys — also listed in ALL_SKELETON_KEYS for the Vault grid. */
 export const SKULL_EMOJI_KEYS = Object.freeze([
   'skull_angry',
+  'skull_burning',
   'skull_cool',
   'skull_crying',
   'skull_doubt',
+  'skull_fire',
   'skull_laugh',
   'skull_love_red_hearts',
   'skull_mindblown_fire_v2',

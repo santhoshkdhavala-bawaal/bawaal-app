@@ -26,9 +26,11 @@ const LOVE_ASSET = require('../assets/skel_love.png');
  */
 export const SKULL_EMOJIS = {
   skull_angry: require('../assets/skull_angry.png'),
+  skull_burning: require('../assets/skull_burning.png'),
   skull_cool: require('../assets/skull_cool.png'),
   skull_crying: require('../assets/skull_crying.png'),
   skull_doubt: require('../assets/skull_doubt.png'),
+  skull_fire: require('../assets/skull_fire.png'),
   skull_laugh: require('../assets/skull_laugh.png'),
   skull_love_red_hearts: require('../assets/skull_love_red_hearts.png'),
   skull_mindblown_fire_v2: require('../assets/skull_mindblown_fire_v2.png'),
