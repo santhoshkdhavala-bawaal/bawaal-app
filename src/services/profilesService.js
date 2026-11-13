@@ -20,6 +20,54 @@ const UUID_RE =
 
 const PROFILE_DENYLIST_SET = new Set(PROFILE_PAYLOAD_DENYLIST);
 
+/**
+ * Session circuit-breaker: once local/dev mode or a remote 400 is seen,
+ * skip further profiles queries for this JS session (stops retry / console spam).
+ */
+let remoteProfilesCircuitOpen = false;
+let remoteProfilesCircuitReason = '';
+
+function openRemoteProfilesCircuit(reason) {
+  if (!remoteProfilesCircuitOpen) {
+    remoteProfilesCircuitReason = String(reason || 'unknown');
+    console.warn(
+      '[profilesService] remote profiles short-circuited for this session',
+      { reason: remoteProfilesCircuitReason }
+    );
+  }
+  remoteProfilesCircuitOpen = true;
+}
+
+function isRemoteProfilesDisabled() {
+  return remoteProfilesCircuitOpen;
+}
+
+/** Local mock success — registration continues without cloud profiles. */
+function localProfileSuccess(id, reason) {
+  openRemoteProfilesCircuit(reason);
+  return {
+    ok: true,
+    fromCloud: false,
+    id: id || `local:offline`,
+    error: null,
+    localFallback: true,
+  };
+}
+
+function isHttp400Error(error) {
+  if (!error) return false;
+  const status = Number(error.status || error.statusCode || 0);
+  const code = String(error.code || '');
+  const msg = String(error.message || error.details || error.hint || error || '');
+  return (
+    status === 400 ||
+    code === '400' ||
+    code === '22P02' ||
+    code === 'PGRST116' ||
+    /bad request|PGRST204|invalid input syntax for type uuid|schema cache/i.test(msg)
+  );
+}
+
 function isSchemaCacheError(error) {
   const msg = String(error?.message || error?.details || error?.hint || error || '');
   return /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
@@ -220,8 +268,9 @@ const PROFILE_LOOKUP_COLUMNS = Object.freeze(['username', 'id', 'email', 'phone'
  * @param {unknown} value
  */
 async function safeLookupProfileByColumn(column, value) {
+  if (isRemoteProfilesDisabled()) return null;
+
   if (!PROFILE_LOOKUP_COLUMNS.includes(column)) {
-    console.warn('[profilesService] profiles lookup skipped — unknown column', { column });
     return null;
   }
 
@@ -230,10 +279,6 @@ async function safeLookupProfileByColumn(column, value) {
 
   // `id` is uuid in V1 schema — never filter with phone:/local: fallbacks
   if (column === 'id' && !isUuid(raw)) {
-    console.warn(
-      '[profilesService] profiles lookup skipped — id filter requires auth UUID',
-      { value: raw }
-    );
     return null;
   }
 
@@ -245,22 +290,17 @@ async function safeLookupProfileByColumn(column, value) {
       .maybeSingle();
 
     if (error) {
-      console.warn('[profilesService] profiles lookup query failed', {
-        column,
-        message: error.message || String(error),
-        code: error.code || null,
-        details: error.details || null,
-        hint: error.hint || null,
-      });
+      if (isHttp400Error(error)) {
+        openRemoteProfilesCircuit(`lookup-400:${column}`);
+      }
       return null;
     }
 
     return data?.id ? { id: String(data.id) } : null;
   } catch (err) {
-    console.warn('[profilesService] profiles lookup threw', {
-      column,
-      message: err?.message || String(err),
-    });
+    if (isHttp400Error(err)) {
+      openRemoteProfilesCircuit(`lookup-throw:${column}`);
+    }
     return null;
   }
 }
@@ -271,6 +311,8 @@ async function safeLookupProfileByColumn(column, value) {
  * @param {{ id?: string, phone?: string, username?: string, email?: string }} keys
  */
 async function findExistingProfileRow(keys = {}) {
+  if (isRemoteProfilesDisabled()) return null;
+
   try {
     const phone = typeof keys.phone === 'string' ? keys.phone.trim() : '';
     const username = typeof keys.username === 'string' ? keys.username.trim() : '';
@@ -281,24 +323,22 @@ async function findExistingProfileRow(keys = {}) {
     const byUsername = username
       ? await safeLookupProfileByColumn('username', username)
       : null;
-    if (byUsername) return byUsername;
+    if (byUsername || isRemoteProfilesDisabled()) return byUsername;
 
     if (id && isUuid(id)) {
       const byId = await safeLookupProfileByColumn('id', id);
-      if (byId) return byId;
+      if (byId || isRemoteProfilesDisabled()) return byId;
     }
 
     const byEmail = email ? await safeLookupProfileByColumn('email', email) : null;
-    if (byEmail) return byEmail;
+    if (byEmail || isRemoteProfilesDisabled()) return byEmail;
 
     const byPhone = phone ? await safeLookupProfileByColumn('phone', phone) : null;
-    if (byPhone) return byPhone;
+    if (byPhone || isRemoteProfilesDisabled()) return byPhone;
 
     return null;
   } catch (err) {
-    console.warn('[profilesService] findExistingProfileRow failed', {
-      message: err?.message || String(err),
-    });
+    openRemoteProfilesCircuit('find-existing-throw');
     return null;
   }
 }
@@ -313,6 +353,10 @@ async function findExistingProfileRow(keys = {}) {
  * @returns {Promise<{ data: { id?: string }|null, error: any, legacySkipped?: boolean }>}
  */
 async function persistProfileRow(row, lookupHints = {}) {
+  if (isRemoteProfilesDisabled()) {
+    return { data: null, error: null, legacySkipped: true, localFallback: true };
+  }
+
   try {
     // Always sanitize — only PROFILE_SAFE_WRITE_COLUMNS leave this function
     const payload = sanitizeProfileWritePayload(row);
@@ -323,121 +367,35 @@ async function persistProfileRow(row, lookupHints = {}) {
     const id = payload.id != null ? String(payload.id) : null;
     const authUuid = id && isUuid(id);
 
-    if (authUuid) {
-      try {
-        return await supabase
-          .from('profiles')
-          .upsert(payload, { onConflict: 'id' })
-          .select('id')
-          .maybeSingle();
-      } catch (err) {
-        console.warn('[profilesService] uuid upsert threw', {
-          message: err?.message || String(err),
-        });
-        return { data: null, error: err };
-      }
+    // No auth UUID → never hit Supabase (stops 400 / retry loops in local-dev)
+    if (!authUuid) {
+      openRemoteProfilesCircuit('persist-non-uuid');
+      return {
+        data: { id: id || lookupHints.username || 'local:offline' },
+        error: null,
+        legacySkipped: true,
+        localFallback: true,
+      };
     }
 
-    // Legacy / local fallback — do NOT call upsert onConflict id (400 on uuid PKs)
-    console.warn(
-      '[profilesService] non-UUID profiles.id — using insert/update branch (no onConflict).',
-      { id }
-    );
-
-    const existing = await findExistingProfileRow({
-      id: null,
-      phone: lookupHints.phone || null,
-      username:
-        (typeof payload.username === 'string' && payload.username) ||
-        lookupHints.username ||
-        null,
-      email:
-        (typeof payload.email === 'string' && payload.email) ||
-        lookupHints.email ||
-        null,
-    });
-
-    if (existing?.id) {
-      const patch = omitKeys(payload, ['id']);
-      if (!Object.keys(patch).length) {
-        return { data: { id: existing.id }, error: null };
-      }
-      try {
-        // Update target id is always a real DB id from select — safe for uuid PK
-        const result = await supabase
-          .from('profiles')
-          .update(patch)
-          .eq('id', existing.id)
-          .select('id')
-          .maybeSingle();
-        if (result.error) {
-          console.warn('[profilesService] legacy update failed', {
-            message: result.error.message || String(result.error),
-            code: result.error.code || null,
-            targetId: existing.id,
-          });
-        }
-        return result;
-      } catch (err) {
-        console.warn('[profilesService] legacy update threw', {
-          message: err?.message || String(err),
-          targetId: existing.id,
-        });
-        return { data: null, error: err };
-      }
-    }
-
-    // Insert: keep legacy text id only for text-PK tables; soft-skip uuid syntax errors
     try {
-      let insertPayload = { ...payload };
-      // Prefer omitting non-UUID id on V1 uuid PK to avoid immediate 400
-      if (insertPayload.id && !isUuid(String(insertPayload.id))) {
-        insertPayload = omitKeys(insertPayload, ['id']);
-      }
-
-      if (!Object.keys(insertPayload).length) {
-        return {
-          data: null,
-          error: new Error('legacy insert skipped — empty payload after id strip'),
-          legacySkipped: true,
-        };
-      }
-
       const result = await supabase
         .from('profiles')
-        .insert(insertPayload)
+        .upsert(payload, { onConflict: 'id' })
         .select('id')
         .maybeSingle();
-
-      if (result.error && isInvalidUuidError(result.error)) {
-        logUpsertFailure('legacy-insert-uuid-pk', result.error, insertPayload);
-        return {
-          data: null,
-          error: result.error,
-          legacySkipped: true,
-        };
+      if (result.error && isHttp400Error(result.error)) {
+        openRemoteProfilesCircuit('upsert-400');
+        return { data: null, error: result.error, legacySkipped: true, localFallback: true };
       }
-
-      if (result.error) {
-        console.warn('[profilesService] legacy insert failed', {
-          message: result.error.message || String(result.error),
-          code: result.error.code || null,
-          details: result.error.details || null,
-        });
-      }
-
       return result;
     } catch (err) {
-      console.warn('[profilesService] legacy insert threw', {
-        message: err?.message || String(err),
-      });
-      return { data: null, error: err, legacySkipped: true };
+      if (isHttp400Error(err)) openRemoteProfilesCircuit('upsert-throw');
+      return { data: null, error: err, legacySkipped: true, localFallback: true };
     }
   } catch (err) {
-    console.warn('[profilesService] persistProfileRow failed', {
-      message: err?.message || String(err),
-    });
-    return { data: null, error: err };
+    if (isHttp400Error(err)) openRemoteProfilesCircuit('persist-throw');
+    return { data: null, error: err, legacySkipped: true, localFallback: true };
   }
 }
 
@@ -448,106 +406,95 @@ async function persistProfileRow(row, lookupHints = {}) {
  * @param {{ id?: string } | null} [authUser] — supabase.auth user after verifyOtp
  */
 export async function upsertRegisteredProfile(userData = {}, authUser = null) {
-  if (!isSupabaseConfigured()) {
-    return { ok: false, fromCloud: false, error: new Error('Supabase not configured') };
-  }
-
   const { id, v1, soft, lookup } = buildRegistrationProfilePayload(userData, authUser);
 
-  if (!v1.id && !isUuid(id)) {
-    // Legacy ids are stripped by sanitizer — still OK to attempt lookup/update path
+  // Local / legacy / circuit already open → zero remote calls
+  if (!isSupabaseConfigured()) {
+    return localProfileSuccess(id, 'supabase-not-configured');
   }
-  if (!v1.id && isUuid(id)) {
+  if (isRemoteProfilesDisabled()) {
+    return localProfileSuccess(id, remoteProfilesCircuitReason || 'circuit-open');
+  }
+  if (!isUuid(id)) {
+    return localProfileSuccess(id, 'non-uuid-local-dev');
+  }
+
+  if (!v1.id) {
     v1.id = id;
-  }
-  if (!v1.id && !lookup?.username && !lookup?.email && !lookup?.phone) {
-    const error = new Error('profiles upsert requires id or username/email/phone');
-    logUpsertFailure('missing-id', error, v1);
-    return { ok: false, fromCloud: false, id: null, error };
   }
 
   try {
-    // 1) Sanitized base-schema payload only
-    let payload = sanitizeProfileWritePayload({ ...v1, id: isUuid(id) ? id : v1.id });
-    let { data, error, legacySkipped } = await persistProfileRow(payload, lookup);
+    // Single sanitized upsert for auth UUID only (max 2 schema-strip retries)
+    let payload = sanitizeProfileWritePayload({ ...v1, id });
+    let { data, error, legacySkipped, localFallback } = await persistProfileRow(
+      payload,
+      lookup
+    );
 
-    // 2) Schema-cache soft strip if a safe column is still missing from API cache
-    let guard = 0;
-    while (error && isSchemaCacheError(error) && !legacySkipped && guard < 6) {
-      guard += 1;
-      const missing = extractMissingColumn(error);
-      logUpsertFailure(`schema-strip-${guard}${missing ? `:${missing}` : ''}`, error, payload);
-      if (missing && missing in payload && missing !== 'id') {
-        payload = omitKeys(payload, [missing]);
-      } else {
-        break;
-      }
-      if (!payload.id && isUuid(id)) break;
-      payload = sanitizeProfileWritePayload(payload);
-      ({ data, error, legacySkipped } = await persistProfileRow(payload, lookup));
+    if (localFallback || legacySkipped || isRemoteProfilesDisabled()) {
+      return localProfileSuccess(id, 'persist-local-fallback');
     }
 
-    if (legacySkipped) {
-      // Local/legacy id on uuid PK — registration continues offline without 400 spam
-      logUpsertFailure('legacy-skip', error, payload);
-      return {
-        ok: false,
-        fromCloud: false,
-        id,
-        error,
-        legacySkipped: true,
-      };
+    let guard = 0;
+    while (
+      error &&
+      isSchemaCacheError(error) &&
+      !isHttp400Error(error) &&
+      guard < 2
+    ) {
+      guard += 1;
+      const missing = extractMissingColumn(error);
+      if (!missing || !(missing in payload) || missing === 'id') break;
+      payload = sanitizeProfileWritePayload(omitKeys(payload, [missing]));
+      ({ data, error, legacySkipped, localFallback } = await persistProfileRow(
+        payload,
+        lookup
+      ));
+      if (localFallback || legacySkipped || isRemoteProfilesDisabled()) {
+        return localProfileSuccess(id, 'persist-local-fallback-retry');
+      }
     }
 
     if (error) {
+      if (isHttp400Error(error) || isInvalidUuidError(error)) {
+        return localProfileSuccess(id, 'upsert-400');
+      }
+      // One warn, then local success so registration never loops
       logUpsertFailure('v1-persist', error, payload);
-      throw error;
+      return localProfileSuccess(id, 'upsert-error');
     }
 
-    const savedId = data?.id || (isUuid(id) ? id : null) || data?.id;
+    const savedId = data?.id || id;
 
-    // 3) Best-effort soft UPDATE with the same sanitized columns only
-    const softPatch = sanitizeProfileWritePayload(soft);
-    if (Object.keys(softPatch).length > 0) {
-      let targetId = savedId && isUuid(String(savedId)) ? String(savedId) : null;
-      if (!targetId) {
-        const found = await findExistingProfileRow({
-          phone: lookup?.phone,
-          username: lookup?.username || v1.username,
-          email: lookup?.email || v1.email,
-        });
-        targetId = found?.id || null;
-      }
-      if (targetId) {
-        let softRow = omitKeys(softPatch, ['id']);
-        let softResult = await supabase
+    // Soft patch once — never on failure cascades
+    const softPatch = omitKeys(sanitizeProfileWritePayload(soft), ['id']);
+    if (
+      Object.keys(softPatch).length > 0 &&
+      isUuid(savedId) &&
+      !isRemoteProfilesDisabled()
+    ) {
+      try {
+        const softResult = await supabase
           .from('profiles')
-          .update(softRow)
-          .eq('id', targetId)
+          .update(softPatch)
+          .eq('id', savedId)
           .select('id')
           .maybeSingle();
-        if (softResult.error && isSchemaCacheError(softResult.error)) {
-          const miss = extractMissingColumn(softResult.error);
-          if (miss && miss in softRow) {
-            softRow = omitKeys(softRow, [miss]);
-            softResult = await supabase
-              .from('profiles')
-              .update(softRow)
-              .eq('id', targetId)
-              .select('id')
-              .maybeSingle();
-          }
+        if (softResult.error && isHttp400Error(softResult.error)) {
+          openRemoteProfilesCircuit('soft-patch-400');
         }
-        if (softResult.error) {
-          logUpsertFailure('soft-compat', softResult.error, softPatch);
-        }
+      } catch (_) {
+        openRemoteProfilesCircuit('soft-patch-throw');
       }
     }
 
-    return { ok: true, fromCloud: true, id: savedId || id, error: null };
+    return { ok: true, fromCloud: true, id: savedId, error: null };
   } catch (error) {
+    if (isHttp400Error(error)) {
+      return localProfileSuccess(id, 'catch-400');
+    }
     logUpsertFailure('catch', error, v1);
-    return { ok: false, fromCloud: false, id, error };
+    return localProfileSuccess(id, 'catch');
   }
 }
 
