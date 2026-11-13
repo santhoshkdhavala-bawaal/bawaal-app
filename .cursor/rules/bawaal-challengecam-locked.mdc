@@ -17,17 +17,17 @@ The **live camera viewfinder** and its interaction model are **production-final*
 
 **Keep only:**
 - Dark full-bleed viewfinder
-- Top: Close / Cancel + clean title (mode or CHALLENGE CAM + challenge label)
-- Bottom: Flip + **minimalist shutter** with **animated spinning dotted ring** around a **solid red center** (square/stop while recording)
+- Top: Close / Cancel + **one** centered broadcast HUD pill (`[MODE] • [DETAILS]`, e.g. `WAR CRY • LIVE 1v1`) + Flip
+- Bottom: **minimalist shutter** with **animated spinning dotted ring** around a **solid red center** (square/stop while recording) + duration chips + **BAWAAL Hub** FAB (UniversalCamera)
 - Native pinch-to-zoom on UniversalCamera (works while recording)
-- Existing duration pill / BAWAAL Hub flows on UniversalCamera only (already shipped)
+- Hub six modes handoff (`hubHandoff`) — see `bawaal-core-system-locked.mdc`
 
 **Never re-add on the live camera:**
 - Floating speed badges / speed chips / SPEED cycle buttons
 - Slow-mo capture overlays or rails
 - Flash toggle / torch chrome
 - Zoom preset pills (1× / 2× / 3×)
-- Extra text overlays, cluttered control clusters, or decorative badges
+- Duplicate timer + mode badges / extra text overlays / cluttered control clusters
 
 ## Preview-only speed
 

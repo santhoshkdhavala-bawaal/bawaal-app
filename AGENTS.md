@@ -34,13 +34,17 @@ Run lint and typecheck before declaring any task done.
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
 Docs: https://docs.expo.dev/eas/index.md
 
+## Core system (locked)
+
+Underground-arena brand: `#000000` / `#FF5500` / white type; zero-clutter feeds; video metrics only behind **⋮**; BAWAAL Hub six modes (SPARKS · JOSH · BAWAAL BATTLE · DARK ARENA · FACEOFF · WAR CRY) with a single centered camera broadcast HUD (`MODE • DETAILS`); proprietary 121+ skeleton/skull Vault only. See `.cursor/rules/bawaal-core-system-locked.mdc`.
+
 ## UI baseline (locked)
 
-Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header + GAME ON drawer (search / NEAR ME / battle + sports rows) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
+Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header + GAME ON drawer (search / NEAR ME / battle + sports rows) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack; **no** like/share counters on the primary overlay) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
 
 ## ChallengeCam / UniversalCamera (locked)
 
-Live viewfinder is **untouchable** — Close/Cancel + title, Flip, spinning dotted red shutter only; **no** floating speed/flash/zoom chrome on the lens. Speed / slow-mo stay on `PreviewScreen.tsx` (ChallengeCam) or post-record ClipPreviewModal (UniversalCamera). See `.cursor/rules/bawaal-challengecam-locked.mdc`.
+Live viewfinder is **untouchable** — Close/Cancel, Flip, spinning dotted red shutter, BAWAAL Hub FAB, and **one** centered broadcast mode pill only; **no** floating speed/flash/zoom chrome on the lens and **no** duplicate timer/mode badges. Speed / slow-mo stay on `PreviewScreen.tsx` (ChallengeCam) or post-record ClipPreviewModal (UniversalCamera). See `.cursor/rules/bawaal-challengecam-locked.mdc` and `bawaal-core-system-locked.mdc`.
 
 ## Onboarding stack (locked)
 
@@ -80,7 +84,7 @@ Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `
 
 ## Custom emoji / reactions (locked — exclusive)
 
-The ~106 skeleton assets (`assets/skel_*.png`) via `BawaalEmoji` + `bawaalEmojiAssets.js` are the **only** emoji/reaction system for chat, banter, DMs, and comments. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Vault: `FullEmojiPickerDrawer` — `ALL_SKELETON_KEYS` must include `'love'` (`skel_love.png`). Mixed text+emoji: one flex row at ~36px; emoji-only stickers ~56–64px. Performance: fixed Image width/height, memoized shortcode parse, Banter FlatList `windowSize={5}` / `maxToRenderPerBatch={10}` / `removeClippedSubviews`. See `.cursor/rules/bawaal-emoji-locked.mdc`.
+The **121+** proprietary assets (`assets/skel_*.png` + `assets/skull_*.png`) via `BawaalEmoji` + `bawaalEmojiAssets.js` (`SKULL_EMOJI_KEYS`) are the **only** emoji/reaction system for chat, banter, DMs, comments, and full-screen Arena reactions. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Vault: `FullEmojiPickerDrawer` — `ALL_SKELETON_KEYS` must include `'love'` (`skel_love.png`) and all `skull_*` keys (e.g. `:skull_fire:`, `:skull_burning:`). Mixed text+emoji: one flex row at ~36px; emoji-only stickers ~56–64px. Performance: fixed Image width/height, memoized shortcode parse, Banter FlatList `windowSize={5}` / `maxToRenderPerBatch={10}` / `removeClippedSubviews`. See `.cursor/rules/bawaal-emoji-locked.mdc` and `bawaal-core-system-locked.mdc`.
 
 ## Rules
 

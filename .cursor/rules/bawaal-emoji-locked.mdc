@@ -1,19 +1,19 @@
 ---
-description: Locked exclusive BawaalEmoji system — love vault key, layout sizes, chat performance
+description: Locked exclusive BawaalEmoji system — love vault key, skull set, layout sizes, chat performance
 alwaysApply: true
 ---
 
 # BAWAAL custom emoji / reactions (LOCKED — exclusive)
 
-The ~106 skeleton PNGs (`assets/skel_*.png`) mapped through **`BawaalEmoji`** are the **official and exclusive** emoji / reaction system for BAWAAL. **Never** revert to unicode / system emoji (🔥 💀 🏆 💬 …) or generic icon packs on chat, banter, DMs, comments, or reaction trays.
+The **121+** proprietary PNGs (`assets/skel_*.png` + `assets/skull_*.png`) mapped through **`BawaalEmoji`** are the **official and exclusive** emoji / reaction system for BAWAAL. **Never** revert to unicode / system emoji (🔥 💀 🏆 💬 …) or generic icon packs on chat, banter, DMs, comments, full-screen Arena reactions, or reaction trays.
 
 ## Canonical files
 
 | File | Role |
 |---|---|
-| `components/BawaalEmoji.js` | `<BawaalEmoji />` + `SKELETON_EMOJIS` (must include `love: require('../assets/skel_love.png')`); Image always has fixed width/height |
-| `src/constants/bawaalEmojiAssets.js` | Full map + **`ALL_SKELETON_KEYS`** (must start with `'love'`) |
-| `components/FullEmojiPickerDrawer.js` | 106-asset Vault grid — force-includes `love` first |
+| `components/BawaalEmoji.js` | `<BawaalEmoji />` + `SKELETON_EMOJIS` + `SKULL_EMOJIS` (must include `love: require('../assets/skel_love.png')`); Image always has fixed width/height |
+| `src/constants/bawaalEmojiAssets.js` | Full map + **`SKULL_EMOJI_KEYS`** + **`ALL_SKELETON_KEYS`** (must start with `'love'`) |
+| `components/FullEmojiPickerDrawer.js` | Vault grid — force-includes `love` first + all `skull_*` keys |
 | `src/utils/bawaalEmojiText.js` | Shortcodes + `BawaalEmojiText` + memoized parse cache |
 | `BanterBottomSheet.js` | Banter feed FlatList virtualization |
 
@@ -22,6 +22,10 @@ The ~106 skeleton PNGs (`assets/skel_*.png`) mapped through **`BawaalEmoji`** ar
 - Asset: `assets/skel_love.png`
 - Key: `love` in `SKELETON_EMOJIS` / `BAWAAL_EMOJI_ASSETS`
 - Vault: `'love'` in `ALL_SKELETON_KEYS` so it always appears in the modal grid
+
+## Skull expression set (LOCKED)
+
+Keys in `SKULL_EMOJI_KEYS` / `SKULL_EMOJIS` (shortcodes `:skull_*:`) including at least: `skull_angry`, `skull_burning`, `skull_cool`, `skull_crying`, `skull_doubt`, `skull_fire`, `skull_laugh`, `skull_love_red_hearts`, `skull_mindblown_fire_v2`, `skull_sad`, `skull_scared`, `skull_shame`, `skull_shouting`, `skull_surprised`, `skull_very_happy`, `skull_wink`, `skull_worried`. Must stay in `ALL_SKELETON_KEYS` and the Vault grid.
 
 ## Layout (LOCKED)
 
@@ -38,5 +42,5 @@ The ~106 skeleton PNGs (`assets/skel_*.png`) mapped through **`BawaalEmoji`** ar
 
 ## Never re-add
 
-- System emoji sticker trays · unicode reaction fallbacks · tiny text-height emoji on mixed messages · stacked text-vs-emoji layouts · dropping `love` from the vault · unvirtualized banter ScrollView maps under load
+- System emoji sticker trays · unicode reaction fallbacks · tiny text-height emoji on mixed messages · stacked text-vs-emoji layouts · dropping `love` or `skull_*` from the vault · unvirtualized banter ScrollView maps under load
 ---

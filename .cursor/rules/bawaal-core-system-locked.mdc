@@ -1,0 +1,61 @@
+---
+description: Locked BAWAAL core brand, clean feed metrics, Hub 6 modes + camera HUD, proprietary emoji vault
+alwaysApply: true
+---
+
+# BAWAAL Core System Specification (LOCKED)
+
+Production-final product contract. Do **not** restyle, re-clutter, or rewire unless the user explicitly unlocks this rule.
+
+## 1. Brand identity & aesthetic
+
+| Token | Value |
+|---|---|
+| Theme | Minimalist elite **underground arena** |
+| Background | Pitch black `#000000` |
+| Accent | Sports orange `#FF5500` |
+| Type | Clean high-contrast white |
+| Philosophy | Zero clutter — video / raw action owns the frame |
+
+## 2. Video feed & metrics
+
+- Feed UI stays a clean, distraction-free player surface (no sport category pills on clips — see `bawaal-ui-baseline.mdc`).
+- **Metrics** (likes, shares, reshared counts, deep stats) stay **behind** the bottom-right **⋮** / action sheet — never as permanent chrome on the primary video overlay.
+- Canonical reel geometry: `src/constants/arenaReelOverlay.js` + `bawaal-v2-arena-ui-locked.mdc`.
+
+## 3. Creator Studio — BAWAAL Hub (6 modes)
+
+Hub modal on `UniversalCamera` (`BawaalHubDrawer` / `HUB_MODES`). Tap → capture mode + rules → dismiss Hub → arm the lens.
+
+| Mode | Brand | Rules |
+|---|---|---|
+| SPARKS | Stories | 30s max · vanishes in 24h |
+| JOSH | Reels | 60s default · unlock to 180s with coins |
+| BAWAAL BATTLE | Group Challenge | Multi-participant group challenge |
+| DARK ARENA | Open Challenge | Anyone posts / anyone participates |
+| FACEOFF | Response Challenge | Athlete challenges; others answer |
+| WAR CRY | 1v1 Live | Live 1v1 → battle setup form |
+
+**Camera HUD (LOCKED):** one centered semi-transparent broadcast pill only — `[MODE] • [DETAILS]` (e.g. `WAR CRY • LIVE 1v1`). No duplicate timer / mode badges. Hub handoff via `hubHandoff` must not fall back to opener titles after a Hub pick.
+
+## 4. Proprietary skeleton + skull vault (121+)
+
+- Central registry: `components/BawaalEmoji.js` + `src/constants/bawaalEmojiAssets.js` (`SKULL_EMOJIS` / `SKULL_EMOJI_KEYS` / `ALL_SKELETON_KEYS`).
+- Shortcodes (`:skull_angry:`, `:skull_fire:`, `:skull_burning:`, `:love:`, …) via `bawaalEmojiText.js`.
+- Banter / Vault: `FullEmojiPickerDrawer` + Banter FlatList virtualization.
+- **Full-screen Arena reactions:** proprietary skeleton/skull PNGs only — **never** unicode / system emoji.
+- Detail lock: `bawaal-emoji-locked.mdc`.
+
+## 5. Technical standards
+
+- React Native / Expo; FlatList virtualization for chat / vault / feeds.
+- Cross-platform touch (web + native); no platform-only assumptions without `Platform.OS` gates.
+- Related locks: `bawaal-challengecam-locked.mdc`, `bawaal-arena-video-playback-locked.mdc`, `bawaal-core-project.mdc`.
+
+## Never re-add
+
+- Metric counters / share counts on the primary reel canvas
+- Dual header pills on the camera (timer + mode HUD)
+- Unicode reaction trays on Arena / Banter / DMs
+- Extra Hub modes or local Hub mode arrays outside `HUB_MODES`
+---

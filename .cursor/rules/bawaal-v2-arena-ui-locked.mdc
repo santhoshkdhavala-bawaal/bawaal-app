@@ -43,9 +43,11 @@ Also locked on this surface:
 - No native play/pause, download, or PiP (`useNativeControls={false}`, `controls={false}`; web stub `controlsList` / context-menu blocked)
 - Video shell: `position: 'relative'`, full-bleed `COVER` player, continuous background playback while overlays toggle
 - No standalone Follow CTA on the video canvas / bottom-left profile overlay — Follow lives only in the `⋮` stack
+- **No** like / share / reshare / deep-stat counters on the primary video overlay — metrics stay behind **⋮** / action sheet only
 - No sport-category pills on clip surfaces (see UI baseline §3)
+- Full-screen Arena reactions use proprietary skeleton/skull assets only (`bawaal-emoji-locked.mdc`)
 
-**Never re-add:** mute backdrop patches, bottom-sheet action modal, canvas Follow button, shifting mute off `top:16`/`right:16`.
+**Never re-add:** mute backdrop patches, bottom-sheet action modal, canvas Follow button, shifting mute off `top:16`/`right:16`, on-canvas metric counters.
 
 ## 4. Onboarding polish (Registration / Terms / OTP)
 
@@ -62,6 +64,7 @@ Also locked on this surface:
 
 ## Related
 
+- Core product lock: `bawaal-core-system-locked.mdc`
 - Camera / tab bar: `bawaal-ui-baseline.mdc`, `bawaal-challengecam-locked.mdc`
 - Forms taxonomy (`BAWAAL_SPORTS`): `bawaal-sport-taxonomy-locked.mdc`
 - Onboarding/auth: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locked.mdc`
