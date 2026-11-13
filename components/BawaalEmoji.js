@@ -27,12 +27,13 @@ export const SKELETON_EMOJIS = {
 // Keep constants map in sync for getBawaalEmojiSource / hasBawaalEmoji
 BAWAAL_EMOJI_ASSETS.love = LOVE_ASSET;
 
-/** Vault grid keys — guaranteed to include `love`. */
-export const ALL_SKELETON_KEYS = (() => {
-  const keys = Object.keys(SKELETON_EMOJIS);
-  if (!keys.includes('love')) keys.push('love');
-  return keys;
-})();
+/**
+ * Vault grid keys — `love` listed explicitly so skel_love.png always ships in the 106 grid.
+ */
+export const ALL_SKELETON_KEYS = [
+  'love',
+  ...Object.keys(SKELETON_EMOJIS).filter((k) => k !== 'love'),
+];
 
 /**
  * Compact banter-tray shortcuts (aliases allowed).

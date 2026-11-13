@@ -4,14 +4,14 @@
  *
  * Size rules:
  * - Emoji-only → size 64 (sticker)
- * - Mixed text + emoji → size 40, nested inline inside one Text line (wraps cleanly)
+ * - Mixed text + emoji → size 48, nested inline inside one Text line (wraps cleanly)
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-/** Prominent inline size beside body text (same line). */
-export const BAWAAL_EMOJI_INLINE_SIZE = 40;
+/** Aggressive inline punch beside body text (same line). */
+export const BAWAAL_EMOJI_INLINE_SIZE = 48;
 /** Pure emoji / reaction stickers. */
 export const BAWAAL_EMOJI_HERO_SIZE = 64;
 
@@ -146,7 +146,7 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
 const styles = StyleSheet.create({
   inlineText: {
     fontSize: 12,
-    lineHeight: 40,
+    lineHeight: 48,
     ...(Platform.OS === 'web'
       ? {
           // Keep bubble content from stretching full desktop width
