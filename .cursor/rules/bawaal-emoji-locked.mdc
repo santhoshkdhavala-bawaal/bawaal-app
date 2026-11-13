@@ -1,5 +1,5 @@
 ---
-description: Locked exclusive BawaalEmoji skeleton system — vault love key + chat/banter layout sizes
+description: Locked exclusive BawaalEmoji system — love vault key, layout sizes, chat performance
 alwaysApply: true
 ---
 
@@ -11,10 +11,11 @@ The ~106 skeleton PNGs (`assets/skel_*.png`) mapped through **`BawaalEmoji`** ar
 
 | File | Role |
 |---|---|
-| `components/BawaalEmoji.js` | `<BawaalEmoji />` + `SKELETON_EMOJIS` (must include `love: require('../assets/skel_love.png')`) |
+| `components/BawaalEmoji.js` | `<BawaalEmoji />` + `SKELETON_EMOJIS` (must include `love: require('../assets/skel_love.png')`); Image always has fixed width/height |
 | `src/constants/bawaalEmojiAssets.js` | Full map + **`ALL_SKELETON_KEYS`** (must start with `'love'`) |
 | `components/FullEmojiPickerDrawer.js` | 106-asset Vault grid — force-includes `love` first |
-| `src/utils/bawaalEmojiText.js` | Shortcodes + `BawaalEmojiText` layout |
+| `src/utils/bawaalEmojiText.js` | Shortcodes + `BawaalEmojiText` + memoized parse cache |
+| `BanterBottomSheet.js` | Banter feed FlatList virtualization |
 
 ## Required: `love` (heart-eyed skeleton)
 
@@ -26,12 +27,16 @@ The ~106 skeleton PNGs (`assets/skel_*.png`) mapped through **`BawaalEmoji`** ar
 
 | Message type | Rule |
 |---|---|
-| Text + inline emoji | Same **flex row** (`flexDirection: 'row'`, `flexWrap: 'wrap'`, `alignItems: 'center'`). Inline size **~36**. Text must **not** stretch full width (or emoji drops to next line). |
+| Text + inline emoji | Same **flex row** (`flexDirection: 'row'`, `flexWrap: 'wrap'`, `alignItems: 'center'`). Inline size **~36**. Text must **not** stretch full width. |
 | Emoji-only / sticker | Large signature size **~56–64** (`BAWAAL_EMOJI_HERO_SIZE`) |
 
-Render via `BawaalEmojiText` / `<BawaalEmoji>`. Persist `:key:` or `[bawaal:key]` — never unicode glyphs.
+## Performance (LOCKED)
+
+- `BawaalEmoji` Image: explicit fixed `width` / `height` (no scroll layout shift)
+- Shortcode parser: memoized / cached (`parseBawaalEmojiSegments`)
+- Banter / chat lists: FlatList with `windowSize={5}`, `maxToRenderPerBatch={10}`, `removeClippedSubviews` (native)
 
 ## Never re-add
 
-- System emoji sticker trays · unicode reaction fallbacks · tiny text-height emoji on mixed messages · stacked/disconnected text-vs-emoji layouts · dropping `love` from the vault list
+- System emoji sticker trays · unicode reaction fallbacks · tiny text-height emoji on mixed messages · stacked text-vs-emoji layouts · dropping `love` from the vault · unvirtualized banter ScrollView maps under load
 ---

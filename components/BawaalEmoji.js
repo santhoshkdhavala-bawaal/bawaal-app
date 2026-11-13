@@ -2,6 +2,7 @@
  * Centralized BAWAAL skeleton emoji — uniform 1:1 Image sizing for chat / banter / DM.
  *
  * Full registry: `SKELETON_EMOJIS` + `ALL_SKELETON_KEYS` (includes `love` → skel_love.png).
+ * Images always use fixed width/height to prevent scroll layout shift.
  */
 import React, { memo } from 'react';
 import { Image, StyleSheet } from 'react-native';
@@ -59,11 +60,17 @@ export const BawaalEmoji = memo(function BawaalEmoji({ name, size = 28, style, .
     SKELETON_EMOJIS[key] ||
     getBawaalEmojiSource(name);
 
+  // Fixed box every time — prevents scroll jitter / CLS in chat feeds
+  const box = { width: dimension, height: dimension };
+
   return (
     <Image
       source={source}
-      style={[{ width: dimension, height: dimension }, styles.emoji, style]}
+      width={dimension}
+      height={dimension}
+      style={[box, styles.emoji, style]}
       resizeMode="contain"
+      fadeDuration={0}
       accessibilityRole="image"
       accessibilityLabel={name ? `Bawaal emoji ${name}` : 'Bawaal emoji'}
       {...rest}

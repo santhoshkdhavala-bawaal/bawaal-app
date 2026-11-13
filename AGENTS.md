@@ -80,7 +80,7 @@ Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `
 
 ## Custom emoji / reactions (locked — exclusive)
 
-The ~106 skeleton assets (`assets/skel_*.png`) via `BawaalEmoji` + `bawaalEmojiAssets.js` are the **only** emoji/reaction system for chat, banter, DMs, and comments. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Vault: `FullEmojiPickerDrawer` — `ALL_SKELETON_KEYS` must include `'love'` (`skel_love.png`). Mixed text+emoji: one flex row at ~36px; emoji-only stickers ~56–64px (`bawaalEmojiText.js`). See `.cursor/rules/bawaal-emoji-locked.mdc`.
+The ~106 skeleton assets (`assets/skel_*.png`) via `BawaalEmoji` + `bawaalEmojiAssets.js` are the **only** emoji/reaction system for chat, banter, DMs, and comments. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Vault: `FullEmojiPickerDrawer` — `ALL_SKELETON_KEYS` must include `'love'` (`skel_love.png`). Mixed text+emoji: one flex row at ~36px; emoji-only stickers ~56–64px. Performance: fixed Image width/height, memoized shortcode parse, Banter FlatList `windowSize={5}` / `maxToRenderPerBatch={10}` / `removeClippedSubviews`. See `.cursor/rules/bawaal-emoji-locked.mdc`.
 
 ## Rules
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  FlatList,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -81,6 +82,38 @@ function withResolvedEmotion(row) {
   return emotion ? { ...row, emotion } : row;
 }
 
+const BanterMessageRow = memo(function BanterMessageRow({ item }) {
+  const emotion = resolveBanterEmotion(item);
+  const body = String(item.text || '').trim();
+  const hasInline = messageHasBawaalEmoji(body);
+  const showLeading = emotion && !hasInline;
+  return (
+    <View style={styles.row}>
+      {showLeading ? (
+        <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
+      ) : null}
+      <View style={styles.rowBody}>
+        <UserHandle
+          handle={item.handle}
+          verified={item.verified ?? isHandleVerified(item.handle)}
+          size={11}
+          color={WHITE}
+          badgeSize={12}
+        />
+        {body ? (
+          <BawaalEmojiText
+            text={body}
+            textStyle={styles.rowText}
+            style={styles.rowRich}
+          />
+        ) : showLeading ? (
+          <Text style={styles.rowText}>reacted</Text>
+        ) : null}
+      </View>
+    </View>
+  );
+});
+
 /**
  * In-place banter / GIF comment sheet — does not switch to immersive reel view.
  */
@@ -126,6 +159,12 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
   const openVaultForInsert = () => {
     setVaultOpen(true);
   };
+
+  const keyExtractor = useCallback((item) => String(item.id), []);
+  const renderBanterItem = useCallback(
+    ({ item }) => <BanterMessageRow item={item} />,
+    []
+  );
 
   const insertEmojiShortcode = (key) => {
     if (!key || !hasBawaalEmoji(key)) return;
@@ -252,42 +291,24 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
               </TouchableOpacity>
             </ScrollView>
 
-            <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-              {loading && banter.length === 0 ? (
-                <Text style={styles.rowText}>Loading banter…</Text>
-              ) : null}
-              {banter.map((c) => {
-                const emotion = resolveBanterEmotion(c);
-                const body = String(c.text || '').trim();
-                const hasInline = messageHasBawaalEmoji(body);
-                const showLeading = emotion && !hasInline;
-                return (
-                  <View key={c.id} style={styles.row}>
-                    {showLeading ? (
-                      <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
-                    ) : null}
-                    <View style={styles.rowBody}>
-                      <UserHandle
-                        handle={c.handle}
-                        verified={c.verified ?? isHandleVerified(c.handle)}
-                        size={11}
-                        color={WHITE}
-                        badgeSize={12}
-                      />
-                      {body ? (
-                        <BawaalEmojiText
-                          text={body}
-                          textStyle={styles.rowText}
-                          style={styles.rowRich}
-                        />
-                      ) : showLeading ? (
-                        <Text style={styles.rowText}>reacted</Text>
-                      ) : null}
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
+            <FlatList
+              data={banter}
+              keyExtractor={keyExtractor}
+              renderItem={renderBanterItem}
+              style={styles.list}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              windowSize={5}
+              maxToRenderPerBatch={10}
+              initialNumToRender={10}
+              updateCellsBatchingPeriod={50}
+              removeClippedSubviews={Platform.OS !== 'web'}
+              ListEmptyComponent={
+                loading ? (
+                  <Text style={styles.rowText}>Loading banter…</Text>
+                ) : null
+              }
+            />
 
             <View style={styles.compose}>
               <TouchableOpacity

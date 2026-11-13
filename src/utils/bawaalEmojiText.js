@@ -18,6 +18,10 @@ export const BAWAAL_EMOJI_HERO_SIZE = 60;
 /** Matches `:key:` or legacy `[bawaal:key]` tokens. */
 export const BAWAAL_EMOJI_TOKEN_RE = /(:([a-z0-9_]+):|\[bawaal:([a-z0-9_]+)\])/gi;
 
+/** Bounded parse cache — avoids re-tokenizing identical messages on scroll. */
+const PARSE_CACHE_MAX = 200;
+const parseCache = new Map();
+
 export function toBawaalShortcode(key) {
   const k = String(key || '')
     .trim()
@@ -30,11 +34,15 @@ export function toBawaalShortcode(key) {
 
 /**
  * Split message text into plain text + emoji segments for inline rendering.
+ * Memoized by full string (WhatsApp/Telegram-style hot-path).
  * @returns {{ type: 'text'|'emoji', value: string }[]}
  */
 export function parseBawaalEmojiSegments(text) {
   const raw = String(text || '');
   if (!raw) return [];
+
+  const hit = parseCache.get(raw);
+  if (hit) return hit;
 
   const segments = [];
   let last = 0;
@@ -55,6 +63,12 @@ export function parseBawaalEmojiSegments(text) {
   if (last < raw.length) {
     segments.push({ type: 'text', value: raw.slice(last) });
   }
+
+  if (parseCache.size >= PARSE_CACHE_MAX) {
+    const oldest = parseCache.keys().next().value;
+    parseCache.delete(oldest);
+  }
+  parseCache.set(raw, segments);
   return segments;
 }
 
