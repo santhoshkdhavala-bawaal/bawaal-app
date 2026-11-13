@@ -35,6 +35,7 @@ export const BAWAAL_BELT_TIERS = Object.freeze([
 /**
  * Canonical V1 column names written on registration upsert.
  * `age` is soft-optional — only sent when present; stripped on schema-cache miss.
+ * Never upsert `list_bucket` from registration (Passport-only / may be absent).
  */
 export const PROFILE_V1_COLUMNS = Object.freeze([
   'id',

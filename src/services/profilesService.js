@@ -7,6 +7,7 @@ import { isSupabaseConfigured, supabase } from './supabase';
 import { CURRENT_USER, FOLLOWING, SUGGESTED } from '../data/athleteSocial';
 import { normalizePhoneE164 } from './authOtp';
 import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
+import { PROFILE_V1_COLUMNS } from '../types/profile';
 
 export const PROFILES_SETUP_HINT =
   'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql (or supabase_schema.sql)';
@@ -14,9 +15,26 @@ export const PROFILES_SETUP_HINT =
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Only these keys may be sent on registration upsert.
+ * Explicitly excludes `list_bucket` and other Passport-only / missing-cache fields.
+ * `created_at` is DB-defaulted — never client-written on upsert.
+ */
+const PROFILE_UPSERT_ALLOWLIST = Object.freeze(
+  PROFILE_V1_COLUMNS.filter((key) => key !== 'created_at')
+);
+
+/** Soft-compat extras — tried only after a successful V1 upsert is not required; stripped on miss. */
+const PROFILE_SOFT_COMPAT_KEYS = Object.freeze([
+  'display_name',
+  'full_name',
+  'primary_sport',
+  'updated_at',
+]);
+
 function isSchemaCacheError(error) {
   const msg = String(error?.message || error?.details || error?.hint || error || '');
-  return /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
+  return /schema cache|PGRST204|Could not find .* column|column .* does not exist|400/i.test(
     msg
   );
 }
@@ -39,17 +57,50 @@ function omitKeys(row, keys) {
   return next;
 }
 
+/**
+ * Drop undefined / null / empty-string values so PostgREST never sees junk keys.
+ * `id` is always retained when present.
+ * @param {Record<string, unknown>} row
+ * @param {readonly string[]} [allowlist]
+ */
+export function compactProfilePayload(row, allowlist) {
+  const src = row && typeof row === 'object' ? row : {};
+  const keys = Array.isArray(allowlist) && allowlist.length
+    ? allowlist
+    : Object.keys(src);
+  const out = {};
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(src, key)) continue;
+    // Never allow known non-schema / Passport-only keys through
+    if (key === 'list_bucket' || key === 'listBucket') continue;
+    const value = src[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string' && !value.trim()) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = typeof value === 'string' ? value.trim() : value;
+  }
+  return out;
+}
+
+function logUpsertFailure(stage, error, payload) {
+  const keys = payload && typeof payload === 'object' ? Object.keys(payload) : [];
+  console.warn('[profilesService] upsertRegisteredProfile failed', {
+    stage,
+    message: error?.message || String(error),
+    code: error?.code || null,
+    details: error?.details || null,
+    hint: error?.hint || null,
+    status: error?.status || error?.statusCode || null,
+    payloadKeys: keys,
+  });
+}
+
 function isUuid(value) {
   return UUID_RE.test(String(value || '').trim());
 }
 
 function stripAt(raw) {
   return String(raw || '').trim().replace(/^@+/, '');
-}
-
-function normalizeHandle(raw) {
-  const h = stripAt(raw) || 'athlete';
-  return `@${h}`;
 }
 
 /**
@@ -71,7 +122,72 @@ export function resolveProfileId(userData = {}, authUser = null) {
 }
 
 /**
- * OTP SUBMIT / registration → `public.profiles` upsert (V1 + soft-compat columns).
+ * Build a compact, allowlisted profiles upsert row from registration form data.
+ * Omits null / undefined / empty strings and never includes `list_bucket`.
+ *
+ * @param {object} userData
+ * @param {{ id?: string } | null} [authUser]
+ */
+export function buildRegistrationProfilePayload(userData = {}, authUser = null) {
+  const id = resolveProfileId(userData, authUser);
+  const username =
+    stripAt(userData.username || userData.handle || userData.displayName || '').toLowerCase() ||
+    null;
+  const realName = String(
+    userData.real_name || userData.realName || userData.name || userData.full_name || ''
+  ).trim();
+  const phone = normalizePhoneE164(userData.phone || userData.mobile || '') || null;
+  const email = String(userData.email || '').trim().toLowerCase() || null;
+  const country =
+    String(userData.country || userData.location || userData.city || '').trim() || null;
+  const role = String(userData.role || 'fan').toLowerCase() || null;
+  const category =
+    String(
+      userData.category ||
+        userData.sportInterest ||
+        userData.sport ||
+        userData.primarySport ||
+        ''
+    ).trim() || null;
+  const sport = category || 'OTHERS';
+  const ageRaw = userData.age;
+  const ageNum = Number(ageRaw);
+  const age = Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
+  const gender = userData.gender ? String(userData.gender).trim() : null;
+  const displayName = String(
+    userData.displayName || userData.handle || username || realName || 'Athlete'
+  ).trim();
+
+  /** Canonical V1 fields only — primary upsert path. */
+  const v1Raw = {
+    id,
+    username,
+    real_name: realName || null,
+    age,
+    gender,
+    email,
+    phone,
+    country,
+    category: sport,
+    role,
+  };
+
+  const v1 = compactProfilePayload(v1Raw, PROFILE_UPSERT_ALLOWLIST);
+
+  /** Optional soft-compat — never includes list_bucket / mobile / handle arrays. */
+  const softRaw = {
+    display_name: displayName || null,
+    full_name: realName || null,
+    primary_sport: sport || null,
+    updated_at: new Date().toISOString(),
+  };
+  const soft = compactProfilePayload(softRaw, PROFILE_SOFT_COMPAT_KEYS);
+
+  return { id, v1, soft };
+}
+
+/**
+ * OTP SUBMIT / registration → `public.profiles` upsert (V1 allowlist + soft strip).
  *
  * @param {object} userData — registration payload from RoleSelection
  * @param {{ id?: string } | null} [authUser] — supabase.auth user after verifyOtp
@@ -81,121 +197,74 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
     return { ok: false, fromCloud: false, error: new Error('Supabase not configured') };
   }
 
-  const id = resolveProfileId(userData, authUser);
-  const username = stripAt(
-    userData.username || userData.handle || userData.displayName || ''
-  ).toLowerCase() || null;
-  const handle = normalizeHandle(username || 'athlete');
-  const realName = String(
-    userData.real_name || userData.realName || userData.name || userData.full_name || ''
-  ).trim();
-  const phone =
-    normalizePhoneE164(userData.phone || userData.mobile || '') || null;
-  const email = String(userData.email || '').trim().toLowerCase() || null;
-  const country =
-    String(userData.country || userData.location || userData.city || '').trim() || null;
-  const location = String(userData.location || userData.country || '').trim() || null;
-  const role = String(userData.role || 'fan').toLowerCase();
-  const category = String(
-    userData.category || userData.sportInterest || userData.sport || userData.primarySport || ''
-  ).trim() || null;
-  const sport = category || 'OTHERS';
-  const interests = Array.isArray(userData.sport_interests)
-    ? userData.sport_interests.map(String)
-    : Array.isArray(userData.sportInterests)
-      ? userData.sportInterests.map(String)
-      : sport
-        ? [String(sport)]
-        : [];
-  const ageRaw = userData.age;
-  const ageNum = Number(ageRaw);
-  const age =
-    Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
-  const gender = userData.gender ? String(userData.gender) : null;
+  const { id, v1, soft } = buildRegistrationProfilePayload(userData, authUser);
 
-  /**
-   * Canonical V1 row — matches ENSURE_PROFILES / PROFILE_V1_COLUMNS.
-   * `age` is only included when present so missing-column schema caches stay quiet.
-   */
-  const v1Row = {
-    id,
-    username,
-    real_name: realName || null,
-    ...(age != null ? { age } : {}),
-    gender,
-    email,
-    phone,
-    country,
-    category: sport,
-    role,
-  };
-
-  /** Full row with legacy soft-compat columns for Passport / Arena. */
-  const fullRow = {
-    ...v1Row,
-    mobile: phone,
-    location,
-    sport_interests: interests,
-    display_name: String(
-      userData.displayName || userData.handle || username || realName || 'Athlete'
-    ).trim(),
-    handle,
-    sport: String(sport),
-    city: location,
-    full_name: realName || null,
-    primary_sport: String(sport),
-    updated_at: new Date().toISOString(),
-  };
+  if (!v1.id) {
+    const error = new Error('profiles upsert requires a stable id');
+    logUpsertFailure('missing-id', error, v1);
+    return { ok: false, fromCloud: false, id: null, error };
+  }
 
   const runUpsert = (row) =>
     supabase.from('profiles').upsert(row, { onConflict: 'id' }).select('id').maybeSingle();
 
   try {
-    // V1 expects auth.users uuid. Non-uuid ids only succeed on legacy text-PK tables.
     if (!isUuid(id)) {
       console.warn(
-        '[profilesService] profiles.id is not an auth uuid — attempting legacy upsert. Live V1 requires verifyOtp session.'
+        '[profilesService] profiles.id is not an auth uuid — attempting legacy upsert. Live V1 requires verifyOtp session.',
+        { id }
       );
     }
 
-    let payload = fullRow;
+    // 1) Lean V1 allowlist only (no list_bucket / null junk)
+    let payload = { ...v1 };
     let { data, error } = await runUpsert(payload);
 
-    // Soft-compat: strip unknown columns (often `age`) until schema accepts the row
+    // 2) Schema-cache soft strip (e.g. missing `age`)
     let guard = 0;
-    while (error && isSchemaCacheError(error) && guard < 8) {
+    while (error && isSchemaCacheError(error) && guard < 6) {
       guard += 1;
       const missing = extractMissingColumn(error);
-      if (missing && missing in payload) {
+      logUpsertFailure(`schema-strip-${guard}${missing ? `:${missing}` : ''}`, error, payload);
+      if (missing && missing in payload && missing !== 'id') {
         payload = omitKeys(payload, [missing]);
-      } else if (guard === 1) {
-        // First fallback: lean V1 (still omits null age)
-        payload = { ...v1Row };
       } else if ('age' in payload) {
         payload = omitKeys(payload, ['age']);
       } else {
-        // Drop common soft-compat extras if the error didn't name a column
-        payload = omitKeys(payload, [
-          'mobile',
-          'location',
-          'sport_interests',
-          'display_name',
-          'handle',
-          'sport',
-          'city',
-          'full_name',
-          'primary_sport',
-          'updated_at',
-        ]);
-        if (Object.keys(payload).length <= 2) break;
+        break;
       }
+      if (!payload.id) break;
       ({ data, error } = await runUpsert(payload));
     }
 
-    if (error) throw error;
+    if (error) {
+      logUpsertFailure('v1-upsert', error, payload);
+      throw error;
+    }
+
+    // 3) Best-effort soft-compat patch (never fails registration)
+    const softPayload = compactProfilePayload({ id: data?.id || id, ...soft });
+    if (Object.keys(softPayload).length > 1) {
+      const softResult = await runUpsert(softPayload);
+      if (softResult.error) {
+        // Strip unknown soft keys once; ignore residual soft failures
+        let softRow = softPayload;
+        const miss = extractMissingColumn(softResult.error);
+        if (miss && miss !== 'id' && miss in softRow) {
+          softRow = omitKeys(softRow, [miss]);
+          const retry = await runUpsert(softRow);
+          if (retry.error) {
+            logUpsertFailure('soft-compat', softResult.error, softPayload);
+          }
+        } else {
+          logUpsertFailure('soft-compat', softResult.error, softPayload);
+        }
+      }
+    }
+
     return { ok: true, fromCloud: true, id: data?.id || id, error: null };
   } catch (error) {
-    console.warn('[profilesService] upsertRegisteredProfile:', error?.message || error);
+    logUpsertFailure('catch', error, v1);
     return { ok: false, fromCloud: false, id, error };
   }
 }
