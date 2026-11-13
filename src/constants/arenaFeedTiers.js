@@ -40,6 +40,7 @@ export function resolveArenaFeedTier(item) {
   if (
     type === 'group_battle' ||
     mode === 'BATTLE_REWIND' ||
+    mode === 'BAWAAL_BATTLE' ||
     explicit === 'battle'
   ) {
     return 'group_battle';
@@ -47,6 +48,7 @@ export function resolveArenaFeedTier(item) {
   if (
     type === 'pro_faceoff' ||
     type === 'faceoff' ||
+    mode === 'FACEOFF' ||
     /faceoff/i.test(String(item.title || ''))
   ) {
     return 'pro_faceoff';
@@ -55,6 +57,7 @@ export function resolveArenaFeedTier(item) {
     type === 'war_cry' ||
     type === 'war_cry_live' ||
     mode === 'WAR_CRY' ||
+    mode === 'BATTLE_BAWAAL' ||
     /war\s*cry/i.test(String(item.title || ''))
   ) {
     return 'war_cry_live';
@@ -65,7 +68,7 @@ export function resolveArenaFeedTier(item) {
     type === 'battle_thread' ||
     item.isOpenChallenge ||
     item._fromArenaChallenges ||
-    mode === 'BATTLE_BAWAAL' ||
+    mode === 'DARK_ARENA' ||
     status === 'OPEN' ||
     explicit === 'dark_arena'
   ) {

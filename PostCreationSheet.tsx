@@ -59,7 +59,13 @@ function yieldToUI(): Promise<void> {
 export type CreationMode =
   | 'SPARKS'
   | 'JOSH'
+  | 'BAWAAL_BATTLE'
+  | 'DARK_ARENA'
+  | 'FACEOFF'
+  | 'WAR_CRY'
+  /** @deprecated Prefer BAWAAL_BATTLE */
   | 'BATTLE_REWIND'
+  /** @deprecated Prefer WAR_CRY */
   | 'BATTLE_BAWAAL';
 
 export const SPARTY_TAGLINES = [
@@ -135,22 +141,32 @@ const ACCENT = '#FF6600';
 const SHEET_BG = '#000000';
 
 const MODE_DISPLAY: Record<CreationMode, string> = {
-  SPARKS: '⚡ SPARKS',
-  JOSH: '🔥 JOSH',
-  BATTLE_REWIND: '🥊 BATTLE REWIND',
-  BATTLE_BAWAAL: '⚔️ BATTLE BAWAAL',
+  SPARKS: 'SPARKS',
+  JOSH: 'JOSH',
+  BAWAAL_BATTLE: 'BAWAAL BATTLE',
+  DARK_ARENA: 'DARK ARENA',
+  FACEOFF: 'FACEOFF',
+  WAR_CRY: 'WAR CRY',
+  BATTLE_REWIND: 'BAWAAL BATTLE',
+  BATTLE_BAWAAL: 'WAR CRY',
 };
 
 function headerForMode(mode: CreationMode): string {
   switch (mode) {
     case 'SPARKS':
-      return '⚡ Publish Spark (24h Story)';
+      return 'Publish Spark (24h Story)';
     case 'JOSH':
-      return '🔥 Publish Bawaal Josh Reel';
+      return 'Publish Bawaal Josh Reel';
+    case 'BAWAAL_BATTLE':
     case 'BATTLE_REWIND':
-      return '🥊 Publish Battle Rewind Challenge';
+      return 'Publish Bawaal Battle (Group Challenge)';
+    case 'DARK_ARENA':
+      return 'Publish Dark Arena Challenge';
+    case 'FACEOFF':
+      return 'Publish Faceoff Challenge';
+    case 'WAR_CRY':
     case 'BATTLE_BAWAAL':
-      return '⚔️ Battle Bawaal (Live 1v1)';
+      return 'War Cry (1v1 Live Challenge)';
     default:
       return 'Publish to BAWAAL';
   }
@@ -162,8 +178,14 @@ function titlePlaceholder(mode: CreationMode): string {
       return 'e.g., Who wants this heat?';
     case 'JOSH':
       return 'e.g., Brutal 150kg PB Deadlift';
+    case 'BAWAAL_BATTLE':
     case 'BATTLE_REWIND':
-      return 'e.g., 50 Clapper Pushups Challenge';
+      return 'e.g., Squad 50 Clapper Pushups';
+    case 'DARK_ARENA':
+      return 'e.g., Open Call — 100 Pushups';
+    case 'FACEOFF':
+      return 'e.g., Answer this challenge';
+    case 'WAR_CRY':
     case 'BATTLE_BAWAAL':
       return 'e.g., Live 100 Pushups Sprint';
     default:
@@ -263,9 +285,15 @@ export async function dispatchToFeeds(
     return { ...payload, title, ...mediaMeta, feedTarget: 'ARENA', newPost };
   }
 
-  if (payload.mode === 'BATTLE_REWIND') {
+  if (
+    payload.mode === 'BATTLE_REWIND' ||
+    payload.mode === 'BAWAAL_BATTLE' ||
+    payload.mode === 'DARK_ARENA' ||
+    payload.mode === 'FACEOFF'
+  ) {
+    const battleMode = payload.mode === 'BATTLE_REWIND' ? 'BAWAAL_BATTLE' : payload.mode;
     const battleCard = pushBattleChallenge({
-      id: `rewind-${timestamp}`,
+      id: `battle-${battleMode.toLowerCase()}-${timestamp}`,
       sport: resolvePostSport(payload, 'GYM'),
       title,
       target: title,
@@ -279,13 +307,20 @@ export async function dispatchToFeeds(
       timeLimit: safeNum(payload.timeLimitSec, 30),
       timeLimitSec: safeNum(payload.timeLimitSec, 30),
       timestamp,
-      source: 'BATTLE_REWIND',
+      source: battleMode,
+      mode: battleMode,
+      tier:
+        battleMode === 'DARK_ARENA'
+          ? 'dark_arena'
+          : battleMode === 'FACEOFF'
+            ? 'pro_faceoff'
+            : 'group_battle',
       isHotFeature: false,
     });
 
     const newPost: FeedPostCard = {
-      id: safeStr(battleCard?.id, `rewind-${timestamp}`),
-      mode: 'BATTLE_REWIND',
+      id: safeStr(battleCard?.id, `battle-${timestamp}`),
+      mode: battleMode,
       ...mediaMeta,
       title,
       targetReps: safeNum(payload.targetReps, 50),
@@ -299,9 +334,9 @@ export async function dispatchToFeeds(
     return { ...payload, title, ...mediaMeta, feedTarget: 'BATTLES', newPost };
   }
 
-  if (payload.mode === 'BATTLE_BAWAAL') {
+  if (payload.mode === 'BATTLE_BAWAAL' || payload.mode === 'WAR_CRY') {
     const hotCard = pushHotFeatureBattle({
-      id: `live-bawaal-${timestamp}`,
+      id: `live-warcry-${timestamp}`,
       challengeTitle: title,
       title,
       target: title,
@@ -316,12 +351,14 @@ export async function dispatchToFeeds(
       timestamp,
       status: 'LIVE',
       isHotFeature: true,
-      source: 'BATTLE_BAWAAL',
+      source: 'WAR_CRY',
+      mode: 'WAR_CRY',
+      tier: 'war_cry_live',
     });
 
     const newPost: FeedPostCard = {
-      id: safeStr(hotCard?.id, `live-bawaal-${timestamp}`),
-      mode: 'BATTLE_BAWAAL',
+      id: safeStr(hotCard?.id, `live-warcry-${timestamp}`),
+      mode: 'WAR_CRY',
       ...mediaMeta,
       title,
       targetReps: safeNum(payload.targetReps, 50),
@@ -446,7 +483,12 @@ function PostCreationSheet({
 
   const showTaglines = mode === 'SPARKS' || mode === 'JOSH';
   const showBattleFields =
-    mode === 'BATTLE_REWIND' || mode === 'BATTLE_BAWAAL';
+    mode === 'BATTLE_REWIND' ||
+    mode === 'BAWAAL_BATTLE' ||
+    mode === 'DARK_ARENA' ||
+    mode === 'FACEOFF' ||
+    mode === 'BATTLE_BAWAAL' ||
+    mode === 'WAR_CRY';
 
   const stopMedia = useCallback(() => {
     try {
@@ -553,7 +595,7 @@ function PostCreationSheet({
       setFormError('Please give your post a quick title!');
       return;
     }
-    if (!videoUri && mode !== 'BATTLE_BAWAAL') {
+    if (!videoUri && mode !== 'BATTLE_BAWAAL' && mode !== 'WAR_CRY') {
       setFormError('Record a video before posting.');
       return;
     }
@@ -655,7 +697,8 @@ function PostCreationSheet({
       let publicCloudUrl: string | null = null;
 
       // Modes with a clip MUST get a cloud HTTPS URL — never save a broken local-only post
-      const requiresCloudVideo = Boolean(localVideoUri) && mode !== 'BATTLE_BAWAAL';
+      const requiresCloudVideo =
+        Boolean(localVideoUri) && mode !== 'BATTLE_BAWAAL' && mode !== 'WAR_CRY';
 
       if (localVideoUri && isRemoteHttpsUri(localVideoUri)) {
         publicCloudUrl =

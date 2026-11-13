@@ -26,6 +26,7 @@ import {
   Image,
   InteractionManager,
   Platform,
+  ScrollView,
 } from 'react-native';
 import {
   abortWebClipRecording,
@@ -83,10 +84,15 @@ export type { CreationMode, PostCreationPayload };
 
 /** Live lens chrome stays high-contrast white; hub / sheets use brand orange. */
 const ACCENT = '#FFFFFF';
-const BRAND_ORANGE = '#FF6600';
+const BRAND_ORANGE = '#FF5500';
 const SHUTTER_RED = '#FF3B30';
 const SHEET_BG = '#000000';
 const TIME_OPTIONS = [5, 15, 30, 60] as const;
+
+/** Live 1v1 setup — leaves the lens for challenge / live form. */
+function isLiveHubMode(mode: CreationMode): boolean {
+  return mode === 'WAR_CRY' || mode === 'BATTLE_BAWAAL';
+}
 const PILL_HIDE_MS = 5000;
 const MIN_TRIM_SPAN = 0.5;
 const DOT_COUNT = 28;
@@ -126,29 +132,47 @@ export type UniversalCameraProps = {
 type HubMode = {
   id: CreationMode;
   title: string;
+  tag: string;
   subtitle: string;
 };
 
 const HUB_MODES: HubMode[] = [
   {
     id: 'SPARKS',
-    title: '⚡ SPARKS',
+    title: 'SPARKS',
+    tag: 'Stories',
     subtitle: '30s max · Story heat that vanishes in 24h',
   },
   {
     id: 'JOSH',
-    title: '🔥 JOSH',
-    subtitle: '60s default · Unlock 3 min (180s) with coins',
+    title: 'JOSH',
+    tag: 'Reels',
+    subtitle: '60s default · Unlock up to 3 min (180s) with coins',
   },
   {
-    id: 'BATTLE_REWIND',
-    title: '🥊 BATTLE REWIND',
-    subtitle: '60s max · Async recorded challenge',
+    id: 'BAWAAL_BATTLE',
+    title: 'BAWAAL BATTLE',
+    tag: 'Group Challenge',
+    subtitle: 'Group challenge mode for multiple participants',
   },
   {
-    id: 'BATTLE_BAWAAL',
-    title: '⚔️ BATTLE BAWAAL',
-    subtitle: 'Set challenge details · then launch live arena',
+    id: 'DARK_ARENA',
+    title: 'DARK ARENA',
+    tag: 'Open Challenge',
+    subtitle: 'Anyone can post a challenge, anyone can participate',
+  },
+  {
+    id: 'FACEOFF',
+    title: 'FACEOFF',
+    tag: 'Response Challenge',
+    subtitle:
+      'Athlete records a challenge; other athletes or challengers can answer',
+  },
+  {
+    id: 'WAR_CRY',
+    title: 'WAR CRY',
+    tag: '1v1 Live Challenge',
+    subtitle: '1v1 real-time live challenge mode',
   },
 ];
 
@@ -158,8 +182,12 @@ function modeCeiling(mode: CreationMode, joshUnlocked3m: boolean): number {
       return 30;
     case 'JOSH':
       return joshUnlocked3m ? 180 : 60;
+    case 'BAWAAL_BATTLE':
     case 'BATTLE_REWIND':
+    case 'DARK_ARENA':
+    case 'FACEOFF':
       return 60;
+    case 'WAR_CRY':
     case 'BATTLE_BAWAAL':
       return 0;
     default:
@@ -173,7 +201,10 @@ function defaultDuration(mode: CreationMode): number {
       return 15;
     case 'JOSH':
       return 30;
+    case 'BAWAAL_BATTLE':
     case 'BATTLE_REWIND':
+    case 'DARK_ARENA':
+    case 'FACEOFF':
       return 30;
     default:
       return 15;
@@ -309,54 +340,67 @@ function BawaalHubDrawer({
           style={hubStyles.logo}
           resizeMode="contain"
         />
-        <Text style={hubStyles.title}>BAWAAL Hub</Text>
-        <Text style={hubStyles.sub}>Pick your creation mode</Text>
+        <Text style={hubStyles.title}>BAWAAL HUB</Text>
+        <Text style={hubStyles.sub}>Pick your creation mode — tap to arm the lens</Text>
 
-        {HUB_MODES.map((m) => (
-          <TouchableOpacity
-            key={m.id}
-            style={hubStyles.card}
-            activeOpacity={0.88}
-            onPress={() => onSelect(m.id)}
-          >
-            <Text style={hubStyles.cardTitle}>{m.title}</Text>
-            <Text style={hubStyles.cardSub}>{m.subtitle}</Text>
-            {m.id === 'JOSH' && (
-              <TouchableOpacity
-                style={hubStyles.joshChip}
-                onPress={onToggleJosh3m}
-              >
-                <Text style={hubStyles.joshChipText}>
-                  {joshUnlocked3m
-                    ? '⚡ 3 MIN UNLOCKED'
-                    : '🔒 Unlock 3 min (10 coins)'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        ))}
-
-        <TouchableOpacity
-          style={[
-            hubStyles.card,
-            hubStyles.galleryCard,
-            galleryDisabled && hubStyles.galleryCardDisabled,
-          ]}
-          activeOpacity={0.88}
-          disabled={galleryDisabled}
-          onPress={() => {
-            if (galleryDisabled) return;
-            onClose();
-            // Let hub modal dismiss before launching the system picker
-            setTimeout(() => onPickGallery(), 220);
-          }}
-          accessibilityLabel="Pick video from gallery"
+        <ScrollView
+          style={hubStyles.modeScroll}
+          contentContainerStyle={hubStyles.modeScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={hubStyles.cardTitle}>Gallery</Text>
-          <Text style={hubStyles.cardSub}>
-            Select clips with checkboxes — delete or use for a post
-          </Text>
-        </TouchableOpacity>
+          <View style={hubStyles.cardGrid}>
+            {HUB_MODES.map((m) => (
+              <TouchableOpacity
+                key={m.id}
+                style={hubStyles.card}
+                activeOpacity={0.88}
+                onPress={() => onSelect(m.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`${m.title} — ${m.tag}`}
+              >
+                <View style={hubStyles.cardHeader}>
+                  <Text style={hubStyles.cardTitle}>{m.title}</Text>
+                  <Text style={hubStyles.cardTag}>{m.tag}</Text>
+                </View>
+                <Text style={hubStyles.cardSub}>{m.subtitle}</Text>
+                {m.id === 'JOSH' ? (
+                  <TouchableOpacity
+                    style={hubStyles.joshChip}
+                    onPress={onToggleJosh3m}
+                  >
+                    <Text style={hubStyles.joshChipText}>
+                      {joshUnlocked3m
+                        ? '3 MIN UNLOCKED'
+                        : 'Unlock 3 min (10 coins)'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={[
+              hubStyles.card,
+              hubStyles.galleryCard,
+              galleryDisabled && hubStyles.galleryCardDisabled,
+            ]}
+            activeOpacity={0.88}
+            disabled={galleryDisabled}
+            onPress={() => {
+              if (galleryDisabled) return;
+              onClose();
+              setTimeout(() => onPickGallery(), 220);
+            }}
+            accessibilityLabel="Pick video from gallery"
+          >
+            <Text style={hubStyles.cardTitle}>GALLERY</Text>
+            <Text style={hubStyles.cardSub}>
+              Select clips with checkboxes — delete or use for a post
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -365,16 +409,17 @@ function BawaalHubDrawer({
 const hubStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+    backgroundColor: 'rgba(0,0,0,0.85)',
   },
   sheet: {
-    backgroundColor: SHEET_BG,
+    backgroundColor: '#000000',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingTop: 10,
-    borderTopWidth: 1,
+    borderTopWidth: 2,
     borderColor: BRAND_ORANGE,
+    maxHeight: '78%',
   },
   handle: {
     alignSelf: 'center',
@@ -386,52 +431,77 @@ const hubStyles = StyleSheet.create({
   },
   logo: { width: 130, height: 44, alignSelf: 'center', marginBottom: 4 },
   title: {
-    color: BRAND_ORANGE,
-    fontSize: 18,
+    color: '#FFFFFF',
+    fontSize: 20,
     fontWeight: '900',
     textAlign: 'center',
-    letterSpacing: 0.6,
+    letterSpacing: 1.2,
   },
   sub: {
-    color: '#A3A3A3',
+    color: 'rgba(255,255,255,0.55)',
     fontSize: 12,
     textAlign: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  modeScroll: {
+    flexGrow: 0,
+  },
+  modeScrollContent: {
+    paddingBottom: 8,
+  },
+  cardGrid: {
+    gap: 10,
   },
   card: {
-    backgroundColor: 'transparent',
+    backgroundColor: '#0A0A0A',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 102, 0, 0.45)',
+    borderWidth: 1.5,
+    borderColor: BRAND_ORANGE,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 10,
+    paddingVertical: 14,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   cardTitle: {
-    color: BRAND_ORANGE,
-    fontSize: 15,
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '900',
+    letterSpacing: 0.8,
+    flexShrink: 1,
+  },
+  cardTag: {
+    color: BRAND_ORANGE,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   cardSub: {
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.62)',
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 6,
     lineHeight: 17,
   },
   joshChip: {
     alignSelf: 'flex-start',
-    marginTop: 8,
-    backgroundColor: 'rgba(255, 102, 0, 0.12)',
+    marginTop: 10,
+    backgroundColor: 'rgba(255, 85, 0, 0.14)',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 102, 0, 0.45)',
+    borderColor: BRAND_ORANGE,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   joshChipText: { color: BRAND_ORANGE, fontSize: 11, fontWeight: '800' },
   galleryCard: {
     borderStyle: 'dashed' as const,
-    marginTop: 4,
+    marginTop: 10,
+    borderColor: 'rgba(255, 85, 0, 0.55)',
   },
   galleryCardDisabled: {
     opacity: 0.4,
@@ -810,11 +880,14 @@ export default function UniversalCamera({
   const rawBootMode: CreationMode =
     initialMode ||
     (respondParams.initialMode as CreationMode | undefined) ||
-    (isChallengeResponse ? 'BATTLE_REWIND' : undefined) ||
+    (isChallengeResponse ? 'FACEOFF' : undefined) ||
     'SPARKS';
-  // Never boot camera into BATTLE_BAWAAL — that route is the challenge form
-  const bootMode: CreationMode =
-    rawBootMode === 'BATTLE_BAWAAL' ? 'SPARKS' : rawBootMode;
+  // Never boot camera into War Cry / live setup — that route is the challenge form
+  const bootMode: CreationMode = isLiveHubMode(rawBootMode)
+    ? 'SPARKS'
+    : rawBootMode === 'BATTLE_REWIND'
+      ? 'BAWAAL_BATTLE'
+      : rawBootMode;
 
   const challengeMaxDuration = Math.max(
     5,
@@ -889,7 +962,7 @@ export default function UniversalCamera({
   );
 
   const availableTimes = useMemo((): number[] => {
-    if (mode === 'BATTLE_BAWAAL') return [];
+    if (isLiveHubMode(mode)) return [];
     const base: number[] = TIME_OPTIONS.filter((t) => t <= ceiling);
     if (mode === 'JOSH' && joshUnlocked3m && !base.includes(180)) {
       return [...base, 180];
@@ -929,7 +1002,7 @@ export default function UniversalCamera({
   }, [fadeTimePill]);
 
   const revealTimePill = useCallback(() => {
-    if (mode === 'BATTLE_BAWAAL' || isRecording) return;
+    if (isLiveHubMode(mode) || isRecording) return;
     fadeTimePill(false);
     scheduleHidePill();
   }, [mode, isRecording, fadeTimePill, scheduleHidePill]);
@@ -956,7 +1029,7 @@ export default function UniversalCamera({
 
   useEffect(() => {
     scheduleHidePill();
-    if (rawBootMode === 'BATTLE_BAWAAL') {
+    if (isLiveHubMode(rawBootMode)) {
       const t = setTimeout(() => {
         navigation?.navigate?.('BattleChallengeForm');
       }, 80);
@@ -996,7 +1069,7 @@ export default function UniversalCamera({
   /** Smooth continuous zoom — enabled before and during recording. */
   const onPinchGestureEvent = useCallback(
     (e: PinchGestureHandlerGestureEvent) => {
-      if (mode === 'BATTLE_BAWAAL') return;
+      if (isLiveHubMode(mode)) return;
       const scale = e.nativeEvent.scale;
       if (!Number.isFinite(scale) || scale <= 0) return;
       // scale starts at 1 each gesture; map onto CameraView 0–1 with light acceleration
@@ -1325,17 +1398,17 @@ export default function UniversalCamera({
   const handleHubSelect = useCallback(
     (next: CreationMode) => {
       setHubOpen(false);
-      // CRITICAL: Battle Bawaal opens challenge setup — never a camera mode
-      if (next === 'BATTLE_BAWAAL') {
+      // WAR CRY / legacy live — leave lens for live challenge setup
+      if (isLiveHubMode(next)) {
         openBattleChallengeForm();
         return;
       }
       setMode(next);
       const nextDur = Math.min(
         defaultDuration(next),
-        modeCeiling(next, joshUnlocked3m)
+        modeCeiling(next, joshUnlocked3m) || defaultDuration(next)
       );
-      setSelectedDuration(nextDur);
+      setSelectedDuration(nextDur || defaultDuration(next));
       fadeTimePill(false);
       scheduleHidePill();
     },
@@ -1353,7 +1426,7 @@ export default function UniversalCamera({
   );
 
   const startRecording = useCallback(async () => {
-    if (mode === 'BATTLE_BAWAAL') {
+    if (isLiveHubMode(mode)) {
       openBattleChallengeForm();
       return;
     }
@@ -1649,7 +1722,7 @@ export default function UniversalCamera({
   ]);
 
   const handleShutter = useCallback(() => {
-    if (mode === 'BATTLE_BAWAAL') {
+    if (isLiveHubMode(mode)) {
       openBattleChallengeForm();
       return;
     }
@@ -1729,7 +1802,7 @@ export default function UniversalCamera({
       isRecording ||
       isFinalizingClip ||
       isProcessing ||
-      mode === 'BATTLE_BAWAAL'
+      isLiveHubMode(mode)
     ) {
       return;
     }
@@ -1815,7 +1888,7 @@ export default function UniversalCamera({
       ? challengeTitle
         ? `RESPOND · ${challengeTitle}`.slice(0, 36)
         : 'RESPOND'
-      : HUB_MODES.find((m) => m.id === mode)?.title || '⚡ SPARKS';
+      : HUB_MODES.find((m) => m.id === mode)?.title || 'SPARKS';
 
   const handlePublishModalCancel = useCallback(() => {
     // Cancel — fully clear modal/camera hold then leave (no orphan black layers)
@@ -2109,7 +2182,7 @@ export default function UniversalCamera({
 
       {/* Camera stays mounted after stop — prevents black flash under publish modal */}
       <PinchGestureHandler
-        enabled={mode !== 'BATTLE_BAWAAL' && !captureHold}
+        enabled={!isLiveHubMode(mode) && !captureHold}
         onGestureEvent={onPinchGestureEvent}
         onHandlerStateChange={onPinchHandlerStateChange}
         minPointers={2}
@@ -2142,9 +2215,9 @@ export default function UniversalCamera({
           <Pressable
             style={styles.viewfinderTap}
             onPress={revealTimePill}
-            disabled={isRecording || captureHold || mode === 'BATTLE_BAWAAL'}
+            disabled={isRecording || captureHold || isLiveHubMode(mode)}
             pointerEvents={
-              isRecording || captureHold || mode === 'BATTLE_BAWAAL'
+              isRecording || captureHold || isLiveHubMode(mode)
                 ? 'none'
                 : 'auto'
             }
@@ -2188,12 +2261,12 @@ export default function UniversalCamera({
 
           <View style={styles.timerBadge}>
             <Text style={styles.timerText}>
-              {mode === 'BATTLE_BAWAAL'
-                ? '🔴 BATTLE BAWAAL'
+              {isLiveHubMode(mode)
+                ? 'WAR CRY LIVE'
                 : isFinalizingClip || isProcessing
-                  ? '⏳ SAVING…'
+                  ? 'SAVING…'
                   : isRecording
-                    ? `🔴 ${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
+                    ? `${formatClock(elapsedSec)} / ${formatClock(recordLimit)}`
                     : modeLabel}
             </Text>
           </View>
@@ -2225,7 +2298,7 @@ export default function UniversalCamera({
             { paddingBottom: Math.max(insets.bottom, 14) },
           ]}
         >
-          {mode !== 'BATTLE_BAWAAL' && showTimePill && (
+          {!isLiveHubMode(mode) && showTimePill && (
             <Animated.View
               style={[styles.timePill, { opacity: timePillOpacity }]}
             >
@@ -2262,7 +2335,7 @@ export default function UniversalCamera({
               style={[
                 styles.shutterInner,
                 isRecording && styles.shutterSquare,
-                mode === 'BATTLE_BAWAAL' && styles.shutterInnerLive,
+                isLiveHubMode(mode) && styles.shutterInnerLive,
               ]}
             />
           </TouchableOpacity>
@@ -2284,7 +2357,7 @@ export default function UniversalCamera({
         onClose={() => setHubOpen(false)}
         onSelect={handleHubSelect}
         onPickGallery={openDeviceGallery}
-        galleryDisabled={isRecording || mode === 'BATTLE_BAWAAL'}
+        galleryDisabled={isRecording || isLiveHubMode(mode)}
         joshUnlocked3m={joshUnlocked3m}
         onToggleJosh3m={() => setJoshUnlocked3m((v) => !v)}
       />
