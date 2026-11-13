@@ -226,7 +226,7 @@ function hubModeTitle(mode: CreationMode): string {
   return 'SPARKS';
 }
 
-/** HUD rule chip: selected duration / live rule for the active Hub mode. */
+/** HUD rule chip: mode contract + selected duration for the active Hub mode. */
 function hubModeRule(
   mode: CreationMode,
   selectedDuration: number,
@@ -234,9 +234,44 @@ function hubModeRule(
 ): string {
   if (isLiveHubMode(mode)) return 'LIVE 1v1';
   const secs = Math.max(1, Math.floor(selectedDuration || defaultDuration(mode)));
-  if (mode === 'SPARKS') return `${secs}s · 24h`;
-  if (mode === 'JOSH' && joshUnlocked3m) return `${secs}s · max 3m`;
-  return `${secs}s`;
+  switch (mode) {
+    case 'SPARKS':
+      return secs >= 30 ? '30s max' : `${secs}s · 30s max`;
+    case 'JOSH':
+      if (joshUnlocked3m) {
+        return secs === 60
+          ? '60s default · max 3m'
+          : `${secs}s · 60s default · max 3m`;
+      }
+      return secs === 60 ? '60s default' : `${secs}s · 60s default`;
+    case 'BAWAAL_BATTLE':
+    case 'BATTLE_REWIND':
+      return `${secs}s · group`;
+    case 'DARK_ARENA':
+      return `${secs}s · open`;
+    case 'FACEOFF':
+      return `${secs}s · respond`;
+    default:
+      return `${secs}s`;
+  }
+}
+
+type HubHandoff = {
+  mode: CreationMode;
+  title: string;
+  rule: string;
+};
+
+function buildHubHandoff(
+  mode: CreationMode,
+  selectedDuration: number,
+  joshUnlocked3m: boolean
+): HubHandoff {
+  return {
+    mode,
+    title: hubModeTitle(mode),
+    rule: hubModeRule(mode, selectedDuration, joshUnlocked3m),
+  };
 }
 
 const ABSOLUTE_FILL = {
@@ -927,6 +962,15 @@ export default function UniversalCamera({
       ? Math.min(challengeMaxDuration, modeCeiling(bootMode, false))
       : defaultDuration(bootMode)
   );
+  /**
+   * Explicit Hub → camera handoff. Once set (tap in BAWAAL Hub), HUD uses this
+   * mode/title/rule and never falls back to opener/respond route titles.
+   */
+  const [hubHandoff, setHubHandoff] = useState<HubHandoff | null>(() =>
+    isOpenerCapture || isChallengeResponse
+      ? null
+      : buildHubHandoff(bootMode, defaultDuration(bootMode), false)
+  );
   const [showTimePill, setShowTimePill] = useState(true);
   const [timePillOpacity] = useState(() => new Animated.Value(1));
 
@@ -1418,18 +1462,25 @@ export default function UniversalCamera({
 
   const handleHubSelect = useCallback(
     (next: CreationMode) => {
+      // Capture mode name + rules immediately, then close Hub → camera HUD
+      const nextDur = isLiveHubMode(next)
+        ? 0
+        : Math.min(
+            defaultDuration(next),
+            modeCeiling(next, joshUnlocked3m) || defaultDuration(next)
+          ) || defaultDuration(next);
+      const handoff = buildHubHandoff(next, nextDur || defaultDuration(next), joshUnlocked3m);
+      setHubHandoff(handoff);
+      setMode(next);
+      if (!isLiveHubMode(next)) {
+        setSelectedDuration(nextDur);
+      }
       setHubOpen(false);
       // WAR CRY / legacy live — leave lens for live challenge setup
       if (isLiveHubMode(next)) {
         openBattleChallengeForm();
         return;
       }
-      setMode(next);
-      const nextDur = Math.min(
-        defaultDuration(next),
-        modeCeiling(next, joshUnlocked3m) || defaultDuration(next)
-      );
-      setSelectedDuration(nextDur || defaultDuration(next));
       fadeTimePill(false);
       scheduleHidePill();
     },
@@ -1440,10 +1491,14 @@ export default function UniversalCamera({
     (sec: number) => {
       if (isRecording) return;
       setSelectedDuration(sec);
+      setHubHandoff((prev) => {
+        const activeMode = prev?.mode || mode;
+        return buildHubHandoff(activeMode, sec, joshUnlocked3m);
+      });
       fadeTimePill(false);
       scheduleHidePill();
     },
-    [isRecording, fadeTimePill, scheduleHidePill]
+    [isRecording, fadeTimePill, scheduleHidePill, mode, joshUnlocked3m]
   );
 
   const startRecording = useCallback(async () => {
@@ -1912,11 +1967,18 @@ export default function UniversalCamera({
       : hubModeTitle(mode);
 
   const modeHudText = useMemo(() => {
+    // Hub tap wins — keep selected mode object on the viewfinder after modal close
+    if (hubHandoff) {
+      const activeMode = hubHandoff.mode;
+      const rule = hubModeRule(activeMode, selectedDuration, joshUnlocked3m);
+      return `${hubModeTitle(activeMode)} • ${rule}`;
+    }
     if (isOpenerCapture || isChallengeResponse) {
       return `${modeLabel} • ${Math.max(1, Math.floor(recordLimit))}s`;
     }
     return `${hubModeTitle(mode)} • ${hubModeRule(mode, selectedDuration, joshUnlocked3m)}`;
   }, [
+    hubHandoff,
     isOpenerCapture,
     isChallengeResponse,
     modeLabel,
@@ -2319,8 +2381,8 @@ export default function UniversalCamera({
           </View>
         </View>
 
-        {/* Active Hub mode HUD — stays on while framing + recording */}
-        {!showPreview && !showPostSheet && !hubOpen ? (
+        {/* Active Hub mode HUD — updates on Hub tap; stays while framing + recording */}
+        {!showPreview && !showPostSheet ? (
           <View
             pointerEvents="none"
             style={[
