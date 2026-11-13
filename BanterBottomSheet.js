@@ -18,19 +18,65 @@ import {
   fetchVideoComments,
   postVideoComment,
 } from './src/services/videoSocialService';
+import { BawaalEmoji, hasBawaalEmoji, SKELETON_EMOJIS } from './components/BawaalEmoji';
 
 const BG = '#000000';
 const CARD = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 
-const GIF_STICKERS = ['🔥', '💀', '🐐', '💪', '🚀', '😂', '⚡', '🏆'];
+/** Horizontal Banter reaction tray — custom skeleton keys. */
+const BANTER_REACTIONS = Object.keys(SKELETON_EMOJIS);
+
+const BAWAAL_MARKER_RE = /\[bawaal:([a-z0-9_]+)\]/i;
 
 const DEMO_BANTER = [
-  { id: 'b1', handle: '@Neha_Lift', verified: true, text: 'That pull was filthy 🔥', gif: '🔥' },
-  { id: 'b2', handle: '@Dev_Snatch', verified: false, text: 'GIF energy only', gif: '💀' },
-  { id: 'b3', handle: '@Mia_Torque', verified: true, text: 'Send the angle next time', gif: '🐐' },
+  {
+    id: 'b1',
+    handle: '@Neha_Lift',
+    verified: true,
+    text: 'That pull was filthy',
+    emotion: 'head_on_fire',
+  },
+  {
+    id: 'b2',
+    handle: '@Dev_Snatch',
+    verified: false,
+    text: 'GIF energy only',
+    emotion: 'laughing1',
+  },
+  {
+    id: 'b3',
+    handle: '@Mia_Torque',
+    verified: true,
+    text: 'Send the angle next time',
+    emotion: 'gold_cup',
+  },
 ];
+
+function resolveBanterEmotion(item) {
+  if (!item) return null;
+  const candidates = [item.emotion, item.reaction, item.gif, item.emoji];
+  for (const key of candidates) {
+    if (key && hasBawaalEmoji(key)) return String(key).toLowerCase();
+  }
+  const match = String(item.text || '').match(BAWAAL_MARKER_RE);
+  if (match && hasBawaalEmoji(match[1])) return match[1].toLowerCase();
+  return null;
+}
+
+function displayBanterText(text, emotion) {
+  const cleaned = String(text || '')
+    .replace(BAWAAL_MARKER_RE, '')
+    .trim();
+  if (cleaned) return cleaned;
+  return emotion ? 'reacted' : '';
+}
+
+function withResolvedEmotion(row) {
+  const emotion = resolveBanterEmotion(row);
+  return emotion ? { ...row, emotion } : row;
+}
 
 /**
  * In-place banter / GIF comment sheet — does not switch to immersive reel view.
@@ -50,9 +96,9 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
       const live = await fetchVideoComments(reel);
       if (!alive) return;
       if (live.length) {
-        setBanter(live);
+        setBanter(live.map(withResolvedEmotion));
       } else if (reel?.banter?.length) {
-        setBanter(reel.banter);
+        setBanter(reel.banter.map(withResolvedEmotion));
       } else {
         setBanter(DEMO_BANTER);
       }
@@ -67,22 +113,40 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
     ? reel.author
     : `@${String(reel?.author || 'athlete').replace(/^@/, '')}`;
 
-  const sendBanter = async (gif) => {
-    const text = draft.trim() || (gif ? `reacted ${gif}` : '');
-    if (!text && !gif) return;
+  const sendBanter = async (emotionKey) => {
+    const emotion =
+      emotionKey && hasBawaalEmoji(emotionKey) ? String(emotionKey).toLowerCase() : null;
+    const draftText = draft.trim();
+    const text =
+      draftText ||
+      (emotion ? `[bawaal:${emotion}]` : '');
+    if (!text && !emotion) return;
+
     const optimistic = {
       id: `local-${Date.now()}`,
       handle: '@you',
-      text: text || 'reacted',
-      gif: gif || '💬',
+      text: draftText || (emotion ? 'reacted' : 'reacted'),
+      emotion,
+      gif: emotion || null,
     };
     setBanter((prev) => [optimistic, ...prev]);
     setDraft('');
-    const posted = await postVideoComment(reel, text || gif || '💬');
+
+    const posted = await postVideoComment(
+      reel,
+      draftText || (emotion ? `[bawaal:${emotion}]` : '💬')
+    );
     if (posted?.comment?.id) {
       setBanter((prev) =>
         prev.map((row) =>
-          row.id === optimistic.id ? { ...optimistic, ...posted.comment } : row
+          row.id === optimistic.id
+            ? withResolvedEmotion({
+                ...optimistic,
+                ...posted.comment,
+                emotion: optimistic.emotion || resolveBanterEmotion(posted.comment),
+                gif: optimistic.emotion || posted.comment.gif,
+              })
+            : row
         )
       );
     }
@@ -129,14 +193,16 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.gifTray}
           >
-            {GIF_STICKERS.map((emoji) => (
+            {BANTER_REACTIONS.map((key) => (
               <TouchableOpacity
-                key={emoji}
+                key={key}
                 style={styles.gifChip}
-                onPress={() => sendBanter(emoji)}
+                onPress={() => sendBanter(key)}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`React with ${key}`}
               >
-                <Text style={styles.gifChipText}>{emoji}</Text>
+                <BawaalEmoji name={key} size={26} style={styles.chipEmoji} />
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -145,21 +211,29 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
             {loading && banter.length === 0 ? (
               <Text style={styles.rowText}>Loading banter…</Text>
             ) : null}
-            {banter.map((c) => (
-              <View key={c.id} style={styles.row}>
-                <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
-                <View style={styles.rowBody}>
-                  <UserHandle
-                    handle={c.handle}
-                    verified={c.verified ?? isHandleVerified(c.handle)}
-                    size={11}
-                    color={WHITE}
-                    badgeSize={12}
-                  />
-                  <Text style={styles.rowText}>{c.text}</Text>
+            {banter.map((c) => {
+              const emotion = resolveBanterEmotion(c);
+              const body = displayBanterText(c.text, emotion);
+              return (
+                <View key={c.id} style={styles.row}>
+                  {emotion ? (
+                    <BawaalEmoji name={emotion} size={22} style={styles.rowEmoji} />
+                  ) : (
+                    <Text style={styles.rowGif}>{c.gif || '💬'}</Text>
+                  )}
+                  <View style={styles.rowBody}>
+                    <UserHandle
+                      handle={c.handle}
+                      verified={c.verified ?? isHandleVerified(c.handle)}
+                      size={11}
+                      color={WHITE}
+                      badgeSize={12}
+                    />
+                    {body ? <Text style={styles.rowText}>{body}</Text> : null}
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </ScrollView>
 
           <View style={styles.compose}>
@@ -252,7 +326,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-  gifChipText: { fontSize: 18 },
+  chipEmoji: {
+    marginHorizontal: 0,
+  },
   list: { maxHeight: 180, marginBottom: 8 },
   row: {
     flexDirection: 'row',
@@ -261,6 +337,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   rowGif: { fontSize: 16, marginTop: 1 },
+  rowEmoji: {
+    marginTop: 1,
+    marginHorizontal: 0,
+  },
   rowBody: { flex: 1 },
   rowText: { color: WHITE, fontSize: 12, marginTop: 1 },
   compose: {
