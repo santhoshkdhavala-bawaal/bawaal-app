@@ -12,7 +12,7 @@ import {
 import { subscribeVideoSocial } from '../services/videoSocialService';
 
 const VIDEOS_WITH_PROFILES_SELECT =
-  '*, profiles(username, avatar_url, avatar_uri, belt_tier, primary_sport)';
+  '*, profiles(username, avatar_url, belt_tier, primary_sport)';
 
 /**
  * @param {{ category?: string, enabled?: boolean, limit?: number }} [opts]

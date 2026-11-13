@@ -11,7 +11,7 @@ import {
 import { fetchVideoSocialCounts } from './videoSocialService';
 
 const VIDEOS_WITH_PROFILES_SELECT =
-  '*, profiles(username, avatar_url, avatar_uri, belt_tier, primary_sport)';
+  '*, profiles(username, avatar_url, belt_tier, primary_sport)';
 
 /** Offline / cold-start Arena feed cards (api schema shape). */
 export const MOCK_ARENA_FEED = [
