@@ -11,7 +11,7 @@ import {
 import { fetchVideoSocialCounts } from './videoSocialService';
 
 const VIDEOS_WITH_PROFILES_SELECT =
-  '*, profiles(username, avatar_url, belt_tier, primary_sport)';
+  '*, profiles(username, avatar_url)';
 
 /** Offline / cold-start Arena feed cards (api schema shape). */
 export const MOCK_ARENA_FEED = [
@@ -64,6 +64,7 @@ function profileHandle(profile) {
 
 function profileAvatar(profile) {
   if (!profile || typeof profile !== 'object') return null;
+  // Canonical profiles column is `avatar_url` (avatar_uri is legacy soft-read only)
   return profile.avatar_url || profile.avatar_uri || null;
 }
 

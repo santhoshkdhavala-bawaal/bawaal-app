@@ -11,7 +11,7 @@
  * @property {string} id — uuid referencing auth.users(id)
  * @property {string|null} username — unique handle (no leading @)
  * @property {string|null} real_name
- * @property {number|null} age
+ * @property {number|null} [age] — soft-optional; omitted from upsert when null / missing in schema cache
  * @property {string|null} gender
  * @property {string|null} email — unique
  * @property {string|null} phone — unique E.164
@@ -32,7 +32,10 @@ export const BAWAAL_BELT_TIERS = Object.freeze([
   'Gold',
 ]);
 
-/** Canonical V1 column names written on registration upsert. */
+/**
+ * Canonical V1 column names written on registration upsert.
+ * `age` is soft-optional — only sent when present; stripped on schema-cache miss.
+ */
 export const PROFILE_V1_COLUMNS = Object.freeze([
   'id',
   'username',

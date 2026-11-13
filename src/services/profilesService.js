@@ -20,6 +20,24 @@ function isSchemaCacheError(error) {
   );
 }
 
+/** Parse PostgREST "Could not find the 'age' column …" → `age`. */
+function extractMissingColumn(error) {
+  const msg = String(error?.message || error?.details || error?.hint || error || '');
+  const match =
+    msg.match(/Could not find the ['"]([a-z0-9_]+)['"] column/i) ||
+    msg.match(/column ['"]([a-z0-9_]+)['"] (?:does not exist|of)/i) ||
+    msg.match(/['"]([a-z0-9_]+)['"] (?:column of|was not found)/i);
+  return match?.[1] || null;
+}
+
+function omitKeys(row, keys) {
+  const next = { ...row };
+  (keys || []).forEach((key) => {
+    if (key in next) delete next[key];
+  });
+  return next;
+}
+
 function isUuid(value) {
   return UUID_RE.test(String(value || '').trim());
 }
@@ -90,15 +108,19 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
         : [];
   const ageRaw = userData.age;
   const ageNum = Number(ageRaw);
-  const age = Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
+  const age =
+    Number.isFinite(ageNum) && ageNum > 0 ? Math.round(ageNum) : null;
   const gender = userData.gender ? String(userData.gender) : null;
 
-  /** Canonical V1 row — matches ENSURE_PROFILES / PROFILE_V1_COLUMNS. */
+  /**
+   * Canonical V1 row — matches ENSURE_PROFILES / PROFILE_V1_COLUMNS.
+   * `age` is only included when present so missing-column schema caches stay quiet.
+   */
   const v1Row = {
     id,
     username,
     real_name: realName || null,
-    age,
+    ...(age != null ? { age } : {}),
     gender,
     email,
     phone,
@@ -125,6 +147,9 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
     updated_at: new Date().toISOString(),
   };
 
+  const runUpsert = (row) =>
+    supabase.from('profiles').upsert(row, { onConflict: 'id' }).select('id').maybeSingle();
+
   try {
     // V1 expects auth.users uuid. Non-uuid ids only succeed on legacy text-PK tables.
     if (!isUuid(id)) {
@@ -133,18 +158,39 @@ export async function upsertRegisteredProfile(userData = {}, authUser = null) {
       );
     }
 
-    let { data, error } = await supabase
-      .from('profiles')
-      .upsert(fullRow, { onConflict: 'id' })
-      .select('id')
-      .maybeSingle();
+    let payload = fullRow;
+    let { data, error } = await runUpsert(payload);
 
-    if (error && isSchemaCacheError(error)) {
-      ({ data, error } = await supabase
-        .from('profiles')
-        .upsert(v1Row, { onConflict: 'id' })
-        .select('id')
-        .maybeSingle());
+    // Soft-compat: strip unknown columns (often `age`) until schema accepts the row
+    let guard = 0;
+    while (error && isSchemaCacheError(error) && guard < 8) {
+      guard += 1;
+      const missing = extractMissingColumn(error);
+      if (missing && missing in payload) {
+        payload = omitKeys(payload, [missing]);
+      } else if (guard === 1) {
+        // First fallback: lean V1 (still omits null age)
+        payload = { ...v1Row };
+      } else if ('age' in payload) {
+        payload = omitKeys(payload, ['age']);
+      } else {
+        // Drop common soft-compat extras if the error didn't name a column
+        payload = omitKeys(payload, [
+          'mobile',
+          'location',
+          'sport_interests',
+          'display_name',
+          'handle',
+          'sport',
+          'city',
+          'full_name',
+          'primary_sport',
+          'list_bucket',
+          'updated_at',
+        ]);
+        if (Object.keys(payload).length <= 2) break;
+      }
+      ({ data, error } = await runUpsert(payload));
     }
 
     if (error) throw error;
@@ -178,7 +224,7 @@ function mapProfileRow(row) {
       : row.category || row.sport
         ? [String(row.category || row.sport).toUpperCase()]
         : [],
-    avatarUri: row.avatar_uri || row.avatar_url || null,
+    avatarUri: row.avatar_url || row.avatar_uri || null,
     verified: Boolean(row.verified),
     role: row.role || 'athlete',
     statusBadge: row.status_badge || null,
