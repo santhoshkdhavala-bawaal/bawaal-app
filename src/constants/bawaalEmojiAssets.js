@@ -59,6 +59,7 @@ export const BAWAAL_EMOJI_ASSETS = {
   kungfu: require('../../assets/skel_kungfu.png'),
   laughing1: require('../../assets/skel_laughing1.png'),
   loser: require('../../assets/skel_loser.png'),
+  /** Heart-eyed skeleton — must appear in Vault as key `love`. */
   love: require('../../assets/skel_love.png'),
   meditation: require('../../assets/skel_meditation.png'),
   mindblown: require('../../assets/skel_mindblown.png'),
@@ -148,13 +149,18 @@ const BAWAAL_EMOJI_ALIASES = {
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
 /**
- * Static vault key list — `love` (`skel_love.png`) is listed explicitly so the
- * 106-asset FullEmojiPickerDrawer grid always includes it.
+ * Static vault key list that populates FullEmojiPickerDrawer.
+ * `'love'` is always first so skel_love.png (heart-eyed skeleton) renders in the grid.
  */
-export const ALL_SKELETON_KEYS = [
+export const ALL_SKELETON_KEYS = Object.freeze([
   'love',
   ...BAWAAL_EMOJI_KEYS.filter((key) => key !== 'love'),
-];
+]);
+
+if (!ALL_SKELETON_KEYS.includes('love') || !BAWAAL_EMOJI_ASSETS.love) {
+  // eslint-disable-next-line no-console
+  console.warn('[bawaalEmojiAssets] Vault missing love / skel_love.png');
+}
 
 function normalizeEmojiKey(name) {
   if (name == null) return '';

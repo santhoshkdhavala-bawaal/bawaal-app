@@ -1,7 +1,8 @@
 /**
  * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* emoji.
+ * Always includes `love` (skel_love.png) as the first tile.
  */
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,13 +13,23 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BawaalEmoji } from './BawaalEmoji';
-import { ALL_SKELETON_KEYS as VAULT_KEYS } from '../src/constants/bawaalEmojiAssets';
+import { BawaalEmoji, SKELETON_EMOJIS } from './BawaalEmoji';
+import { ALL_SKELETON_KEYS as CONST_VAULT_KEYS } from '../src/constants/bawaalEmojiAssets';
 
 const BAWAAL_ORANGE = '#FF5500';
 
-/** Vault keys from constants (static list — always includes `love`). */
-export const ALL_SKELETON_KEYS = VAULT_KEYS;
+/**
+ * Grid population list — merges constants + SKELETON_EMOJIS and force-includes `love`.
+ */
+function buildVaultKeys() {
+  const merged = new Set(['love', ...CONST_VAULT_KEYS, ...Object.keys(SKELETON_EMOJIS || {})]);
+  const rest = Array.from(merged)
+    .filter((key) => key !== 'love')
+    .sort();
+  return ['love', ...rest];
+}
+
+export const ALL_SKELETON_KEYS = buildVaultKeys();
 
 export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
   visible,
@@ -26,7 +37,8 @@ export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
   onSelectEmoji,
 }) {
   const insets = useSafeAreaInsets();
-  const count = ALL_SKELETON_KEYS.length;
+  const vaultKeys = useMemo(() => buildVaultKeys(), []);
+  const count = vaultKeys.length;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -52,13 +64,13 @@ export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {ALL_SKELETON_KEYS.map((key) => (
+            {vaultKeys.map((key) => (
               <TouchableOpacity
                 key={key}
-                style={styles.emojiTile}
+                style={[styles.emojiTile, key === 'love' && styles.loveTile]}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel={`Select ${key}`}
+                accessibilityLabel={key === 'love' ? 'Select love skeleton' : `Select ${key}`}
                 onPress={() => {
                   try {
                     onSelectEmoji?.(key);
@@ -131,6 +143,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2A2A2A',
+  },
+  loveTile: {
+    borderColor: BAWAAL_ORANGE,
   },
   tileEmoji: {
     marginHorizontal: 0,

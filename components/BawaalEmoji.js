@@ -13,12 +13,12 @@ import {
   hasBawaalEmoji,
 } from '../src/constants/bawaalEmojiAssets';
 
-/** Explicit love asset — mirrors constants `love: require('../../assets/skel_love.png')`. */
+/** Heart-eyed skeleton — Vault key `love` → assets/skel_love.png */
 const LOVE_ASSET = require('../assets/skel_love.png');
 
 /**
  * Official full registry — every `skel_*.png` keyed by filename stem.
- * `love` is required explicitly so the Vault grid never drops it.
+ * `love` is required explicitly so the Vault grid always shows skel_love.png.
  */
 export const SKELETON_EMOJIS = {
   ...BAWAAL_EMOJI_ASSETS,
