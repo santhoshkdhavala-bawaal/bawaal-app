@@ -1,0 +1,54 @@
+---
+description: BAWAAL stability checkpoint — profiles, social soft-fail, media fallbacks (LOCKED)
+alwaysApply: true
+---
+
+# BAWAAL Stability Checkpoint (LOCKED)
+
+Production-final resilience contract for registration, social feed soft-fail, and remote media. Do **not** reintroduce hot-path `console.log`, unbounded retries, or hard throws on missing Supabase tables.
+
+## 1. Profiles & registration
+
+| Rule | Contract |
+|---|---|
+| Auth UUID | Real `auth.users` UUID → sanitized upsert to `public.profiles` |
+| Local / non-UUID | `phone:…` / `local:…` → **zero** PostgREST calls; return local `ok: true` |
+| Circuit breaker | First hard 400 / local-dev → session short-circuit; no further profiles queries |
+| Payload | `PROFILE_SAFE_WRITE_COLUMNS` only; map form aliases (`real_name`↔`full_name`, `category`↔`primary_sport`, `location`↔`city_country`, `avatar_uri`↔`avatar_url`); denylist `list_bucket` + client junk |
+| Schema miss | Soft-strip missing columns (bounded); fall back to `PROFILE_BASE_WRITE_COLUMNS`, then local success |
+| SQL | `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` + `migrations/008_ensure_profiles_registration_columns.sql` |
+
+Locked files: `src/services/profilesService.js`, `src/types/profile.js`, registration OTP wiring in `authOtp.js` / `RoleSelection.js` (UI lock still applies).
+
+## 2. Social feed & table fallbacks
+
+| Surface | Soft-fail |
+|---|---|
+| `likes` / `comments` | Prefer new tables; legacy `reel_likes` / `reel_banter` via try/catch |
+| Missing table / 404 | Return `[]` or local mock; session short-circuit that table |
+| `arena_challenges` / `videos` / battles | Never throw into Arena UX; empty array / local cache |
+| Logging | `softFailWarn` once per key — **no** hot-path `console.log` |
+
+Locked files: `src/services/videoSocialService.js`, `src/services/reelSocialService.js`, `src/utils/softFailLog.js`, soft-fail paths in `arenaChallengeService.js` / `arenaPostsService.js` / `arenaFeedStore.js`.
+
+## 3. Arena media & vault
+
+| Rule | Contract |
+|---|---|
+| Avatars / remote images | `SafeAvatar` / `SafeRemoteImage` + `normalizeRemoteImageUri` |
+| onError | Swap to local `require(...)` (or black underlay for Arena posters — never logo blink) |
+| Failed URI cache | Session set — do not re-fetch known 404 Storage URLs |
+| Vault | Proprietary skeleton/skull PNGs only (`BawaalEmoji`); Image has silent `onError` |
+
+## 4. Hygiene (camera pipeline ready)
+
+- No unbounded retry loops on profiles / reel social / feed hydrate
+- Persist retry: **at most one** automatic retry in `arenaFeedStore` (already capped)
+- Prefer `softFailWarn` / silent catch over `console.error` / `console.log` on soft-fail paths
+
+## Related
+
+- Data integration: `bawaal-data-integration-locked.mdc`
+- Arena playback: `bawaal-arena-video-playback-locked.mdc`
+- Emoji vault: `bawaal-emoji-locked.mdc`
+- Onboarding: `bawaal-v1-fullstack-locked.mdc`

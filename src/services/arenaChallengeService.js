@@ -3,6 +3,7 @@
  * Canonical columns: title, sport, video_url, user_id, created_at.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
+import { softFailWarn } from '../utils/softFailLog';
 import { getActiveUser } from './activeUserProfile';
 import {
   ensurePublicBawaalVideoUrl,
@@ -189,13 +190,6 @@ function mapRowToCard(row, extras = {}) {
  */
 export async function fetchArenaChallenges(opts = {}) {
   const limit = Math.min(Math.max(Number(opts.limit) || 40, 1), 80);
-  console.log('[arena_challenges] FETCH start', {
-    table: TABLE,
-    limit,
-    select: ARENA_CHALLENGES_FEED_SELECT,
-    // Intentionally no .eq('sport', …) — COMBAT and all sports must return
-    sportFilter: null,
-  });
 
   if (!isSupabaseConfigured()) {
     console.warn(
@@ -234,31 +228,12 @@ export async function fetchArenaChallenges(opts = {}) {
     }
 
     if (error) {
-      console.error('[arena_challenges] FETCH error — schema/RLS mismatch?', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        status,
-        statusText,
-        setupHint: ARENA_CHALLENGES_SETUP_HINT,
-      });
+      softFailWarn('arena_challenges:fetch', '[arena_challenges] FETCH soft-fail — returning []');
       return [];
     }
 
     const rows = Array.isArray(data) ? data : [];
     // Confirm raw rows reached the client (incl. sport: 'COMBAT')
-    console.log('ARENA_CHALLENGES_FETCHED:', rows);
-    console.log('[arena_challenges] FETCH ok', {
-      count: rows.length,
-      combatCount: rows.filter(
-        (r) => String(r?.sport || '').toUpperCase() === 'COMBAT'
-      ).length,
-      newestId: rows[0]?.id || null,
-      newestCreatedAt: rows[0]?.created_at || null,
-      sports: [...new Set(rows.map((r) => r?.sport).filter(Boolean))],
-      sampleKeys: rows[0] ? Object.keys(rows[0]) : [],
-    });
 
     // Map every row — never filter out by sport; keep created_at desc
     return rows
@@ -276,10 +251,7 @@ export async function fetchArenaChallenges(opts = {}) {
         return tb - ta;
       });
   } catch (err) {
-    console.error('[arena_challenges] FETCH crashed:', {
-      message: err?.message || String(err),
-      err,
-    });
+    softFailWarn('arena_challenges:fetch-crash', '[arena_challenges] FETCH crashed — returning []');
     return [];
   }
 }
@@ -319,10 +291,6 @@ export async function publishArenaChallenge({
       publicOpenerUrl = ensurePublicBawaalVideoUrl(localOpener) || localOpener;
     } else {
       try {
-        console.log('[arena_challenges] UPLOAD opener start', {
-          challengeId,
-          localOpener: String(localOpener).slice(0, 120),
-        });
         const uploaded = await uploadVideoToSupabase(
           localOpener,
           `arena-opener-${challengeId}.mp4`,
@@ -331,10 +299,6 @@ export async function publishArenaChallenge({
         publicOpenerUrl = uploaded
           ? ensurePublicBawaalVideoUrl(uploaded) || uploaded
           : null;
-        console.log('[arena_challenges] UPLOAD opener result', {
-          challengeId,
-          publicOpenerUrl,
-        });
       } catch (err) {
         console.warn(
           '[arena_challenges] UPLOAD opener failed:',
@@ -395,7 +359,7 @@ export async function publishArenaChallenge({
 
   let insertAlertShown = false;
   const reportInsertError = (error) => {
-    console.error('SUPABASE_INSERT_ERROR:', error);
+    softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', error);
     const exactMessage =
       (typeof error?.message === 'string' && error.message.trim()) ||
       (typeof error === 'string' && error.trim()) ||
@@ -466,17 +430,6 @@ export async function publishArenaChallenge({
     };
   }
 
-  console.log('[arena_challenges] INSERT payload', {
-    table: TABLE,
-    challengeId,
-    title: insertPayload.title,
-    sport: insertPayload.sport,
-    video_url: insertPayload.video_url,
-    user_id: insertPayload.user_id,
-    created_at: insertPayload.created_at,
-    payload: insertPayload,
-    payloadKeys: Object.keys(insertPayload),
-  });
 
   try {
     let data = null;
@@ -487,11 +440,6 @@ export async function publishArenaChallenge({
     try {
       // Final scrub — never send "user-santhosh" / empty / non-UUID to uuid column
       const safeRow = sanitizeInsertUserId(insertPayload);
-      console.log('[arena_challenges] INSERT user_id check', {
-        raw: rawUserId || host.userId || null,
-        safe: safeRow.user_id ?? null,
-        omitted: !Object.prototype.hasOwnProperty.call(safeRow, 'user_id'),
-      });
       const insertResult = await supabase
         .from(TABLE)
         .upsert(safeRow, { onConflict: 'id' })
@@ -502,13 +450,13 @@ export async function publishArenaChallenge({
       status = insertResult.status;
       statusText = insertResult.statusText;
     } catch (insertThrown) {
-      console.error('SUPABASE_INSERT_ERROR:', insertThrown);
+      softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', insertThrown);
       reportInsertError(insertThrown);
       throw insertThrown;
     }
 
     if (error) {
-      console.error('SUPABASE_INSERT_ERROR:', error);
+      softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', error);
       // Soft-retry without user_id on FK/RLS noise
       if (
         insertPayload.user_id &&
@@ -540,7 +488,7 @@ export async function publishArenaChallenge({
           status = retry.status;
           statusText = retry.statusText;
         } catch (retryThrown) {
-          console.error('SUPABASE_INSERT_ERROR:', retryThrown);
+          softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', retryThrown);
           reportInsertError(retryThrown);
           throw retryThrown;
         }
@@ -585,49 +533,21 @@ export async function publishArenaChallenge({
         status = retry.status;
         statusText = retry.statusText;
       } catch (legacyThrown) {
-        console.error('SUPABASE_INSERT_ERROR:', legacyThrown);
+        softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', legacyThrown);
         reportInsertError(legacyThrown);
         throw legacyThrown;
       }
     }
 
     if (error) {
-      console.error('SUPABASE_INSERT_ERROR:', error);
-      console.error('[arena_challenges] INSERT failed details', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint,
-        status,
-        statusText,
-        payload: {
-          title: insertPayload.title,
-          sport: insertPayload.sport,
-          video_url: insertPayload.video_url,
-          user_id: insertPayload.user_id,
-          created_at: insertPayload.created_at,
-        },
-        setupHint: ARENA_CHALLENGES_SETUP_HINT,
-      });
+      softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', error);
+      softFailWarn('arena_challenges:insert-details', '[arena_challenges] INSERT soft-fail');
       reportInsertError(error);
       throw error;
     }
 
-    console.log('[arena_challenges] INSERT ok', {
-      id: data?.id || challengeId,
-      title: data?.title || insertPayload.title,
-      sport: data?.sport || insertPayload.sport,
-      video_url: data?.video_url || insertPayload.video_url,
-      user_id: data?.user_id || insertPayload.user_id,
-      created_at: data?.created_at || createdAt,
-      rowKeys: data ? Object.keys(data) : [],
-    });
 
     const refreshed = await fetchArenaChallenges({ limit: 40 });
-    console.log('[arena_challenges] REFRESH after insert', {
-      count: refreshed.length,
-      includesNew: refreshed.some((c) => String(c?.id) === String(challengeId)),
-    });
 
     return {
       ok: true,

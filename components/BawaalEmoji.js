@@ -84,7 +84,8 @@ export const BawaalEmoji = memo(function BawaalEmoji({ name, size = 28, style, .
   const source =
     (key === 'love' ? LOVE_ASSET : null) ||
     SKELETON_EMOJIS[key] ||
-    getBawaalEmojiSource(name);
+    getBawaalEmojiSource(name) ||
+    LOVE_ASSET;
 
   // Fixed box every time — prevents scroll jitter / CLS in chat feeds
   const box = { width: dimension, height: dimension };
@@ -97,6 +98,9 @@ export const BawaalEmoji = memo(function BawaalEmoji({ name, size = 28, style, .
       style={[box, styles.emoji, style]}
       resizeMode="contain"
       fadeDuration={0}
+      onError={() => {
+        /* local vault assets — swallow decode errors silently */
+      }}
       accessibilityRole="image"
       accessibilityLabel={name ? `Bawaal emoji ${name}` : 'Bawaal emoji'}
       {...rest}

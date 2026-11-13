@@ -10,6 +10,7 @@ import {
   postVideoComment,
   toggleVideoLike,
 } from './videoSocialService';
+import { softFailWarn } from '../utils/softFailLog';
 
 const QUEUE_KEY = '@bawaal/reel_social_queue_v1';
 const FOLLOW_SET_KEY = '@bawaal/reel_following_ids_v1';
@@ -38,7 +39,7 @@ async function pushLocalEvent(event) {
     next.unshift(event);
     await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(next.slice(0, 200)));
   } catch (err) {
-    console.warn('[reelSocial] local queue failed:', err?.message || err);
+    softFailWarn('reelSocial:queue', '[reelSocial] local queue failed', err?.message || err);
   }
 }
 
@@ -76,10 +77,7 @@ async function softInsert(table, row) {
       if (isMissingRelationError(error)) {
         if (!missingSocialTables.has(table)) {
           missingSocialTables.add(table);
-          console.warn(
-            `[reelSocial] ${table} unavailable — local fallback only`,
-            { reason: error.message || error.code }
-          );
+          softFailWarn(`reelSocial:${table}`, `[reelSocial] ${table} unavailable — local fallback only`, { reason: error.message || error.code });
         }
         return { ok: false, fromCloud: false, reason: 'table-missing' };
       }
@@ -139,7 +137,7 @@ async function writeFollowSet(set) {
       JSON.stringify(Array.from(set).slice(0, 500))
     );
   } catch (err) {
-    console.warn('[reelSocial] follow set persist failed:', err?.message || err);
+    softFailWarn('reelSocial:follow-set', '[reelSocial] follow set persist failed', err?.message || err);
   }
 }
 

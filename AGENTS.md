@@ -78,6 +78,10 @@ Feed players (`ArenaClipPlayer` / `NativeFeedVideo` / `ArenaFeed` shells) use **
 
 Supabase profiles + OTP, `arena_challenges` / `bawaalvideos` streaming, GAME ON tier+sport filters (`arenaFilterStore`), and reel ⋮ social soft-sync (`reelSocialService` + `ENSURE_REEL_SOCIAL.sql`) are production-final. Soft-fail offline/schema noise. See `.cursor/rules/bawaal-data-integration-locked.mdc`.
 
+## Stability checkpoint (locked)
+
+Profiles: UUID upsert vs non-UUID local success + session circuit; sanitized `PROFILE_SAFE_WRITE_COLUMNS` (no `list_bucket` junk). Social: `reel_likes` / `reel_banter` / challenges soft-fail to `[]` or local mock. Media: `SafeAvatar` / `SafeRemoteImage` + failed-URI cache → local `require(...)`. Logging: `softFailWarn` once per key — no hot-path `console.log`. See `.cursor/rules/bawaal-stability-checkpoint-locked.mdc`.
+
 ## Back controls (locked)
 
 Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.

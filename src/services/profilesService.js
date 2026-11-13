@@ -13,6 +13,7 @@ import {
   PROFILE_PAYLOAD_DENYLIST,
   PROFILE_SAFE_WRITE_COLUMNS,
 } from '../types/profile';
+import { softFailWarn } from '../utils/softFailLog';
 
 export const PROFILES_SETUP_HINT =
   'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql (or migrations/008_ensure_profiles_registration_columns.sql)';
@@ -21,7 +22,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const PROFILE_DENYLIST_SET = new Set(PROFILE_PAYLOAD_DENYLIST);
-const MAX_SCHEMA_STRIP_RETRIES = 8;
+const MAX_SCHEMA_STRIP_RETRIES = 4;
 
 /**
  * Session circuit-breaker: once local/dev mode or a hard remote failure is seen,
@@ -33,10 +34,7 @@ let remoteProfilesCircuitReason = '';
 function openRemoteProfilesCircuit(reason) {
   if (!remoteProfilesCircuitOpen) {
     remoteProfilesCircuitReason = String(reason || 'unknown');
-    console.warn(
-      '[profilesService] remote profiles short-circuited for this session',
-      { reason: remoteProfilesCircuitReason }
-    );
+    softFailWarn('profiles:circuit', '[profilesService] remote profiles short-circuited for this session', { reason: remoteProfilesCircuitReason });
   }
   remoteProfilesCircuitOpen = true;
 }
@@ -208,7 +206,7 @@ export function sanitizeProfileWritePayload(
 
 function logUpsertFailure(stage, error, payload) {
   const keys = payload && typeof payload === 'object' ? Object.keys(payload) : [];
-  console.warn('[profilesService] upsertRegisteredProfile failed', {
+  softFailWarn('profiles:upsert', '[profilesService] upsertRegisteredProfile failed', {
     stage,
     message: error?.message || String(error),
     code: error?.code || null,

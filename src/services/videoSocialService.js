@@ -5,6 +5,7 @@
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
+import { softFailWarn } from '../utils/softFailLog';
 
 function actorId() {
   const u = getActiveUser?.() || {};
@@ -43,9 +44,7 @@ function isMissingRelationError(error) {
 function markLegacyTableMissing(table, reason) {
   if (missingLegacyTables.has(table)) return;
   missingLegacyTables.add(table);
-  console.warn(`[videoSocial] ${table} unavailable — using local empty fallback`, {
-    reason: String(reason || 'missing'),
-  });
+  softFailWarn(`videoSocial:${table}`, `[videoSocial] ${table} unavailable — using local empty fallback`, { reason: String(reason || 'missing') });
 }
 
 function isLegacyTableDisabled(table) {

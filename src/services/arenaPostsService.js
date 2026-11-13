@@ -3,6 +3,7 @@
  * Canonical table is `public.videos` only — never query/write legacy `bawaal_posts`.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { softFailWarn } from '../utils/softFailLog';
 import { isSupabaseConfigured, supabase, getSupabaseUrl } from './supabase';
 import {
   BAWAAL_VIDEO_BUCKET,
@@ -373,10 +374,6 @@ export async function fetchArenaPostsFromSupabase() {
   }
 
   try {
-    console.log('[arenaPosts] FETCH videos start', {
-      table: TABLE,
-      order: 'created_at desc',
-    });
     // Canonical live query: videos + profile username / avatar
     let { data, error } = await supabase
       .from(TABLE)
@@ -554,7 +551,7 @@ async function fetchArenaPostsFromMetaJson() {
  */
 export async function persistArenaPostToSupabase(post) {
   if (!isSupabaseConfigured()) {
-    console.error('[arenaPosts] persist skipped — Supabase not configured');
+    softFailWarn('arenaPosts:no-supabase', '[arenaPosts] persist skipped — Supabase not configured');
     return {
       ok: false,
       skipped: false,
@@ -701,7 +698,7 @@ export async function persistArenaPostToSupabase(post) {
       warning: attempt.error?.message || String(attempt.error || ''),
     };
   } catch (err) {
-    console.error('[arenaPosts] persist crashed:', err?.message || err);
+    softFailWarn('arenaPosts:persist-crash', '[arenaPosts] persist crashed', err?.message || err);
     try {
       const fb = await persistArenaPostMetaToStorage(videosRow);
       if (fb.ok) {

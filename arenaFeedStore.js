@@ -519,7 +519,6 @@ async function hydrateLocal() {
  */
 export async function refreshArenaChallengesIntoFeed(opts = {}) {
   const emitEvent = opts.emitEvent !== false;
-  console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed start');
   try {
     const cards = await fetchArenaChallenges({
       limit: opts.limit || 40,
@@ -556,9 +555,6 @@ export async function refreshArenaChallengesIntoFeed(opts = {}) {
         );
       }
     }
-    console.log('[arenaFeedStore] refreshArenaChallengesIntoFeed ok', {
-      count: incoming.length,
-    });
     return incoming;
   } catch (err) {
     console.warn(
@@ -574,10 +570,6 @@ async function hydrateRemote() {
   try {
     const remote = await fetchArenaPostsFromSupabase();
     const challenges = await fetchArenaChallenges({ limit: 40 });
-    console.log('[arenaFeedStore] hydrateRemote sources', {
-      videos: Array.isArray(remote) ? remote.length : 0,
-      arena_challenges: Array.isArray(challenges) ? challenges.length : 0,
-    });
 
     const incoming = [];
     for (const row of remote || []) {
