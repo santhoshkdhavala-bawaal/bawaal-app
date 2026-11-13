@@ -1,17 +1,17 @@
 /**
  * Banter / chat shortcodes for BAWAAL skeleton emojis.
- * Forms: `:gym:`  ·  `[bawaal:gym]`
+ * Forms: `:gym:`  ·  `[bawaal:gym]` · `:love:`
  *
- * Size rules (LOCKED visual impact):
- * - Emoji-only message → size 64 (sticker punch)
- * - Mixed text + emoji → text normal size; emoji stays LARGE (size 60), never shrunk to text height
+ * Size rules:
+ * - Emoji-only → size 64 (sticker)
+ * - Mixed text + emoji → size 40, nested inline inside one Text line (wraps cleanly)
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-/** Mixed messages keep sticker-scale impact beside text (not text-height). */
-export const BAWAAL_EMOJI_INLINE_SIZE = 60;
+/** Prominent inline size beside body text (same line). */
+export const BAWAAL_EMOJI_INLINE_SIZE = 40;
 /** Pure emoji / reaction stickers. */
 export const BAWAAL_EMOJI_HERO_SIZE = 64;
 
@@ -83,13 +83,11 @@ export function isEmojiOnlyMessage(textOrSegments) {
 
 /**
  * Text + BawaalEmoji for chat / banter bubbles.
- * Mixed: large 60 stickers next to / wrapping with normal text.
- * Emoji-only: 64 sticker row.
+ * Mixed messages nest Images inside a single Text so stickers stay on the same line.
  */
 export const BawaalEmojiText = memo(function BawaalEmojiText({
   text,
   textStyle,
-  /** Override auto size; omit to use impact rules. */
   emojiSize,
   inlineEmojiSize = BAWAAL_EMOJI_INLINE_SIZE,
   heroEmojiSize = BAWAAL_EMOJI_HERO_SIZE,
@@ -107,50 +105,61 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
         ? heroEmojiSize
         : inlineEmojiSize;
 
+  if (emojiOnly) {
+    return (
+      <View style={[styles.heroRow, style]}>
+        {segments.map((seg, i) =>
+          seg.type === 'emoji' ? (
+            <BawaalEmoji
+              key={`e-${i}-${seg.value}`}
+              name={seg.value}
+              size={size}
+              style={styles.heroEmoji}
+            />
+          ) : null
+        )}
+      </View>
+    );
+  }
+
+  // Nested Image-in-Text = true horizontal inline on iOS / Android / web
   return (
-    <View
-      style={[
-        emojiOnly ? styles.heroRow : styles.mixedRow,
-        style,
-      ]}
-    >
+    <Text style={[styles.inlineText, textStyle, style]}>
       {segments.map((seg, i) =>
         seg.type === 'emoji' ? (
           <BawaalEmoji
             key={`e-${i}-${seg.value}`}
             name={seg.value}
             size={size}
-            style={emojiOnly ? styles.heroEmoji : styles.mixedEmoji}
+            style={styles.inlineEmoji}
           />
-        ) : String(seg.value || '').length ? (
-          <Text
-            key={`t-${i}`}
-            style={[
-              styles.baseText,
-              emojiOnly ? styles.hiddenWhitespace : null,
-              textStyle,
-            ]}
-          >
-            {emojiOnly ? (String(seg.value).trim() ? seg.value : '') : seg.value}
+        ) : (
+          <Text key={`t-${i}`} style={[styles.inlineText, textStyle]}>
+            {seg.value}
           </Text>
-        ) : null
+        )
       )}
-    </View>
+    </Text>
   );
 });
 
 const styles = StyleSheet.create({
-  mixedRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-end',
-    gap: 6,
-    maxWidth: '100%',
+  inlineText: {
+    fontSize: 12,
+    lineHeight: 40,
     ...(Platform.OS === 'web'
       ? {
-          alignSelf: 'flex-start',
+          // Keep bubble content from stretching full desktop width
+          maxWidth: '100%',
         }
       : null),
+  },
+  inlineEmoji: {
+    width: BAWAAL_EMOJI_INLINE_SIZE,
+    height: BAWAAL_EMOJI_INLINE_SIZE,
+    marginHorizontal: 2,
+    // Nested-in-Text Images ignore flex; fixed box keeps line rhythm
+    transform: [{ translateY: Platform.OS === 'ios' ? 0 : 2 }],
   },
   heroRow: {
     flexDirection: 'row',
@@ -159,32 +168,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 4,
     maxWidth: '100%',
-    paddingVertical: 0,
-    marginVertical: 0,
     ...(Platform.OS === 'web'
       ? {
           alignSelf: 'flex-start',
         }
       : null),
-  },
-  baseText: {
-    // Body copy stays normal; large stickers sit beside / wrap under
-    fontSize: 12,
-    lineHeight: 20,
-    ...(Platform.OS === 'web'
-      ? {
-          display: 'inline',
-        }
-      : null),
-  },
-  hiddenWhitespace: {
-    width: 0,
-    height: 0,
-    opacity: 0,
-  },
-  mixedEmoji: {
-    marginHorizontal: 0,
-    marginVertical: 2,
   },
   heroEmoji: {
     marginHorizontal: 1,

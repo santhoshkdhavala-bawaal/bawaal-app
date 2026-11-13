@@ -59,7 +59,6 @@ export const BAWAAL_EMOJI_ASSETS = {
   kungfu: require('../../assets/skel_kungfu.png'),
   laughing1: require('../../assets/skel_laughing1.png'),
   loser: require('../../assets/skel_loser.png'),
-  // Vault + shortcode `:love:` — skel_love.png (must stay registered)
   love: require('../../assets/skel_love.png'),
   meditation: require('../../assets/skel_meditation.png'),
   mindblown: require('../../assets/skel_mindblown.png'),
