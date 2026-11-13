@@ -4,14 +4,14 @@
  *
  * Size rules:
  * - Emoji-only → size 64 (sticker)
- * - Mixed text + emoji → size 48, nested inline inside one Text line (wraps cleanly)
+ * - Mixed text + emoji → size 36 in one flex row (side-by-side, natural wrap)
  */
 import React, { memo, useMemo } from 'react';
 import { Text, View, StyleSheet, Platform } from 'react-native';
 import { BawaalEmoji, hasBawaalEmoji } from '../../components/BawaalEmoji';
 
-/** Aggressive inline punch beside body text (same line). */
-export const BAWAAL_EMOJI_INLINE_SIZE = 48;
+/** Clean inline height alongside body text (same flex row). */
+export const BAWAAL_EMOJI_INLINE_SIZE = 36;
 /** Pure emoji / reaction stickers. */
 export const BAWAAL_EMOJI_HERO_SIZE = 64;
 
@@ -83,7 +83,7 @@ export function isEmojiOnlyMessage(textOrSegments) {
 
 /**
  * Text + BawaalEmoji for chat / banter bubbles.
- * Mixed messages nest Images inside a single Text so stickers stay on the same line.
+ * Mixed: single flex-row container so text + emoji stay side-by-side (wrap only when needed).
  */
 export const BawaalEmojiText = memo(function BawaalEmojiText({
   text,
@@ -122,44 +122,67 @@ export const BawaalEmojiText = memo(function BawaalEmojiText({
     );
   }
 
-  // Nested Image-in-Text = true horizontal inline on iOS / Android / web
   return (
-    <Text style={[styles.inlineText, textStyle, style]}>
-      {segments.map((seg, i) =>
-        seg.type === 'emoji' ? (
-          <BawaalEmoji
-            key={`e-${i}-${seg.value}`}
-            name={seg.value}
-            size={size}
-            style={styles.inlineEmoji}
-          />
-        ) : (
-          <Text key={`t-${i}`} style={[styles.inlineText, textStyle]}>
-            {seg.value}
+    <View style={[styles.mixedRow, style]}>
+      {segments.map((seg, i) => {
+        if (seg.type === 'emoji') {
+          return (
+            <View key={`e-${i}-${seg.value}`} style={styles.emojiSlot}>
+              <BawaalEmoji name={seg.value} size={size} style={styles.mixedEmoji} />
+            </View>
+          );
+        }
+        const value = String(seg.value || '');
+        if (!value) return null;
+        return (
+          <Text key={`t-${i}`} style={[styles.mixedText, textStyle]}>
+            {value}
           </Text>
-        )
-      )}
-    </Text>
+        );
+      })}
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
-  inlineText: {
-    fontSize: 12,
-    lineHeight: 48,
+  mixedRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    alignContent: 'center',
+    maxWidth: '100%',
     ...(Platform.OS === 'web'
       ? {
-          // Keep bubble content from stretching full desktop width
+          alignSelf: 'flex-start',
+        }
+      : null),
+  },
+  mixedText: {
+    fontSize: 12,
+    lineHeight: 36,
+    // Critical: do NOT stretch to full width or the emoji drops to the next line
+    flexGrow: 0,
+    flexShrink: 1,
+    ...(Platform.OS === 'web'
+      ? {
+          display: 'inline',
+          width: 'auto',
           maxWidth: '100%',
         }
       : null),
   },
-  inlineEmoji: {
+  emojiSlot: {
     width: BAWAAL_EMOJI_INLINE_SIZE,
     height: BAWAAL_EMOJI_INLINE_SIZE,
     marginHorizontal: 2,
-    // Nested-in-Text Images ignore flex; fixed box keeps line rhythm
-    transform: [{ translateY: Platform.OS === 'ios' ? 0 : 2 }],
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  mixedEmoji: {
+    marginHorizontal: 0,
+    marginVertical: 0,
   },
   heroRow: {
     flexDirection: 'row',

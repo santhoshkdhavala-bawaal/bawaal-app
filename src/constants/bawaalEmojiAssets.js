@@ -147,6 +147,15 @@ const BAWAAL_EMOJI_ALIASES = {
 
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
+/**
+ * Static vault key list — `love` (`skel_love.png`) is listed explicitly so the
+ * 106-asset FullEmojiPickerDrawer grid always includes it.
+ */
+export const ALL_SKELETON_KEYS = [
+  'love',
+  ...BAWAAL_EMOJI_KEYS.filter((key) => key !== 'love'),
+];
+
 function normalizeEmojiKey(name) {
   if (name == null) return '';
   return String(name)

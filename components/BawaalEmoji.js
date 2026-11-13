@@ -8,11 +8,12 @@ import { Image, StyleSheet } from 'react-native';
 import {
   BAWAAL_EMOJI_ASSETS,
   BAWAAL_EMOJI_KEYS,
+  ALL_SKELETON_KEYS,
   getBawaalEmojiSource,
   hasBawaalEmoji,
 } from '../src/constants/bawaalEmojiAssets';
 
-/** Explicit love asset — also mirrored in bawaalEmojiAssets.js */
+/** Explicit love asset — mirrors constants `love: require('../../assets/skel_love.png')`. */
 const LOVE_ASSET = require('../assets/skel_love.png');
 
 /**
@@ -26,14 +27,6 @@ export const SKELETON_EMOJIS = {
 
 // Keep constants map in sync for getBawaalEmojiSource / hasBawaalEmoji
 BAWAAL_EMOJI_ASSETS.love = LOVE_ASSET;
-
-/**
- * Vault grid keys — `love` listed explicitly so skel_love.png always ships in the 106 grid.
- */
-export const ALL_SKELETON_KEYS = [
-  'love',
-  ...Object.keys(SKELETON_EMOJIS).filter((k) => k !== 'love'),
-];
 
 /**
  * Compact banter-tray shortcuts (aliases allowed).
@@ -77,7 +70,6 @@ export const BawaalEmoji = memo(function BawaalEmoji({ name, size = 28, style, .
 
 const styles = StyleSheet.create({
   emoji: {
-    // Keep default margin light so nested-in-Text inline layout stays tight
     marginHorizontal: 0,
   },
 });
@@ -86,6 +78,7 @@ export default BawaalEmoji;
 export {
   BAWAAL_EMOJI_ASSETS,
   BAWAAL_EMOJI_KEYS,
+  ALL_SKELETON_KEYS,
   getBawaalEmojiSource,
   hasBawaalEmoji,
 };
