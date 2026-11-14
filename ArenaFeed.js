@@ -83,6 +83,12 @@ import {
   appendBurstParticles,
   createCenteredEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
+import {
+  resolveVaultBurstRoomId,
+  subscribeVaultBurstChannel,
+  broadcastVaultBurst,
+  resolveBurstActorId,
+} from './src/services/vaultBurstRealtime';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -813,6 +819,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const vaultBtnRef = useRef(null);
   const moreBottom = tabBarHeight + 18;
   const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
+  const roomId = resolveVaultBurstRoomId(item);
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
@@ -849,21 +856,40 @@ const GeneralReelCard = memo(function GeneralReelCard({
     }
   }, []);
 
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      // Measured center: centerX = width/2, centerY = height/2 → startX/startY
-      const next = createCenteredEmojiBurst(emojiKey, containerSize);
+  /** Local center-screen vault explosion (own pick or peer broadcast). */
+  const triggerLocalEmojiBurst = useCallback(
+    (emojiId) => {
+      if (!emojiId) return;
+      const next = createCenteredEmojiBurst(emojiId, containerSize);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     },
     [containerSize]
   );
 
-  const onVaultEmojiSelect = useCallback(
-    (key) => {
+  // Active viewport card only — subscribe to arena_${roomId} vault_burst
+  useEffect(() => {
+    if (!shouldPlay || !roomId || immersiveOpen) {
+      return undefined;
+    }
+    return subscribeVaultBurstChannel(roomId, {
+      onVaultBurst: (emojiId) => {
+        triggerLocalEmojiBurst(emojiId);
+      },
+    });
+  }, [shouldPlay, roomId, immersiveOpen, triggerLocalEmojiBurst]);
+
+  /** Vault skull pick: local burst instantly + broadcast to room peers. */
+  const handleSelectSkull = useCallback(
+    (emojiId) => {
       setVaultOpen(false);
-      if (key) spawnVaultBurst(key);
+      if (!emojiId) return;
+      triggerLocalEmojiBurst(emojiId);
+      void (async () => {
+        const userId = await resolveBurstActorId();
+        await broadcastVaultBurst(roomId, { emojiId, userId });
+      })();
     },
-    [spawnVaultBurst]
+    [triggerLocalEmojiBurst, roomId]
   );
 
   const onReelAction = useCallback(
@@ -994,7 +1020,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
       <FullEmojiPickerDrawer
         visible={vaultOpen && !immersiveOpen}
         onClose={() => setVaultOpen(false)}
-        onSelectEmoji={onVaultEmojiSelect}
+        onSelectEmoji={handleSelectSkull}
       />
     </View>
   );
@@ -1196,6 +1222,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const vaultBtnRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
+  const roomId = resolveVaultBurstRoomId(item);
 
   const toggleMute = useCallback(() => {
     setIsMuted((m) => !m);
@@ -1220,20 +1247,38 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     }
   }, []);
 
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      const next = createCenteredEmojiBurst(emojiKey, containerSize);
+  const triggerLocalEmojiBurst = useCallback(
+    (emojiId) => {
+      if (!emojiId) return;
+      const next = createCenteredEmojiBurst(emojiId, containerSize);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     },
     [containerSize]
   );
 
-  const onVaultEmojiSelect = useCallback(
-    (key) => {
+  // Active challenge page only — subscribe to arena_${roomId} vault_burst
+  useEffect(() => {
+    if (!shouldPlay || !roomId) {
+      return undefined;
+    }
+    return subscribeVaultBurstChannel(roomId, {
+      onVaultBurst: (emojiId) => {
+        triggerLocalEmojiBurst(emojiId);
+      },
+    });
+  }, [shouldPlay, roomId, triggerLocalEmojiBurst]);
+
+  const handleSelectSkull = useCallback(
+    (emojiId) => {
       setVaultOpen(false);
-      if (key) spawnVaultBurst(key);
+      if (!emojiId) return;
+      triggerLocalEmojiBurst(emojiId);
+      void (async () => {
+        const userId = await resolveBurstActorId();
+        await broadcastVaultBurst(roomId, { emojiId, userId });
+      })();
     },
-    [spawnVaultBurst]
+    [triggerLocalEmojiBurst, roomId]
   );
 
   const onReelAction = useCallback(
@@ -1320,7 +1365,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       <FullEmojiPickerDrawer
         visible={vaultOpen}
         onClose={() => setVaultOpen(false)}
-        onSelectEmoji={onVaultEmojiSelect}
+        onSelectEmoji={handleSelectSkull}
       />
     </View>
   );
