@@ -5,6 +5,7 @@
 create extension if not exists "pgcrypto";
 
 -- ── Likes (Banner Like) ─────────────────────────────────────────────
+-- Binding: reel_id + user_id with unique pair (legacy soft-fallback for likes)
 create table if not exists public.reel_likes (
   id text primary key,
   user_id text not null,
@@ -13,6 +14,9 @@ create table if not exists public.reel_likes (
 );
 create index if not exists reel_likes_reel_idx on public.reel_likes (reel_id);
 create index if not exists reel_likes_user_idx on public.reel_likes (user_id);
+create unique index if not exists reel_likes_user_reel_uidx
+  on public.reel_likes (user_id, reel_id)
+  where reel_id is not null;
 alter table public.reel_likes enable row level security;
 drop policy if exists reel_likes_all_demo on public.reel_likes;
 create policy reel_likes_all_demo on public.reel_likes
@@ -64,13 +68,17 @@ create policy reel_tags_all_demo on public.reel_tags
 grant select, insert, update, delete on public.reel_tags to anon, authenticated;
 
 -- ── Banter threads ──────────────────────────────────────────────────
+-- Binding: reel_id, user_id, username, body (= content). Primary path is public.comments.
 create table if not exists public.reel_banter (
   id text primary key,
   user_id text not null,
   reel_id text,
+  username text,
   body text not null default '🔥',
   created_at timestamptz not null default now()
 );
+alter table if exists public.reel_banter
+  add column if not exists username text;
 create index if not exists reel_banter_reel_idx on public.reel_banter (reel_id, created_at desc);
 alter table public.reel_banter enable row level security;
 drop policy if exists reel_banter_all_demo on public.reel_banter;

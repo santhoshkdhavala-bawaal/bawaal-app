@@ -40,7 +40,6 @@ const BG = '#0b0b0b';
 const CARD = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const BAWAAL_ORANGE = '#FF5722';
 const ACCENT = '#FF5722';
 
 /** Horizontal Banter reaction tray — skulls first, then skeleton shortcuts. */

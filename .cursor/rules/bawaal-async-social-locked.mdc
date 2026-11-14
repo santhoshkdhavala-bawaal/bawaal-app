@@ -1,0 +1,56 @@
+# BAWAAL Asynchronous Ecosystem & Social Loop (LOCKED)
+
+Production-final contract for Sparks / Josh / Battle Bawaal feeds, Banter/Share/DM, Faceoff async split, and vault burst Realtime. Do **not** restyle, rewire, or rebuild unless the user explicitly unlocks this rule.
+
+## 1. Arena feed surfaces (`ArenaFeed.js`)
+
+| Surface | Contract |
+|---|---|
+| Reels (Sparks/Josh) | `GeneralReelCard` — declarative playback shells, `minHeight: 450`, `position: 'relative'` |
+| Challenge pages | `ChallengeFeedCard` (no separate `ChallengeFeed.js`) |
+| Vault burst | `handleSelectSkull` → `triggerLocalEmojiBurst` → `createCenteredEmojiBurst` at `centerX=w/2`, `centerY=h*0.58` |
+| Burst sync | `vaultBurstRealtime` channel `arena_${roomId}` (`battleId \|\| challengeId \|\| id`); `broadcast: { self: false }` |
+| Active subscribe | Only viewport-active card (`shouldPlay`) — cleanup `removeChannel` on leave |
+
+Canonical burst engine: `src/components/FloatingEmojiBurst.js` (`BURST_CENTER_Y_RATIO = 0.58`, kick-float traj).
+
+## 2. Social loop (locked theme + wiring)
+
+| File | Contract |
+|---|---|
+| `BanterBottomSheet.js` | Sheet bg `#0b0b0b`, accents `#FF5722`; proprietary BawaalEmoji vault; FlatList virtualization; `subscribeVideoSocial` while open |
+| `ReelActionSheet.js` | Share → `Share.share` only; DM / Send → parent opens `DmSharePicker` (not native share) |
+| `DmSharePicker.js` | Athlete list → `dmStore.sendMessage` with reel deep-link body |
+
+Primary cloud tables: `public.likes` / `public.comments` (`ENSURE_SOCIAL_GRAPH.sql`). Legacy soft-fallback: `reel_likes` / `reel_banter` (`ENSURE_REEL_SOCIAL.sql`) — never throw into Arena UX.
+
+## 3. Faceoff async 1v1 (`BattleCard` in `ArenaFeed.js`)
+
+| State | UI |
+|---|---|
+| Open / no rival | Host **PLAYER A** locked; right pane **WAITING FOR CHALLENGER** + Accept |
+| Rival present | Adaptive split (row ≥768 / column mobile) + glowing **VS** |
+| Voting | **VOTE A** / **VOTE B** via `customMatchupService`; Banter opens `BanterBottomSheet` |
+
+Further responses stay in `ResponseReelDrawer` tray — primary split is Host vs first rival only.
+
+## 4. Soft-fail & hygiene
+
+- Missing tables / Realtime / env → local mock or no-op; `softFailWarn` once per key — **no** hot-path `console.log`
+- Do not re-add unicode reaction trays on Banter / vault burst paths
+- Do not put permanent like/share counters on primary reel overlay (metrics stay behind ⋮)
+
+## Locked files
+
+- `ArenaFeed.js` (GeneralReelCard, ChallengeFeedCard, BattleCard social + Faceoff)
+- `BanterBottomSheet.js`, `src/components/ReelActionSheet.js`, `src/components/DmSharePicker.js`
+- `src/components/FloatingEmojiBurst.js`, `src/services/vaultBurstRealtime.js`
+- `src/services/videoSocialService.js`, `src/services/customMatchupService.js`
+- `supabase/ENSURE_SOCIAL_GRAPH.sql`, `supabase/ENSURE_REEL_SOCIAL.sql`
+
+## Related
+
+- Arena V2 chrome: `bawaal-v2-arena-ui-locked.mdc`
+- Data integration: `bawaal-data-integration-locked.mdc`
+- Stability: `bawaal-stability-checkpoint-locked.mdc`
+- Emoji vault: `bawaal-emoji-locked.mdc`
