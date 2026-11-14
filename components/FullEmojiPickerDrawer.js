@@ -1,6 +1,6 @@
 /**
  * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* + skull_* emoji.
- * Always includes `love` (skel_love.png) first, plus the full skull set (expressions + sports).
+ * Grid order: skull* keys first, then skeleton assets (responsive flex-wrap unchanged).
  */
 import React, { memo, useMemo } from 'react';
 import {
@@ -17,13 +17,14 @@ import { BawaalEmoji, SKELETON_EMOJIS } from './BawaalEmoji';
 import {
   ALL_SKELETON_KEYS as CONST_VAULT_KEYS,
   SKULL_EMOJI_KEYS,
+  sortVaultEmojiKeys,
 } from '../src/constants/bawaalEmojiAssets';
 
 const BAWAAL_ORANGE = '#FF5500';
 
 /**
  * Grid population list — merges constants + SKELETON_EMOJIS and force-includes
- * `love` + all `skull_*` keys so the Vault always shows the new expression set.
+ * all `skull_*` keys, then sorts skulls → skeletons for the Vault rows.
  */
 function buildVaultKeys() {
   const merged = new Set([
@@ -32,10 +33,7 @@ function buildVaultKeys() {
     ...CONST_VAULT_KEYS,
     ...Object.keys(SKELETON_EMOJIS || {}),
   ]);
-  const rest = Array.from(merged)
-    .filter((key) => key !== 'love')
-    .sort();
-  return ['love', ...rest];
+  return sortVaultEmojiKeys(Array.from(merged));
 }
 
 export const ALL_SKELETON_KEYS = buildVaultKeys();

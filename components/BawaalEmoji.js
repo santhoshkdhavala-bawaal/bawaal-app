@@ -18,6 +18,8 @@ import {
   hasBawaalEmoji,
   getSkullEmojiSource,
   hasSkullEmoji,
+  sortVaultEmojiKeys,
+  isSkullVaultKey,
 } from '../src/constants/bawaalEmojiAssets';
 
 /**
@@ -40,10 +42,8 @@ export const SKELETON_EMOJIS = {
 BAWAAL_EMOJI_ASSETS.love = LOVE_ASSET;
 Object.assign(BAWAAL_EMOJI_ASSETS, SKULL_EMOJIS);
 
-/**
- * Compact banter-tray shortcuts — classic skeletons + sports skull quick reactions.
- */
-export const BANTER_QUICK_EMOJIS = {
+/** Unordered quick-tray map — skulls + classic skeletons. */
+const BANTER_QUICK_EMOJI_MAP = {
   head_on_fire: require('../assets/skel_head_on_fire.png'),
   laughing1: require('../assets/skel_laughing1.png'),
   gym: require('../assets/skel_gym.png'),
@@ -60,6 +60,18 @@ export const BANTER_QUICK_EMOJIS = {
     ])
   ),
 };
+
+/**
+ * Compact banter-tray shortcuts — skull reactions first, then skeleton assets
+ * (same sort as Vault; Object key order drives the horizontal preview row).
+ */
+export const BANTER_QUICK_KEYS = Object.freeze(
+  sortVaultEmojiKeys(Object.keys(BANTER_QUICK_EMOJI_MAP))
+);
+
+export const BANTER_QUICK_EMOJIS = Object.fromEntries(
+  BANTER_QUICK_KEYS.map((key) => [key, BANTER_QUICK_EMOJI_MAP[key]])
+);
 
 export { SKULL_EMOJIS };
 
@@ -115,4 +127,6 @@ export {
   hasBawaalEmoji,
   getSkullEmojiSource,
   hasSkullEmoji,
+  sortVaultEmojiKeys,
+  isSkullVaultKey,
 };

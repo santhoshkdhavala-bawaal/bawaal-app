@@ -28,7 +28,7 @@ import {
   prefetchReelPoster,
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
-import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_EMOJIS } from './components/BawaalEmoji';
+import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
 import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
 
@@ -42,8 +42,8 @@ const TAP_REACT_SIZE = 64;
 const TAP_REACT_MS = 800;
 const TAP_REACT_MAX = 14;
 
-/** Banter / floating reactions — BawaalEmoji + sports skull keys only (never unicode). */
-const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
+/** Banter / floating reactions — skulls first, then skeletons (never unicode). */
+const BANTER_REACTIONS = BANTER_QUICK_KEYS;
 
 function pickRandomVaultKey() {
   const keys = ALL_SKELETON_KEYS;

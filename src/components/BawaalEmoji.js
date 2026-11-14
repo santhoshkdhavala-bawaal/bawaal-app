@@ -8,6 +8,7 @@ export {
   SKULL_EMOJIS,
   ALL_SKELETON_KEYS,
   BANTER_QUICK_EMOJIS,
+  BANTER_QUICK_KEYS,
   BAWAAL_EMOJI_ASSETS,
   BAWAAL_EMOJI_KEYS,
   SKULL_EMOJI_KEYS,
@@ -16,4 +17,6 @@ export {
   hasBawaalEmoji,
   getSkullEmojiSource,
   hasSkullEmoji,
+  sortVaultEmojiKeys,
+  isSkullVaultKey,
 } from '../../components/BawaalEmoji';

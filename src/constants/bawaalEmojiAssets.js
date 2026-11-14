@@ -168,17 +168,39 @@ const BAWAAL_EMOJI_ALIASES = {
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
 /**
- * Static vault key list that populates FullEmojiPickerDrawer.
- * `'love'` is always first so skel_love.png (heart-eyed skeleton) renders in the grid.
- * All skull_* keys (expression + sports set) are force-included for the Vault.
+ * Skull vault group — keys that start with or contain `skull`
+ * (e.g. `skull_goal`, `holding_skull_high_gold_crown`).
  */
-export const ALL_SKELETON_KEYS = Object.freeze([
-  'love',
-  ...SKULL_EMOJI_KEYS,
-  ...BAWAAL_EMOJI_KEYS.filter(
-    (key) => key !== 'love' && !SKULL_EMOJI_KEYS.includes(key)
-  ),
-]);
+export function isSkullVaultKey(key) {
+  return String(key || '')
+    .toLowerCase()
+    .includes('skull');
+}
+
+/**
+ * Vault / tray order: skull group first, then skeleton (`skel_`) assets;
+ * alphabetical within each group so the flex-wrap grid stays stable.
+ */
+export function compareVaultEmojiKeys(a, b) {
+  const aTier = isSkullVaultKey(a) ? 0 : 1;
+  const bTier = isSkullVaultKey(b) ? 0 : 1;
+  if (aTier !== bTier) return aTier - bTier;
+  return String(a).localeCompare(String(b));
+}
+
+export function sortVaultEmojiKeys(keys) {
+  return [...(keys || [])].sort(compareVaultEmojiKeys);
+}
+
+/**
+ * Static vault key list that populates FullEmojiPickerDrawer.
+ * Order: all skull* keys → remaining skeleton assets (incl. `love`).
+ */
+export const ALL_SKELETON_KEYS = Object.freeze(
+  sortVaultEmojiKeys(
+    Array.from(new Set(['love', ...SKULL_EMOJI_KEYS, ...BAWAAL_EMOJI_KEYS]))
+  )
+);
 
 if (!ALL_SKELETON_KEYS.includes('love') || !BAWAAL_EMOJI_ASSETS.love) {
   // eslint-disable-next-line no-console
