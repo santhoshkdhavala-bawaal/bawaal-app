@@ -1,50 +1,95 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
- * Spawns multiple copies near an origin; drift upward, scale up, fade out ~1.6–2s.
+ * Spawns at canvas center (width/2, height/2); disperses outward + floats up
+ * with spring physics, scales up, and fades out over ~2s.
  */
 import React, { memo, useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, StyleSheet, View } from 'react-native';
 import { BawaalEmoji } from '../../components/BawaalEmoji';
 
-export const BURST_DURATION_MS = 1800;
-export const BURST_PARTICLE_COUNT = 6;
+export const BURST_DURATION_MS = 2000;
+export const BURST_PARTICLE_COUNT = 7;
 export const BURST_MAX_PARTICLES = 42;
-export const BURST_EMOJI_SIZE = 44;
+export const BURST_EMOJI_SIZE = 48;
 
 let burstSeq = 0;
 
 /**
- * Build particle descriptors for one vault pick near (originX, originY).
+ * Resolve spawn origin to the exact center of the video / screen canvas.
+ * @param {{ width?: number, height?: number } | null | undefined} canvas
+ * @returns {{ startX: number, startY: number, width: number, height: number }}
+ */
+export function getCanvasCenterOrigin(canvas) {
+  const win = Dimensions.get('window');
+  const width =
+    Number(canvas?.width) > 0 ? Number(canvas.width) : win.width || 390;
+  const height =
+    Number(canvas?.height) > 0 ? Number(canvas.height) : win.height || 844;
+  return {
+    width,
+    height,
+    startX: width / 2,
+    startY: height / 2,
+  };
+}
+
+/**
+ * Build particle descriptors for one vault pick.
+ * Origin defaults to canvas center — not the sidebar vault button.
  * @returns {{ id: string, emojiKey: string, x: number, y: number, driftX: number, rise: number, delay: number, duration: number, size: number }[]}
  */
 export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {}) {
-  const count = Math.max(3, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
+  const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
   const key = String(emojiKey || 'skull_orange_glow_v3').toLowerCase();
-  const ox = Number(originX);
-  const oy = Number(originY);
-  if (!Number.isFinite(ox) || !Number.isFinite(oy)) return [];
+
+  // Prefer explicit center; fall back to window center if callers pass NaN / omit
+  const center = getCanvasCenterOrigin({
+    width: opts.width,
+    height: opts.height,
+  });
+  const ox = Number.isFinite(Number(originX)) ? Number(originX) : center.startX;
+  const oy = Number.isFinite(Number(originY)) ? Number(originY) : center.startY;
 
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    const driftX = (Math.random() - 0.5) * 90;
-    const rise = 120 + Math.random() * 70;
-    const delay = Math.floor(Math.random() * 120);
-    const duration = BURST_DURATION_MS + Math.floor(Math.random() * 250);
-    const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 10);
+    // Even radial spread + jitter — disperse across the middle of the feed
+    const baseAngle = (i / count) * Math.PI * 2;
+    const angle = baseAngle + (Math.random() - 0.5) * 0.55;
+    const outward = 70 + Math.random() * 110;
+    const driftX = Math.cos(angle) * outward;
+    // Always float upward; add a bit more rise when the radial vector points up
+    const rise =
+      130 +
+      Math.random() * 90 +
+      Math.max(0, -Math.sin(angle)) * (outward * 0.45);
+    const delay = Math.floor(Math.random() * 90);
+    const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 12);
     particles.push({
       id: `burst-${Date.now()}-${burstSeq}-${i}`,
       emojiKey: key,
-      x: ox + (Math.random() - 0.5) * 18,
-      y: oy + (Math.random() - 0.5) * 12,
+      x: ox,
+      y: oy,
       driftX,
       rise,
       delay,
-      duration,
+      duration: BURST_DURATION_MS,
       size,
     });
   }
   return particles;
+}
+
+/**
+ * Spawn a burst at the exact center of the given canvas (or window).
+ */
+export function createCenteredEmojiBurst(emojiKey, canvas, opts = {}) {
+  const { startX, startY, width, height } = getCanvasCenterOrigin(canvas);
+  return createEmojiBurstParticles(startX, startY, emojiKey, {
+    ...opts,
+    width,
+    height,
+  });
 }
 
 /** Cap particle list length (keeps feed overlays light). */
@@ -68,40 +113,58 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   onDone,
 }) {
   const progress = useRef(new Animated.Value(0)).current;
+  const fade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     progress.setValue(0);
-    const anim = Animated.sequence([
-      Animated.delay(Math.max(0, delay || 0)),
-      Animated.timing(progress, {
+    fade.setValue(0);
+    const wait = Math.max(0, delay || 0);
+    const life = Math.max(BURST_DURATION_MS, duration || BURST_DURATION_MS);
+
+    const motion = Animated.sequence([
+      Animated.delay(wait),
+      Animated.spring(progress, {
         toValue: 1,
-        duration: Math.max(1200, duration || BURST_DURATION_MS),
+        friction: 5.5,
+        tension: 38,
         useNativeDriver: true,
       }),
     ]);
+
+    const opacityAnim = Animated.sequence([
+      Animated.delay(wait),
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+      Animated.timing(fade, {
+        toValue: 0,
+        duration: Math.max(400, life - 180),
+        useNativeDriver: true,
+      }),
+    ]);
+
+    const anim = Animated.parallel([motion, opacityAnim]);
     anim.start(({ finished }) => {
       if (finished) onDone?.(id);
     });
     return () => {
       anim.stop();
     };
-  }, [progress, id, onDone, delay, duration]);
+  }, [progress, fade, id, onDone, delay, duration]);
 
   const scale = progress.interpolate({
-    inputRange: [0, 0.25, 1],
-    outputRange: [0.4, 1.15, 1.05],
+    inputRange: [0, 0.35, 1],
+    outputRange: [0.35, 1.2, 1.08],
   });
   const translateY = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -(rise || 140)],
+    outputRange: [0, -(rise || 160)],
   });
   const translateX = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, driftX || 0],
-  });
-  const opacity = progress.interpolate({
-    inputRange: [0, 0.15, 0.65, 1],
-    outputRange: [0, 1, 1, 0],
   });
 
   const dim = typeof size === 'number' && size > 0 ? size : BURST_EMOJI_SIZE;
@@ -114,7 +177,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
         {
           left: x - dim / 2,
           top: y - dim / 2,
-          opacity,
+          opacity: fade,
           transform: [{ translateX }, { translateY }, { scale }],
         },
       ]}

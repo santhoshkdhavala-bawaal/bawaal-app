@@ -81,7 +81,7 @@ import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
 import {
   FloatingEmojiBurstLayer,
   appendBurstParticles,
-  createEmojiBurstParticles,
+  createCenteredEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
 
 /** Insert an inline community shelf after every N video/battle rows. */
@@ -836,32 +836,25 @@ const GeneralReelCard = memo(function GeneralReelCard({
   }, []);
 
   const spawnVaultBurst = useCallback((emojiKey) => {
-    const fallbackX = Dimensions.get('window').width - REEL_VAULT.right - REEL_VAULT.width / 2;
-    const fallbackY = Dimensions.get('window').height - vaultBottom - REEL_VAULT.height / 2;
-
-    const finish = (ox, oy) => {
-      const next = createEmojiBurstParticles(ox, oy, emojiKey);
+    const win = Dimensions.get('window');
+    const apply = (width, height) => {
+      const next = createCenteredEmojiBurst(emojiKey, { width, height });
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     };
 
-    const btn = vaultBtnRef.current;
     const card = cardRef.current;
-    if (btn?.measureInWindow && card?.measureInWindow) {
-      btn.measureInWindow((bx, by, bw, bh) => {
-        card.measureInWindow((cx, cy) => {
-          const ox = bx - cx + (bw || REEL_VAULT.width) / 2;
-          const oy = by - cy + (bh || REEL_VAULT.height) / 2;
-          if (Number.isFinite(ox) && Number.isFinite(oy)) {
-            finish(ox, oy);
-            return;
-          }
-          finish(fallbackX, fallbackY);
-        });
+    if (card?.measure) {
+      card.measure((_x, _y, w, h) => {
+        if (w > 0 && h > 0) {
+          apply(w, h);
+          return;
+        }
+        apply(win.width, win.height);
       });
       return;
     }
-    finish(fallbackX, fallbackY);
-  }, [vaultBottom]);
+    apply(win.width, win.height);
+  }, []);
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -1209,33 +1202,23 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   }, []);
 
   const spawnVaultBurst = useCallback((emojiKey) => {
-    const fallbackX =
-      Dimensions.get('window').width - REEL_VAULT.right - REEL_VAULT.width / 2;
-    const fallbackY =
-      screenHeight - (REEL_MORE.bottom + REEL_VAULT.aboveMore) - REEL_VAULT.height / 2;
-
-    const finish = (ox, oy) => {
-      const next = createEmojiBurstParticles(ox, oy, emojiKey);
+    const apply = (width, height) => {
+      const next = createCenteredEmojiBurst(emojiKey, { width, height });
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     };
 
-    const btn = vaultBtnRef.current;
     const card = cardRef.current;
-    if (btn?.measureInWindow && card?.measureInWindow) {
-      btn.measureInWindow((bx, by, bw, bh) => {
-        card.measureInWindow((cx, cy) => {
-          const ox = bx - cx + (bw || REEL_VAULT.width) / 2;
-          const oy = by - cy + (bh || REEL_VAULT.height) / 2;
-          if (Number.isFinite(ox) && Number.isFinite(oy)) {
-            finish(ox, oy);
-            return;
-          }
-          finish(fallbackX, fallbackY);
-        });
+    if (card?.measure) {
+      card.measure((_x, _y, w, h) => {
+        if (w > 0 && h > 0) {
+          apply(w, h);
+          return;
+        }
+        apply(Dimensions.get('window').width, screenHeight);
       });
       return;
     }
-    finish(fallbackX, fallbackY);
+    apply(Dimensions.get('window').width, screenHeight);
   }, [screenHeight]);
 
   const onVaultEmojiSelect = useCallback(
