@@ -808,6 +808,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
   const moreBottom = tabBarHeight + 18;
@@ -837,11 +838,25 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const spawnVaultBurst = useCallback((emojiKey) => {
-    // Flex-centered overlay — particles start at translate 0,0
-    const next = createCenteredEmojiBurst(emojiKey);
-    setBurstParticles((prev) => appendBurstParticles(prev, next));
+  const onVideoContainerLayout = useCallback((event) => {
+    const { width, height } = event?.nativeEvent?.layout || {};
+    if (width > 0 && height > 0) {
+      setContainerSize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      );
+    }
   }, []);
+
+  const spawnVaultBurst = useCallback(
+    (emojiKey) => {
+      // Measured center: centerX = width/2, centerY = height/2 → startX/startY
+      const next = createCenteredEmojiBurst(emojiKey, containerSize);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [containerSize]
+  );
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -868,7 +883,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
   );
 
   return (
-    <View ref={cardRef} style={styles.reelCard} collapsable={false}>
+    <View
+      ref={cardRef}
+      style={styles.reelCard}
+      collapsable={false}
+      onLayout={onVideoContainerLayout}
+    >
       {/* Viewable row autoplays; mute + vault + ⋮ — long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
@@ -1171,6 +1191,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
@@ -1188,10 +1209,24 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const spawnVaultBurst = useCallback((emojiKey) => {
-    const next = createCenteredEmojiBurst(emojiKey);
-    setBurstParticles((prev) => appendBurstParticles(prev, next));
+  const onVideoContainerLayout = useCallback((event) => {
+    const { width, height } = event?.nativeEvent?.layout || {};
+    if (width > 0 && height > 0) {
+      setContainerSize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      );
+    }
   }, []);
+
+  const spawnVaultBurst = useCallback(
+    (emojiKey) => {
+      const next = createCenteredEmojiBurst(emojiKey, containerSize);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [containerSize]
+  );
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -1222,6 +1257,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       ref={cardRef}
       style={[styles.challengePage, { height: screenHeight }]}
       collapsable={false}
+      onLayout={onVideoContainerLayout}
     >
       <VideoItem
         item={item}
