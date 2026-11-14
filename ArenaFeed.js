@@ -806,9 +806,9 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
-  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
+  const burstLayerRef = useRef(null);
   const moreBottom = tabBarHeight + 18;
   const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
   const handle = item.author?.startsWith('@')
@@ -836,28 +836,19 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const onVideoBurstLayout = useCallback((e) => {
-    const { width, height } = e?.nativeEvent?.layout || {};
-    if (width > 0 && height > 0) {
-      setVideoLayout((prev) =>
-        prev.width === width && prev.height === height
-          ? prev
-          : { width, height }
-      );
-    }
-  }, []);
-
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      const win = Dimensions.get('window');
-      const width = videoLayout.width > 0 ? videoLayout.width : win.width;
-      const height = videoLayout.height > 0 ? videoLayout.height : win.height;
-      // Exact video-container center (width/2, height/2) + per-particle ±50 jitter
-      const next = createCenteredEmojiBurst(emojiKey, { width, height });
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    // Window center via Dimensions — mapped into overlay local space
+    const run = (layerOrigin) => {
+      const next = createCenteredEmojiBurst(emojiKey, layerOrigin);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
-    },
-    [videoLayout.width, videoLayout.height]
-  );
+    };
+    const layer = burstLayerRef.current;
+    if (layer?.measureWindowOrigin) {
+      void layer.measureWindowOrigin().then(run).catch(() => run({ x: 0, y: 0 }));
+      return;
+    }
+    run({ x: 0, y: 0 });
+  }, []);
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -970,9 +961,9 @@ const GeneralReelCard = memo(function GeneralReelCard({
       ) : null}
 
       <FloatingEmojiBurstLayer
+        ref={burstLayerRef}
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
-        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
@@ -1188,9 +1179,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
-  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
+  const burstLayerRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
 
@@ -1206,30 +1197,18 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const onVideoBurstLayout = useCallback((e) => {
-    const { width, height } = e?.nativeEvent?.layout || {};
-    if (width > 0 && height > 0) {
-      setVideoLayout((prev) =>
-        prev.width === width && prev.height === height
-          ? prev
-          : { width, height }
-      );
-    }
-  }, []);
-
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      const width =
-        videoLayout.width > 0
-          ? videoLayout.width
-          : Dimensions.get('window').width;
-      const height =
-        videoLayout.height > 0 ? videoLayout.height : screenHeight;
-      const next = createCenteredEmojiBurst(emojiKey, { width, height });
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    const run = (layerOrigin) => {
+      const next = createCenteredEmojiBurst(emojiKey, layerOrigin);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
-    },
-    [videoLayout.width, videoLayout.height, screenHeight]
-  );
+    };
+    const layer = burstLayerRef.current;
+    if (layer?.measureWindowOrigin) {
+      void layer.measureWindowOrigin().then(run).catch(() => run({ x: 0, y: 0 }));
+      return;
+    }
+    run({ x: 0, y: 0 });
+  }, []);
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -1302,9 +1281,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       </TouchableOpacity>
 
       <FloatingEmojiBurstLayer
+        ref={burstLayerRef}
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
-        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
