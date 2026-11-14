@@ -65,6 +65,8 @@ import {
   BAWAAL_ORANGE,
   REEL_MORE,
   REEL_MUTE,
+  REEL_VAULT,
+  REEL_VAULT_ICON_KEY,
 } from './src/constants/arenaReelOverlay';
 import {
   getArenaFilters,
@@ -74,6 +76,13 @@ import {
   subscribeArenaFilters,
 } from './src/stores/arenaFilterStore';
 import { dispatchReelSocialAction } from './src/services/reelSocialService';
+import { BawaalEmoji } from './components/BawaalEmoji';
+import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
+import {
+  FloatingEmojiBurstLayer,
+  appendBurstParticles,
+  createEmojiBurstParticles,
+} from './src/components/FloatingEmojiBurst';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -795,6 +804,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [muted, setMuted] = useState(true);
   const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [burstParticles, setBurstParticles] = useState([]);
+  const cardRef = useRef(null);
+  const vaultBtnRef = useRef(null);
+  const moreBottom = tabBarHeight + 18;
+  const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
@@ -816,6 +831,46 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setShowActionStack((open) => !open);
   }, []);
 
+  const removeBurstParticle = useCallback((id) => {
+    setBurstParticles((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    const fallbackX = Dimensions.get('window').width - REEL_VAULT.right - REEL_VAULT.width / 2;
+    const fallbackY = Dimensions.get('window').height - vaultBottom - REEL_VAULT.height / 2;
+
+    const finish = (ox, oy) => {
+      const next = createEmojiBurstParticles(ox, oy, emojiKey);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    };
+
+    const btn = vaultBtnRef.current;
+    const card = cardRef.current;
+    if (btn?.measureInWindow && card?.measureInWindow) {
+      btn.measureInWindow((bx, by, bw, bh) => {
+        card.measureInWindow((cx, cy) => {
+          const ox = bx - cx + (bw || REEL_VAULT.width) / 2;
+          const oy = by - cy + (bh || REEL_VAULT.height) / 2;
+          if (Number.isFinite(ox) && Number.isFinite(oy)) {
+            finish(ox, oy);
+            return;
+          }
+          finish(fallbackX, fallbackY);
+        });
+      });
+      return;
+    }
+    finish(fallbackX, fallbackY);
+  }, [vaultBottom]);
+
+  const onVaultEmojiSelect = useCallback(
+    (key) => {
+      setVaultOpen(false);
+      if (key) spawnVaultBurst(key);
+    },
+    [spawnVaultBurst]
+  );
+
   const onReelAction = useCallback(
     (actionId, reelSnapshot) => {
       // Comment / Banter open the live sheet — posts write from BanterBottomSheet
@@ -833,8 +888,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
   );
 
   return (
-    <View style={styles.reelCard}>
-      {/* Viewable row autoplays; mute + ⋮ only — long-press opens immersive */}
+    <View ref={cardRef} style={styles.reelCard} collapsable={false}>
+      {/* Viewable row autoplays; mute + vault + ⋮ — long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
         uri={pickFeedClipUri(item)}
@@ -891,16 +946,37 @@ const GeneralReelCard = memo(function GeneralReelCard({
       </View>
 
       {!immersiveOpen ? (
-        <TouchableOpacity
-          style={[styles.reelMoreBtn, { bottom: tabBarHeight + 18 }]}
-          onPress={toggleActionStack}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle reel actions"
-        >
-          <Text style={styles.reelMoreText}>⋮</Text>
-        </TouchableOpacity>
+        <>
+          <TouchableOpacity
+            ref={vaultBtnRef}
+            style={[styles.reelVaultBtn, { bottom: vaultBottom }]}
+            onPress={() => {
+              setShowActionStack(false);
+              setVaultOpen(true);
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Open BAWAAL skeleton vault"
+            collapsable={false}
+          >
+            <BawaalEmoji name={REEL_VAULT_ICON_KEY} size={REEL_VAULT.iconSize} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.reelMoreBtn, { bottom: moreBottom }]}
+            onPress={toggleActionStack}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle reel actions"
+          >
+            <Text style={styles.reelMoreText}>⋮</Text>
+          </TouchableOpacity>
+        </>
       ) : null}
+
+      <FloatingEmojiBurstLayer
+        particles={burstParticles}
+        onParticleDone={removeBurstParticle}
+      />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
       <ReelActionSheet
@@ -908,12 +984,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
         reel={item}
         onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
-        style={{ bottom: Math.max(tabBarHeight + 72, 100) }}
+        style={{ bottom: Math.max(tabBarHeight + 72 + REEL_VAULT.aboveMore, 100) }}
       />
       <BanterBottomSheet
         visible={banterOpen}
         reel={item}
         onClose={() => setBanterOpen(false)}
+      />
+      <FullEmojiPickerDrawer
+        visible={vaultOpen && !immersiveOpen}
+        onClose={() => setVaultOpen(false)}
+        onSelectEmoji={onVaultEmojiSelect}
       />
     </View>
   );
@@ -1097,7 +1178,7 @@ const BattleCard = memo(function BattleCard({
 });
 
 /**
- * Primary Arena feed page — full-bleed VideoItem + mute + floating ⋮ action stack.
+ * Primary Arena feed page — full-bleed VideoItem + mute + vault + floating ⋮ stack.
  */
 const ChallengeFeedCard = memo(function ChallengeFeedCard({
   item,
@@ -1108,6 +1189,10 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [isMuted, setIsMuted] = useState(true);
   const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [burstParticles, setBurstParticles] = useState([]);
+  const cardRef = useRef(null);
+  const vaultBtnRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
 
@@ -1118,6 +1203,48 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const toggleActionStack = useCallback(() => {
     setShowActionStack((open) => !open);
   }, []);
+
+  const removeBurstParticle = useCallback((id) => {
+    setBurstParticles((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    const fallbackX =
+      Dimensions.get('window').width - REEL_VAULT.right - REEL_VAULT.width / 2;
+    const fallbackY =
+      screenHeight - (REEL_MORE.bottom + REEL_VAULT.aboveMore) - REEL_VAULT.height / 2;
+
+    const finish = (ox, oy) => {
+      const next = createEmojiBurstParticles(ox, oy, emojiKey);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    };
+
+    const btn = vaultBtnRef.current;
+    const card = cardRef.current;
+    if (btn?.measureInWindow && card?.measureInWindow) {
+      btn.measureInWindow((bx, by, bw, bh) => {
+        card.measureInWindow((cx, cy) => {
+          const ox = bx - cx + (bw || REEL_VAULT.width) / 2;
+          const oy = by - cy + (bh || REEL_VAULT.height) / 2;
+          if (Number.isFinite(ox) && Number.isFinite(oy)) {
+            finish(ox, oy);
+            return;
+          }
+          finish(fallbackX, fallbackY);
+        });
+      });
+      return;
+    }
+    finish(fallbackX, fallbackY);
+  }, [screenHeight]);
+
+  const onVaultEmojiSelect = useCallback(
+    (key) => {
+      setVaultOpen(false);
+      if (key) spawnVaultBurst(key);
+    },
+    [spawnVaultBurst]
+  );
 
   const onReelAction = useCallback(
     (actionId, reelSnapshot) => {
@@ -1136,7 +1263,11 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   );
 
   return (
-    <View style={[styles.challengePage, { height: screenHeight }]}>
+    <View
+      ref={cardRef}
+      style={[styles.challengePage, { height: screenHeight }]}
+      collapsable={false}
+    >
       <VideoItem
         item={item}
         itemHeight={screenHeight}
@@ -1153,6 +1284,21 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       />
 
       <TouchableOpacity
+        ref={vaultBtnRef}
+        style={styles.challengeVaultBtn}
+        onPress={() => {
+          setShowActionStack(false);
+          setVaultOpen(true);
+        }}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel="Open BAWAAL skeleton vault"
+        collapsable={false}
+      >
+        <BawaalEmoji name={REEL_VAULT_ICON_KEY} size={REEL_VAULT.iconSize} />
+      </TouchableOpacity>
+
+      <TouchableOpacity
         style={styles.challengeMoreBtn}
         onPress={toggleActionStack}
         activeOpacity={0.85}
@@ -1162,17 +1308,28 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         <Text style={styles.reelMoreText}>⋮</Text>
       </TouchableOpacity>
 
+      <FloatingEmojiBurstLayer
+        particles={burstParticles}
+        onParticleDone={removeBurstParticle}
+      />
+
       {/* Floating Instagram-style stack — video keeps playing underneath */}
       <ReelActionSheet
         visible={showActionStack}
         reel={item}
         onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
+        style={{ bottom: REEL_MORE.bottom + REEL_VAULT.aboveMore + 48 }}
       />
       <BanterBottomSheet
         visible={banterOpen}
         reel={item}
         onClose={() => setBanterOpen(false)}
+      />
+      <FullEmojiPickerDrawer
+        visible={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        onSelectEmoji={onVaultEmojiSelect}
       />
     </View>
   );
@@ -2237,6 +2394,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  /** Glow-skull Vault — stacked directly above ⋮ */
+  challengeVaultBtn: {
+    position: 'absolute',
+    bottom: REEL_MORE.bottom + REEL_VAULT.aboveMore,
+    right: REEL_VAULT.right,
+    zIndex: REEL_VAULT.zIndex,
+    width: REEL_VAULT.width,
+    height: REEL_VAULT.height,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
   reelMuteBtn: {
     position: 'absolute',
     top: REEL_MUTE.top,
@@ -2249,6 +2418,16 @@ const styles = StyleSheet.create({
     zIndex: REEL_MORE.zIndex,
     width: REEL_MORE.width,
     height: REEL_MORE.height,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  reelVaultBtn: {
+    position: 'absolute',
+    right: REEL_VAULT.right,
+    zIndex: REEL_VAULT.zIndex,
+    width: REEL_VAULT.width,
+    height: REEL_VAULT.height,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',

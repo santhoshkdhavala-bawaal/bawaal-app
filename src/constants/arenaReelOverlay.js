@@ -36,3 +36,20 @@ export const REEL_MORE = {
   height: 40,
   zIndex: 40,
 };
+
+/**
+ * Glow-skull Vault trigger — stacked directly above ⋮ on the same right rail.
+ * Parent sets `bottom: moreBottom + REEL_VAULT.aboveMore`.
+ */
+export const REEL_VAULT = {
+  right: 16,
+  /** Distance from ⋮ bottom edge to vault button bottom edge */
+  aboveMore: REEL_MORE.height + 8,
+  width: 40,
+  height: 40,
+  zIndex: 41,
+  iconSize: 32,
+};
+
+/** Asset key for the lightning / orange-glow vault rail button */
+export const REEL_VAULT_ICON_KEY = 'skull_orange_glow_v3';
