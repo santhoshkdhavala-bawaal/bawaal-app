@@ -89,6 +89,12 @@ import {
   broadcastVaultBurst,
   resolveBurstActorId,
 } from './src/services/vaultBurstRealtime';
+import DmSharePicker from './src/components/DmSharePicker';
+import {
+  castCustomMatchupVote,
+  fetchChallengeMatchupRoster,
+  tallyMatchupVotes,
+} from './src/services/customMatchupService';
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -813,6 +819,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [dmShareOpen, setDmShareOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
@@ -897,6 +904,11 @@ const GeneralReelCard = memo(function GeneralReelCard({
       // Comment / Banter open the live sheet — posts write from BanterBottomSheet
       if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
+        return;
+      }
+      // DM / Send → quick DM share picker (Share stays native in ReelActionSheet)
+      if (actionId === 'dm' || actionId === 'send') {
+        setDmShareOpen(true);
         return;
       }
       void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(
@@ -1022,9 +1034,16 @@ const GeneralReelCard = memo(function GeneralReelCard({
         onClose={() => setVaultOpen(false)}
         onSelectEmoji={handleSelectSkull}
       />
+      <DmSharePicker
+        visible={dmShareOpen && !immersiveOpen}
+        reel={item}
+        onClose={() => setDmShareOpen(false)}
+      />
     </View>
   );
 });
+
+const SPLIT_WIDE_MIN = 768;
 
 const BattleCard = memo(function BattleCard({
   item,
@@ -1034,28 +1053,34 @@ const BattleCard = memo(function BattleCard({
   isMounted = false,
 }) {
   const [muted, setMuted] = useState(true);
+  const [banterOpen, setBanterOpen] = useState(false);
+  const [votesA, setVotesA] = useState(0);
+  const [votesB, setVotesB] = useState(0);
+  const [voting, setVoting] = useState(false);
+  const [splitWide, setSplitWide] = useState(
+    () => Dimensions.get('window').width >= SPLIT_WIDE_MIN
+  );
+
   const isOpenChallenge =
     item?.isOpenChallenge === true ||
     String(item?.status || '').toUpperCase() === 'OPEN';
   const responses = sortResponses(item.responses, 'top');
-  const leader = responses[0];
+  // Host lock: first successful response = Player B (primary rival)
+  const rival = responses[0] || null;
   const responseCount = responses.length;
-  // Host opener benchmark (left pane for OPEN challenges)
+  const waitingForChallenger = isOpenChallenge && !rival;
+
   const openerUri =
     item.challengeVideoUri ||
     item.openerVideoUri ||
     (isOpenChallenge
       ? item.videoUri || item.uri || item.localVideoUri || null
       : null);
-  // Athlete response URI — never fall back to opener on OPEN cards
   const responseUri = isOpenChallenge
-    ? leader?.videoUri ||
-      leader?.uri ||
-      leader?.localVideoUri ||
-      null
-    : leader?.videoUri ||
-      leader?.uri ||
-      leader?.localVideoUri ||
+    ? rival?.videoUri || rival?.uri || rival?.localVideoUri || null
+    : rival?.videoUri ||
+      rival?.uri ||
+      rival?.localVideoUri ||
       item.videoUri ||
       item.uri ||
       item.localVideoUri ||
@@ -1066,17 +1091,89 @@ const BattleCard = memo(function BattleCard({
       ? item.challengeVideoUri
       : null;
 
+  const challengeId = String(
+    item.challengeId || item.battleId || item.id || ''
+  );
+  const fighterAId = String(
+    item.hostResponseId || item.openerId || `host-${item.id}`
+  );
+  const fighterBId = String(rival?.id || `rival-${item.id}`);
+
   const toggleMute = useCallback(() => {
     setMuted((m) => !m);
   }, []);
 
-  const leftLabel = isOpenChallenge
-    ? '@YOU'
+  const onSplitLayout = useCallback((e) => {
+    const w = e?.nativeEvent?.layout?.width || 0;
+    if (w > 0) {
+      setSplitWide(w >= SPLIT_WIDE_MIN);
+    }
+  }, []);
+
+  // Soft-load pairwise tallies when both fighters are present
+  useEffect(() => {
+    if (!rival || !challengeId) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const roster = await fetchChallengeMatchupRoster(challengeId);
+        if (!alive) return;
+        const tallied = tallyMatchupVotes(
+          roster?.votes || [],
+          fighterAId,
+          fighterBId
+        );
+        setVotesA(Number(tallied.votesA) || 0);
+        setVotesB(Number(tallied.votesB) || 0);
+      } catch (_) {
+        /* soft-fail — keep local zeros */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [rival, challengeId, fighterAId, fighterBId]);
+
+  const castVote = useCallback(
+    async (side) => {
+      if (!rival || voting) return;
+      const votedForId = side === 'A' ? fighterAId : fighterBId;
+      setVoting(true);
+      if (side === 'A') setVotesA((n) => n + 1);
+      else setVotesB((n) => n + 1);
+      try {
+        await castCustomMatchupVote({
+          challengeId,
+          fighterAId,
+          fighterBId,
+          votedForId,
+        });
+      } catch (_) {
+        /* soft-fail — optimistic counts stay */
+      } finally {
+        setVoting(false);
+      }
+    },
+    [rival, voting, challengeId, fighterAId, fighterBId]
+  );
+
+  const hostLabel = isOpenChallenge
+    ? 'HOST · PLAYER A'
     : challengeUri
-      ? item.opponent || 'CHALLENGE'
-      : leader?.creator === 'You'
-        ? 'YOU'
-        : item.opponent || 'CLIP';
+      ? item.opponent || 'PLAYER A'
+      : rival?.creator === 'You'
+        ? 'YOU · PLAYER A'
+        : item.opponent || 'PLAYER A';
+
+  const rivalLabel = rival
+    ? rival.creator === 'You'
+      ? 'YOU · PLAYER B'
+      : `PLAYER B · @${String(rival.creator || 'rival').replace(/^@/, '')}`
+    : 'PLAYER B';
+
+  const totalVotes = votesA + votesB;
+  const pctA = totalVotes > 0 ? Math.round((votesA / totalVotes) * 100) : 50;
+  const pctB = totalVotes > 0 ? 100 - pctA : 50;
 
   const { tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
 
@@ -1085,21 +1182,37 @@ const BattleCard = memo(function BattleCard({
       <View style={styles.feedCardHeader}>
         <View style={styles.battleBadge}>
           <Text style={styles.battleBadgeText}>
-            {isOpenChallenge ? 'OPEN CHALLENGE' : 'OFFICIAL BATTLE'}
+            {waitingForChallenger
+              ? 'FACEOFF · OPEN'
+              : isOpenChallenge
+                ? 'FACEOFF · LIVE SPLIT'
+                : 'OFFICIAL BATTLE'}
           </Text>
         </View>
-        <Text style={styles.feedTime}>{item.status || 'BATTLE'}</Text>
+        <Text style={styles.feedTime}>
+          {waitingForChallenger
+            ? 'WAITING FOR CHALLENGER'
+            : item.status || 'BATTLE'}
+        </Text>
       </View>
 
       <View style={styles.vsRow}>
         <Text style={styles.vsTitle}>
-          {isOpenChallenge
-            ? '@YOU vs OPEN FIELD'
-            : `${item.challengerLabel || 'YOU'} vs ${item.leaderLabel || item.opponent}`}
+          {waitingForChallenger
+            ? 'HOST (A) vs WAITING FOR CHALLENGER'
+            : `${item.challengerLabel || 'HOST A'} vs ${
+                item.leaderLabel || rivalLabel
+              }`}
         </Text>
       </View>
 
-      <View style={styles.splitRow}>
+      <View
+        style={[
+          styles.splitRow,
+          splitWide ? styles.splitRowWide : styles.splitRowStack,
+        ]}
+        onLayout={onSplitLayout}
+      >
         <View style={styles.splitPane}>
           <ClipSurface
             uri={challengeUri || (!isOpenChallenge ? responseUri : null)}
@@ -1113,27 +1226,32 @@ const BattleCard = memo(function BattleCard({
                   : item.localVideoUri,
               publicCloudUrl: item.publicCloudUrl,
             }}
-            label={leftLabel}
+            label={hostLabel}
             style={styles.splitClip}
             muted={muted}
             shouldPlay={shouldPlay}
             isMounted={isMounted}
           />
         </View>
-        <View style={styles.splitDivider}>
+        <View
+          style={[
+            styles.splitDivider,
+            !splitWide && styles.splitDividerHorizontal,
+          ]}
+        >
           <Text style={styles.splitVs}>VS</Text>
         </View>
         <View style={styles.splitPane}>
-          {isOpenChallenge && !responseUri ? (
+          {waitingForChallenger ? (
             <TouchableOpacity
               style={[styles.splitClip, styles.openSlot]}
               onPress={() => onRespond?.(item)}
               activeOpacity={0.85}
               accessibilityRole="button"
-              accessibilityLabel="Respond to open challenge"
+              accessibilityLabel="Accept open challenge"
             >
-              <Text style={styles.openSlotLabel}>CHALLENGER</Text>
-              <Text style={styles.openSlotCta}>TAP TO RESPOND</Text>
+              <Text style={styles.openSlotLabel}>WAITING FOR CHALLENGER</Text>
+              <Text style={styles.openSlotCta}>ACCEPT · RECORD ATTEMPT</Text>
             </TouchableOpacity>
           ) : (
             <ClipSurface
@@ -1141,18 +1259,12 @@ const BattleCard = memo(function BattleCard({
               source={{
                 uri: responseUri,
                 videoUri: responseUri,
-                video_url: leader?.video_url,
-                localVideoUri: leader?.localVideoUri || item.localVideoUri,
-                recordedVideoUri: leader?.recordedVideoUri,
-                publicCloudUrl: leader?.publicCloudUrl || item.publicCloudUrl,
+                video_url: rival?.video_url,
+                localVideoUri: rival?.localVideoUri || item.localVideoUri,
+                recordedVideoUri: rival?.recordedVideoUri,
+                publicCloudUrl: rival?.publicCloudUrl || item.publicCloudUrl,
               }}
-              label={
-                leader
-                  ? leader.creator === 'You'
-                    ? 'YOU'
-                    : `@${leader.creator}`
-                  : 'YOU'
-              }
+              label={rivalLabel}
               shouldPlay={shouldPlay}
               isMounted={isMounted}
               muted={muted}
@@ -1173,6 +1285,47 @@ const BattleCard = memo(function BattleCard({
         </Text>
       ) : null}
 
+      {/* Voting + banter bar — below split (async Faceoff) */}
+      {!waitingForChallenger ? (
+        <View style={styles.voteBanterBar}>
+          <View style={styles.voteTrack}>
+            <View style={[styles.voteFillA, { flex: Math.max(pctA, 8) }]} />
+            <View style={[styles.voteFillB, { flex: Math.max(pctB, 8) }]} />
+          </View>
+          <View style={styles.voteActions}>
+            <TouchableOpacity
+              style={styles.voteBtnA}
+              onPress={() => castVote('A')}
+              disabled={voting}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Vote A"
+            >
+              <Text style={styles.voteBtnText}>VOTE A · {votesA}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.banterBarBtn}
+              onPress={() => setBanterOpen(true)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Open banter"
+            >
+              <Text style={styles.banterBarBtnText}>BANTER</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.voteBtnB}
+              onPress={() => castVote('B')}
+              disabled={voting}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Vote B"
+            >
+              <Text style={styles.voteBtnText}>VOTE B · {votesB}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
       <TouchableOpacity
         style={styles.responseBadge}
         onPress={() => onOpenResponses?.(item)}
@@ -1183,15 +1336,27 @@ const BattleCard = memo(function BattleCard({
         </Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.respondCta}
-        onPress={() => onRespond?.(item)}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel="Respond to battle"
-      >
-        <Text style={styles.respondCtaText}>RESPOND</Text>
-      </TouchableOpacity>
+      {waitingForChallenger ? (
+        <TouchableOpacity
+          style={styles.respondCta}
+          onPress={() => onRespond?.(item)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Accept challenge"
+        >
+          <Text style={styles.respondCtaText}>ACCEPT CHALLENGE</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={styles.respondCta}
+          onPress={() => onOpenResponses?.(item)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="View responses tray"
+        >
+          <Text style={styles.respondCtaText}>VIEW RESPONSES</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.feedFooter}>
         <Text style={styles.targetText}>TARGET: {item.target}</Text>
@@ -1199,6 +1364,12 @@ const BattleCard = memo(function BattleCard({
           <Text style={styles.postedText}>{item.sport}</Text>
         </View>
       </View>
+
+      <BanterBottomSheet
+        visible={banterOpen}
+        reel={item}
+        onClose={() => setBanterOpen(false)}
+      />
     </View>
   );
 });
@@ -1216,6 +1387,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [showActionStack, setShowActionStack] = useState(false);
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [dmShareOpen, setDmShareOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
@@ -1286,6 +1458,10 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       // Comment / Banter open the live sheet — posts write from BanterBottomSheet
       if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
+        return;
+      }
+      if (actionId === 'dm' || actionId === 'send') {
+        setDmShareOpen(true);
         return;
       }
       void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(
@@ -1366,6 +1542,11 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         visible={vaultOpen}
         onClose={() => setVaultOpen(false)}
         onSelectEmoji={handleSelectSkull}
+      />
+      <DmSharePicker
+        visible={dmShareOpen}
+        reel={item}
+        onClose={() => setDmShareOpen(false)}
       />
     </View>
   );
@@ -2618,15 +2799,23 @@ const styles = StyleSheet.create({
   },
   splitRow: {
     position: 'relative',
-    flexDirection: 'row',
     flex: 1,
+    minHeight: 220,
     backgroundColor: DARK_BG,
+  },
+  splitRowWide: {
+    flexDirection: 'row',
+  },
+  splitRowStack: {
+    flexDirection: 'column',
   },
   splitPane: {
     flex: 1,
+    minHeight: 140,
   },
   splitClip: {
     flex: 1,
+    minHeight: 140,
   },
   openSlot: {
     backgroundColor: '#0A0A0A',
@@ -2643,6 +2832,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
     marginBottom: 6,
+    textAlign: 'center',
   },
   openSlotCta: {
     color: '#3B82F6',
@@ -2657,11 +2847,77 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: DARK_BG,
   },
+  splitDividerHorizontal: {
+    width: '100%',
+    height: 28,
+  },
   splitVs: {
     color: CRIMSON,
     fontWeight: '900',
-    fontSize: 11,
-    letterSpacing: 1,
+    fontSize: 12,
+    letterSpacing: 1.2,
+    textShadowColor: 'rgba(255,0,51,0.65)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 8,
+  },
+  voteBanterBar: {
+    marginHorizontal: 12,
+    marginTop: 10,
+    paddingVertical: 8,
+  },
+  voteTrack: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: '#1A1A1A',
+    marginBottom: 8,
+  },
+  voteFillA: {
+    backgroundColor: '#3B82F6',
+  },
+  voteFillB: {
+    backgroundColor: '#FF5722',
+  },
+  voteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  voteBtnA: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  voteBtnB: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FF5722',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  voteBtnText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  banterBarBtn: {
+    borderRadius: 10,
+    backgroundColor: '#FF5722',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  banterBarBtnText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
   },
   targetDetailsText: {
     color: MUTED,

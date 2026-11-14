@@ -18,6 +18,7 @@ import { isHandleVerified } from './src/data/athleteSocial';
 import {
   fetchVideoComments,
   postVideoComment,
+  subscribeVideoSocial,
 } from './src/services/videoSocialService';
 import {
   BawaalEmoji,
@@ -34,11 +35,13 @@ import {
   toBawaalShortcode,
 } from './src/utils/bawaalEmojiText';
 
-const BG = '#000000';
+/** Banter sheet theme (scoped — Social Loop sprint) */
+const BG = '#0b0b0b';
 const CARD = '#121212';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const BAWAAL_ORANGE = '#FF5500';
+const BAWAAL_ORANGE = '#FF5722';
+const ACCENT = '#FF5722';
 
 /** Horizontal Banter reaction tray — skulls first, then skeleton shortcuts. */
 const BANTER_REACTIONS = BANTER_QUICK_KEYS;
@@ -126,31 +129,52 @@ export default function BanterBottomSheet({ visible, reel, onClose, onPosted }) 
   const [loading, setLoading] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
 
+  const reloadBanter = useCallback(async () => {
+    const live = await fetchVideoComments(reel);
+    if (live.length) {
+      setBanter(live.map(withResolvedEmotion));
+      return;
+    }
+    if (reel?.banter?.length) {
+      setBanter(reel.banter.map(withResolvedEmotion));
+      return;
+    }
+    setBanter(DEMO_BANTER);
+  }, [reel]);
+
   useEffect(() => {
     if (!visible) {
       setVaultOpen(false);
-      return;
+      return undefined;
     }
     setDraft('');
     setSelection({ start: 0, end: 0 });
     let alive = true;
     setLoading(true);
     (async () => {
-      const live = await fetchVideoComments(reel);
-      if (!alive) return;
-      if (live.length) {
-        setBanter(live.map(withResolvedEmotion));
-      } else if (reel?.banter?.length) {
-        setBanter(reel.banter.map(withResolvedEmotion));
-      } else {
-        setBanter(DEMO_BANTER);
-      }
-      setLoading(false);
+      await reloadBanter();
+      if (alive) setLoading(false);
     })();
+
+    const videoId = String(reel?.id || reel?.videoId || '');
+    const unsub =
+      videoId
+        ? subscribeVideoSocial([videoId], (evt) => {
+            if (evt?.table === 'comments') {
+              void reloadBanter();
+            }
+          })
+        : () => {};
+
     return () => {
       alive = false;
+      try {
+        unsub?.();
+      } catch (_) {
+        /* ignore */
+      }
     };
-  }, [visible, reel?.id]);
+  }, [visible, reel?.id, reloadBanter]);
 
   const handle = reel?.author?.startsWith('@')
     ? reel.author
@@ -446,13 +470,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: BAWAAL_ORANGE,
+    borderColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   vaultChipText: {
-    color: BAWAAL_ORANGE,
+    color: ACCENT,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.6,
@@ -469,7 +493,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: BAWAAL_ORANGE,
+    borderColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -504,14 +528,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   sendBtn: {
-    backgroundColor: WHITE,
+    backgroundColor: ACCENT,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   sendText: {
-    color: BG,
+    color: WHITE,
     fontSize: 11,
     fontWeight: '900',
+    letterSpacing: 0.6,
   },
 });

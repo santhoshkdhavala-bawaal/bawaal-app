@@ -139,7 +139,8 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
         setLikedByMe(nextLiked);
         setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
       }
-      if (resolvedId === 'share' || resolvedId === 'send') {
+      // Share = native system share. Send/DM open the DM picker via onAction.
+      if (resolvedId === 'share') {
         await shareReel(reel);
       }
       try {
