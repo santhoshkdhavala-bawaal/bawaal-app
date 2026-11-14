@@ -849,7 +849,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   const spawnVaultBurst = useCallback(
     (emojiKey) => {
-      // Video-card lower-middle (width/2, height*0.65) — not window height
+      // Video-card combat zone (width/2, fixed startY px) — not window %
       const next = createCenteredEmojiBurst(emojiKey, videoLayout);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     },

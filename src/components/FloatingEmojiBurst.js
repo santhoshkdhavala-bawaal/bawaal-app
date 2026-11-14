@@ -1,11 +1,11 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Spawn origin is the video player container from onLayout:
+ * Spawn origin (video-player local coords):
  *   startX = containerWidth / 2
- *   startY = containerHeight * BURST_ORIGIN_Y_RATIO (lower-middle combat zone)
- * Never uses Dimensions.get('window').height (excludes browser/app chrome).
- * Radial spread then drifts up and fades ~2s.
+ *   startY = BURST_ORIGIN_Y_PX (fixed px from top of the video card — combat zone)
+ * Never uses window height or relative % for startY (web miscalc).
+ * Overlay is absolute-fill over the video player card.
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
@@ -18,17 +18,15 @@ export const BURST_EMOJI_SIZE = 48;
 /** Random initial offset from center: Math.random() * 100 - 50 → [-50, 50] */
 export const BURST_CENTER_JITTER = 50;
 /**
- * Vertical spawn ratio — lower-middle of the video frame (combat sweet spot).
- * 0.65 ≈ 65% down from the top of the video container.
+ * Hardcoded vertical spawn — pixels down from the top of the video player card.
+ * Lands in the active combat zone (~lower-middle on phone / web card).
  */
+export const BURST_ORIGIN_Y_PX = 375;
+/** @deprecated percentages miscalculate on web — use BURST_ORIGIN_Y_PX */
 export const BURST_ORIGIN_Y_RATIO = 0.65;
-/**
- * Fallback size when container height is not yet measured
- * (startY ≈ fallbackHeight * 0.65 ≈ 260).
- */
-export const BURST_FALLBACK_HEIGHT = 400;
+export const BURST_FALLBACK_HEIGHT = 700;
 export const BURST_FALLBACK_WIDTH = 390;
-export const BURST_FALLBACK_CENTER_Y = BURST_FALLBACK_HEIGHT * BURST_ORIGIN_Y_RATIO;
+export const BURST_FALLBACK_CENTER_Y = BURST_ORIGIN_Y_PX;
 export const BURST_FALLBACK_CENTER_X = BURST_FALLBACK_WIDTH / 2;
 
 let burstSeq = 0;
@@ -39,8 +37,7 @@ function randomCenterOffset() {
 
 /**
  * Burst origin over the video player (local coords).
- * Horizontal: dead center. Vertical: lower-middle (~65% of container height).
- * Prefer onLayout width/height — never window height (includes headers).
+ * Horizontal: containerWidth / 2. Vertical: fixed BURST_ORIGIN_Y_PX from top.
  *
  * @param {{ width?: number, height?: number } | null | undefined} container
  * @returns {{ startX: number, startY: number, width: number, height: number }}
@@ -50,11 +47,13 @@ export function getVideoContainerCenter(container) {
   const height = Number(container?.height);
   const w = Number.isFinite(width) && width > 0 ? width : BURST_FALLBACK_WIDTH;
   const h = Number.isFinite(height) && height > 0 ? height : BURST_FALLBACK_HEIGHT;
+  // Fixed px from top of video card; clamp so short layouts stay on-card
+  const startY = Math.min(BURST_ORIGIN_Y_PX, Math.max(120, h - 80));
   return {
     width: w,
     height: h,
     startX: w / 2,
-    startY: h * BURST_ORIGIN_Y_RATIO,
+    startY,
   };
 }
 
@@ -111,7 +110,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at video lower-middle: width/2, height * 0.65 (from onLayout).
+ * Spawn at video combat zone: width/2, fixed startY px from top of card.
  * @param {string} emojiKey
  * @param {{ width?: number, height?: number } | null} containerLayout
  */
