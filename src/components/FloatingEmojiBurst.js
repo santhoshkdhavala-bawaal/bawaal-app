@@ -1,9 +1,8 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Flex-centered overlay on the video card:
- *   absolute fill + justifyContent/alignItems center
- * Particles start at dead center (translateX/Y: 0) and explode radially:
+ * Overlay absolute-fills a position:relative video card (explicit height / flex).
+ * Particles anchor at top/left 50% (container midpoint) and explode radially:
  *   X → random ±150px; Y → brief +40 kick then float to −180 while fading.
  */
 import React, { memo, useEffect, useRef } from 'react';
@@ -27,7 +26,7 @@ function randomBetween(min, max) {
 }
 
 /**
- * Build particles that erupt radially from flex dead-center (0, 0).
+ * Build particles that erupt radially from container midpoint (50%/50%).
  * targetX: −150…+150 · kickY: ~+40 · floatY: ~−180
  */
 export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {}) {
@@ -37,11 +36,8 @@ export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    // True radial left/right coverage across the combat zone
     const targetX = randomBetween(-BURST_X_SPREAD, BURST_X_SPREAD);
-    // Slight outward/downward kick on the initial pop
     const kickY = BURST_KICK_Y + randomBetween(-8, 12);
-    // Then float upward as they fade
     const floatY = BURST_FLOAT_Y + randomBetween(-30, 20);
     const delay = Math.floor(Math.random() * 80);
     const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 12);
@@ -60,7 +56,7 @@ export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {
 }
 
 /**
- * Spawn a flex-centered radial burst.
+ * Spawn a centered radial burst over the measured video card.
  * @param {string} emojiKey
  */
 export function createCenteredEmojiBurst(emojiKey, _containerLayout, opts = {}) {
@@ -137,7 +133,6 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     outputRange: [0, targetX || 0],
     extrapolate: 'clamp',
   });
-  // Initial pop kicks slightly down/out, then floats up while fading
   const translateY = progress.interpolate({
     inputRange: [0, 0.22, 1],
     outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
@@ -154,6 +149,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
         {
           width: dim,
           height: dim,
+          // Anchor glyph center on the 50%/50% point
           marginLeft: -dim / 2,
           marginTop: -dim / 2,
           opacity: fade,
@@ -167,8 +163,8 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Absolute flex-centered overlay spanning the video card.
- * Particles sit at the layout midpoint and erupt radially.
+ * Absolute overlay matching the video card bounds.
+ * Requires a position:relative parent with measured height (web-safe).
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -177,23 +173,20 @@ export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
 }) {
   return (
     <View pointerEvents="none" collapsable={false} style={[styles.layer, style]}>
-      {/* 0×0 flex origin pinned at visual center of the card */}
-      <View style={styles.origin} pointerEvents="none" collapsable={false}>
-        {(particles || []).map((p) => (
-          <FloatingEmojiParticle
-            key={p.id}
-            id={p.id}
-            emojiKey={p.emojiKey}
-            targetX={p.targetX}
-            kickY={p.kickY}
-            floatY={p.floatY}
-            delay={p.delay}
-            duration={p.duration}
-            size={p.size}
-            onDone={onParticleDone}
-          />
-        ))}
-      </View>
+      {(particles || []).map((p) => (
+        <FloatingEmojiParticle
+          key={p.id}
+          id={p.id}
+          emojiKey={p.emojiKey}
+          targetX={p.targetX}
+          kickY={p.kickY}
+          floatY={p.floatY}
+          delay={p.delay}
+          duration={p.duration}
+          size={p.size}
+          onDone={onParticleDone}
+        />
+      ))}
     </View>
   );
 });
@@ -207,22 +200,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
     pointerEvents: 'none',
-    zIndex: 50,
     overflow: 'hidden',
-  },
-  origin: {
-    width: 0,
-    height: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'visible',
+    zIndex: 50,
   },
   particle: {
     position: 'absolute',
-    left: 0,
-    top: 0,
+    top: '50%',
+    left: '50%',
   },
 });

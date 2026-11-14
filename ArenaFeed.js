@@ -464,9 +464,11 @@ function ingestPostsBatch(prev, posts) {
 }
 
 const FEED_VIDEO_SHELL = {
+  position: 'relative',
   width: '100%',
   height: '100%',
   flex: 1,
+  minHeight: 450,
   backgroundColor: '#000000',
   overflow: 'hidden',
 };
@@ -2289,8 +2291,10 @@ const styles = StyleSheet.create({
   },
   reelCard: {
     position: 'relative',
+    width: '100%',
     flex: 1,
     height: '100%',
+    minHeight: 450,
     marginHorizontal: 0,
     marginBottom: 0,
     backgroundColor: DARK_BG,
@@ -2300,9 +2304,11 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
   },
   clipShell: {
+    position: 'relative',
     width: '100%',
     height: '100%',
     flex: 1,
+    minHeight: 450,
     backgroundColor: '#000',
     overflow: 'hidden',
   },
@@ -2325,6 +2331,7 @@ const styles = StyleSheet.create({
   challengePage: {
     position: 'relative',
     width: '100%',
+    minHeight: 450,
     backgroundColor: '#000000',
     overflow: 'hidden',
   },
