@@ -806,9 +806,9 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
+  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
-  const burstLayerRef = useRef(null);
   const moreBottom = tabBarHeight + 18;
   const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
   const handle = item.author?.startsWith('@')
@@ -836,20 +836,25 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const spawnVaultBurst = useCallback((emojiKey) => {
-    // Window center via Dimensions — mapped into overlay local space
-    const run = (layerOrigin) => {
-      const next = createCenteredEmojiBurst(emojiKey, layerOrigin);
-      setBurstParticles((prev) => appendBurstParticles(prev, next));
-    };
-    const layer = burstLayerRef.current;
-    if (layer?.measureWindowOrigin) {
-      void layer.measureWindowOrigin().then(run).catch(() => run({ x: 0, y: 0 }));
-      return;
+  const onVideoBurstLayout = useCallback((e) => {
+    const { width, height } = e?.nativeEvent?.layout || {};
+    if (width > 0 && height > 0) {
+      setVideoLayout((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      );
     }
-    run({ x: 0, y: 0 });
   }, []);
 
+  const spawnVaultBurst = useCallback(
+    (emojiKey) => {
+      // Video-card lower-middle (width/2, height*0.65) — not window height
+      const next = createCenteredEmojiBurst(emojiKey, videoLayout);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [videoLayout]
+  );
   const onVaultEmojiSelect = useCallback(
     (key) => {
       setVaultOpen(false);
@@ -961,9 +966,9 @@ const GeneralReelCard = memo(function GeneralReelCard({
       ) : null}
 
       <FloatingEmojiBurstLayer
-        ref={burstLayerRef}
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
+        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
@@ -1179,9 +1184,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
+  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
-  const burstLayerRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
 
@@ -1197,19 +1202,24 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const spawnVaultBurst = useCallback((emojiKey) => {
-    const run = (layerOrigin) => {
-      const next = createCenteredEmojiBurst(emojiKey, layerOrigin);
-      setBurstParticles((prev) => appendBurstParticles(prev, next));
-    };
-    const layer = burstLayerRef.current;
-    if (layer?.measureWindowOrigin) {
-      void layer.measureWindowOrigin().then(run).catch(() => run({ x: 0, y: 0 }));
-      return;
+  const onVideoBurstLayout = useCallback((e) => {
+    const { width, height } = e?.nativeEvent?.layout || {};
+    if (width > 0 && height > 0) {
+      setVideoLayout((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      );
     }
-    run({ x: 0, y: 0 });
   }, []);
 
+  const spawnVaultBurst = useCallback(
+    (emojiKey) => {
+      const next = createCenteredEmojiBurst(emojiKey, videoLayout);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [videoLayout]
+  );
   const onVaultEmojiSelect = useCallback(
     (key) => {
       setVaultOpen(false);
@@ -1281,9 +1291,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       </TouchableOpacity>
 
       <FloatingEmojiBurstLayer
-        ref={burstLayerRef}
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
+        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}

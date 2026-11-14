@@ -1,20 +1,14 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Spawn origin is the **window center** via Dimensions.get('window'):
- *   startX = width / 2
- *   startY = height / 2
- * Converted into the absolute-fill overlay's local space so particles are not
- * stuck at container top (0). Radial spread then drifts up and fades ~2s.
+ * Spawn origin is the video player container from onLayout:
+ *   startX = containerWidth / 2
+ *   startY = containerHeight * BURST_ORIGIN_Y_RATIO (lower-middle combat zone)
+ * Never uses Dimensions.get('window').height (excludes browser/app chrome).
+ * Radial spread then drifts up and fades ~2s.
  */
-import React, {
-  forwardRef,
-  memo,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import React, { memo, useEffect, useRef } from 'react';
+import { Animated, StyleSheet, View } from 'react-native';
 import { BawaalEmoji } from '../../components/BawaalEmoji';
 
 export const BURST_DURATION_MS = 2000;
@@ -23,6 +17,19 @@ export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
 /** Random initial offset from center: Math.random() * 100 - 50 → [-50, 50] */
 export const BURST_CENTER_JITTER = 50;
+/**
+ * Vertical spawn ratio — lower-middle of the video frame (combat sweet spot).
+ * 0.65 ≈ 65% down from the top of the video container.
+ */
+export const BURST_ORIGIN_Y_RATIO = 0.65;
+/**
+ * Fallback size when container height is not yet measured
+ * (startY ≈ fallbackHeight * 0.65 ≈ 260).
+ */
+export const BURST_FALLBACK_HEIGHT = 400;
+export const BURST_FALLBACK_WIDTH = 390;
+export const BURST_FALLBACK_CENTER_Y = BURST_FALLBACK_HEIGHT * BURST_ORIGIN_Y_RATIO;
+export const BURST_FALLBACK_CENTER_X = BURST_FALLBACK_WIDTH / 2;
 
 let burstSeq = 0;
 
@@ -31,65 +38,59 @@ function randomCenterOffset() {
 }
 
 /**
- * Explicit window-center origin — never defaults to top/left (0, 0).
- * startX = Dimensions.get('window').width / 2
- * startY = Dimensions.get('window').height / 2
+ * Burst origin over the video player (local coords).
+ * Horizontal: dead center. Vertical: lower-middle (~65% of container height).
+ * Prefer onLayout width/height — never window height (includes headers).
+ *
+ * @param {{ width?: number, height?: number } | null | undefined} container
+ * @returns {{ startX: number, startY: number, width: number, height: number }}
  */
-export function getWindowCenterOrigin() {
-  const { width, height } = Dimensions.get('window');
-  const w = width > 0 ? width : 390;
-  const h = height > 0 ? height : 844;
+export function getVideoContainerCenter(container) {
+  const width = Number(container?.width);
+  const height = Number(container?.height);
+  const w = Number.isFinite(width) && width > 0 ? width : BURST_FALLBACK_WIDTH;
+  const h = Number.isFinite(height) && height > 0 ? height : BURST_FALLBACK_HEIGHT;
   return {
     width: w,
     height: h,
     startX: w / 2,
-    startY: h / 2,
+    startY: h * BURST_ORIGIN_Y_RATIO,
   };
 }
 
-/** @deprecated alias — always window center now */
-export function getCanvasCenterOrigin() {
-  return getWindowCenterOrigin();
+/** @deprecated use getVideoContainerCenter */
+export function getCanvasCenterOrigin(container) {
+  return getVideoContainerCenter(container);
+}
+
+/** @deprecated window height must not drive vertical center */
+export function getWindowCenterOrigin() {
+  return getVideoContainerCenter(null);
 }
 
 /**
- * Convert window-center coords into the burst overlay's local space.
- * layerWindowX/Y = overlay's top-left in window coords (from measureInWindow).
- */
-export function windowCenterToLocal(layerWindowX = 0, layerWindowY = 0) {
-  const { startX, startY, width, height } = getWindowCenterOrigin();
-  const lx = Number(layerWindowX);
-  const ly = Number(layerWindowY);
-  return {
-    width,
-    height,
-    startX: startX - (Number.isFinite(lx) ? lx : 0),
-    startY: startY - (Number.isFinite(ly) ? ly : 0),
-  };
-}
-
-/**
- * Build particles at local (startX, startY) with radial outward spread.
+ * Build particles at video-container local (startX, startY) with radial spread.
  */
 export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {}) {
   const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
   const key = String(emojiKey || 'skull_orange_glow_v3').toLowerCase();
-  const win = getWindowCenterOrigin();
-  const startX = Number.isFinite(Number(originX)) ? Number(originX) : win.startX;
-  const startY = Number.isFinite(Number(originY)) ? Number(originY) : win.startY;
+  const center = getVideoContainerCenter({
+    width: opts.width,
+    height: opts.height,
+  });
+  const startX = Number.isFinite(Number(originX)) ? Number(originX) : center.startX;
+  const startY = Number.isFinite(Number(originY)) ? Number(originY) : center.startY;
 
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
     const offsetX = randomCenterOffset();
     const offsetY = randomCenterOffset();
-    // Radial spread from center in all directions
     const baseAngle = (i / count) * Math.PI * 2;
     const angle = baseAngle + (Math.random() - 0.5) * 0.5;
     const outward = 80 + Math.random() * 120;
     const radialX = Math.cos(angle) * outward;
     const radialY = Math.sin(angle) * outward;
-    // Drift = radial burst + upward float (negative Y)
     const driftX = radialX;
     const rise = Math.max(90, -radialY + 100 + Math.random() * 80);
     const delay = Math.floor(Math.random() * 80);
@@ -110,19 +111,16 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn using Dimensions.get('window') center, mapped into overlay local space.
+ * Spawn at video lower-middle: width/2, height * 0.65 (from onLayout).
  * @param {string} emojiKey
- * @param {{ x?: number, y?: number } | null} layerWindowOrigin measureInWindow of overlay
+ * @param {{ width?: number, height?: number } | null} containerLayout
  */
-export function createCenteredEmojiBurst(emojiKey, layerWindowOrigin, opts = {}) {
-  const local = windowCenterToLocal(
-    layerWindowOrigin?.x,
-    layerWindowOrigin?.y
-  );
-  return createEmojiBurstParticles(local.startX, local.startY, emojiKey, {
+export function createCenteredEmojiBurst(emojiKey, containerLayout, opts = {}) {
+  const { startX, startY, width, height } = getVideoContainerCenter(containerLayout);
+  return createEmojiBurstParticles(startX, startY, emojiKey, {
     ...opts,
-    width: local.width,
-    height: local.height,
+    width,
+    height,
   });
 }
 
@@ -222,66 +220,40 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Full-window-style absolute overlay over the video player.
- * ref.measureInWindow() used so spawn maps window center → local coords.
+ * Absolute-fill overlay over the video player.
+ * onLayout reports the true video-card size for dead-center spawn.
  */
-export const FloatingEmojiBurstLayer = memo(
-  forwardRef(function FloatingEmojiBurstLayer(
-    { particles, onParticleDone, style },
-    ref
-  ) {
-    const layerRef = useRef(null);
-
-    useImperativeHandle(ref, () => ({
-      /**
-       * Measure overlay top-left in window space for window-center → local mapping.
-       * @returns {Promise<{ x: number, y: number, width: number, height: number }>}
-       */
-      measureWindowOrigin() {
-        return new Promise((resolve) => {
-          const node = layerRef.current;
-          if (!node?.measureInWindow) {
-            resolve({ x: 0, y: 0, width: 0, height: 0 });
-            return;
-          }
-          node.measureInWindow((x, y, width, height) => {
-            resolve({
-              x: Number(x) || 0,
-              y: Number(y) || 0,
-              width: Number(width) || 0,
-              height: Number(height) || 0,
-            });
-          });
-        });
-      },
-    }));
-
-    return (
-      <View
-        ref={layerRef}
-        pointerEvents="none"
-        collapsable={false}
-        style={[styles.layer, style]}
-      >
-        {(particles || []).map((p) => (
-          <FloatingEmojiParticle
-            key={p.id}
-            id={p.id}
-            emojiKey={p.emojiKey}
-            x={p.x}
-            y={p.y}
-            driftX={p.driftX}
-            rise={p.rise}
-            delay={p.delay}
-            duration={p.duration}
-            size={p.size}
-            onDone={onParticleDone}
-          />
-        ))}
-      </View>
-    );
-  })
-);
+export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
+  particles,
+  onParticleDone,
+  onLayout,
+  style,
+}) {
+  return (
+    <View
+      pointerEvents="none"
+      collapsable={false}
+      onLayout={onLayout}
+      style={[styles.layer, style]}
+    >
+      {(particles || []).map((p) => (
+        <FloatingEmojiParticle
+          key={p.id}
+          id={p.id}
+          emojiKey={p.emojiKey}
+          x={p.x}
+          y={p.y}
+          driftX={p.driftX}
+          rise={p.rise}
+          delay={p.delay}
+          duration={p.duration}
+          size={p.size}
+          onDone={onParticleDone}
+        />
+      ))}
+    </View>
+  );
+});
 
 export default FloatingEmojiBurstLayer;
 
