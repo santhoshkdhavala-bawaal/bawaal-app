@@ -806,7 +806,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
-  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
   const moreBottom = tabBarHeight + 18;
@@ -836,25 +835,11 @@ const GeneralReelCard = memo(function GeneralReelCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const onVideoBurstLayout = useCallback((e) => {
-    const { width, height } = e?.nativeEvent?.layout || {};
-    if (width > 0 && height > 0) {
-      setVideoLayout((prev) =>
-        prev.width === width && prev.height === height
-          ? prev
-          : { width, height }
-      );
-    }
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    // Flex-centered overlay — particles start at translate 0,0
+    const next = createCenteredEmojiBurst(emojiKey);
+    setBurstParticles((prev) => appendBurstParticles(prev, next));
   }, []);
-
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      // onLayout center: startX = width/2, startY = height/2
-      const next = createCenteredEmojiBurst(emojiKey, videoLayout);
-      setBurstParticles((prev) => appendBurstParticles(prev, next));
-    },
-    [videoLayout]
-  );
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -969,7 +954,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
       <FloatingEmojiBurstLayer
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
-        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
@@ -1185,7 +1169,6 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
-  const [videoLayout, setVideoLayout] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
   const isActive = Math.abs(index - activeIndex) <= 1;
@@ -1203,24 +1186,10 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  const onVideoBurstLayout = useCallback((e) => {
-    const { width, height } = e?.nativeEvent?.layout || {};
-    if (width > 0 && height > 0) {
-      setVideoLayout((prev) =>
-        prev.width === width && prev.height === height
-          ? prev
-          : { width, height }
-      );
-    }
+  const spawnVaultBurst = useCallback((emojiKey) => {
+    const next = createCenteredEmojiBurst(emojiKey);
+    setBurstParticles((prev) => appendBurstParticles(prev, next));
   }, []);
-
-  const spawnVaultBurst = useCallback(
-    (emojiKey) => {
-      const next = createCenteredEmojiBurst(emojiKey, videoLayout);
-      setBurstParticles((prev) => appendBurstParticles(prev, next));
-    },
-    [videoLayout]
-  );
 
   const onVaultEmojiSelect = useCallback(
     (key) => {
@@ -1295,7 +1264,6 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       <FloatingEmojiBurstLayer
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
-        onLayout={onVideoBurstLayout}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
