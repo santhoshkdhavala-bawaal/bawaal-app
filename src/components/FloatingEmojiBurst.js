@@ -3,8 +3,8 @@
  *
  * Flex-centered overlay on the video card:
  *   absolute fill + justifyContent/alignItems center
- * Particles start at dead center (translateX: 0, translateY: 0) and spring
- * outward via interpolated targetX / targetY (~2s fade).
+ * Particles start at dead center (translateX/Y: 0) and explode radially:
+ *   X → random ±150px; Y → brief +40 kick then float to −180 while fading.
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
@@ -14,18 +14,21 @@ export const BURST_DURATION_MS = 2000;
 export const BURST_PARTICLE_COUNT = 7;
 export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
-export const BURST_CENTER_JITTER = 24;
-export const BURST_UPWARD_BIAS = 110;
+
+/** Radial combat-zone spread */
+export const BURST_X_SPREAD = 150;
+export const BURST_KICK_Y = 40;
+export const BURST_FLOAT_Y = -180;
 
 let burstSeq = 0;
 
-function randomJitter() {
-  return Math.random() * (BURST_CENTER_JITTER * 2) - BURST_CENTER_JITTER;
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
 }
 
 /**
- * Build particles that erupt from flex dead-center (0, 0).
- * targetX spreads left/right; targetY drifts upward.
+ * Build particles that erupt radially from flex dead-center (0, 0).
+ * targetX: −150…+150 · kickY: ~+40 · floatY: ~−180
  */
 export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {}) {
   const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
@@ -34,23 +37,20 @@ export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    const baseAngle = (i / count) * Math.PI * 2;
-    const angle = baseAngle + (Math.random() - 0.5) * 0.55;
-    const outward = 70 + Math.random() * 130;
-    // Left/right spread from center
-    const targetX = Math.cos(angle) * outward + randomJitter() * 0.4;
-    // Outward + upward drift
-    const targetY =
-      Math.sin(angle) * outward * 0.85 -
-      BURST_UPWARD_BIAS -
-      Math.random() * 60;
+    // True radial left/right coverage across the combat zone
+    const targetX = randomBetween(-BURST_X_SPREAD, BURST_X_SPREAD);
+    // Slight outward/downward kick on the initial pop
+    const kickY = BURST_KICK_Y + randomBetween(-8, 12);
+    // Then float upward as they fade
+    const floatY = BURST_FLOAT_Y + randomBetween(-30, 20);
     const delay = Math.floor(Math.random() * 80);
     const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 12);
     particles.push({
       id: `burst-${Date.now()}-${burstSeq}-${i}`,
       emojiKey: key,
       targetX,
-      targetY,
+      kickY,
+      floatY,
       delay,
       duration: BURST_DURATION_MS,
       size,
@@ -60,7 +60,7 @@ export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {
 }
 
 /**
- * Spawn a flex-centered burst (origin is layout midpoint via flex, not coords).
+ * Spawn a flex-centered radial burst.
  * @param {string} emojiKey
  */
 export function createCenteredEmojiBurst(emojiKey, _containerLayout, opts = {}) {
@@ -78,7 +78,8 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   id,
   emojiKey,
   targetX,
-  targetY,
+  kickY,
+  floatY,
   delay,
   duration,
   size,
@@ -129,14 +130,18 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   const scale = progress.interpolate({
     inputRange: [0, 0.35, 1],
     outputRange: [0.35, 1.2, 1.08],
+    extrapolate: 'clamp',
   });
   const translateX = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, targetX || 0],
+    extrapolate: 'clamp',
   });
+  // Initial pop kicks slightly down/out, then floats up while fading
   const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, targetY || 0],
+    inputRange: [0, 0.22, 1],
+    outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
+    extrapolate: 'clamp',
   });
 
   const dim = typeof size === 'number' && size > 0 ? size : BURST_EMOJI_SIZE;
@@ -163,7 +168,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 
 /**
  * Absolute flex-centered overlay spanning the video card.
- * Particles sit at the layout midpoint and erupt via translate.
+ * Particles sit at the layout midpoint and erupt radially.
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -180,7 +185,8 @@ export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
             id={p.id}
             emojiKey={p.emojiKey}
             targetX={p.targetX}
-            targetY={p.targetY}
+            kickY={p.kickY}
+            floatY={p.floatY}
             delay={p.delay}
             duration={p.duration}
             size={p.size}
