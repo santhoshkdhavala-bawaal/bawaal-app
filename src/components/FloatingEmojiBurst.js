@@ -3,7 +3,7 @@
  *
  * Origin from video-container onLayout:
  *   centerX = containerWidth / 2
- *   centerY = containerHeight / 2
+ *   centerY = containerHeight / 2 + BURST_CENTER_Y_BIAS (+45)
  *   startX / startY anchored to that measured center
  * Overlay absolute-fills the card; particles explode 360° then fade.
  */
@@ -17,6 +17,8 @@ export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
 export const BURST_RADIUS_MIN = 90;
 export const BURST_RADIUS_MAX = 180;
+/** Nudge burst ring slightly lower into the video mid-frame */
+export const BURST_CENTER_Y_BIAS = 45;
 
 let burstSeq = 0;
 
@@ -38,7 +40,7 @@ export function getContainerBurstCenter(container) {
 
   if (containerWidth > 0 && containerHeight > 0) {
     const centerX = containerWidth / 2;
-    const centerY = containerHeight / 2;
+    const centerY = containerHeight / 2 + BURST_CENTER_Y_BIAS;
     return {
       containerWidth,
       containerHeight,
@@ -52,7 +54,7 @@ export function getContainerBurstCenter(container) {
   // Soft fallback only until onLayout has measured the card
   const { width, height } = Dimensions.get('window');
   const centerX = width / 2;
-  const centerY = height / 2;
+  const centerY = height / 2 + BURST_CENTER_Y_BIAS;
   return {
     containerWidth: width,
     containerHeight: height,
