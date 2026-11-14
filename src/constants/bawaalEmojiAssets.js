@@ -1,13 +1,31 @@
+/* eslint-disable global-require */
 /**
  * BAWAAL custom skeleton emoji asset map.
  * Keys are clean short names (no `skel_` prefix). Use via `BawaalEmoji` or `getBawaalEmojiSource`.
+ * Skull set lives in `skullEmojiRegistry.js` and is merged below.
  */
-/* eslint-disable global-require */
+import {
+  SKULL_EMOJIS,
+  SKULL_EMOJI_KEYS,
+  SKULL_QUICK_REACTION_KEYS,
+  getSkullEmojiSource,
+  hasSkullEmoji,
+  DEFAULT_SKULL_EMOJI_KEY,
+} from './skullEmojiRegistry';
+
+export {
+  SKULL_EMOJIS,
+  SKULL_EMOJI_KEYS,
+  SKULL_QUICK_REACTION_KEYS,
+  getSkullEmojiSource,
+  hasSkullEmoji,
+  DEFAULT_SKULL_EMOJI_KEY,
+};
 
 /** Asset-map key for the default fallback (`skel_laughing1.png`). Alias: `laughing`. */
 export const DEFAULT_BAWAAL_EMOJI_KEY = 'laughing1';
 
-/** Primary map: short name → bundled PNG require. */
+/** Primary map: short name → bundled PNG require (skel_* + all skull_*). */
 export const BAWAAL_EMOJI_ASSETS = {
   angry: require('../../assets/skel_angry.png'),
   archery: require('../../assets/skel_archery.png'),
@@ -92,24 +110,7 @@ export const BAWAAL_EMOJI_ASSETS = {
   skateboard: require('../../assets/skel_skateboard.png'),
   skateboard1: require('../../assets/skel_skateboard1.png'),
   skiing: require('../../assets/skel_skiing.png'),
-  /** Skull expression set — shortcodes `:skull_angry:` … `:skull_fire:` */
-  skull_angry: require('../../assets/skull_angry.png'),
-  skull_burning: require('../../assets/skull_burning.png'),
-  skull_cool: require('../../assets/skull_cool.png'),
-  skull_crying: require('../../assets/skull_crying.png'),
-  skull_doubt: require('../../assets/skull_doubt.png'),
-  skull_fire: require('../../assets/skull_fire.png'),
-  skull_laugh: require('../../assets/skull_laugh.png'),
-  skull_love_red_hearts: require('../../assets/skull_love_red_hearts.png'),
-  skull_mindblown_fire_v2: require('../../assets/skull_mindblown_fire_v2.png'),
-  skull_sad: require('../../assets/skull_sad.png'),
-  skull_scared: require('../../assets/skull_scared.png'),
-  skull_shame: require('../../assets/skull_shame.png'),
-  skull_shouting: require('../../assets/skull_shouting.png'),
-  skull_surprised: require('../../assets/skull_surprised.png'),
-  skull_very_happy: require('../../assets/skull_very_happy.png'),
-  skull_wink: require('../../assets/skull_wink.png'),
-  skull_worried: require('../../assets/skull_worried.png'),
+  ...SKULL_EMOJIS,
   skydiving: require('../../assets/skel_skydiving.png'),
   sleepy: require('../../assets/skel_sleepy.png'),
   speedskating: require('../../assets/skel_speedskating.png'),
@@ -166,31 +167,10 @@ const BAWAAL_EMOJI_ALIASES = {
 
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
-/** New skull expression keys — also listed in ALL_SKELETON_KEYS for the Vault grid. */
-export const SKULL_EMOJI_KEYS = Object.freeze([
-  'skull_angry',
-  'skull_burning',
-  'skull_cool',
-  'skull_crying',
-  'skull_doubt',
-  'skull_fire',
-  'skull_laugh',
-  'skull_love_red_hearts',
-  'skull_mindblown_fire_v2',
-  'skull_sad',
-  'skull_scared',
-  'skull_shame',
-  'skull_shouting',
-  'skull_surprised',
-  'skull_very_happy',
-  'skull_wink',
-  'skull_worried',
-]);
-
 /**
  * Static vault key list that populates FullEmojiPickerDrawer.
  * `'love'` is always first so skel_love.png (heart-eyed skeleton) renders in the grid.
- * Skull keys are force-included so the 106+ Vault always shows the new set.
+ * All skull_* keys (expression + sports set) are force-included for the Vault.
  */
 export const ALL_SKELETON_KEYS = Object.freeze([
   'love',

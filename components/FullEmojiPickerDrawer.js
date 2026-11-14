@@ -1,6 +1,6 @@
 /**
  * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* + skull_* emoji.
- * Always includes `love` (skel_love.png) as the first tile, plus the skull expression set.
+ * Always includes `love` (skel_love.png) first, plus the full skull set (expressions + sports).
  */
 import React, { memo, useMemo } from 'react';
 import {

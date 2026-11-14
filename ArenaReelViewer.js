@@ -42,7 +42,7 @@ const TAP_REACT_SIZE = 64;
 const TAP_REACT_MS = 800;
 const TAP_REACT_MAX = 14;
 
-/** Banter / floating reactions — BawaalEmoji keys only (never unicode). */
+/** Banter / floating reactions — BawaalEmoji + sports skull keys only (never unicode). */
 const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
 
 function pickRandomVaultKey() {

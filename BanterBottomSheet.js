@@ -40,7 +40,7 @@ const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
 const BAWAAL_ORANGE = '#FF5500';
 
-/** Horizontal Banter reaction tray — quick skeleton shortcuts. */
+/** Horizontal Banter reaction tray — skeleton shortcuts + sports skull quick reactions. */
 const BANTER_REACTIONS = Object.keys(BANTER_QUICK_EMOJIS);
 
 const BAWAAL_MARKER_RE = /\[bawaal:([a-z0-9_]+)\]/i;
