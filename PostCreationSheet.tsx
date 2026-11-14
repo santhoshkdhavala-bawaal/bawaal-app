@@ -129,6 +129,8 @@ export type PostCreationSheetProps = {
   durationSec?: number;
   /** Media-library asset id for optional "delete from gallery" control. */
   galleryAssetId?: string | null;
+  /** Optional vault/skull reaction shortcode key from ClipPreview. */
+  initialReactionKey?: string | null;
   onClose: () => void;
   onSuccess: (payload?: PostCreationPayload) => void;
   /** Kill any lingering preview / camera player audio before post or leave. */
@@ -450,13 +452,18 @@ function PostCreationSheet({
   slowMoEndSec,
   durationSec,
   galleryAssetId = null,
+  initialReactionKey = null,
   onClose,
   onSuccess,
   onStopMedia,
   onGalleryAssetDeleted,
 }: PostCreationSheetProps) {
   const insets = useSafeAreaInsets();
-  const [title, setTitle] = useState('');
+  const reactionSeed =
+    typeof initialReactionKey === 'string' && initialReactionKey.trim()
+      ? `:${initialReactionKey.trim().replace(/^:+|:+$/g, '')}:`
+      : '';
+  const [title, setTitle] = useState(reactionSeed);
   const [tagline, setTagline] = useState<SportyTagline>('#DailyGrind');
   const [sport, setSport] = useState('GYM');
   const [targetReps, setTargetReps] = useState('50');

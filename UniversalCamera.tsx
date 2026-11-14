@@ -42,6 +42,13 @@ import {
 } from 'expo-camera';
 import { Video as ExpoAvVideo, ResizeMode } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BawaalCameraPermissionGate from './components/BawaalCameraPermissionGate';
+import { BawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
+import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
+import {
+  BAWAAL_RECORDING_TEARDOWN_MS,
+  extractRecordingUri,
+} from './src/camera/bawaalCameraPipeline';
 import {
   GestureHandlerRootView,
   PinchGestureHandler,
@@ -108,7 +115,7 @@ function waitMs(ms: number) {
 }
 
 /** Hardware lock release window after stopRecording resolves (~200ms). */
-const RECORDING_TEARDOWN_MS = 200;
+const RECORDING_TEARDOWN_MS = BAWAAL_RECORDING_TEARDOWN_MS;
 /** Extra beat after setting videoUri so React commits before ClipPreview mounts. */
 const PREVIEW_HANDSHAKE_MS = 100;
 
@@ -585,12 +592,14 @@ type ClipPreviewModalProps = {
   visible: boolean;
   uri: string | null;
   fallbackDuration: number;
+  initialReactionKey?: string | null;
   onRetake: () => void;
   onNext: (opts: {
     slowMoEnabled: boolean;
     slowMoRate: number;
     slowMoStartSec: number;
     slowMoEndSec: number;
+    reactionKey: string | null;
   }) => void;
 };
 
@@ -598,6 +607,7 @@ function NativeClipPreviewModal({
   visible,
   uri,
   fallbackDuration,
+  initialReactionKey = null,
   onRetake,
   onNext,
 }: ClipPreviewModalProps) {
@@ -608,6 +618,10 @@ function NativeClipPreviewModal({
   const [startSec, setStartSec] = useState(0);
   const [endSec, setEndSec] = useState(bootDur);
   const [playheadSec, setPlayheadSec] = useState(0);
+  const [reactionKey, setReactionKey] = useState<string | null>(
+    initialReactionKey || null
+  );
+  const [vaultOpen, setVaultOpen] = useState(false);
 
   const startSecRef = useRef(0);
   const endSecRef = useRef(bootDur);
@@ -693,8 +707,18 @@ function NativeClipPreviewModal({
       slowMoRate: rate > 0 ? rate : 1,
       slowMoStartSec: Number.isFinite(start) ? start : 0,
       slowMoEndSec: Number.isFinite(end) ? end : dur,
+      reactionKey: reactionKey || null,
     });
-  }, [onNext, releasePreview, slowMoRate, startSec, endSec, duration, bootDur]);
+  }, [
+    onNext,
+    releasePreview,
+    slowMoRate,
+    startSec,
+    endSec,
+    duration,
+    bootDur,
+    reactionKey,
+  ]);
 
   if (!visible || !uri) return null;
 
@@ -728,7 +752,50 @@ function NativeClipPreviewModal({
               </Text>
             </View>
           </TouchableOpacity>
+          {reactionKey ? (
+            <View style={previewStyles.reactionBadge} pointerEvents="none">
+              <BawaalEmoji name={reactionKey} size={36} />
+            </View>
+          ) : null}
         </View>
+
+        <Text style={previewStyles.rateLabel}>Skull reaction (vault)</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={previewStyles.reactionRow}
+          keyboardShouldPersistTaps="handled"
+        >
+          {BANTER_QUICK_KEYS.map((key) => {
+            const active = reactionKey === key;
+            return (
+              <TouchableOpacity
+                key={`react-${key}`}
+                style={[
+                  previewStyles.reactionChip,
+                  active && previewStyles.reactionChipActive,
+                ]}
+                onPress={() =>
+                  setReactionKey((prev) => (prev === key ? null : key))
+                }
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`React with ${key}`}
+              >
+                <BawaalEmoji name={key} size={26} />
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            style={previewStyles.vaultChip}
+            onPress={() => setVaultOpen(true)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Open skeleton vault"
+          >
+            <Text style={previewStyles.vaultChipText}>VAULT</Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         <FilmStripTrimmer
           duration={duration}
@@ -791,6 +858,14 @@ function NativeClipPreviewModal({
           </TouchableOpacity>
         </View>
       </View>
+
+      <FullEmojiPickerDrawer
+        visible={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        onSelectEmoji={(key) => {
+          setReactionKey(key || null);
+        }}
+      />
     </Modal>
   );
 }
@@ -889,6 +964,56 @@ const previewStyles = StyleSheet.create({
   },
   rateText: { color: '#A3A3A3', fontWeight: '800', fontSize: 12 },
   rateTextActive: { color: '#000000' },
+  reactionBadge: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: BRAND_ORANGE,
+  },
+  reactionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  reactionChip: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: '#333333',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionChipActive: {
+    borderColor: BRAND_ORANGE,
+    backgroundColor: '#1A1208',
+  },
+  vaultChip: {
+    height: 44,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BRAND_ORANGE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111111',
+  },
+  vaultChipText: {
+    color: BRAND_ORANGE,
+    fontWeight: '900',
+    fontSize: 11,
+    letterSpacing: 1,
+  },
   actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
   secondaryBtn: {
     flex: 1,
@@ -983,6 +1108,7 @@ export default function UniversalCamera({
   const [cameraError, setCameraError] = useState('');
 
   const [recordedVideoUri, setRecordedVideoUri] = useState<string | null>(null);
+  const [clipReactionKey, setClipReactionKey] = useState<string | null>(null);
   const [galleryAssetId, setGalleryAssetId] = useState<string | null>(null);
   const [showDeviceGallery, setShowDeviceGallery] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -1329,6 +1455,7 @@ export default function UniversalCamera({
       setIsPublishModalOpen(false);
       setHubOpen(false);
       setRecordedVideoUri(null);
+      setClipReactionKey(null);
       setGalleryAssetId(null);
       setSlowMoEnabled(false);
       setSlowMoRate(0.5);
@@ -1380,6 +1507,7 @@ export default function UniversalCamera({
     isPublishModalOpenRef.current = false;
     setIsPublishModalOpen(false);
     setRecordedVideoUri(null);
+    setClipReactionKey(null);
     setGalleryAssetId(null);
     setSlowMoEnabled(false);
     setSlowMoRate(0.5);
@@ -1596,7 +1724,7 @@ export default function UniversalCamera({
 
       // Null / empty / codec fail → sample clip so preview never blacks out
       const { uri: playableUri, usedFallback } = await ensurePlayableRecordingUri(
-        typeof video?.uri === 'string' ? video.uri : null,
+        extractRecordingUri(video),
         {
           persist: async (u) => {
             if (
@@ -2013,6 +2141,7 @@ export default function UniversalCamera({
     setShowPreview(false);
     setShowPostSheet(false);
     setRecordedVideoUri(null);
+    setClipReactionKey(null);
     recordingHandoffDoneRef.current = false;
     recordingLockRef.current = false;
     stoppingRef.current = false;
@@ -2261,31 +2390,22 @@ export default function UniversalCamera({
 
   if (permissionsPending) {
     return (
-      <View style={styles.permissionContainer}>
-        <StatusBar barStyle="light-content" />
-        <ActivityIndicator color={ACCENT} size="large" />
-        <Text style={styles.permissionText}>Preparing camera…</Text>
-      </View>
+      <BawaalCameraPermissionGate
+        pending
+        onClose={handleClose}
+      />
     );
   }
 
   if (!permissionsGranted) {
     return (
-      <View style={styles.permissionContainer}>
-        <StatusBar barStyle="light-content" />
-        <Text style={styles.permissionText}>
-          Camera and Microphone access needed for BAWAAL creation.
-        </Text>
-        <TouchableOpacity
-          style={styles.permissionBtn}
-          onPress={() => {
-            void requestCameraPermission();
-            void requestMicPermission();
-          }}
-        >
-          <Text style={styles.btnText}>Grant Permissions</Text>
-        </TouchableOpacity>
-      </View>
+      <BawaalCameraPermissionGate
+        onClose={handleClose}
+        onRequestPermissions={() => {
+          void requestCameraPermission();
+          void requestMicPermission();
+        }}
+      />
     );
   }
 
@@ -2505,12 +2625,14 @@ export default function UniversalCamera({
           visible
           uri={recordedVideoUri}
           fallbackDuration={recordLimit}
+          initialReactionKey={clipReactionKey}
           onRetake={returnToLiveCamera}
           onNext={({
             slowMoEnabled: sm,
             slowMoRate: rate,
             slowMoStartSec: s,
             slowMoEndSec: e,
+            reactionKey,
           }) => {
             const clipDur = safeDurationSec(
               e,
@@ -2523,6 +2645,7 @@ export default function UniversalCamera({
               Number.isFinite(start) ? Math.min(start, clipDur - 0.5) : 0
             );
             setSlowMoEndSec(clipDur);
+            setClipReactionKey(reactionKey || null);
             // Record Opener for Create Arena Challenge — skip post sheet, return clip
             if (isOpenerCapture && recordedVideoUri) {
               const draft =
@@ -2610,6 +2733,7 @@ export default function UniversalCamera({
           slowMoStartSec={Math.max(0, Number(slowMoStartSec) || 0)}
           slowMoEndSec={safeDurationSec(slowMoEndSec, recordLimit)}
           durationSec={safeDurationSec(recordLimit, 15)}
+          initialReactionKey={clipReactionKey}
           onClose={() => {
             setShowPreview(false);
             setShowPostSheet(false);
