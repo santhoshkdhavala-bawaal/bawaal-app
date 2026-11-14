@@ -1,11 +1,9 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Spawn origin (video-player local coords):
- *   startX = containerWidth / 2
- *   startY = BURST_ORIGIN_Y_PX (fixed px from top of the video card — combat zone)
- * Never uses window height or relative % for startY (web miscalc).
- * Overlay is absolute-fill over the video player card.
+ * Overlay: absolute-fill over the video card, flex-centered (web-safe).
+ * Particles spawn at (0, 0) relative to that dead-center origin, then erupt
+ * with random dx/dy outward before floating up and fading ~2s.
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
@@ -15,92 +13,75 @@ export const BURST_DURATION_MS = 2000;
 export const BURST_PARTICLE_COUNT = 7;
 export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
-/** Random initial offset from center: Math.random() * 100 - 50 → [-50, 50] */
-export const BURST_CENTER_JITTER = 50;
-/**
- * Hardcoded vertical spawn — pixels down from the top of the video player card.
- * Lands in the active combat zone (~lower-middle on phone / web card).
- */
-export const BURST_ORIGIN_Y_PX = 375;
-/** @deprecated percentages miscalculate on web — use BURST_ORIGIN_Y_PX */
-export const BURST_ORIGIN_Y_RATIO = 0.65;
+/** Small jitter around the centered origin before radial erupt */
+export const BURST_CENTER_JITTER = 24;
+/** Extra upward bias (negative Y) after radial erupt */
+export const BURST_UPWARD_BIAS = 110;
+
+/** Kept for callers / docs — spawn is always (0,0) in the centered origin. */
+export const BURST_ORIGIN_Y_PX = 0;
+export const BURST_ORIGIN_Y_RATIO = 0.5;
 export const BURST_FALLBACK_HEIGHT = 700;
 export const BURST_FALLBACK_WIDTH = 390;
-export const BURST_FALLBACK_CENTER_Y = BURST_ORIGIN_Y_PX;
-export const BURST_FALLBACK_CENTER_X = BURST_FALLBACK_WIDTH / 2;
+export const BURST_FALLBACK_CENTER_Y = 0;
+export const BURST_FALLBACK_CENTER_X = 0;
 
 let burstSeq = 0;
 
-function randomCenterOffset() {
-  return Math.random() * 100 - 50;
+function randomJitter() {
+  return Math.random() * (BURST_CENTER_JITTER * 2) - BURST_CENTER_JITTER;
 }
 
 /**
- * Burst origin over the video player (local coords).
- * Horizontal: containerWidth / 2. Vertical: fixed BURST_ORIGIN_Y_PX from top.
- *
- * @param {{ width?: number, height?: number } | null | undefined} container
- * @returns {{ startX: number, startY: number, width: number, height: number }}
+ * Dead-center origin relative to the flex-centered burst layer.
+ * startX / startY are always 0 — the parent centers on the video card.
  */
-export function getVideoContainerCenter(container) {
-  const width = Number(container?.width);
-  const height = Number(container?.height);
-  const w = Number.isFinite(width) && width > 0 ? width : BURST_FALLBACK_WIDTH;
-  const h = Number.isFinite(height) && height > 0 ? height : BURST_FALLBACK_HEIGHT;
-  // Fixed px from top of video card; clamp so short layouts stay on-card
-  const startY = Math.min(BURST_ORIGIN_Y_PX, Math.max(120, h - 80));
+export function getVideoContainerCenter() {
   return {
-    width: w,
-    height: h,
-    startX: w / 2,
-    startY,
+    width: 0,
+    height: 0,
+    startX: 0,
+    startY: 0,
   };
 }
 
-/** @deprecated use getVideoContainerCenter */
-export function getCanvasCenterOrigin(container) {
-  return getVideoContainerCenter(container);
+export function getCanvasCenterOrigin() {
+  return getVideoContainerCenter();
 }
 
-/** @deprecated window height must not drive vertical center */
 export function getWindowCenterOrigin() {
-  return getVideoContainerCenter(null);
+  return getVideoContainerCenter();
 }
 
 /**
- * Build particles at video-container local (startX, startY) with radial spread.
+ * Build particles at (0, 0) with outward dx / dy velocities.
  */
-export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {}) {
+export function createEmojiBurstParticles(_originX, _originY, emojiKey, opts = {}) {
   const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
   const key = String(emojiKey || 'skull_orange_glow_v3').toLowerCase();
-  const center = getVideoContainerCenter({
-    width: opts.width,
-    height: opts.height,
-  });
-  const startX = Number.isFinite(Number(originX)) ? Number(originX) : center.startX;
-  const startY = Number.isFinite(Number(originY)) ? Number(originY) : center.startY;
 
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    const offsetX = randomCenterOffset();
-    const offsetY = randomCenterOffset();
     const baseAngle = (i / count) * Math.PI * 2;
-    const angle = baseAngle + (Math.random() - 0.5) * 0.5;
-    const outward = 80 + Math.random() * 120;
-    const radialX = Math.cos(angle) * outward;
-    const radialY = Math.sin(angle) * outward;
-    const driftX = radialX;
-    const rise = Math.max(90, -radialY + 100 + Math.random() * 80);
+    const angle = baseAngle + (Math.random() - 0.5) * 0.55;
+    const outward = 70 + Math.random() * 130;
+    // Erupt in all directions from exact center (0,0)
+    const dx = Math.cos(angle) * outward + randomJitter() * 0.4;
+    // Radial Y + upward float (negative = up in RN / CSS)
+    const dy =
+      Math.sin(angle) * outward * 0.85 -
+      BURST_UPWARD_BIAS -
+      Math.random() * 60;
     const delay = Math.floor(Math.random() * 80);
     const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 12);
     particles.push({
       id: `burst-${Date.now()}-${burstSeq}-${i}`,
       emojiKey: key,
-      x: startX + offsetX,
-      y: startY + offsetY,
-      driftX,
-      rise,
+      startX: 0,
+      startY: 0,
+      dx,
+      dy,
       delay,
       duration: BURST_DURATION_MS,
       size,
@@ -110,17 +91,10 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at video combat zone: width/2, fixed startY px from top of card.
- * @param {string} emojiKey
- * @param {{ width?: number, height?: number } | null} containerLayout
+ * Spawn a burst at the video-card dead center (0,0 in centered overlay).
  */
-export function createCenteredEmojiBurst(emojiKey, containerLayout, opts = {}) {
-  const { startX, startY, width, height } = getVideoContainerCenter(containerLayout);
-  return createEmojiBurstParticles(startX, startY, emojiKey, {
-    ...opts,
-    width,
-    height,
-  });
+export function createCenteredEmojiBurst(emojiKey, _containerLayout, opts = {}) {
+  return createEmojiBurstParticles(0, 0, emojiKey, opts);
 }
 
 /** Cap particle list length (keeps feed overlays light). */
@@ -134,10 +108,8 @@ export function appendBurstParticles(prev, nextParticles) {
 const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   id,
   emojiKey,
-  x,
-  y,
-  driftX,
-  rise,
+  dx,
+  dy,
   delay,
   duration,
   size,
@@ -189,13 +161,13 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     inputRange: [0, 0.35, 1],
     outputRange: [0.35, 1.2, 1.08],
   });
-  const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -(rise || 160)],
-  });
   const translateX = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, driftX || 0],
+    outputRange: [0, dx || 0],
+  });
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, dy || 0],
   });
 
   const dim = typeof size === 'number' && size > 0 ? size : BURST_EMOJI_SIZE;
@@ -206,8 +178,10 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
       style={[
         styles.particle,
         {
-          left: x - dim / 2,
-          top: y - dim / 2,
+          marginLeft: -dim / 2,
+          marginTop: -dim / 2,
+          width: dim,
+          height: dim,
           opacity: fade,
           transform: [{ translateX }, { translateY }, { scale }],
         },
@@ -219,8 +193,8 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Absolute-fill overlay over the video player.
- * onLayout reports the true video-card size for dead-center spawn.
+ * Absolute-fill overlay spanning the video card; flex-centers the burst origin.
+ * Particles spawn at (0,0) in that centered origin and erupt with dx/dy.
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -235,21 +209,21 @@ export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
       onLayout={onLayout}
       style={[styles.layer, style]}
     >
-      {(particles || []).map((p) => (
-        <FloatingEmojiParticle
-          key={p.id}
-          id={p.id}
-          emojiKey={p.emojiKey}
-          x={p.x}
-          y={p.y}
-          driftX={p.driftX}
-          rise={p.rise}
-          delay={p.delay}
-          duration={p.duration}
-          size={p.size}
-          onDone={onParticleDone}
-        />
-      ))}
+      <View style={styles.origin} pointerEvents="none" collapsable={false}>
+        {(particles || []).map((p) => (
+          <FloatingEmojiParticle
+            key={p.id}
+            id={p.id}
+            emojiKey={p.emojiKey}
+            dx={p.dx}
+            dy={p.dy}
+            delay={p.delay}
+            duration={p.duration}
+            size={p.size}
+            onDone={onParticleDone}
+          />
+        ))}
+      </View>
     </View>
   );
 });
@@ -265,8 +239,20 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 50,
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  /** Zero-size anchor at the exact center of the video card */
+  origin: {
+    width: 0,
+    height: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   particle: {
     position: 'absolute',
+    left: 0,
+    top: 0,
   },
 });
