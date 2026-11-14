@@ -20,6 +20,7 @@ import {
   hasSkullEmoji,
   sortVaultEmojiKeys,
   isSkullVaultKey,
+  isSkelVaultKey,
 } from '../src/constants/bawaalEmojiAssets';
 
 /**
@@ -62,7 +63,7 @@ const BANTER_QUICK_EMOJI_MAP = {
 };
 
 /**
- * Compact banter-tray shortcuts — skull reactions first, then skeleton assets
+ * Compact banter-tray shortcuts — `skull…` reactions first, then `skel…` assets
  * (same sort as Vault; Object key order drives the horizontal preview row).
  */
 export const BANTER_QUICK_KEYS = Object.freeze(
@@ -129,4 +130,5 @@ export {
   hasSkullEmoji,
   sortVaultEmojiKeys,
   isSkullVaultKey,
+  isSkelVaultKey,
 };

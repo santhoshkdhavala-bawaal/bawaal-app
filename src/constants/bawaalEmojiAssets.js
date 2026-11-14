@@ -167,25 +167,51 @@ const BAWAAL_EMOJI_ALIASES = {
 
 export const BAWAAL_EMOJI_KEYS = Object.keys(BAWAAL_EMOJI_ASSETS);
 
-/**
- * Skull vault group — keys that start with or contain `skull`
- * (e.g. `skull_goal`, `holding_skull_high_gold_crown`).
- */
-export function isSkullVaultKey(key) {
+/** Normalize vault key for prefix checks (`Skull_Goal` → `skull_goal`). */
+function vaultSortKey(key) {
   return String(key || '')
+    .trim()
     .toLowerCase()
-    .includes('skull');
+    .replace(/^:+|:+$/g, '')
+    .replace(/\.png$/i, '')
+    .replace(/[\s-]+/g, '_');
 }
 
 /**
- * Vault / tray order: skull group first, then skeleton (`skel_`) assets;
+ * Absolute skull vault group — keys that **start with** `skull`
+ * (e.g. `skull_goal`, `skull_mvp`). Mid-string matches like `holding_skull_*` are skel.
+ */
+export function isSkullVaultKey(key) {
+  return vaultSortKey(key).startsWith('skull');
+}
+
+/** Keys that **start with** `skel` (placed immediately after the skull block). */
+export function isSkelVaultKey(key) {
+  return vaultSortKey(key).startsWith('skel');
+}
+
+/**
+ * Vault tier:
+ * 0 = starts with `skull` (absolute first)
+ * 1 = starts with `skel` (immediately after skulls)
+ * 2 = remaining skeleton short names (`love`, `gym`, `holding_skull_*`, …)
+ */
+export function vaultEmojiTier(key) {
+  const k = vaultSortKey(key);
+  if (k.startsWith('skull')) return 0;
+  if (k.startsWith('skel')) return 1;
+  return 2;
+}
+
+/**
+ * Vault / tray order: `skull*` first, then `skel*` / skeleton assets;
  * alphabetical within each group so the flex-wrap grid stays stable.
  */
 export function compareVaultEmojiKeys(a, b) {
-  const aTier = isSkullVaultKey(a) ? 0 : 1;
-  const bTier = isSkullVaultKey(b) ? 0 : 1;
+  const aTier = vaultEmojiTier(a);
+  const bTier = vaultEmojiTier(b);
   if (aTier !== bTier) return aTier - bTier;
-  return String(a).localeCompare(String(b));
+  return vaultSortKey(a).localeCompare(vaultSortKey(b));
 }
 
 export function sortVaultEmojiKeys(keys) {
@@ -194,7 +220,7 @@ export function sortVaultEmojiKeys(keys) {
 
 /**
  * Static vault key list that populates FullEmojiPickerDrawer.
- * Order: all skull* keys → remaining skeleton assets (incl. `love`).
+ * Order: all `skull…` keys → all `skel…` / skeleton assets (incl. `love`).
  */
 export const ALL_SKELETON_KEYS = Object.freeze(
   sortVaultEmojiKeys(

@@ -19,4 +19,5 @@ export {
   hasSkullEmoji,
   sortVaultEmojiKeys,
   isSkullVaultKey,
+  isSkelVaultKey,
 } from '../../components/BawaalEmoji';

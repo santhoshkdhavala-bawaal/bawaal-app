@@ -1,6 +1,6 @@
 /**
  * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* + skull_* emoji.
- * Grid order: skull* keys first, then skeleton assets (responsive flex-wrap unchanged).
+ * Grid order: keys starting with `skull` first, then `skel` / skeleton assets.
  */
 import React, { memo, useMemo } from 'react';
 import {
@@ -24,7 +24,7 @@ const BAWAAL_ORANGE = '#FF5500';
 
 /**
  * Grid population list — merges constants + SKELETON_EMOJIS and force-includes
- * all `skull_*` keys, then sorts skulls → skeletons for the Vault rows.
+ * all `skull_*` keys, then sorts `skull…` → `skel…` for the Vault rows.
  */
 function buildVaultKeys() {
   const merged = new Set([
