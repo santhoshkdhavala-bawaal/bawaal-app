@@ -410,6 +410,8 @@ export default function CreateBattleSheet({
         category: battle.sport,
         matchLength: `${battle.durationSec}s`,
         status: scheduleMode === 'now' ? 'live' : 'scheduled',
+        scheduledAtUTC: battle.scheduledAtUTC || scheduledAtUTC,
+        startTime: battle.scheduledAtUTC || scheduledAtUTC,
         challenger:
           battleType === 'direct'
             ? {

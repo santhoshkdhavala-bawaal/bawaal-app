@@ -8,7 +8,7 @@ import MainTabs from './MainTabs';
 import CameraPublishHost from './CameraPublishHost';
 import BattleChallengeForm from './BattleChallengeForm';
 import LeaderboardScreen from './LeaderboardScreen';
-import Live1v1BattleScreen from './ChallengerArena';
+import Live1v1BattleScreen from './Live1v1BattleScreen';
 import AthleteRegistrationScreen from './AthleteRegistrationScreen';
 import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';

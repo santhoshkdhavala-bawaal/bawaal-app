@@ -1,8 +1,13 @@
 /**
  * BATTLE BAWAAL real-time sync — Supabase Realtime + RPC helpers.
  * Channel: `battle:${battleId}`
+ * War Cry schedule: start_time (UTC) + registration_open (5h cutoff).
  */
 import { isSupabaseConfigured, supabase } from './supabase';
+import {
+  resolveWarCryRegistrationOpen,
+  parseWarCryStartMs,
+} from '../utils/warCrySchedule';
 
 const LOCAL_SENDER = 'spectator-local';
 
@@ -35,6 +40,8 @@ export async function createLiveBattle({
   matchLength,
   status = 'live',
   challenger,
+  scheduledAtUTC = null,
+  startTime = null,
 } = {}) {
   const battleId = id || newBattleId();
   if (!isSupabaseConfigured()) {
@@ -42,6 +49,16 @@ export async function createLiveBattle({
   }
 
   try {
+    const startUtc =
+      startTime ||
+      scheduledAtUTC ||
+      (status === 'live' ? new Date().toISOString() : null);
+    const startMs = parseWarCryStartMs(startUtc);
+    const registrationOpen =
+      status === 'live'
+        ? false
+        : resolveWarCryRegistrationOpen(startUtc);
+
     const row = {
       id: battleId,
       host_id: hostId || 'host-local',
@@ -54,12 +71,33 @@ export async function createLiveBattle({
       host_reps: 0,
       total_spectators: 1,
     };
+    if (startMs != null) {
+      row.start_time = new Date(startMs).toISOString();
+      row.registration_open = registrationOpen;
+    } else if (status === 'live') {
+      row.registration_open = false;
+    }
 
-    const { data: battle, error } = await supabase
+    let { data: battle, error } = await supabase
       .from('battles')
       .upsert(row, { onConflict: 'id' })
       .select()
       .single();
+
+    // Soft-retry without schedule columns if migration not applied yet
+    if (
+      error &&
+      /start_time|registration_open|PGRST204|schema cache|column/i.test(
+        String(error.message || error.code || '')
+      )
+    ) {
+      const { start_time: _st, registration_open: _ro, ...baseRow } = row;
+      ({ data: battle, error } = await supabase
+        .from('battles')
+        .upsert(baseRow, { onConflict: 'id' })
+        .select()
+        .single());
+    }
     if (error) throw error;
 
     if (challenger?.userId) {

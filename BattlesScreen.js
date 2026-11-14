@@ -24,6 +24,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import OpenCalloutsPanel from './src/components/OpenCalloutsPanel';
 import { useBattles } from './src/hooks/useBattles';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
+import {
+  isWarCryRegistrationClosed,
+  isWarCryStartReached,
+  warCryJoinLabel,
+  warCryRegistrationBadge,
+} from './src/utils/warCrySchedule';
 
 const OBSIDIAN = '#000000';
 const LIGHT_RED = '#FF4D4D';
@@ -243,12 +249,33 @@ export default function BattlesScreen({
   })();
 
   const openChallenge = (battle) => {
-    if (battle.liveMatch) {
+    const startUtc =
+      battle.scheduledAtUTC ||
+      battle.start_time ||
+      battle.startTime ||
+      battle.liveMatch?.scheduledAtUTC ||
+      null;
+    const isWarCryLive =
+      battle.liveMatch ||
+      battle.status === 'LIVE' ||
+      battle.status === 'SCHEDULED' ||
+      battle.status === 'live' ||
+      battle.status === 'scheduled';
+
+    if (isWarCryLive) {
+      const canJoin = isWarCryStartReached(startUtc);
       navigation?.navigate?.('Live1v1Battle', {
-        match: battle.liveMatch,
-        battleId: battle.id || battle.liveMatch.battleId || battle.liveMatch.id,
-        mode: 'spectator',
+        match: {
+          ...(battle.liveMatch || {}),
+          scheduledAtUTC: startUtc,
+          category: `[${battle.sport || 'GYM'}] ${
+            battle.target || battle.description || 'War Cry'
+          }`,
+        },
+        battleId: battle.id || battle.liveMatch?.battleId || battle.liveMatch?.id,
+        mode: canJoin ? 'spectator' : 'spectator',
         role: 'spectator',
+        scheduledAtUTC: startUtc,
       });
       return;
     }
@@ -312,7 +339,18 @@ export default function BattlesScreen({
   };
 
   const listCtaLabel = (battle) => {
-    if (battle.status === 'HOT' || battle.status === 'LIVE') return 'CHALLENGE';
+    const startUtc =
+      battle.scheduledAtUTC || battle.start_time || battle.startTime || null;
+    if (
+      battle.liveMatch ||
+      battle.status === 'LIVE' ||
+      battle.status === 'SCHEDULED' ||
+      battle.status === 'live' ||
+      battle.status === 'scheduled'
+    ) {
+      return warCryJoinLabel(startUtc);
+    }
+    if (battle.status === 'HOT') return 'CHALLENGE';
     return 'ACCEPT';
   };
 
@@ -420,6 +458,16 @@ export default function BattlesScreen({
         {visible.map((battle) => {
           const title = battle.target || battle.description || 'OPEN CHALLENGE';
           const isRewind = battle.source === 'BATTLE_REWIND';
+          const startUtc =
+            battle.scheduledAtUTC ||
+            battle.start_time ||
+            battle.startTime ||
+            null;
+          const lockedBadge = warCryRegistrationBadge(startUtc);
+          const registrationClosed =
+            lockedBadge ||
+            battle.registration_open === false ||
+            isWarCryRegistrationClosed(startUtc);
           return (
             <View
               key={battle.id}
@@ -441,9 +489,17 @@ export default function BattlesScreen({
                   {battle.status === 'LIVE' ? ' · LIVE' : ''}
                   {battle.status === 'SCHEDULED' ? ' · SCHEDULED' : ''}
                 </Text>
+                {registrationClosed ? (
+                  <Text style={styles.warRoomLocked} numberOfLines={2}>
+                    {lockedBadge || 'REGISTRATION CLOSED – WAR ROOM LOCKED'}
+                  </Text>
+                ) : null}
               </View>
               <TouchableOpacity
-                style={styles.enterBtn}
+                style={[
+                  styles.enterBtn,
+                  listCtaLabel(battle) === 'JOIN WAR ROOM' && styles.enterBtnWar,
+                ]}
                 activeOpacity={0.85}
                 onPress={() => openChallenge(battle)}
               >
@@ -599,6 +655,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     marginTop: 4,
+  },
+  warRoomLocked: {
+    marginTop: 4,
+    color: FLAME_ORANGE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  enterBtnWar: {
+    backgroundColor: FLAME_ORANGE,
+    borderColor: FLAME_ORANGE,
   },
   enterBtn: {
     backgroundColor: '#E8ECE9',

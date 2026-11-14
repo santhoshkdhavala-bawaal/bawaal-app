@@ -59,6 +59,7 @@ import {
   castVote,
   incrementReps,
   sendReaction,
+  sendHype,
   subscribeToBattle,
 } from './src/services/battleSyncService';
 import { ArenaLocalVideo } from './src/components/ArenaLocalVideo';
@@ -83,11 +84,32 @@ import {
 } from './src/services/activeUserProfile';
 import AthleteProfileSheet from './AthleteProfileSheet';
 import ChallengerRosterSheet from './ChallengerRosterSheet';
+import { BawaalEmoji } from './components/BawaalEmoji';
+import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
+import {
+  FloatingEmojiBurstLayer,
+  appendBurstParticles,
+  createCenteredEmojiBurst,
+} from './src/components/FloatingEmojiBurst';
+import {
+  subscribeVaultBurstChannel,
+  broadcastVaultBurst,
+  resolveBurstActorId,
+} from './src/services/vaultBurstRealtime';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const SPLIT_WIDE_MIN = 768;
+
+/** Spectator reaction tray — proprietary vault keys (emoji lock). */
+const WAR_CRY_REACTIONS = [
+  { id: 'fire', label: 'FIRE', emojiKey: 'skull_fire' },
+  { id: 'roast', label: 'ROAST', emojiKey: 'skull_laugh' },
+  { id: 'beast', label: 'BEAST', emojiKey: 'skull_orange_glow_v3' },
+  { id: 'hype', label: 'HYPE', emojiKey: 'skull_shouting' },
+];
 
 const BG = '#000000';
 const SURFACE = '#121212';
@@ -552,14 +574,22 @@ function FloatingReactionLayer({ reactions }) {
               },
             ]}
           >
-            <Animated.Text
-              style={[
-                rx.text ? styles.floatingPillEmoji : styles.floatingEmoji,
-                rx.scale ? { transform: [{ scale: rx.scale }] } : null,
-              ]}
-            >
-              {rx.emoji}
-            </Animated.Text>
+            {rx.bawaalKey ? (
+              <Animated.View
+                style={rx.scale ? { transform: [{ scale: rx.scale }] } : null}
+              >
+                <BawaalEmoji name={rx.bawaalKey} size={rx.text ? 22 : 36} />
+              </Animated.View>
+            ) : (
+              <Animated.Text
+                style={[
+                  rx.text ? styles.floatingPillEmoji : styles.floatingEmoji,
+                  rx.scale ? { transform: [{ scale: rx.scale }] } : null,
+                ]}
+              >
+                {rx.emoji}
+              </Animated.Text>
+            )}
             {!!rx.text && <Text style={styles.floatingPillText}>{rx.text}</Text>}
           </Animated.View>
         );
@@ -734,8 +764,21 @@ function Live1v1BattleScreenInner({
   /** Floating HUD chrome — starts visible; 5s auto-fade. Gloves stay persistent. */
   const [showControls, setShowControls] = useState(true); // HUD visible on enter
   const [floatingReactions, setFloatingReactions] = useState([]);
+  const [burstParticles, setBurstParticles] = useState([]);
+  const [burstLayout, setBurstLayout] = useState({
+    width: SCREEN_W,
+    height: SCREEN_H,
+  });
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [banterTicker, setBanterTicker] = useState([]);
+  const [roundRemainingSec, setRoundRemainingSec] = useState(() => {
+    const raw = String(match.matchLength || match.timerLabel || '90');
+    const parsed = parseInt(raw.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+  });
   const [banterOpen, setBanterOpen] = useState(false);
   const [banterDraft, setBanterDraft] = useState('');
+  const splitWide = SCREEN_W >= SPLIT_WIDE_MIN;
   /** Agora remote publisher uids currently in the channel. */
   const [remoteUids, setRemoteUids] = useState([]);
   const [micMuted, setMicMuted] = useState(false);
@@ -935,6 +978,7 @@ function Live1v1BattleScreenInner({
       {
         id,
         emoji,
+        bawaalKey: options.bawaalKey || null,
         left,
         text: options.text || null,
         placement: options.placement || 'float',
@@ -1005,6 +1049,20 @@ function Live1v1BattleScreenInner({
           side: 'rival',
           text: 'VOTED RIVAL',
         });
+        return;
+      }
+      if (type === 'BANTER') {
+        const line = String(row.payload || row.body || row.text || '').trim();
+        if (line) {
+          setBanterTicker((prev) =>
+            [{ id: `t-${Date.now()}`, text: line }, ...prev].slice(0, 12)
+          );
+          spawnFloatingReaction(null, {
+            bawaalKey: 'skull_laugh',
+            left: 24 + Math.random() * (SCREEN_W - 72),
+            text: line.slice(0, 42),
+          });
+        }
       }
     },
     [hostAthlete.handle, hostAthlete.label, spawnFloatingReaction]
@@ -1183,6 +1241,75 @@ function Live1v1BattleScreenInner({
     void enableLocalCamera();
     return undefined;
   }, [isAthlete, isCameraOn, rtcJoined]);
+
+  const triggerLocalEmojiBurst = useCallback((emojiId) => {
+    if (!emojiId) return;
+    const next = createCenteredEmojiBurst(emojiId, burstLayout);
+    setBurstParticles((prev) => appendBurstParticles(prev, next));
+  }, [burstLayout]);
+
+  const removeBurstParticle = useCallback((id) => {
+    setBurstParticles((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  // Vault bursts sync across both fighters via arena_${battleId}
+  useEffect(() => {
+    if (!battleId) return undefined;
+    return subscribeVaultBurstChannel(battleId, {
+      onVaultBurst: (emojiId) => triggerLocalEmojiBurst(emojiId),
+    });
+  }, [battleId, triggerLocalEmojiBurst]);
+
+  // Round countdown (top-right clock)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRoundRemainingSec((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [battleId]);
+
+  const fireWarCryReaction = useCallback(
+    async (reaction) => {
+      if (!reaction?.emojiKey) return;
+      triggerLocalEmojiBurst(reaction.emojiKey);
+      spawnFloatingReaction(null, {
+        bawaalKey: reaction.emojiKey,
+        burst: true,
+        text: reaction.label,
+        left: 24 + Math.random() * (SCREEN_W - 72),
+      });
+      try {
+        const userId = await resolveBurstActorId();
+        await broadcastVaultBurst(battleId, {
+          emojiId: reaction.emojiKey,
+          userId,
+        });
+        if (reaction.id === 'hype' || reaction.id === 'fire') {
+          void sendHype(battleId, userId);
+        } else {
+          void sendReaction(battleId, userId, 'HYPE');
+        }
+      } catch (_) {
+        /* soft-fail */
+      }
+    },
+    [battleId, spawnFloatingReaction, triggerLocalEmojiBurst]
+  );
+
+  const handleSelectVaultSkull = useCallback(
+    async (emojiId) => {
+      setVaultOpen(false);
+      if (!emojiId) return;
+      triggerLocalEmojiBurst(emojiId);
+      try {
+        const userId = await resolveBurstActorId();
+        await broadcastVaultBurst(battleId, { emojiId, userId });
+      } catch (_) {
+        /* soft-fail */
+      }
+    },
+    [battleId, triggerLocalEmojiBurst]
+  );
 
   useEffect(() => {
     if (!battleId) return undefined;
@@ -1461,11 +1588,15 @@ function Live1v1BattleScreenInner({
   ]);
 
   const submitBanter = useCallback(() => {
-    const text = banterDraft.trim() || "Let's go Mumbai! 🔥";
+    const text = banterDraft.trim() || 'War Cry energy!';
     setBanterOpen(false);
     setBanterDraft('');
     onBanter?.(text);
-    spawnFloatingReaction('💬', {
+    setBanterTicker((prev) =>
+      [{ id: `local-${Date.now()}`, text: `@You: ${text}` }, ...prev].slice(0, 12)
+    );
+    spawnFloatingReaction(null, {
+      bawaalKey: 'skull_laugh',
       left: 20 + Math.random() * Math.max(40, SCREEN_W - 220),
       text: `@You: ${text}`,
     });
@@ -1577,12 +1708,26 @@ function Live1v1BattleScreenInner({
         accessibilityRole="button"
         accessibilityLabel="Toggle battle HUD"
       >
-      {/* STRICT 50/50 Host / Rival — no fixed-height cards / no spill */}
+      {/* 50/50 Host / Rival — column on mobile, row on wide / tablet */}
       <View
-        style={{ flex: 1, backgroundColor: '#0A0E1A' }}
+        style={{
+          flex: 1,
+          backgroundColor: '#0A0E1A',
+          flexDirection: splitWide && isDualFocus ? 'row' : 'column',
+        }}
         pointerEvents="box-none"
+        onLayout={(e) => {
+          const { width, height } = e?.nativeEvent?.layout || {};
+          if (width > 0 && height > 0) {
+            setBurstLayout((prev) =>
+              prev.width === width && prev.height === height
+                ? prev
+                : { width, height }
+            );
+          }
+        }}
       >
-        {/* TOP HALF: HOST (50%) */}
+        {/* HOST pane (50%) */}
         <View
           style={{
             flex: 1,
@@ -1590,8 +1735,10 @@ function Live1v1BattleScreenInner({
             position: 'relative',
             overflow: 'hidden',
             backgroundColor: '#1F293D',
-            borderBottomWidth: 1,
+            borderBottomWidth: splitWide && isDualFocus ? 0 : 1,
+            borderRightWidth: splitWide && isDualFocus ? 1 : 0,
             borderBottomColor: 'rgba(255,255,255,0.14)',
+            borderRightColor: 'rgba(255,255,255,0.14)',
           }}
           pointerEvents="box-none"
         >
@@ -1834,7 +1981,11 @@ function Live1v1BattleScreenInner({
               </TouchableOpacity>
 
               <View style={styles.timerBadge}>
-                <Text style={styles.timerText}>{match.timerLabel}</Text>
+                <Text style={styles.timerText}>
+                  {`${String(Math.floor(roundRemainingSec / 60)).padStart(2, '0')}:${String(
+                    roundRemainingSec % 60
+                  ).padStart(2, '0')}`}
+                </Text>
                 <Text style={styles.categoryText} numberOfLines={1}>
                   {match.category}
                 </Text>
@@ -1989,7 +2140,7 @@ function Live1v1BattleScreenInner({
             >
               <Text style={styles.gloveEmojiFloat}>🥊</Text>
               <Text style={[styles.actionLabel, styles.actionLabelHost]}>
-                VOTE HOST
+                VOTE A
               </Text>
             </TouchableOpacity>
 
@@ -2004,9 +2155,25 @@ function Live1v1BattleScreenInner({
               accessibilityRole="button"
               accessibilityLabel="Open banter"
             >
-              <Text style={styles.banterEmojiFloat}>💬</Text>
+              <BawaalEmoji name="skull_laugh" size={22} />
               <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
                 BANTER
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.persistentGloveBtn}
+              onPress={() => {
+                bumpHud();
+                setVaultOpen(true);
+              }}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Open vault"
+            >
+              <BawaalEmoji name="skull_orange_glow_v3" size={22} />
+              <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
+                VAULT
               </Text>
             </TouchableOpacity>
 
@@ -2016,16 +2183,54 @@ function Live1v1BattleScreenInner({
               activeOpacity={0.75}
               hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
               accessibilityRole="button"
-              accessibilityLabel="Vote rival"
+              accessibilityLabel="Vote B"
             >
               <Text style={styles.gloveEmojiFloat}>🥊</Text>
               <Text style={[styles.actionLabel, styles.actionLabelRival]}>
-                VOTE RIVAL
+                VOTE B
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Spectator reaction tray — FIRE / ROAST / BEAST / HYPE */}
+          <View style={styles.warCryReactionTray} pointerEvents="auto">
+            {WAR_CRY_REACTIONS.map((rx) => (
+              <TouchableOpacity
+                key={rx.id}
+                style={styles.warCryReactionChip}
+                onPress={() => {
+                  bumpHud();
+                  void fireWarCryReaction(rx);
+                }}
+                activeOpacity={0.8}
+              >
+                <BawaalEmoji name={rx.emojiKey} size={20} />
+                <Text style={styles.warCryReactionLabel}>{rx.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Live banter ticker */}
+          {banterTicker.length ? (
+            <View style={styles.banterTicker} pointerEvents="none">
+              <Text style={styles.banterTickerText} numberOfLines={1}>
+                {banterTicker[0]?.text}
+              </Text>
+            </View>
+          ) : null}
         </View>
       )}
+
+      <FloatingEmojiBurstLayer
+        particles={burstParticles}
+        onParticleDone={removeBurstParticle}
+      />
+
+      <FullEmojiPickerDrawer
+        visible={vaultOpen}
+        onClose={() => setVaultOpen(false)}
+        onSelectEmoji={handleSelectVaultSkull}
+      />
 
       <Modal
         visible={Boolean(isSpectator && banterOpen)}
@@ -2233,6 +2438,47 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     shadowOpacity: 0,
     elevation: 0,
+  },
+  warCryReactionTray: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    marginTop: 8,
+    marginHorizontal: 16,
+    gap: 6,
+  },
+  warCryReactionChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,87,34,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    minWidth: 64,
+  },
+  warCryReactionLabel: {
+    marginTop: 2,
+    color: WHITE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  banterTicker: {
+    marginTop: 8,
+    marginHorizontal: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,87,34,0.35)',
+  },
+  banterTickerText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '700',
   },
   persistentGloveBtn: {
     alignItems: 'center',
