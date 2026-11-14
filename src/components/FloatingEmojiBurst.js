@@ -1,11 +1,11 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Origin from video-container onLayout:
+ * Master layout (dynamic onLayout):
  *   centerX = containerWidth / 2
- *   centerY = containerHeight / 2 + BURST_CENTER_Y_BIAS (+45)
- *   startX / startY anchored to that measured center
- * Overlay absolute-fills the card; particles explode 360° then fade.
+ *   centerY = containerHeight * BURST_CENTER_Y_RATIO (0.58)
+ * Overlay absolute-fills the video card (pointerEvents none, overflow hidden).
+ * Particles radiate: X → random horizontal spread; Y → down kick then upward float + fade.
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, Dimensions, StyleSheet, View } from 'react-native';
@@ -15,10 +15,21 @@ export const BURST_DURATION_MS = 2000;
 export const BURST_PARTICLE_COUNT = 7;
 export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
-export const BURST_RADIUS_MIN = 90;
-export const BURST_RADIUS_MAX = 180;
-/** Nudge burst ring slightly lower into the video mid-frame */
-export const BURST_CENTER_Y_BIAS = 45;
+
+/** Horizontal radial spread (px) */
+export const BURST_X_SPREAD = 150;
+/** Initial outward / downward pop (px) */
+export const BURST_KICK_Y = 40;
+/** Final upward float target (px) */
+export const BURST_FLOAT_Y = -180;
+/**
+ * Proportional vertical anchor in the active action zone.
+ * centerY = height * 0.58
+ */
+export const BURST_CENTER_Y_RATIO = 0.58;
+
+/** @deprecated Prefer BURST_CENTER_Y_RATIO; kept for call-site compatibility */
+export const BURST_CENTER_Y_BIAS = 0;
 
 let burstSeq = 0;
 
@@ -28,7 +39,8 @@ function randomBetween(min, max) {
 
 /**
  * True center from measured container bounds.
- * centerX = containerWidth / 2, centerY = containerHeight / 2
+ * centerX = width / 2
+ * centerY = height * 0.58
  *
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null | undefined} container
  */
@@ -40,7 +52,7 @@ export function getContainerBurstCenter(container) {
 
   if (containerWidth > 0 && containerHeight > 0) {
     const centerX = containerWidth / 2;
-    const centerY = containerHeight / 2 + BURST_CENTER_Y_BIAS;
+    const centerY = containerHeight * BURST_CENTER_Y_RATIO;
     return {
       containerWidth,
       containerHeight,
@@ -54,7 +66,7 @@ export function getContainerBurstCenter(container) {
   // Soft fallback only until onLayout has measured the card
   const { width, height } = Dimensions.get('window');
   const centerX = width / 2;
-  const centerY = height / 2 + BURST_CENTER_Y_BIAS;
+  const centerY = height * BURST_CENTER_Y_RATIO;
   return {
     containerWidth: width,
     containerHeight: height,
@@ -66,7 +78,8 @@ export function getContainerBurstCenter(container) {
 }
 
 /**
- * Build particles at measured startX/startY with full 360° outward deltas.
+ * Build particles at measured startX/startY.
+ * targetX: random horizontal spread · kickY → floatY vertical arc
  */
 export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {}) {
   const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
@@ -81,11 +94,11 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    const baseAngle = (i / count) * Math.PI * 2;
-    const angle = baseAngle + (Math.random() - 0.5) * 0.65;
-    const radius = randomBetween(BURST_RADIUS_MIN, BURST_RADIUS_MAX);
-    const targetX = Math.cos(angle) * radius;
-    const targetY = Math.sin(angle) * radius;
+    // Randomized horizontal spread from dead center
+    const targetX = randomBetween(-BURST_X_SPREAD, BURST_X_SPREAD);
+    // Slight outward/downward kick, then float upward
+    const kickY = BURST_KICK_Y + randomBetween(-8, 12);
+    const floatY = BURST_FLOAT_Y + randomBetween(-30, 20);
     const delay = Math.floor(Math.random() * 80);
     const size = BURST_EMOJI_SIZE + Math.floor((Math.random() - 0.5) * 12);
     particles.push({
@@ -94,7 +107,8 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
       startX,
       startY,
       targetX,
-      targetY,
+      kickY,
+      floatY,
       delay,
       duration: BURST_DURATION_MS,
       size,
@@ -104,7 +118,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at onLayout center: containerWidth/2, containerHeight/2.
+ * Spawn at onLayout proportional center (width/2, height*0.58).
  * @param {string} emojiKey
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} containerSize
  */
@@ -131,7 +145,8 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   startX,
   startY,
   targetX,
-  targetY,
+  kickY,
+  floatY,
   delay,
   duration,
   size,
@@ -189,9 +204,10 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     outputRange: [0, targetX || 0],
     extrapolate: 'clamp',
   });
+  // Initial pop kicks slightly down/out, then floats up while fading
   const translateY = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, targetY || 0],
+    inputRange: [0, 0.22, 1],
+    outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
     extrapolate: 'clamp',
   });
 
@@ -243,7 +259,8 @@ export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
           startX={p.startX}
           startY={p.startY}
           targetX={p.targetX}
-          targetY={p.targetY}
+          kickY={p.kickY}
+          floatY={p.floatY}
           delay={p.delay}
           duration={p.duration}
           size={p.size}
