@@ -2284,6 +2284,7 @@ function Live1v1BattleScreenInner({
       <FloatingEmojiBurstLayer
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
+        style={styles.warCryBurstOverlay}
       />
 
       <FullEmojiPickerDrawer
@@ -2469,6 +2470,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'transparent',
     pointerEvents: 'box-none',
+  },
+  /** Full War Cry stadium bounds for vault reaction particles */
+  warCryBurstOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
   },
   athleteTopBack: {
     position: 'absolute',

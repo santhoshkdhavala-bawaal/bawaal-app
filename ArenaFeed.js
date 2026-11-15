@@ -1014,6 +1014,8 @@ const GeneralReelCard = memo(function GeneralReelCard({
       <FloatingEmojiBurstLayer
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
+        onLayout={onVideoContainerLayout}
+        style={styles.reelBurstOverlay}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
@@ -1523,6 +1525,8 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       <FloatingEmojiBurstLayer
         particles={burstParticles}
         onParticleDone={removeBurstParticle}
+        onLayout={onVideoContainerLayout}
+        style={styles.challengeBurstOverlay}
       />
 
       {/* Floating Instagram-style stack — video keeps playing underneath */}
@@ -2565,6 +2569,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderColor: BORDER,
   },
+  /** Full video-card bounds for vault reaction particles */
+  reelBurstOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
+  },
   clipShell: {
     position: 'relative',
     width: '100%',
@@ -2596,6 +2606,12 @@ const styles = StyleSheet.create({
     minHeight: 450,
     backgroundColor: '#000000',
     overflow: 'hidden',
+  },
+  /** Full challenge-page bounds for vault reaction particles */
+  challengeBurstOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    elevation: 9999,
   },
   /** LOCKED — top-right mute (arenaReelOverlay.REEL_MUTE) */
   challengeMuteBtn: {
