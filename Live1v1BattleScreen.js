@@ -89,7 +89,7 @@ import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
 import {
   FloatingEmojiBurstLayer,
   appendBurstParticles,
-  createDualPaneEmojiBurst,
+  createCenteredEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
 import {
   subscribeVaultBurstChannel,
@@ -784,8 +784,6 @@ function Live1v1BattleScreenInner({
     width: SCREEN_W,
     height: SCREEN_H,
   });
-  const [hostPaneLayout, setHostPaneLayout] = useState(null);
-  const [rivalPaneLayout, setRivalPaneLayout] = useState(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [banterTicker, setBanterTicker] = useState([]);
   const [roundRemainingSec, setRoundRemainingSec] = useState(() => {
@@ -1265,15 +1263,10 @@ function Live1v1BattleScreenInner({
   const triggerLocalEmojiBurst = useCallback(
     (emojiId) => {
       if (!emojiId) return;
-      const next = createDualPaneEmojiBurst(
-        emojiId,
-        hostPaneLayout,
-        rivalPaneLayout,
-        burstLayout
-      );
+      const next = createCenteredEmojiBurst(emojiId, burstLayout);
       setBurstParticles((prev) => appendBurstParticles(prev, next));
     },
-    [burstLayout, hostPaneLayout, rivalPaneLayout]
+    [burstLayout]
   );
 
   const removeBurstParticle = useCallback((id) => {
@@ -1811,20 +1804,6 @@ function Live1v1BattleScreenInner({
               : styles.hostHalfColumn,
           ]}
           pointerEvents="box-none"
-          onLayout={(e) => {
-            const { x, y, width, height } = e?.nativeEvent?.layout || {};
-            if (width > 0 && height > 0) {
-              setHostPaneLayout((prev) =>
-                prev &&
-                prev.x === x &&
-                prev.y === y &&
-                prev.width === width &&
-                prev.height === height
-                  ? prev
-                  : { x, y, width, height }
-              );
-            }
-          }}
         >
           <StreamSurface
             streamId={safeHostAthlete.streamId}
@@ -1924,20 +1903,6 @@ function Live1v1BattleScreenInner({
         <View
           style={styles.rivalHalf}
           pointerEvents="box-none"
-          onLayout={(e) => {
-            const { x, y, width, height } = e?.nativeEvent?.layout || {};
-            if (width > 0 && height > 0) {
-              setRivalPaneLayout((prev) =>
-                prev &&
-                prev.x === x &&
-                prev.y === y &&
-                prev.width === width &&
-                prev.height === height
-                  ? prev
-                  : { x, y, width, height }
-              );
-            }
-          }}
         >
           <StreamSurface
             streamId={rivalAthlete?.streamId}

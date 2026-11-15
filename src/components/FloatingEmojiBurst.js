@@ -1,11 +1,8 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Master layout (dynamic onLayout):
- *   centerX = containerWidth / 2
- *   centerY = containerHeight * BURST_CENTER_Y_RATIO (0.58)
- * Overlay absolute-fills the video card (pointerEvents none, overflow hidden).
- * Particles radiate: X → random horizontal spread; Y → down kick then upward float + fade.
+ * Origin: absolute center of the overlay (top/left 50%).
+ * Particles spawn at that point and radiate outward (X spread + kick/float Y).
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, Dimensions, StyleSheet, View } from 'react-native';
@@ -23,10 +20,10 @@ export const BURST_KICK_Y = 40;
 /** Final upward float target (px) */
 export const BURST_FLOAT_Y = -180;
 /**
- * Proportional vertical anchor in the active action zone.
- * centerY = height * 0.58
+ * Vertical center ratio for measured containers / dual-pane helpers.
+ * True screen center = 0.5
  */
-export const BURST_CENTER_Y_RATIO = 0.58;
+export const BURST_CENTER_Y_RATIO = 0.5;
 
 /** @deprecated Prefer BURST_CENTER_Y_RATIO; kept for call-site compatibility */
 export const BURST_CENTER_Y_BIAS = 0;
@@ -38,9 +35,7 @@ function randomBetween(min, max) {
 }
 
 /**
- * True center from measured container bounds.
- * centerX = width / 2
- * centerY = height * 0.58
+ * Geometric center of measured container bounds (width/2, height/2).
  *
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null | undefined} container
  */
@@ -63,7 +58,6 @@ export function getContainerBurstCenter(container) {
     };
   }
 
-  // Soft fallback only until onLayout has measured the card
   const { width, height } = Dimensions.get('window');
   const centerX = width / 2;
   const centerY = height * BURST_CENTER_Y_RATIO;
@@ -78,25 +72,19 @@ export function getContainerBurstCenter(container) {
 }
 
 /**
- * Build particles at measured startX/startY.
+ * Build particles at origin-relative startX/startY (0,0 = overlay center).
  * targetX: random horizontal spread · kickY → floatY vertical arc
  */
 export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {}) {
   const count = Math.max(4, Math.min(10, Number(opts.count) || BURST_PARTICLE_COUNT));
   const key = String(emojiKey || 'skull_orange_glow_v3').toLowerCase();
-  const measured = getContainerBurstCenter({
-    width: opts.containerWidth ?? opts.width,
-    height: opts.containerHeight ?? opts.height,
-  });
-  const startX = Number.isFinite(Number(originX)) ? Number(originX) : measured.startX;
-  const startY = Number.isFinite(Number(originY)) ? Number(originY) : measured.startY;
+  const startX = Number.isFinite(Number(originX)) ? Number(originX) : 0;
+  const startY = Number.isFinite(Number(originY)) ? Number(originY) : 0;
 
   const particles = [];
   for (let i = 0; i < count; i += 1) {
     burstSeq += 1;
-    // Randomized horizontal spread from dead center
     const targetX = randomBetween(-BURST_X_SPREAD, BURST_X_SPREAD);
-    // Slight outward/downward kick, then float upward
     const kickY = BURST_KICK_Y + randomBetween(-8, 12);
     const floatY = BURST_FLOAT_Y + randomBetween(-30, 20);
     const delay = Math.floor(Math.random() * 80);
@@ -118,23 +106,16 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at onLayout proportional center (width/2, height*0.58).
+ * Spawn at exact overlay center (origin-relative 0,0).
  * @param {string} emojiKey
- * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} containerSize
+ * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} [_containerSize]
  */
-export function createCenteredEmojiBurst(emojiKey, containerSize, opts = {}) {
-  const { startX, startY, containerWidth, containerHeight } =
-    getContainerBurstCenter(containerSize);
-  return createEmojiBurstParticles(startX, startY, emojiKey, {
-    ...opts,
-    containerWidth,
-    containerHeight,
-  });
+export function createCenteredEmojiBurst(emojiKey, _containerSize, opts = {}) {
+  return createEmojiBurstParticles(0, 0, emojiKey, opts);
 }
 
 /**
- * Spawn vault particles over both fighter midpoints (Host + Rival panes).
- * Pane layouts are relative to the dual-split parent measured by onLayout.
+ * Spawn vault particles over both fighter midpoints as offsets from overlay center.
  *
  * @param {string} emojiKey
  * @param {{ x?: number, y?: number, width?: number, height?: number } | null} hostPane
@@ -151,8 +132,6 @@ export function createDualPaneEmojiBurst(
   const parent = getContainerBurstCenter(containerSize);
   const paneOpts = {
     ...opts,
-    containerWidth: parent.containerWidth,
-    containerHeight: parent.containerHeight,
     count: Math.max(3, Math.min(6, Number(opts.count) || 5)),
   };
 
@@ -168,8 +147,10 @@ export function createDualPaneEmojiBurst(
   panes.forEach((pane) => {
     const ox = Number(pane.x) || 0;
     const oy = Number(pane.y) || 0;
-    const startX = ox + Number(pane.width) / 2;
-    const startY = oy + Number(pane.height) * BURST_CENTER_Y_RATIO;
+    // Offsets from overlay center so particles still parent under the 50%/50% origin
+    const startX = ox + Number(pane.width) / 2 - parent.centerX;
+    const startY =
+      oy + Number(pane.height) * BURST_CENTER_Y_RATIO - parent.centerY;
     particles.push(
       ...createEmojiBurstParticles(startX, startY, emojiKey, paneOpts)
     );
@@ -250,7 +231,6 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     outputRange: [0, targetX || 0],
     extrapolate: 'clamp',
   });
-  // Initial pop kicks slightly down/out, then floats up while fading
   const translateY = progress.interpolate({
     inputRange: [0, 0.22, 1],
     outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
@@ -267,8 +247,11 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
       style={[
         styles.particle,
         {
+          // Origin-relative: (0,0) is overlay center; offset by half emoji size
           left: sx - dim / 2,
           top: sy - dim / 2,
+          marginLeft: 0,
+          marginTop: 0,
           width: dim,
           height: dim,
           opacity: fade,
@@ -282,7 +265,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Absolute overlay matching the measured video container bounds.
+ * Full-bleed overlay with an absolute center origin — particles spawn there.
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -297,22 +280,24 @@ export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
       onLayout={onLayout}
       style={[styles.layer, style]}
     >
-      {(particles || []).map((p) => (
-        <FloatingEmojiParticle
-          key={p.id}
-          id={p.id}
-          emojiKey={p.emojiKey}
-          startX={p.startX}
-          startY={p.startY}
-          targetX={p.targetX}
-          kickY={p.kickY}
-          floatY={p.floatY}
-          delay={p.delay}
-          duration={p.duration}
-          size={p.size}
-          onDone={onParticleDone}
-        />
-      ))}
+      <View style={styles.origin} pointerEvents="none">
+        {(particles || []).map((p) => (
+          <FloatingEmojiParticle
+            key={p.id}
+            id={p.id}
+            emojiKey={p.emojiKey}
+            startX={p.startX}
+            startY={p.startY}
+            targetX={p.targetX}
+            kickY={p.kickY}
+            floatY={p.floatY}
+            delay={p.delay}
+            duration={p.duration}
+            size={p.size}
+            onDone={onParticleDone}
+          />
+        ))}
+      </View>
     </View>
   );
 });
@@ -329,6 +314,15 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     pointerEvents: 'none',
     overflow: 'hidden',
+  },
+  /** Dead-center spawn hub — particles are children of this point. */
+  origin: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 0,
+    height: 0,
+    overflow: 'visible',
   },
   particle: {
     position: 'absolute',
