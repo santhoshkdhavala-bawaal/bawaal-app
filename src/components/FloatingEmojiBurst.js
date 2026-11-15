@@ -1,9 +1,9 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Origin: absolute dead-center over the video/arena overlay (top/left 50%).
- * Particles spawn there, float upward for ~2.8s, stay opaque through 75%, then fade.
- * State cleanup waits BURST_CLEANUP_MS so particles are not unmounted early.
+ * Origin: lower third of the video/arena overlay (top 60% · left 50%).
+ * Particles spawn there and float upward across the feed for ~2.8s,
+ * stay opaque through 75%, then fade. Cleanup waits BURST_CLEANUP_MS.
  */
 import React, { memo, useEffect, useRef } from 'react';
 import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
@@ -24,9 +24,10 @@ export const BURST_KICK_Y = 40;
 /** Final upward float target (px) */
 export const BURST_FLOAT_Y = -180;
 /**
- * Vertical anchor — dead center of the video overlay (matches origin `top: '50%'`).
+ * Vertical spawn — center-bottom of the video overlay (matches origin `top: '60%'`).
+ * Particles float upward from here across the active feed.
  */
-export const BURST_CENTER_Y_RATIO = 0.5;
+export const BURST_CENTER_Y_RATIO = 0.6;
 
 /** @deprecated Prefer BURST_CENTER_Y_RATIO; kept for call-site compatibility */
 export const BURST_CENTER_Y_BIAS = 0;
@@ -38,7 +39,7 @@ function randomBetween(min, max) {
 }
 
 /**
- * Burst anchor of measured container bounds (width/2, height/2).
+ * Burst anchor of measured container bounds (width/2, height * 0.6).
  *
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null | undefined} container
  */
@@ -113,7 +114,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at dead-center origin (origin-relative 0,0 → top 50% / left 50%).
+ * Spawn at lower-center origin (origin-relative 0,0 → top 60% / left 50%).
  * @param {string} emojiKey
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} [_containerSize]
  */
@@ -231,9 +232,14 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     outputRange: [0, targetX || 0],
     extrapolate: 'clamp',
   });
+  // Kick slightly down, then float upward across the center of the feed
   const translateY = progress.interpolate({
     inputRange: [0, 0.18, 1],
-    outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
+    outputRange: [
+      0,
+      Math.abs(kickY ?? BURST_KICK_Y),
+      floatY ?? BURST_FLOAT_Y, // negative = upward
+    ],
     extrapolate: 'clamp',
   });
 
@@ -262,7 +268,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Full-bleed overlay with an absolute dead-center origin — particles spawn there.
+ * Full-bleed overlay with a lower-center origin — particles spawn and float up.
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -313,13 +319,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   /**
-   * Dead-center spawn hub over the video view.
-   * 0×0 at top/left 50% — RN-safe equivalent of translate(-50%, -50%)
-   * on a zero-size node (percentage transforms are unreliable cross-platform).
+   * Lower-center spawn hub over the video feed (center-bottom).
+   * 0×0 at top 60% / left 50% — particles radiate and float upward from here.
    */
   origin: {
     position: 'absolute',
-    top: '50%',
+    top: '60%',
     left: '50%',
     width: 0,
     height: 0,
