@@ -107,6 +107,10 @@ const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const SPLIT_WIDE_MIN = 768;
+/** Athlete BAWAAL + QUEUED top bar height — pane overlays clear this band. */
+const ATHLETE_TOP_BAR_H = 40;
+/** Spectator header content offset below safe-area (timer / LIVE row). */
+const SPECTATOR_TOP_CHROME_H = 52;
 
 /** Spectator reaction tray — proprietary vault keys (emoji lock). */
 const WAR_CRY_REACTIONS = [
@@ -521,12 +525,17 @@ function StreamSurface({
         style={shellStyle}
         accessibilityLabel={`stream-${streamId || rtcUid || label}`}
       >
-        <ArenaLocalVideo
-          isCameraOn={localCamOn}
-          isCamOn={localCamOn}
-          handle={label}
-          flag={flag}
-        />
+        {renderFallback('local-fallback')}
+        {localCamOn ? (
+          <StreamErrorBoundary fallback={renderFallback('error-fallback')}>
+            <ArenaLocalVideo
+              isCameraOn={localCamOn}
+              isCamOn={localCamOn}
+              handle={label}
+              flag={flag}
+            />
+          </StreamErrorBoundary>
+        ) : null}
       </View>
     );
   }
@@ -550,7 +559,8 @@ function StreamSurface({
       style={shellStyle}
       accessibilityLabel={`stream-${streamId || rtcUid || label}`}
     >
-      {renderFallback('base-fallback')}
+      {/* Sim is visual-only — skip STANDBY text stack so VS stays crisp */}
+      {showRivalSim ? null : renderFallback('base-fallback')}
       {liveTrack ? (
         <StreamErrorBoundary fallback={renderFallback('error-fallback')}>
           {liveTrack}
@@ -1746,6 +1756,9 @@ function Live1v1BattleScreenInner({
   const rivalVotesLabel = formatVoteCount(rivalVotes);
   /** Status bar / notch clearance — paddingTop: insets.top + 10 on Host overlays. */
   const hostOverlayPadTop = insets.top + 10;
+  const paneChromePadTop = isAthlete
+    ? hostOverlayPadTop + ATHLETE_TOP_BAR_H
+    : hostOverlayPadTop + SPECTATOR_TOP_CHROME_H;
   const isDualFocus = Boolean(hasActiveRival);
 
   const rivalIsLocal = isLocalAthlete(rivalAthlete);
@@ -1791,17 +1804,12 @@ function Live1v1BattleScreenInner({
       >
         {/* HOST pane (50%) */}
         <View
-          style={{
-            flex: 1,
-            width: '100%',
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: '#1F293D',
-            borderBottomWidth: splitWide && isDualFocus ? 0 : 1,
-            borderRightWidth: splitWide && isDualFocus ? 1 : 0,
-            borderBottomColor: 'rgba(255,255,255,0.14)',
-            borderRightColor: 'rgba(255,255,255,0.14)',
-          }}
+          style={[
+            styles.hostHalf,
+            splitWide && isDualFocus
+              ? styles.hostHalfWide
+              : styles.hostHalfColumn,
+          ]}
           pointerEvents="box-none"
           onLayout={(e) => {
             const { x, y, width, height } = e?.nativeEvent?.layout || {};
@@ -1839,7 +1847,7 @@ function Live1v1BattleScreenInner({
               position: 'absolute',
               top: 0,
               left: 16,
-              paddingTop: hostOverlayPadTop,
+              paddingTop: paneChromePadTop,
               gap: 8,
               zIndex: 8,
               maxWidth: '62%',
@@ -1874,7 +1882,7 @@ function Live1v1BattleScreenInner({
                 position: 'absolute',
                 top: 0,
                 right: 16,
-                paddingTop: hostOverlayPadTop,
+                paddingTop: paneChromePadTop,
                 zIndex: 8,
                 alignItems: 'flex-end',
                 gap: 6,
@@ -1914,13 +1922,7 @@ function Live1v1BattleScreenInner({
 
         {/* BOTTOM HALF: RIVAL (50%) */}
         <View
-          style={{
-            flex: 1,
-            width: '100%',
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: '#0f172a',
-          }}
+          style={styles.rivalHalf}
           pointerEvents="box-none"
           onLayout={(e) => {
             const { x, y, width, height } = e?.nativeEvent?.layout || {};
@@ -2008,7 +2010,7 @@ function Live1v1BattleScreenInner({
           pointerEvents="box-none"
         >
           <TouchableOpacity
-            style={styles.headerBrand}
+            style={styles.athleteHeaderBrand}
             onPress={() => {
               if (navigation?.canGoBack?.()) navigation.goBack();
               else navigation?.navigate?.('Main', { tab: 'Battles' });
@@ -2023,7 +2025,7 @@ function Live1v1BattleScreenInner({
               onPress={openChallengerRoster}
               activeOpacity={0.85}
             >
-              <Text style={styles.queuedAthletesPillText}>
+              <Text style={styles.queuedAthletesPillText} numberOfLines={1}>
                 QUEUED ({queue.length})
               </Text>
             </TouchableOpacity>
@@ -2051,7 +2053,10 @@ function Live1v1BattleScreenInner({
           pointerEvents={showControls ? 'box-none' : 'none'}
         >
           <View
-            style={[styles.hudTopBlock, { paddingTop: hostOverlayPadTop + 52 }]}
+            style={[
+              styles.hudTopBlock,
+              { paddingTop: hostOverlayPadTop + SPECTATOR_TOP_CHROME_H },
+            ]}
             pointerEvents="box-none"
           >
             <View style={styles.header}>
@@ -2502,13 +2507,22 @@ const styles = StyleSheet.create({
   },
   athleteTopBack: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    zIndex: 50,
+    left: 0,
+    right: 0,
+    zIndex: 60,
+    elevation: 60,
+    minHeight: ATHLETE_TOP_BAR_H,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
     backgroundColor: 'transparent',
+  },
+  athleteHeaderBrand: {
+    flexShrink: 1,
+    maxWidth: '38%',
+    paddingVertical: 4,
   },
   persistentGlovesDock: {
     position: 'absolute',
@@ -2591,7 +2605,7 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 50,
     elevation: 50,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'transparent',
   },
   athleteToolsDock: {
     position: 'absolute',
@@ -2643,10 +2657,11 @@ const styles = StyleSheet.create({
     gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: SURFACE,
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
   headerBrand: {
     flexShrink: 1,
-    maxWidth: '28%',
+    maxWidth: '26%',
   },
   brandTitle: {
     color: WHITE,
@@ -2669,7 +2684,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
-    maxWidth: '42%',
+    maxWidth: '34%',
   },
   timerText: {
     color: ORANGE,
@@ -2682,11 +2697,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerRightCluster: {
-    flexShrink: 0,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-end',
     gap: 6,
-    maxWidth: '42%',
+    maxWidth: '34%',
   },
   liveBadge: {
     flexShrink: 1,
@@ -2818,7 +2834,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   queuedAthletesPill: {
-    flex: 1,
+    flexShrink: 0,
+    alignSelf: 'flex-end',
+    maxWidth: '58%',
     backgroundColor: 'rgba(255,230,0,0.12)',
     borderWidth: 1,
     borderColor: '#FFE600',
@@ -2826,6 +2844,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   queuedAthletesPillText: {
     color: '#FFE600',
@@ -2872,9 +2891,15 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#1F293D',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: PANEL_HOST,
+  },
+  hostHalfColumn: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.18)',
+  },
+  hostHalfWide: {
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: 'rgba(255,255,255,0.18)',
   },
   rivalHalf: {
     flex: 1,
@@ -2882,14 +2907,14 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: 'relative',
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    backgroundColor: PANEL_RIVAL,
   },
   vsAbsoluteCenter: {
     position: 'absolute',
     top: '50%',
     left: '50%',
     zIndex: 100,
-    transform: [{ translateX: -20 }, { translateY: -20 }],
+    transform: [{ translateX: -22 }, { translateY: -22 }],
   },
   rivalBadge: {
     alignSelf: 'flex-start',
@@ -2963,10 +2988,10 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
   },
   streamSurfaceHost: {
-    backgroundColor: 'transparent',
+    backgroundColor: PANEL_HOST,
   },
   streamSurfaceRival: {
-    backgroundColor: 'transparent',
+    backgroundColor: PANEL_RIVAL,
   },
   cameraLayer: {
     position: 'absolute',
@@ -3025,7 +3050,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
-    backgroundColor: PANEL_RIVAL,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
