@@ -1,0 +1,84 @@
+---
+description: BAWAAL War Cry stadium, skull vault registry, Hub modes (no Dark Arena), and vault reaction burst system — production-final lock.
+alwaysApply: true
+---
+
+# BAWAAL War Cry · Vault · Hub · Burst (LOCKED)
+
+Production-final snapshot. Do **not** restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+
+## 1. Custom skull vault registry
+
+There is **no** root `vaultAssets.js`. Canonical skull map:
+
+| File | Role |
+|---|---|
+| [`src/constants/skullEmojiRegistry.js`](src/constants/skullEmojiRegistry.js) | Every `assets/skull_*.png` → explicit `require()` in `SKULL_EMOJIS` |
+| [`scripts/generateSkullEmojiRegistry.js`](scripts/generateSkullEmojiRegistry.js) | Regenerator — run after adding skull PNGs |
+| [`src/constants/bawaalEmojiAssets.js`](src/constants/bawaalEmojiAssets.js) | Merges `...SKULL_EMOJIS` into `BAWAAL_EMOJI_ASSETS`; `ALL_SKELETON_KEYS` includes `SKULL_EMOJI_KEYS` |
+
+**Contract:** filenames are keys (e.g. `skull_hattrick`). Registry count must match `assets/skull_*.png` (189 as of lock-in). Vault picker + `FloatingEmojiBurst` resolve via `BawaalEmoji` / registry keys only — never unicode.
+
+## 2. ChallengerArena / War Cry 1v1
+
+| Surface | Locked path |
+|---|---|
+| Product module | [`WarCryScreen.js`](WarCryScreen.js) → re-exports [`Live1v1BattleScreen.js`](Live1v1BattleScreen.js) |
+| Routes | `Live1v1Battle` + `ChallengerArena` in [`App.js`](App.js) mount `WarCryScreen` |
+
+### Layout
+- Dual Host / Rival panes: `hostHalf` / `rivalHalf` — `flex: 1`, `minHeight: 0`, `PANEL_HOST` / `PANEL_RIVAL`
+- Central VS: `vsAbsoluteCenter` + `vsBadge` (44px; transform ±22)
+- Athlete header: `athleteTopBack` — BAWAAL left, `QUEUED (N)` right; pane chrome clears via `ATHLETE_TOP_BAR_H`
+- Inactive RTC: `StreamFallbackPanel` (flag + handle + STANDBY / RECONNECTING)
+
+### 5-hour registration cutoff
+Source: [`src/utils/warCrySchedule.js`](src/utils/warCrySchedule.js)
+
+- Rule: `now >= start_time - 5h` → closed (`WAR_CRY_REGISTRATION_CUTOFF_MS`)
+- Badge: `REGISTRATIONS CLOSED – WAR ROOM LOCKED` (`warCryRegistrationBadge` / `getWarCryRegistrationState`)
+- Enforce disable: Battles ACCEPT / join CTAs, roster CALL OUT, CreateBattleSheet rival input when closed
+
+## 3. BAWAAL Hub modes (no Dark Arena)
+
+Canonical list: `HUB_MODES` in [`UniversalCamera.tsx`](UniversalCamera.tsx) → `BawaalHubDrawer`
+
+**Hub cards (locked order):**
+1. SPARKS
+2. JOSH
+3. BAWAAL BATTLE
+4. FACEOFF
+5. WAR CRY
+(+ Gallery row)
+
+**Never re-add** `DARK_ARENA` to `HUB_MODES`. Legacy `CreationMode` / duration switch cases may remain for deep-links only — not as a Hub card.
+
+## 4. Reaction particle burst
+
+Canonical: [`src/components/FloatingEmojiBurst.js`](src/components/FloatingEmojiBurst.js)
+
+| Token | Value |
+|---|---|
+| Layer | `StyleSheet.absoluteFillObject` over video / stadium card |
+| Spawn | `BURST_CENTER_Y_RATIO = 0.75` (lower-center of measured bounds) |
+| Duration | `BURST_DURATION_MS = 2800` |
+| Cleanup | `BURST_CLEANUP_MS = 3000` (must not unmount early) |
+| Opacity | Solid through ~75%, fade in last quarter |
+| Motion | Brief downward kick → upward float (`BURST_FLOAT_Y` negative) |
+
+Wired on Arena reel/challenge cards ([`ArenaFeed.js`](ArenaFeed.js)) and War Cry ([`Live1v1BattleScreen.js`](Live1v1BattleScreen.js)) via `FloatingEmojiBurstLayer` + `createCenteredEmojiBurst`.
+
+## Never re-add
+
+- Parallel `vaultAssets.js` that diverges from `skullEmojiRegistry.js`
+- Dark Arena Hub card
+- Metric counters on primary Arena overlay (metrics stay behind ⋮ — core lock)
+- Unicode reaction particles / trays on War Cry / Arena vault bursts
+- Registration CTAs that ignore the 5h cutoff
+
+## Related
+
+- Emoji vault exclusive: `bawaal-emoji-locked.mdc`
+- Core Hub six-mode history → this rule supersedes Dark Arena as a Hub pick
+- Arena V2 chrome: `bawaal-v2-arena-ui-locked.mdc`
+---
