@@ -1,7 +1,7 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Origin: absolute center of the overlay (top/left 50%).
+ * Origin: absolute center over the video/arena container (top 40% · left 50%).
  * Particles spawn at that point and radiate outward (X spread + kick/float Y).
  */
 import React, { memo, useEffect, useRef } from 'react';
@@ -20,10 +20,9 @@ export const BURST_KICK_Y = 40;
 /** Final upward float target (px) */
 export const BURST_FLOAT_Y = -180;
 /**
- * Vertical center ratio for measured containers / dual-pane helpers.
- * True screen center = 0.5
+ * Vertical anchor over the video action zone (matches origin `top: '40%'`).
  */
-export const BURST_CENTER_Y_RATIO = 0.5;
+export const BURST_CENTER_Y_RATIO = 0.4;
 
 /** @deprecated Prefer BURST_CENTER_Y_RATIO; kept for call-site compatibility */
 export const BURST_CENTER_Y_BIAS = 0;
@@ -35,7 +34,7 @@ function randomBetween(min, max) {
 }
 
 /**
- * Geometric center of measured container bounds (width/2, height/2).
+ * Burst anchor of measured container bounds (width/2, height * 0.4).
  *
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null | undefined} container
  */
@@ -106,7 +105,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at exact overlay center (origin-relative 0,0).
+ * Spawn at video-centered origin (origin-relative 0,0 → top 40% / left 50%).
  * @param {string} emojiKey
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} [_containerSize]
  */
@@ -315,13 +314,19 @@ const styles = StyleSheet.create({
     pointerEvents: 'none',
     overflow: 'hidden',
   },
-  /** Dead-center spawn hub — particles are children of this point. */
+  /**
+   * Spawn hub centered over the video feed.
+   * 0×0 point at top/left 40%/50% — equivalent to CSS translate(-50%, -50%)
+   * on a zero-size node (RN % transforms are unreliable cross-platform).
+   */
   origin: {
     position: 'absolute',
-    top: '50%',
+    top: '40%',
     left: '50%',
     width: 0,
     height: 0,
+    marginLeft: 0,
+    marginTop: 0,
     overflow: 'visible',
   },
   particle: {
