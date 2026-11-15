@@ -93,6 +93,21 @@ export function subscribeVaultBurstChannel(roomId, opts = {}) {
       }
     });
 
+    channel.on('broadcast', { event: 'battle_banter' }, (msg) => {
+      try {
+        const payload = msg?.payload || {};
+        const text = String(payload.text || payload.body || '').trim();
+        if (!text) return;
+        opts.onBanter?.(text, payload);
+      } catch (err) {
+        softFailWarn(
+          'vaultBurst:banterReceive',
+          '[vaultBurst] banter receive soft-fail',
+          err?.message || err
+        );
+      }
+    });
+
     channel.subscribe((status) => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         softFailWarn(
@@ -196,6 +211,83 @@ export async function broadcastVaultBurst(roomId, payload = {}) {
     softFailWarn(
       'vaultBurst:broadcast',
       '[vaultBurst] broadcast soft-fail',
+      err?.message || err
+    );
+    return { ok: false };
+  }
+}
+
+/**
+ * Broadcast live banter text to the War Cry room (same arena_* channel).
+ * Soft-fail; never throws. Peers receive via subscribeVaultBurstChannel onBanter.
+ *
+ * @param {string} roomId
+ * @param {{ text: string, userId?: string, handle?: string }} payload
+ */
+export async function broadcastBattleBanter(roomId, payload = {}) {
+  const id = String(roomId || '').trim();
+  const text = String(payload.text || payload.body || '').trim();
+  if (!id || !text || !isSupabaseConfigured()) {
+    return { ok: false };
+  }
+
+  const name = vaultBurstChannelName(id);
+  const body = {
+    type: 'broadcast',
+    event: 'battle_banter',
+    payload: {
+      text,
+      userId: payload.userId || (await resolveBurstActorId()),
+      handle: payload.handle || null,
+    },
+  };
+
+  try {
+    let channel = activeChannels.get(name);
+    let ephemeral = false;
+
+    if (!channel) {
+      ephemeral = true;
+      channel = supabase.channel(name, {
+        config: { broadcast: { self: false } },
+      });
+      await new Promise((resolve) => {
+        channel.subscribe((status) => {
+          if (
+            status === 'SUBSCRIBED' ||
+            status === 'CHANNEL_ERROR' ||
+            status === 'TIMED_OUT' ||
+            status === 'CLOSED'
+          ) {
+            resolve(status);
+          }
+        });
+      });
+    }
+
+    const result = await channel.send(body);
+
+    if (ephemeral) {
+      try {
+        supabase.removeChannel(channel);
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    if (result === 'error' || result?.error) {
+      softFailWarn(
+        'vaultBurst:banterBroadcast',
+        '[vaultBurst] banter broadcast soft-fail',
+        result
+      );
+      return { ok: false };
+    }
+    return { ok: true };
+  } catch (err) {
+    softFailWarn(
+      'vaultBurst:banterBroadcast',
+      '[vaultBurst] banter broadcast soft-fail',
       err?.message || err
     );
     return { ok: false };

@@ -7,6 +7,12 @@
 
 export const WAR_CRY_REGISTRATION_CUTOFF_MS = 5 * 60 * 60 * 1000;
 
+/** Primary tactical badge when registration is locked. */
+export const WAR_CRY_REGISTRATIONS_CLOSED_BADGE = 'REGISTRATIONS CLOSED';
+
+/** Secondary lock line for war-room surfaces. */
+export const WAR_CRY_WAR_ROOM_LOCKED_SUB = 'WAR ROOM LOCKED';
+
 /**
  * @param {string|number|Date|null|undefined} start
  * @returns {number|null} epoch ms
@@ -55,16 +61,40 @@ export function resolveWarCryRegistrationOpen(startUtc, nowMs = Date.now()) {
   return isWarCryRegistrationOpen(startUtc, nowMs);
 }
 
+/**
+ * Single registration-state snapshot for all War Cry callers.
+ * @returns {{
+ *   startMs: number|null,
+ *   registrationOpen: boolean,
+ *   registrationClosed: boolean,
+ *   startReached: boolean,
+ *   badge: string|null,
+ *   badgeSub: string|null,
+ *   joinLabel: string,
+ * }}
+ */
+export function getWarCryRegistrationState(startUtc, nowMs = Date.now()) {
+  const startMs = parseWarCryStartMs(startUtc);
+  const registrationOpen = isWarCryRegistrationOpen(startUtc, nowMs);
+  const registrationClosed = !registrationOpen;
+  const startReached = isWarCryStartReached(startUtc, nowMs);
+  return {
+    startMs,
+    registrationOpen,
+    registrationClosed,
+    startReached,
+    badge: registrationClosed ? WAR_CRY_REGISTRATIONS_CLOSED_BADGE : null,
+    badgeSub: registrationClosed ? WAR_CRY_WAR_ROOM_LOCKED_SUB : null,
+    joinLabel: startReached ? 'JOIN WAR ROOM' : 'WAR ROOM OPENS SOON',
+  };
+}
+
 export function warCryRegistrationBadge(startUtc, nowMs = Date.now()) {
-  if (isWarCryRegistrationClosed(startUtc, nowMs)) {
-    return 'REGISTRATION CLOSED – WAR ROOM LOCKED';
-  }
-  return null;
+  const state = getWarCryRegistrationState(startUtc, nowMs);
+  if (!state.registrationClosed) return null;
+  return `${state.badge} – ${state.badgeSub}`;
 }
 
 export function warCryJoinLabel(startUtc, nowMs = Date.now()) {
-  if (!isWarCryStartReached(startUtc, nowMs)) {
-    return 'WAR ROOM OPENS SOON';
-  }
-  return 'JOIN WAR ROOM';
+  return getWarCryRegistrationState(startUtc, nowMs).joinLabel;
 }

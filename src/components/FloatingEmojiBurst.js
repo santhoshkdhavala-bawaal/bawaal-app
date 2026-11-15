@@ -132,6 +132,52 @@ export function createCenteredEmojiBurst(emojiKey, containerSize, opts = {}) {
   });
 }
 
+/**
+ * Spawn vault particles over both fighter midpoints (Host + Rival panes).
+ * Pane layouts are relative to the dual-split parent measured by onLayout.
+ *
+ * @param {string} emojiKey
+ * @param {{ x?: number, y?: number, width?: number, height?: number } | null} hostPane
+ * @param {{ x?: number, y?: number, width?: number, height?: number } | null} rivalPane
+ * @param {{ width?: number, height?: number } | null} containerSize
+ */
+export function createDualPaneEmojiBurst(
+  emojiKey,
+  hostPane,
+  rivalPane,
+  containerSize,
+  opts = {}
+) {
+  const parent = getContainerBurstCenter(containerSize);
+  const paneOpts = {
+    ...opts,
+    containerWidth: parent.containerWidth,
+    containerHeight: parent.containerHeight,
+    count: Math.max(3, Math.min(6, Number(opts.count) || 5)),
+  };
+
+  const particles = [];
+  const panes = [hostPane, rivalPane].filter(
+    (p) => p && Number(p.width) > 0 && Number(p.height) > 0
+  );
+
+  if (!panes.length) {
+    return createCenteredEmojiBurst(emojiKey, containerSize, opts);
+  }
+
+  panes.forEach((pane) => {
+    const ox = Number(pane.x) || 0;
+    const oy = Number(pane.y) || 0;
+    const startX = ox + Number(pane.width) / 2;
+    const startY = oy + Number(pane.height) * BURST_CENTER_Y_RATIO;
+    particles.push(
+      ...createEmojiBurstParticles(startX, startY, emojiKey, paneOpts)
+    );
+  });
+
+  return particles;
+}
+
 export function appendBurstParticles(prev, nextParticles) {
   const merged = [...(prev || []), ...(nextParticles || [])];
   return merged.length > BURST_MAX_PARTICLES

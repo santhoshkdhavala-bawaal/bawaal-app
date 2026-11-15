@@ -376,7 +376,25 @@ export async function fetchBattleSnapshot(battleId) {
       ]);
     if (bErr) throw bErr;
     if (cErr) throw cErr;
-    return { ok: true, battle, challengers: challengers || [] };
+
+    // Soft-refresh registration_open when hydrate detects the 5h cutoff crossed.
+    let nextBattle = battle;
+    if (battle?.start_time != null) {
+      const open = resolveWarCryRegistrationOpen(battle.start_time);
+      if (battle.registration_open !== open) {
+        nextBattle = { ...battle, registration_open: open };
+        try {
+          await supabase
+            .from('battles')
+            .update({ registration_open: open })
+            .eq('id', battleId);
+        } catch (_) {
+          /* soft-fail — UI still uses computed flag */
+        }
+      }
+    }
+
+    return { ok: true, battle: nextBattle, challengers: challengers || [] };
   } catch (error) {
     return {
       ok: false,

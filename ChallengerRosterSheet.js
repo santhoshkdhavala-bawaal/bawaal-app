@@ -36,6 +36,8 @@ export default function ChallengerRosterSheet({
   activeRivalId,
   hostMode = false,
   spectatorMode = false,
+  registrationClosed = false,
+  registrationBadge = null,
   queuedCount,
   nextUpId,
   onSelectRival,
@@ -81,6 +83,7 @@ export default function ChallengerRosterSheet({
 
   const pickAthlete = (athlete) => {
     if (hostMode) {
+      if (registrationClosed) return;
       onCallOut?.(athlete);
       return;
     }
@@ -93,7 +96,11 @@ export default function ChallengerRosterSheet({
   };
 
   const actionLabel = (athlete, index) => {
-    if (hostMode) return isActive(athlete) ? 'LIVE' : 'CALL OUT';
+    if (hostMode) {
+      if (isActive(athlete)) return 'LIVE';
+      if (registrationClosed) return 'LOCKED';
+      return 'CALL OUT';
+    }
     if (spectatorMode) {
       if (isActive(athlete)) return 'WATCHING';
       if (isNextUp(athlete, index)) return 'UP NEXT';
@@ -108,14 +115,23 @@ export default function ChallengerRosterSheet({
     const label = actionLabel(athlete, index);
 
     if (hostMode) {
+      const locked = registrationClosed && !active;
       return (
         <TouchableOpacity
-          style={[styles.callOutBtn, active && styles.callOutBtnDisabled]}
+          style={[
+            styles.callOutBtn,
+            (active || locked) && styles.callOutBtnDisabled,
+          ]}
           activeOpacity={0.85}
-          disabled={active}
-          onPress={() => onCallOut?.(athlete)}
+          disabled={active || locked}
+          onPress={() => {
+            if (locked) return;
+            onCallOut?.(athlete);
+          }}
         >
-          <Text style={styles.callOutBtnText}>{label}</Text>
+          <Text style={styles.callOutBtnText}>
+            {locked ? 'LOCKED' : label}
+          </Text>
         </TouchableOpacity>
       );
     }
@@ -171,9 +187,19 @@ export default function ChallengerRosterSheet({
         <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 14) }]}>
           <View style={styles.pullBar} />
           <Text style={styles.title}>{title}</Text>
+          {registrationClosed ? (
+            <View style={styles.regClosedBadge}>
+              <Text style={styles.regClosedBadgeText}>
+                {registrationBadge || 'REGISTRATIONS CLOSED'}
+              </Text>
+              <Text style={styles.regClosedSub}>WAR ROOM LOCKED</Text>
+            </View>
+          ) : null}
           {hostMode ? (
             <Text style={styles.hostHint}>
-              Tap CALL OUT to override the auto-queue and start a 1v1 duel.
+              {registrationClosed
+                ? 'Registration closed — CALL OUT is locked until the next War Cry window.'
+                : 'Tap CALL OUT to override the auto-queue and start a 1v1 duel.'}
             </Text>
           ) : null}
           {spectatorMode ? (
@@ -340,6 +366,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
     lineHeight: 15,
+  },
+  regClosedBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,87,34,0.12)',
+    borderWidth: 1,
+    borderColor: ORANGE,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  regClosedBadgeText: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  regClosedSub: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '700',
+    marginTop: 2,
+    letterSpacing: 0.4,
   },
   hostCard: {
     flexDirection: 'row',

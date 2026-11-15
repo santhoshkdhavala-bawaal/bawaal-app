@@ -8,7 +8,7 @@ import MainTabs from './MainTabs';
 import CameraPublishHost from './CameraPublishHost';
 import BattleChallengeForm from './BattleChallengeForm';
 import LeaderboardScreen from './LeaderboardScreen';
-import Live1v1BattleScreen from './Live1v1BattleScreen';
+import WarCryScreen from './WarCryScreen';
 import AthleteRegistrationScreen from './AthleteRegistrationScreen';
 import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
@@ -337,7 +337,7 @@ function AppBoot() {
               <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
               <Stack.Screen
                 name="Live1v1Battle"
-                component={Live1v1BattleScreen}
+                component={WarCryScreen}
                 options={{
                   animation: 'slide_from_bottom',
                   presentation: 'fullScreenModal',
@@ -346,7 +346,7 @@ function AppBoot() {
               {/* Alias used by UniversalCamera / BattleChallengeForm */}
               <Stack.Screen
                 name="ChallengerArena"
-                component={Live1v1BattleScreen}
+                component={WarCryScreen}
                 options={{
                   animation: 'slide_from_bottom',
                   presentation: 'fullScreenModal',

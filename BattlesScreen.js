@@ -25,10 +25,9 @@ import OpenCalloutsPanel from './src/components/OpenCalloutsPanel';
 import { useBattles } from './src/hooks/useBattles';
 import { seedBattlesOpenCallouts } from './src/utils/faceoffCallout';
 import {
-  isWarCryRegistrationClosed,
+  getWarCryRegistrationState,
   isWarCryStartReached,
   warCryJoinLabel,
-  warCryRegistrationBadge,
 } from './src/utils/warCrySchedule';
 
 const OBSIDIAN = '#000000';
@@ -302,7 +301,17 @@ export default function BattlesScreen({
     });
   };
 
+  const featuredStartUtc =
+    featuredLive?.match?.scheduledAtUTC ||
+    featuredLive?.scheduledAtUTC ||
+    featuredLive?.start_time ||
+    null;
+  const featuredRegState = getWarCryRegistrationState(featuredStartUtc);
+
   const openLiveArena = async (role = 'spectator') => {
+    if (role === 'challenger' && featuredRegState.registrationClosed) {
+      return;
+    }
     await ensureMediaPermissions();
     const participant = toChallengerAthlete();
     const baseMatch = featuredLive.match || {
@@ -326,8 +335,10 @@ export default function BattlesScreen({
       battleId: featuredLive.battleId,
       participant: role === 'challenger' ? participant : undefined,
       rtcUid: role === 'challenger' ? participant.rtcUid : undefined,
+      scheduledAtUTC: featuredStartUtc,
       match: {
         ...baseMatch,
+        scheduledAtUTC: featuredStartUtc || baseMatch.scheduledAtUTC,
         ...(role === 'challenger'
           ? {
               challenger: participant,
@@ -436,6 +447,11 @@ export default function BattlesScreen({
           <Text style={styles.featuredSubtitle} numberOfLines={1}>
             {featuredSubtitle(featuredLive)}
           </Text>
+          {featuredRegState.registrationClosed ? (
+            <Text style={styles.warRoomLocked} numberOfLines={2}>
+              {featuredRegState.badge} – {featuredRegState.badgeSub}
+            </Text>
+          ) : null}
           <View style={styles.featuredActions}>
             <TouchableOpacity
               style={[styles.featuredBtn, styles.featuredBtnOutline]}
@@ -445,11 +461,20 @@ export default function BattlesScreen({
               <Text style={styles.featuredBtnOutlineText}>👁️ WATCH LIVE</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.featuredBtn, styles.featuredBtnSolid]}
+              style={[
+                styles.featuredBtn,
+                styles.featuredBtnSolid,
+                featuredRegState.registrationClosed && styles.featuredBtnDisabled,
+              ]}
               activeOpacity={0.85}
+              disabled={featuredRegState.registrationClosed}
               onPress={() => openLiveArena('challenger')}
             >
-              <Text style={styles.featuredBtnSolidText}>⚔️ ACCEPT CHALLENGE</Text>
+              <Text style={styles.featuredBtnSolidText}>
+                {featuredRegState.registrationClosed
+                  ? 'REGISTRATIONS CLOSED'
+                  : '⚔️ ACCEPT CHALLENGE'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -463,11 +488,13 @@ export default function BattlesScreen({
             battle.start_time ||
             battle.startTime ||
             null;
-          const lockedBadge = warCryRegistrationBadge(startUtc);
+          const regState = getWarCryRegistrationState(startUtc);
           const registrationClosed =
-            lockedBadge ||
-            battle.registration_open === false ||
-            isWarCryRegistrationClosed(startUtc);
+            battle.registration_open === false || regState.registrationClosed;
+          const ctaLabel = listCtaLabel(battle);
+          const isWarRoomCta =
+            ctaLabel === 'JOIN WAR ROOM' || ctaLabel === 'WAR ROOM OPENS SOON';
+          const joinBlocked = isWarRoomCta && !isWarCryStartReached(startUtc);
           return (
             <View
               key={battle.id}
@@ -476,7 +503,7 @@ export default function BattlesScreen({
               <View style={styles.cardLeft}>
                 <View style={styles.titleRow}>
                   <Text style={styles.sportTag}>
-                    {isRewind ? '🥊 REWIND' : `[${battle.sport}]`}
+                    {isRewind ? 'REWIND' : `[${battle.sport}]`}
                   </Text>
                   <Text style={styles.title} numberOfLines={1}>
                     {title}
@@ -491,19 +518,25 @@ export default function BattlesScreen({
                 </Text>
                 {registrationClosed ? (
                   <Text style={styles.warRoomLocked} numberOfLines={2}>
-                    {lockedBadge || 'REGISTRATION CLOSED – WAR ROOM LOCKED'}
+                    {regState.badge || 'REGISTRATIONS CLOSED'}
+                    {regState.badgeSub ? ` – ${regState.badgeSub}` : ''}
                   </Text>
                 ) : null}
               </View>
               <TouchableOpacity
                 style={[
                   styles.enterBtn,
-                  listCtaLabel(battle) === 'JOIN WAR ROOM' && styles.enterBtnWar,
+                  ctaLabel === 'JOIN WAR ROOM' && styles.enterBtnWar,
+                  joinBlocked && styles.enterBtnDisabled,
                 ]}
                 activeOpacity={0.85}
-                onPress={() => openChallenge(battle)}
+                disabled={joinBlocked}
+                onPress={() => {
+                  if (joinBlocked) return;
+                  openChallenge(battle);
+                }}
               >
-                <Text style={styles.enterBtnText}>{listCtaLabel(battle)}</Text>
+                <Text style={styles.enterBtnText}>{ctaLabel}</Text>
               </TouchableOpacity>
             </View>
           );
@@ -675,6 +708,9 @@ const styles = StyleSheet.create({
     minWidth: 92,
     alignItems: 'center',
   },
+  enterBtnDisabled: {
+    opacity: 0.45,
+  },
   enterBtnText: {
     color: '#000000',
     fontSize: 11,
@@ -746,6 +782,11 @@ const styles = StyleSheet.create({
     backgroundColor: FLAME_ORANGE,
     borderWidth: 1.5,
     borderColor: FLAME_ORANGE,
+  },
+  featuredBtnDisabled: {
+    opacity: 0.45,
+    backgroundColor: '#3A3A3A',
+    borderColor: '#555555',
   },
   featuredBtnOutlineText: {
     color: FLAME_ORANGE,

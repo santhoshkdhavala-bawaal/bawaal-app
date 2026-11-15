@@ -89,13 +89,18 @@ import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
 import {
   FloatingEmojiBurstLayer,
   appendBurstParticles,
-  createCenteredEmojiBurst,
+  createDualPaneEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
 import {
   subscribeVaultBurstChannel,
   broadcastVaultBurst,
+  broadcastBattleBanter,
   resolveBurstActorId,
 } from './src/services/vaultBurstRealtime';
+import {
+  getWarCryRegistrationState,
+  isWarCryRegistrationClosed,
+} from './src/utils/warCrySchedule';
 
 const AgoraSdk = getAgoraSdk();
 const RtcSurfaceView = AgoraSdk?.RtcSurfaceView || null;
@@ -769,6 +774,8 @@ function Live1v1BattleScreenInner({
     width: SCREEN_W,
     height: SCREEN_H,
   });
+  const [hostPaneLayout, setHostPaneLayout] = useState(null);
+  const [rivalPaneLayout, setRivalPaneLayout] = useState(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [banterTicker, setBanterTicker] = useState([]);
   const [roundRemainingSec, setRoundRemainingSec] = useState(() => {
@@ -1021,14 +1028,16 @@ function Live1v1BattleScreenInner({
       const type = row.event_type;
       if (type === 'HYPE') {
         setHypeCount((n) => n + 1);
-        spawnFloatingReaction('🔥', {
+        spawnFloatingReaction(null, {
+          bawaalKey: 'skull_fire',
           left: 24 + Math.random() * (SCREEN_W - 72),
         });
         return;
       }
       if (type === 'VOTE_HOST') {
         setHostVotes((n) => n + 1);
-        spawnFloatingReaction('🥊', {
+        spawnFloatingReaction(null, {
+          bawaalKey: 'skull_boxing',
           placement: 'toast',
           side: 'host',
           text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
@@ -1044,7 +1053,8 @@ function Live1v1BattleScreenInner({
               : c
           )
         );
-        spawnFloatingReaction('🥊', {
+        spawnFloatingReaction(null, {
+          bawaalKey: 'skull_boxing',
           placement: 'toast',
           side: 'rival',
           text: 'VOTED RIVAL',
@@ -1242,23 +1252,52 @@ function Live1v1BattleScreenInner({
     return undefined;
   }, [isAthlete, isCameraOn, rtcJoined]);
 
-  const triggerLocalEmojiBurst = useCallback((emojiId) => {
-    if (!emojiId) return;
-    const next = createCenteredEmojiBurst(emojiId, burstLayout);
-    setBurstParticles((prev) => appendBurstParticles(prev, next));
-  }, [burstLayout]);
+  const triggerLocalEmojiBurst = useCallback(
+    (emojiId) => {
+      if (!emojiId) return;
+      const next = createDualPaneEmojiBurst(
+        emojiId,
+        hostPaneLayout,
+        rivalPaneLayout,
+        burstLayout
+      );
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [burstLayout, hostPaneLayout, rivalPaneLayout]
+  );
 
   const removeBurstParticle = useCallback((id) => {
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
-  // Vault bursts sync across both fighters via arena_${battleId}
+  const applyRemoteBanter = useCallback(
+    (text, payload = {}) => {
+      const line = String(text || '').trim();
+      if (!line) return;
+      const handle = String(payload.handle || payload.userId || 'FAN').trim();
+      const display = handle.startsWith('@')
+        ? `${handle}: ${line}`
+        : `@${handle}: ${line}`;
+      setBanterTicker((prev) =>
+        [{ id: `t-${Date.now()}`, text: display }, ...prev].slice(0, 12)
+      );
+      spawnFloatingReaction(null, {
+        bawaalKey: 'skull_laugh',
+        left: 24 + Math.random() * (SCREEN_W - 72),
+        text: line.slice(0, 42),
+      });
+    },
+    [spawnFloatingReaction]
+  );
+
+  // Vault bursts + banter sync across both fighters via arena_${battleId}
   useEffect(() => {
     if (!battleId) return undefined;
     return subscribeVaultBurstChannel(battleId, {
       onVaultBurst: (emojiId) => triggerLocalEmojiBurst(emojiId),
+      onBanter: (text, payload) => applyRemoteBanter(text, payload),
     });
-  }, [battleId, triggerLocalEmojiBurst]);
+  }, [applyRemoteBanter, battleId, triggerLocalEmojiBurst]);
 
   // Round countdown (top-right clock)
   useEffect(() => {
@@ -1391,16 +1430,25 @@ function Live1v1BattleScreenInner({
     [promoteRival]
   );
 
+  const warCryStartUtc =
+    match.scheduledAtUTC ||
+    route?.params?.scheduledAtUTC ||
+    route?.params?.match?.scheduledAtUTC ||
+    null;
+  const warCryRegState = getWarCryRegistrationState(warCryStartUtc);
+  const registrationClosed = warCryRegState.registrationClosed;
+
   /** Host override — jump the queue and launch a duel with a specific athlete. */
   const callOutRival = useCallback(
     (athlete) => {
       if (!isHostRole || !athlete) return;
+      if (isWarCryRegistrationClosed(warCryStartUtc)) return;
       promoteRival(athlete, { requeueCurrent: true });
       if (__DEV__) {
         console.log('[matchmaking] HOST CALL OUT', athlete.handle || athlete.id);
       }
     },
-    [isHostRole, promoteRival]
+    [isHostRole, promoteRival, warCryStartUtc]
   );
 
   /** Open roster sheet over live 1v1 — does not pause or tear down streams. */
@@ -1602,13 +1650,26 @@ function Live1v1BattleScreenInner({
     });
     if (battleId) {
       void sendReaction(battleId, senderIdRef.current, 'BANTER', null);
+      void (async () => {
+        try {
+          const userId = await resolveBurstActorId();
+          await broadcastBattleBanter(battleId, {
+            text,
+            userId,
+            handle: 'You',
+          });
+        } catch (_) {
+          /* soft-fail */
+        }
+      })();
     }
   }, [banterDraft, battleId, onBanter, spawnFloatingReaction]);
 
   const handleVoteHost = useCallback(() => {
     setHostVotes((n) => n + 1);
     onVote?.('host', focusedRival?.id);
-    spawnFloatingReaction('🥊', {
+    spawnFloatingReaction(null, {
+      bawaalKey: 'skull_boxing',
       placement: 'toast',
       side: 'host',
       text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
@@ -1632,7 +1693,8 @@ function Live1v1BattleScreenInner({
       fr ? { ...fr, votes: (fr.votes ?? 0) + 1 } : fr
     );
     onVote?.('challenger', rivalId);
-    spawnFloatingReaction('🥊', {
+    spawnFloatingReaction(null, {
+      bawaalKey: 'skull_boxing',
       placement: 'toast',
       side: 'rival',
       text: `VOTED ${focusedRival?.handle || focusedRival?.label || 'RIVAL'}`,
@@ -1741,6 +1803,20 @@ function Live1v1BattleScreenInner({
             borderRightColor: 'rgba(255,255,255,0.14)',
           }}
           pointerEvents="box-none"
+          onLayout={(e) => {
+            const { x, y, width, height } = e?.nativeEvent?.layout || {};
+            if (width > 0 && height > 0) {
+              setHostPaneLayout((prev) =>
+                prev &&
+                prev.x === x &&
+                prev.y === y &&
+                prev.width === width &&
+                prev.height === height
+                  ? prev
+                  : { x, y, width, height }
+              );
+            }
+          }}
         >
           <StreamSurface
             streamId={safeHostAthlete.streamId}
@@ -1846,6 +1922,20 @@ function Live1v1BattleScreenInner({
             backgroundColor: '#0f172a',
           }}
           pointerEvents="box-none"
+          onLayout={(e) => {
+            const { x, y, width, height } = e?.nativeEvent?.layout || {};
+            if (width > 0 && height > 0) {
+              setRivalPaneLayout((prev) =>
+                prev &&
+                prev.x === x &&
+                prev.y === y &&
+                prev.width === width &&
+                prev.height === height
+                  ? prev
+                  : { x, y, width, height }
+              );
+            }
+          }}
         >
           <StreamSurface
             streamId={rivalAthlete?.streamId}
@@ -1996,7 +2086,7 @@ function Live1v1BattleScreenInner({
                   <View style={styles.liveDot} />
                   <Text style={styles.liveText} numberOfLines={1}>
                     {rtcJoined ? 'LIVE' : match.spectatorsLabel}
-                    {hypeCount > 0 ? ` · 🔥${hypeCount}` : ''}
+                    {hypeCount > 0 ? ` · HYPE ${hypeCount}` : ''}
                   </Text>
                 </View>
               </View>
@@ -2138,7 +2228,7 @@ function Live1v1BattleScreenInner({
               accessibilityRole="button"
               accessibilityLabel="Vote host"
             >
-              <Text style={styles.gloveEmojiFloat}>🥊</Text>
+              <BawaalEmoji name="skull_boxing" size={22} />
               <Text style={[styles.actionLabel, styles.actionLabelHost]}>
                 VOTE A
               </Text>
@@ -2185,7 +2275,7 @@ function Live1v1BattleScreenInner({
               accessibilityRole="button"
               accessibilityLabel="Vote B"
             >
-              <Text style={styles.gloveEmojiFloat}>🥊</Text>
+              <BawaalEmoji name="skull_boxing" size={22} />
               <Text style={[styles.actionLabel, styles.actionLabelRival]}>
                 VOTE B
               </Text>
@@ -2248,7 +2338,7 @@ function Live1v1BattleScreenInner({
             <Text style={styles.banterTitle}>DROP BANTER</Text>
             <TextInput
               style={styles.banterInput}
-              placeholder="Let's go Mumbai! 🔥"
+              placeholder="Let's go Mumbai!"
               placeholderTextColor="#666666"
               value={banterDraft}
               onChangeText={setBanterDraft}
@@ -2259,9 +2349,9 @@ function Live1v1BattleScreenInner({
             <View style={styles.banterActions}>
               <TouchableOpacity
                 style={styles.banterQuick}
-                onPress={() => setBanterDraft("Let's go Mumbai! 🔥")}
+                onPress={() => setBanterDraft("Let's go Mumbai!")}
               >
-                <Text style={styles.banterQuickText}>{"Quick: Let's go Mumbai! 🔥"}</Text>
+                <Text style={styles.banterQuickText}>{"Quick: Let's go Mumbai!"}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.banterSend} onPress={submitBanter}>
                 <Text style={styles.banterSendText}>SEND</Text>
@@ -2283,6 +2373,8 @@ function Live1v1BattleScreenInner({
         host={safeHostAthlete}
         hostMode={isHostRole}
         spectatorMode={isSpectator}
+        registrationClosed={registrationClosed}
+        registrationBadge={warCryRegState.badge}
         queuedCount={isSpectator ? challengersInQueueCount : queue.length}
         nextUpId={
           waitingChallengers[0]?.id ||

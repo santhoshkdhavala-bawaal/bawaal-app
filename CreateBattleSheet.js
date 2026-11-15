@@ -21,6 +21,7 @@ import {
   ARENA_SPORT_OPTIONS,
   BAWAAL_FORM_SPORTS,
 } from './src/utils/sportCategory';
+import { getWarCryRegistrationState } from './src/utils/warCrySchedule';
 
 /** Hard cap so the publish button never sits at 100% forever. */
 const PUBLISH_WATCHDOG_MS = 45_000;
@@ -160,6 +161,12 @@ export default function CreateBattleSheet({
     () => formatLocalSchedule(scheduledAtUTC),
     [scheduledAtUTC]
   );
+
+  const registrationState = useMemo(
+    () => getWarCryRegistrationState(scheduledAtUTC),
+    [scheduledAtUTC, tick]
+  );
+  const registrationClosed = registrationState.registrationClosed;
 
   const buildOpenDraft = () => ({
     sport,
@@ -557,16 +564,31 @@ export default function CreateBattleSheet({
                   </TouchableOpacity>
                 </View>
 
+                {registrationClosed ? (
+                  <View style={styles.regClosedBadge}>
+                    <Text style={styles.regClosedBadgeText}>
+                      {registrationState.badge || 'REGISTRATIONS CLOSED'}
+                    </Text>
+                    <Text style={styles.regClosedSub}>
+                      New rival registration locks 5h before kickoff.
+                    </Text>
+                  </View>
+                ) : null}
+
                 {battleType === 'direct' ? (
                   <>
                     <Text style={styles.label}>RIVAL HANDLE</Text>
                     <TextInput
-                      style={styles.input}
+                      style={[
+                        styles.input,
+                        registrationClosed && styles.inputDisabled,
+                      ]}
                       value={rivalHandle}
                       onChangeText={setRivalHandle}
                       placeholder="Tag rival e.g. @NYC_LIFT"
                       placeholderTextColor="#666"
                       autoCapitalize="none"
+                      editable={!registrationClosed}
                     />
                   </>
                 ) : null}
@@ -619,7 +641,7 @@ export default function CreateBattleSheet({
                 {scheduleMode === 'later' ? (
                   <View style={styles.scheduleMeta}>
                     <View style={styles.offsetRow}>
-                      {[60, 135, 240].map((mins) => (
+                      {[60, 135, 240, 360].map((mins) => (
                         <TouchableOpacity
                           key={mins}
                           style={[
@@ -759,6 +781,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  regClosedBadge: {
+    marginTop: 12,
+    backgroundColor: 'rgba(255,87,34,0.12)',
+    borderWidth: 1,
+    borderColor: '#FF5722',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  regClosedBadgeText: {
+    color: '#FF5722',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+  },
+  regClosedSub: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+    lineHeight: 15,
+  },
   input: {
     backgroundColor: SURFACE,
     borderWidth: 1,
@@ -770,6 +814,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
+  },
+  inputDisabled: {
+    opacity: 0.45,
+    borderColor: '#FF5722',
   },
   inputMultiline: {
     minHeight: 72,
