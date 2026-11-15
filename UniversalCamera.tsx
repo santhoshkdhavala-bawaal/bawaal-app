@@ -163,12 +163,6 @@ const HUB_MODES: HubMode[] = [
     subtitle: 'Group challenge mode for multiple participants',
   },
   {
-    id: 'DARK_ARENA',
-    title: 'DARK ARENA',
-    tag: 'Open Challenge',
-    subtitle: 'Anyone can post a challenge, anyone can participate',
-  },
-  {
     id: 'FACEOFF',
     title: 'FACEOFF',
     tag: 'Response Challenge',
@@ -512,9 +506,10 @@ const hubStyles = StyleSheet.create({
   },
   modeScrollContent: {
     paddingBottom: 8,
+    gap: 12,
   },
   cardGrid: {
-    gap: 10,
+    gap: 12,
   },
   card: {
     backgroundColor: '#0A0A0A',
@@ -563,7 +558,7 @@ const hubStyles = StyleSheet.create({
   joshChipText: { color: BRAND_ORANGE, fontSize: 11, fontWeight: '800' },
   galleryCard: {
     borderStyle: 'dashed' as const,
-    marginTop: 10,
+    marginTop: 0,
     borderColor: 'rgba(255, 85, 0, 0.55)',
   },
   galleryCardDisabled: {
