@@ -1,14 +1,18 @@
 /**
  * Floating vault emoji burst — proprietary BawaalEmoji particles only.
  *
- * Origin: absolute center over the video/arena container (top 40% · left 50%).
- * Particles spawn at that point and radiate outward (X spread + kick/float Y).
+ * Origin: absolute dead-center over the video/arena overlay (top/left 50%).
+ * Particles spawn there, float upward for ~2.8s, stay opaque through 75%, then fade.
+ * State cleanup waits BURST_CLEANUP_MS so particles are not unmounted early.
  */
 import React, { memo, useEffect, useRef } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
 import { BawaalEmoji } from '../../components/BawaalEmoji';
 
-export const BURST_DURATION_MS = 2000;
+/** Visible float duration — linger long enough to read the reaction. */
+export const BURST_DURATION_MS = 2800;
+/** Unmount delay — must be >= animation life so particles do not vanish early. */
+export const BURST_CLEANUP_MS = 3000;
 export const BURST_PARTICLE_COUNT = 7;
 export const BURST_MAX_PARTICLES = 42;
 export const BURST_EMOJI_SIZE = 48;
@@ -20,9 +24,9 @@ export const BURST_KICK_Y = 40;
 /** Final upward float target (px) */
 export const BURST_FLOAT_Y = -180;
 /**
- * Vertical anchor over the video action zone (matches origin `top: '40%'`).
+ * Vertical anchor — dead center of the video overlay (matches origin `top: '50%'`).
  */
-export const BURST_CENTER_Y_RATIO = 0.4;
+export const BURST_CENTER_Y_RATIO = 0.5;
 
 /** @deprecated Prefer BURST_CENTER_Y_RATIO; kept for call-site compatibility */
 export const BURST_CENTER_Y_BIAS = 0;
@@ -34,7 +38,7 @@ function randomBetween(min, max) {
 }
 
 /**
- * Burst anchor of measured container bounds (width/2, height * 0.4).
+ * Burst anchor of measured container bounds (width/2, height/2).
  *
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null | undefined} container
  */
@@ -79,6 +83,10 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
   const key = String(emojiKey || 'skull_orange_glow_v3').toLowerCase();
   const startX = Number.isFinite(Number(originX)) ? Number(originX) : 0;
   const startY = Number.isFinite(Number(originY)) ? Number(originY) : 0;
+  const life = Math.max(
+    BURST_DURATION_MS,
+    Number(opts.duration) || BURST_DURATION_MS
+  );
 
   const particles = [];
   for (let i = 0; i < count; i += 1) {
@@ -97,7 +105,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
       kickY,
       floatY,
       delay,
-      duration: BURST_DURATION_MS,
+      duration: life,
       size,
     });
   }
@@ -105,7 +113,7 @@ export function createEmojiBurstParticles(originX, originY, emojiKey, opts = {})
 }
 
 /**
- * Spawn at video-centered origin (origin-relative 0,0 → top 40% / left 50%).
+ * Spawn at dead-center origin (origin-relative 0,0 → top 50% / left 50%).
  * @param {string} emojiKey
  * @param {{ width?: number, height?: number, containerWidth?: number, containerHeight?: number } | null} [_containerSize]
  */
@@ -146,7 +154,6 @@ export function createDualPaneEmojiBurst(
   panes.forEach((pane) => {
     const ox = Number(pane.x) || 0;
     const oy = Number(pane.y) || 0;
-    // Offsets from overlay center so particles still parent under the 50%/50% origin
     const startX = ox + Number(pane.width) / 2 - parent.centerX;
     const startY =
       oy + Number(pane.height) * BURST_CENTER_Y_RATIO - parent.centerY;
@@ -179,50 +186,44 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
   onDone,
 }) {
   const progress = useRef(new Animated.Value(0)).current;
-  const fade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     progress.setValue(0);
-    fade.setValue(0);
     const wait = Math.max(0, delay || 0);
     const life = Math.max(BURST_DURATION_MS, duration || BURST_DURATION_MS);
+    // Cleanup must outlive motion + fade so state filter does not unmount early
+    const cleanupMs = Math.max(BURST_CLEANUP_MS, wait + life + 200);
 
-    const motion = Animated.sequence([
+    const anim = Animated.sequence([
       Animated.delay(wait),
-      Animated.spring(progress, {
+      Animated.timing(progress, {
         toValue: 1,
-        friction: 5.5,
-        tension: 38,
+        duration: life,
+        easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]);
 
-    const opacityAnim = Animated.sequence([
-      Animated.delay(wait),
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fade, {
-        toValue: 0,
-        duration: Math.max(400, life - 180),
-        useNativeDriver: true,
-      }),
-    ]);
+    anim.start();
+    const cleanupTimer = setTimeout(() => {
+      onDone?.(id);
+    }, cleanupMs);
 
-    const anim = Animated.parallel([motion, opacityAnim]);
-    anim.start(({ finished }) => {
-      if (finished) onDone?.(id);
-    });
     return () => {
       anim.stop();
+      clearTimeout(cleanupTimer);
     };
-  }, [progress, fade, id, onDone, delay, duration]);
+  }, [progress, id, onDone, delay, duration]);
 
+  // Opacity solid through first 75%, gentle fade in the last quarter
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.06, 0.75, 1],
+    outputRange: [0, 1, 1, 0],
+    extrapolate: 'clamp',
+  });
   const scale = progress.interpolate({
-    inputRange: [0, 0.35, 1],
-    outputRange: [0.35, 1.2, 1.08],
+    inputRange: [0, 0.2, 1],
+    outputRange: [0.4, 1.15, 1.05],
     extrapolate: 'clamp',
   });
   const translateX = progress.interpolate({
@@ -231,7 +232,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
     extrapolate: 'clamp',
   });
   const translateY = progress.interpolate({
-    inputRange: [0, 0.22, 1],
+    inputRange: [0, 0.18, 1],
     outputRange: [0, kickY ?? BURST_KICK_Y, floatY ?? BURST_FLOAT_Y],
     extrapolate: 'clamp',
   });
@@ -246,14 +247,11 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
       style={[
         styles.particle,
         {
-          // Origin-relative: (0,0) is overlay center; offset by half emoji size
           left: sx - dim / 2,
           top: sy - dim / 2,
-          marginLeft: 0,
-          marginTop: 0,
           width: dim,
           height: dim,
-          opacity: fade,
+          opacity,
           transform: [{ translateX }, { translateY }, { scale }],
         },
       ]}
@@ -264,7 +262,7 @@ const FloatingEmojiParticle = memo(function FloatingEmojiParticle({
 });
 
 /**
- * Full-bleed overlay with an absolute center origin — particles spawn there.
+ * Full-bleed overlay with an absolute dead-center origin — particles spawn there.
  */
 export const FloatingEmojiBurstLayer = memo(function FloatingEmojiBurstLayer({
   particles,
@@ -315,18 +313,16 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   /**
-   * Spawn hub centered over the video feed.
-   * 0×0 point at top/left 40%/50% — equivalent to CSS translate(-50%, -50%)
-   * on a zero-size node (RN % transforms are unreliable cross-platform).
+   * Dead-center spawn hub over the video view.
+   * 0×0 at top/left 50% — RN-safe equivalent of translate(-50%, -50%)
+   * on a zero-size node (percentage transforms are unreliable cross-platform).
    */
   origin: {
     position: 'absolute',
-    top: '40%',
+    top: '50%',
     left: '50%',
     width: 0,
     height: 0,
-    marginLeft: 0,
-    marginTop: 0,
     overflow: 'visible',
   },
   particle: {
