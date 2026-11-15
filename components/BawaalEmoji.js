@@ -2,7 +2,7 @@
  * Centralized BAWAAL skeleton emoji — uniform 1:1 Image sizing for chat / banter / DM.
  *
  * Full registry: `SKELETON_EMOJIS` + `ALL_SKELETON_KEYS` (includes `love` → skel_love.png).
- * Skull set: `SKULL_EMOJIS` from `skullEmojiRegistry.js` (92 assets, incl. 75 sports).
+ * Skull set: `SKULL_EMOJIS` from `skullEmojiRegistry.js` (all assets/skull_*.png).
  * Images always use fixed width/height to prevent scroll layout shift.
  */
 import React, { memo } from 'react';
