@@ -50,7 +50,8 @@ export const REEL_VAULT = {
   aboveMore: REEL_MORE.height + 4,
   width: 40,
   height: 40,
-  zIndex: 41,
+  /** Above ⋮ so vault taps are never swallowed by the More hit target */
+  zIndex: 50,
   iconSize: 36,
 };
 

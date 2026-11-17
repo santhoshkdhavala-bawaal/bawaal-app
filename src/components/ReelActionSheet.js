@@ -139,13 +139,16 @@ function ReelActionSheet({
   }, [visible, reel?.id, reel?.likeCount, reel?.commentCount, reel?.likedByMe]);
 
   const actions = useMemo(() => {
-    const allow =
+    const byId = Object.fromEntries(
+      BASE_ACTIONS.map((action) => [action.id, action])
+    );
+    // Preserve caller order (Like → Banter → Share → DM → Comment).
+    const ordered =
       Array.isArray(actionIds) && actionIds.length > 0
-        ? new Set(actionIds.map(String))
-        : null;
-    return BASE_ACTIONS.filter((action) =>
-      allow ? allow.has(action.id) : true
-    ).map((action) => {
+        ? actionIds.map((id) => byId[String(id)]).filter(Boolean)
+        : BASE_ACTIONS;
+
+    return ordered.map((action) => {
       if (action.id === 'follow') {
         return { ...action, label: following ? 'Unfollow' : 'Follow' };
       }
@@ -155,11 +158,18 @@ function ReelActionSheet({
           label: formatCountLabel(likedByMe ? 'Liked' : 'Like', likeCount),
         };
       }
-      if (action.id === 'comment' || action.id === 'banter') {
+      // Banter stays an explicit menu label (never renamed / omitted).
+      if (action.id === 'banter') {
+        return { ...action, label: 'Banter' };
+      }
+      if (action.id === 'comment') {
         return {
           ...action,
-          label: formatCountLabel(action.label, commentCount),
+          label: formatCountLabel('Comment', commentCount),
         };
+      }
+      if (action.id === 'dm') {
+        return { ...action, label: 'DM' };
       }
       return action;
     });

@@ -846,12 +846,18 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const roomId = resolveVaultBurstRoomId(item);
   const [showActionStack, setShowActionStack] = useState(false);
 
-  /** Skull rail → toggle full BAWAAL Skeleton Vault tray (never Banter). */
+  /** Skull rail → toggle full BAWAAL Skeleton Vault tray (never Banter sheet). */
   const toggleVaultTray = useCallback(() => {
     setShowActionStack(false);
     setBanterOpen(false);
     setDmShareOpen(false);
     setVaultOpen((open) => !open);
+  }, []);
+
+  const toggleMoreMenu = useCallback(() => {
+    setVaultOpen(false);
+    setBanterOpen(false);
+    setShowActionStack((open) => !open);
   }, []);
   const handle = item.author?.startsWith('@')
     ? item.author
@@ -923,8 +929,14 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
   const onReelAction = useCallback(
     (actionId, reelSnapshot) => {
-      // Comment / Banter open the live sheet — posts write from BanterBottomSheet
-      if (actionId === 'banter' || actionId === 'comment') {
+      setShowActionStack(false);
+      setVaultOpen(false);
+      // Banter from ⋮ More menu → Banter bottom sheet (not Vault)
+      if (actionId === 'banter') {
+        setBanterOpen(true);
+        return;
+      }
+      if (actionId === 'comment') {
         setBanterOpen(true);
         return;
       }
@@ -1009,13 +1021,14 @@ const GeneralReelCard = memo(function GeneralReelCard({
         <>
           {/*
             Right rail (strict): mute (top) → skullOrange → ⋮
-            No Like / Banter / Share / DM / Comment icons on the rail.
+            Banter / Like / Share / DM / Comment live only in the ⋮ popup.
           */}
           <TouchableOpacity
             ref={vaultBtnRef}
             style={[styles.reelVaultBtn, { bottom: vaultBottom }]}
             onPress={toggleVaultTray}
             activeOpacity={0.85}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             accessibilityRole="button"
             accessibilityLabel={
               vaultOpen
@@ -1035,10 +1048,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
           <TouchableOpacity
             style={[styles.reelMoreBtn, { bottom: moreBottom }]}
-            onPress={() => {
-              setVaultOpen(false);
-              setShowActionStack((open) => !open);
-            }}
+            onPress={toggleMoreMenu}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="More actions"
@@ -1046,7 +1056,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
             <Text style={styles.reelMoreText}>⋮</Text>
           </TouchableOpacity>
 
-          {/* Secondary popup from ⋮: Like · Banter · Share · DM · Comment */}
+          {/* ⋮ More: Like · Banter · Share · DM · Comment */}
           <ReelActionSheet
             visible={showActionStack}
             showLabels
@@ -1072,7 +1082,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
       />
 
       <BanterBottomSheet
-        visible={banterOpen}
+        visible={banterOpen && !immersiveOpen}
         reel={item}
         onClose={() => setBanterOpen(false)}
       />
@@ -1460,6 +1470,12 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setVaultOpen((open) => !open);
   }, []);
 
+  const toggleMoreMenu = useCallback(() => {
+    setVaultOpen(false);
+    setBanterOpen(false);
+    setShowActionStack((open) => !open);
+  }, []);
+
   const removeBurstParticle = useCallback((id) => {
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
   }, []);
@@ -1511,7 +1527,8 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
 
   const onReelAction = useCallback(
     (actionId, reelSnapshot) => {
-      // Comment / Banter open the live sheet — posts write from BanterBottomSheet
+      setShowActionStack(false);
+      setVaultOpen(false);
       if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
         return;
@@ -1560,6 +1577,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         style={styles.challengeVaultBtn}
         onPress={toggleVaultTray}
         activeOpacity={0.85}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityRole="button"
         accessibilityLabel={
           vaultOpen
@@ -1579,10 +1597,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
 
       <TouchableOpacity
         style={styles.challengeMoreBtn}
-        onPress={() => {
-          setVaultOpen(false);
-          setShowActionStack((open) => !open);
-        }}
+        onPress={toggleMoreMenu}
         activeOpacity={0.85}
         accessibilityRole="button"
         accessibilityLabel="More actions"
@@ -1590,6 +1605,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         <Text style={styles.reelMoreText}>⋮</Text>
       </TouchableOpacity>
 
+      {/* ⋮ More: Like · Banter · Share · DM · Comment */}
       <ReelActionSheet
         visible={showActionStack}
         showLabels
