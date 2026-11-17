@@ -74,13 +74,21 @@ const BAWAAL_SCROLLBAR_CSS = `
   }
 
   /*
-   * Arena horizontal shelves / pills — permanently hide scrollbar track.
-   * Inline style companion: overflowX scroll + scrollbarWidth none + msOverflowStyle none.
+   * Arena horizontal shelves / pills — no scrollbar track and no reserved gutter.
+   * Inline companion: overflowX auto + scrollbarWidth none + -webkit-overflow-scrolling touch.
    */
   .bawaal-hscroll-hidden,
   .bawaal-hscroll-hidden * {
     scrollbar-width: none !important; /* Firefox */
     -ms-overflow-style: none !important; /* IE / Edge */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bawaal-hscroll-hidden {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
   }
 
   .bawaal-hscroll-hidden::-webkit-scrollbar,

@@ -111,21 +111,31 @@ import {
 } from './src/services/customMatchupService';
 
 /**
- * Horizontal reel / pill ScrollView — permanently hide scrollbar track.
+ * Horizontal shelves / pills — no scrollbar track and no reserved bottom gutter.
  * Native: showsHorizontalScrollIndicator + overScrollMode.
- * Web: className + overflowX / scrollbarWidth / msOverflowStyle (+ webkit rule in injectWebScrollbar).
+ * Web: className + overflowX auto / scrollbarWidth none / -webkit-overflow-scrolling.
  */
 const HSCROLL_HIDDEN_STYLE =
   Platform.OS === 'web'
     ? {
-        overflowX: 'scroll',
+        overflowX: 'auto',
+        overflowY: 'hidden',
         scrollbarWidth: 'none', // Firefox
         msOverflowStyle: 'none', // IE / Edge
+        WebkitOverflowScrolling: 'touch',
+        paddingBottom: 0,
+        marginBottom: 0,
+        flexGrow: 0,
       }
-    : {};
+    : {
+        paddingBottom: 0,
+        marginBottom: 0,
+        flexGrow: 0,
+      };
 
 const HSCROLL_HIDDEN_PROPS = {
   showsHorizontalScrollIndicator: false,
+  showsVerticalScrollIndicator: false,
   persistentScrollbar: false,
   overScrollMode: 'never',
   ...(Platform.OS === 'web'
@@ -1761,7 +1771,7 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
           horizontal
           {...HSCROLL_HIDDEN_PROPS}
           contentContainerStyle={styles.shelfRow}
-          style={[styles.shelfScrollNoBar, HSCROLL_HIDDEN_STYLE]}
+          style={[styles.shelfScroll, styles.shelfScrollNoBar, HSCROLL_HIDDEN_STYLE]}
         >
           {showPlaceholders
             ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map((_, index) => (
@@ -2874,6 +2884,7 @@ export default function ArenaFeed({ navigation, route }) {
           contentContainerStyle={styles.filterPillRow}
           style={[
             styles.filterPillScroll,
+            styles.shelfScroll,
             styles.shelfScrollNoBar,
             HSCROLL_HIDDEN_STYLE,
           ]}
@@ -3138,22 +3149,44 @@ const styles = StyleSheet.create({
   dashSectionSub: {
     color: '#7A7A7A',
     fontSize: 12,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   shelfRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: 12,
     paddingRight: 8,
+    paddingTop: 0,
+    paddingBottom: 0,
+    marginBottom: 0,
+  },
+  /** Tight height — no reserved scrollbar gutter under card rows */
+  shelfScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+    paddingBottom: 0,
+    marginBottom: 0,
+    overflow: 'hidden',
   },
   shelfScrollNoBar: Platform.select({
     web: {
-      overflowX: 'scroll',
+      overflowX: 'auto',
+      overflowY: 'hidden',
       scrollbarWidth: 'none',
       msOverflowStyle: 'none',
+      WebkitOverflowScrolling: 'touch',
+      paddingBottom: 0,
+      marginBottom: 0,
     },
-    default: {},
+    default: {
+      paddingBottom: 0,
+      marginBottom: 0,
+    },
   }),
   shelfCard: {
     width: SHELF_CARD_SIZE,
+    marginBottom: 0,
+    paddingBottom: 0,
   },
   shelfThumb: {
     width: SHELF_CARD_SIZE,
@@ -3187,11 +3220,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 8,
-    minHeight: 32,
+    marginBottom: 0,
+    lineHeight: 16,
   },
   shelfCardTitleSpacer: {
     marginTop: 8,
-    minHeight: 32,
+    height: 16,
   },
   shelfEmptyCard: {
     paddingVertical: 18,
