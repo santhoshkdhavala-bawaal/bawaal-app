@@ -15,6 +15,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Animated,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeFeedVideo, {
@@ -39,6 +40,8 @@ import {
   createCenteredEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
 import {
+  REEL_MORE,
+  REEL_MUTE,
   REEL_VAULT,
   REEL_VAULT_ICON_KEY,
 } from './src/constants/arenaReelOverlay';
@@ -47,6 +50,9 @@ import {
   REEL_VAULT_SKULL,
   getSkullAsset,
 } from './src/utils/skullAssets';
+import ReelActionSheet, {
+  REEL_SECONDARY_ACTION_IDS,
+} from './src/components/ReelActionSheet';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -139,8 +145,8 @@ const DEMO_BANTER = [
 /**
  * Full-screen Arena Reel — banter = text & GIF audience chat (not audio).
  *
- * LOCK-IN layout: single safe top header; right rail = icon stack + pinned vault skull;
- * bottom horizontal quick-reactions (scrollable), hidden while Banter drawer is open.
+ * LOCK-IN layout: single safe top header; right rail = mute + skullOrange + ⋮ only;
+ * Like / Banter / Share / DM / Comment live in the ⋮ popup; skull opens Vault tray.
  */
 export default function ArenaReelViewer({
   visible,
@@ -315,25 +321,59 @@ export default function ArenaReelViewer({
     [spawnTapReactAt]
   );
 
+  const dropGif = useCallback(
+    (emotionKey) => {
+      const emoji =
+        emotionKey && hasBawaalEmoji(emotionKey)
+          ? String(emotionKey).toLowerCase()
+          : 'laughing1';
+      spawnTapReactAt(
+        SCREEN_W * (0.2 + Math.random() * 0.6),
+        SCREEN_H * (0.25 + Math.random() * 0.4),
+        emoji
+      );
+    },
+    [spawnTapReactAt]
+  );
+
+  const onMoreAction = useCallback(
+    async (actionId) => {
+      setMoreOpen(false);
+      setVaultOpen(false);
+      if (actionId === 'like') {
+        setHype((n) => n + 1);
+        dropGif('head_on_fire');
+        return;
+      }
+      if (actionId === 'banter' || actionId === 'comment') {
+        setShowBanter(true);
+        return;
+      }
+      if (actionId === 'share') {
+        try {
+          const handle = String(reel?.author || 'athlete').replace(/^@/, '');
+          await Share.share({
+            title: 'BAWAAL Arena',
+            message: `Check @${handle} on BAWAAL`,
+          });
+        } catch (_) {
+          flashToast('SHARE FAILED');
+        }
+        return;
+      }
+      if (actionId === 'dm' || actionId === 'send') {
+        flashToast('DM READY');
+      }
+    },
+    [dropGif, flashToast, reel?.author]
+  );
+
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly
   if (!reel) return null;
 
   const handle = reel.author?.startsWith('@')
     ? reel.author
     : `@${String(reel.author || 'athlete').replace(/^@/, '')}`;
-
-  const dropGif = (emotionKey) => {
-    const emoji =
-      emotionKey && hasBawaalEmoji(emotionKey)
-        ? String(emotionKey).toLowerCase()
-        : 'laughing1';
-    // Tray picks use the same floating burst at a random canvas point
-    spawnTapReactAt(
-      SCREEN_W * (0.2 + Math.random() * 0.6),
-      SCREEN_H * (0.25 + Math.random() * 0.4),
-      emoji
-    );
-  };
 
   const sendBanter = (emotionKey) => {
     const emotion =
@@ -357,9 +397,9 @@ export default function ArenaReelViewer({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 8;
-  const actionStackBottom = 180 + Math.max(insets.bottom, 0);
-  /** Floating vault skull sits just above the vertical action column. */
-  const vaultFabBottom = actionStackBottom + 118;
+  /** Right rail: ⋮ at bottom, skullOrange tight above it (no side Like/Banter/etc). */
+  const moreBottom = 24 + Math.max(insets.bottom, 0);
+  const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
   const bottomStackPad = Math.max(insets.bottom, 12);
 
   return (
@@ -459,7 +499,10 @@ export default function ArenaReelViewer({
               <MuteToggleButton
                 muted={muted}
                 onPress={toggleMute}
-                style={[styles.muteBtn, { top: topPad + 8 }]}
+                style={[
+                  styles.muteBtn,
+                  { top: topPad + REEL_MUTE.top, right: REEL_MUTE.right },
+                ]}
               />
               {paused ? (
                 <View style={styles.pauseBadge} pointerEvents="none">
@@ -521,9 +564,12 @@ export default function ArenaReelViewer({
           </View>
         )}
 
-        {/* Vault skull — toggles full BAWAAL Skeleton Vault tray */}
+        {/*
+          Right rail (strict): mute (top) → skullOrange → ⋮
+          Stripped RESHARE / REPOST / BANTER / Like / Share / DM / Comment from the side.
+        */}
         <TouchableOpacity
-          style={[styles.vaultFab, { bottom: vaultFabBottom }]}
+          style={[styles.vaultFab, { bottom: vaultBottom }]}
           onPress={() => {
             setMoreOpen(false);
             setShowBanter(false);
@@ -545,107 +591,34 @@ export default function ArenaReelViewer({
           />
         </TouchableOpacity>
 
-        {/* Slim rail: secondary socials only inside ⋮ */}
-        <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
-          {moreOpen ? (
-            <>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setHype((n) => n + 1);
-                  dropGif('head_on_fire');
-                  setMoreOpen(false);
-                }}
-                activeOpacity={0.85}
-                accessibilityLabel={`Like ${hype}`}
-              >
-                <Image
-                  source={require('./assets/bawaal_like.png')}
-                  style={styles.actionIconImg}
-                  resizeMode="contain"
-                />
-                <Text style={styles.actionMenuLabel}>Like</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setMoreOpen(false);
-                  setShowBanter(true);
-                }}
-                activeOpacity={0.85}
-                accessibilityLabel="Banter"
-              >
-                <Image
-                  source={require('./assets/bawaal_banter.png')}
-                  style={styles.actionIconImg}
-                  resizeMode="contain"
-                />
-                <Text style={styles.actionMenuLabel}>Banter</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setMoreOpen(false);
-                  flashToast('SHARED');
-                }}
-                activeOpacity={0.85}
-                accessibilityLabel="Share"
-              >
-                <Image
-                  source={require('./assets/bawaal_share.png')}
-                  style={styles.actionIconImg}
-                  resizeMode="contain"
-                />
-                <Text style={styles.actionMenuLabel}>Share</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setMoreOpen(false);
-                  flashToast('DM READY');
-                }}
-                activeOpacity={0.85}
-                accessibilityLabel="DM"
-              >
-                <Image
-                  source={require('./assets/bawaal_dm.png')}
-                  style={styles.actionIconImg}
-                  resizeMode="contain"
-                />
-                <Text style={styles.actionMenuLabel}>DM</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => {
-                  setMoreOpen(false);
-                  flashToast('COMMENT');
-                }}
-                activeOpacity={0.85}
-                accessibilityLabel="Comment"
-              >
-                <Image
-                  source={require('./assets/bawaal_comment.png')}
-                  style={styles.actionIconImg}
-                  resizeMode="contain"
-                />
-                <Text style={styles.actionMenuLabel}>Comment</Text>
-              </TouchableOpacity>
-            </>
-          ) : null}
+        <TouchableOpacity
+          style={[styles.moreBtn, { bottom: moreBottom }]}
+          onPress={() => {
+            setVaultOpen(false);
+            setMoreOpen((v) => !v);
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="More actions"
+        >
+          <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
+        </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => {
-              setVaultOpen(false);
-              setMoreOpen((v) => !v);
-            }}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="Toggle reel actions"
-          >
-            <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
-          </TouchableOpacity>
-        </View>
+        {/* ⋮ popup: Like · Banter · Share · DM · Comment */}
+        <ReelActionSheet
+          visible={moreOpen}
+          showLabels
+          compact
+          actionIds={REEL_SECONDARY_ACTION_IDS}
+          reel={reel}
+          onClose={() => setMoreOpen(false)}
+          onAction={onMoreAction}
+          style={{
+            bottom: moreBottom + REEL_MORE.height + 8,
+            top: undefined,
+            right: REEL_MORE.right,
+          }}
+        />
 
         <FullEmojiPickerDrawer
           visible={vaultOpen && visible}
@@ -958,36 +931,27 @@ const styles = StyleSheet.create({
   },
   vaultFab: {
     position: 'absolute',
-    right: 10,
-    width: 52,
-    height: 52,
+    right: REEL_VAULT.right,
+    width: REEL_VAULT.width,
+    height: REEL_VAULT.height,
     zIndex: REEL_VAULT.zIndex,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
   vaultFabImage: {
-    width: 48,
-    height: 48,
+    width: REEL_VAULT.iconSize,
+    height: REEL_VAULT.iconSize,
   },
-  actionStack: {
+  moreBtn: {
     position: 'absolute',
-    right: 12,
-    bottom: 180,
-    zIndex: 15,
-    alignItems: 'center',
-    gap: 14,
-  },
-  actionBtn: {
+    right: REEL_MORE.right,
+    width: REEL_MORE.width,
+    height: REEL_MORE.height,
+    zIndex: REEL_MORE.zIndex,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    minWidth: 40,
-    minHeight: 40,
-  },
-  actionIconImg: {
-    width: 28,
-    height: 28,
   },
   moreDots: {
     color: ACCENT,
@@ -995,12 +959,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 28,
     backgroundColor: 'transparent',
-  },
-  actionMenuLabel: {
-    marginTop: 2,
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '800',
   },
   gifChipVault: {
     borderColor: ACCENT,
