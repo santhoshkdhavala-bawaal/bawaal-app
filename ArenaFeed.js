@@ -49,7 +49,6 @@ import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
 import VideoItem from './src/components/VideoItem';
 import MuteToggleButton from './src/components/MuteToggleButton';
 import ReelActionSheet, {
-  REEL_ESSENTIAL_ACTION_IDS,
   REEL_SECONDARY_ACTION_IDS,
 } from './src/components/ReelActionSheet';
 import UserHandle from './src/components/UserHandle';
@@ -76,7 +75,6 @@ import {
 } from './src/constants/gameOnSports';
 import {
   BAWAAL_ORANGE,
-  REEL_ACTION_STACK,
   REEL_MORE,
   REEL_MUTE,
   REEL_VAULT,
@@ -848,12 +846,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const roomId = resolveVaultBurstRoomId(item);
   const [showActionStack, setShowActionStack] = useState(false);
 
-  /** Skull rail → full Vault grid (never Banter sheet). */
-  const openVaultTray = useCallback(() => {
+  /** Skull rail → toggle full BAWAAL Skeleton Vault tray (never Banter). */
+  const toggleVaultTray = useCallback(() => {
     setShowActionStack(false);
     setBanterOpen(false);
     setDmShareOpen(false);
-    setVaultOpen(true);
+    setVaultOpen((open) => !open);
   }, []);
   const handle = item.author?.startsWith('@')
     ? item.author
@@ -951,7 +949,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
       collapsable={false}
       onLayout={onVideoContainerLayout}
     >
-      {/* Viewable row autoplays; mute + icon rail + vault — long-press opens immersive */}
+      {/* Viewable row autoplays; mute + skull + ⋮ — long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
         uri={pickFeedClipUri(item)}
@@ -981,7 +979,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
-      {/* Mute top-right of the video overlay — flat orange icon */}
+      {/* Essential top-right mute */}
       {!immersiveOpen ? (
         <MuteToggleButton
           muted={muted}
@@ -1009,30 +1007,21 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       {!immersiveOpen ? (
         <>
-          {/* Slim rail: Follow → skull (tight above ⋮) → ⋮ */}
-          <ReelActionSheet
-            visible
-            persistent
-            showLabels={false}
-            showClose={false}
-            actionIds={REEL_ESSENTIAL_ACTION_IDS}
-            reel={item}
-            onClose={() => {}}
-            onAction={onReelAction}
-            style={{
-              bottom: vaultBottom + REEL_VAULT.height + 6,
-              top: REEL_ACTION_STACK.top,
-            }}
-          />
-
-          {/* Vault skull — opens full BAWAAL Skeleton Vault grid tray */}
+          {/*
+            Right rail (strict): mute (top) → skullOrange → ⋮
+            No Like / Banter / Share / DM / Comment icons on the rail.
+          */}
           <TouchableOpacity
             ref={vaultBtnRef}
             style={[styles.reelVaultBtn, { bottom: vaultBottom }]}
-            onPress={openVaultTray}
+            onPress={toggleVaultTray}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Open BAWAAL skeleton vault"
+            accessibilityLabel={
+              vaultOpen
+                ? 'Close BAWAAL skeleton vault'
+                : 'Open BAWAAL skeleton vault'
+            }
             accessibilityState={{ expanded: vaultOpen }}
             collapsable={false}
           >
@@ -1052,12 +1041,12 @@ const GeneralReelCard = memo(function GeneralReelCard({
             }}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Toggle reel actions"
+            accessibilityLabel="More actions"
           >
             <Text style={styles.reelMoreText}>⋮</Text>
           </TouchableOpacity>
 
-          {/* Secondary: Like · Banter · Share · DM · Comment — ⋮ only */}
+          {/* Secondary popup from ⋮: Like · Banter · Share · DM · Comment */}
           <ReelActionSheet
             visible={showActionStack}
             showLabels
@@ -1069,6 +1058,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
             style={{
               bottom: moreBottom + REEL_MORE.height + 8,
               top: undefined,
+              right: REEL_MORE.right,
             }}
           />
         </>
@@ -1463,11 +1453,11 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     setIsMuted((m) => !m);
   }, []);
 
-  const openVaultTray = useCallback(() => {
+  const toggleVaultTray = useCallback(() => {
     setShowActionStack(false);
     setBanterOpen(false);
     setDmShareOpen(false);
-    setVaultOpen(true);
+    setVaultOpen((open) => !open);
   }, []);
 
   const removeBurstParticle = useCallback((id) => {
@@ -1554,37 +1544,28 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         muted={isMuted}
       />
 
-      {/* Mute top-right of the video overlay — flat orange icon */}
+      {/* Essential top-right mute */}
       <MuteToggleButton
         muted={isMuted}
         onPress={toggleMute}
         style={styles.challengeMuteBtn}
       />
 
-      {/* Slim rail: Follow → vault skull (tight above ⋮) → ⋮ */}
-      <ReelActionSheet
-        visible
-        persistent
-        showLabels={false}
-        showClose={false}
-        actionIds={REEL_ESSENTIAL_ACTION_IDS}
-        reel={item}
-        onClose={() => {}}
-        onAction={onReelAction}
-        style={{
-          bottom:
-            REEL_MORE.bottom + REEL_VAULT.aboveMore + REEL_VAULT.height + 6,
-          top: REEL_ACTION_STACK.top,
-        }}
-      />
-
+      {/*
+        Right rail (strict): mute (top) → skullOrange → ⋮
+        No Like / Banter / Share / DM / Comment icons on the rail.
+      */}
       <TouchableOpacity
         ref={vaultBtnRef}
         style={styles.challengeVaultBtn}
-        onPress={openVaultTray}
+        onPress={toggleVaultTray}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="Open BAWAAL skeleton vault"
+        accessibilityLabel={
+          vaultOpen
+            ? 'Close BAWAAL skeleton vault'
+            : 'Open BAWAAL skeleton vault'
+        }
         accessibilityState={{ expanded: vaultOpen }}
         collapsable={false}
       >
@@ -1604,7 +1585,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         }}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="Toggle reel actions"
+        accessibilityLabel="More actions"
       >
         <Text style={styles.reelMoreText}>⋮</Text>
       </TouchableOpacity>
@@ -1620,6 +1601,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         style={{
           bottom: REEL_MORE.bottom + REEL_MORE.height + 8,
           top: undefined,
+          right: REEL_MORE.right,
         }}
       />
 
