@@ -110,22 +110,28 @@ import {
   tallyMatchupVotes,
 } from './src/services/customMatchupService';
 
-/** Horizontal reel / pill ScrollView props — hide native + web scrollbar track. */
-const HSCROLL_HIDDEN_PROPS =
+/**
+ * Horizontal reel / pill ScrollView — permanently hide scrollbar track.
+ * Native: showsHorizontalScrollIndicator + overScrollMode.
+ * Web: className + overflowX / scrollbarWidth / msOverflowStyle (+ webkit rule in injectWebScrollbar).
+ */
+const HSCROLL_HIDDEN_STYLE =
   Platform.OS === 'web'
     ? {
-        showsHorizontalScrollIndicator: false,
-        persistentScrollbar: false,
-        className: BAWAAL_HSCROLL_HIDDEN_CLASS,
-        style: {
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        },
+        overflowX: 'scroll',
+        scrollbarWidth: 'none', // Firefox
+        msOverflowStyle: 'none', // IE / Edge
       }
-    : {
-        showsHorizontalScrollIndicator: false,
-        persistentScrollbar: false,
-      };
+    : {};
+
+const HSCROLL_HIDDEN_PROPS = {
+  showsHorizontalScrollIndicator: false,
+  persistentScrollbar: false,
+  overScrollMode: 'never',
+  ...(Platform.OS === 'web'
+    ? { className: BAWAAL_HSCROLL_HIDDEN_CLASS }
+    : null),
+};
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -1755,7 +1761,7 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
           horizontal
           {...HSCROLL_HIDDEN_PROPS}
           contentContainerStyle={styles.shelfRow}
-          style={[styles.shelfScrollNoBar, HSCROLL_HIDDEN_PROPS.style]}
+          style={[styles.shelfScrollNoBar, HSCROLL_HIDDEN_STYLE]}
         >
           {showPlaceholders
             ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map((_, index) => (
@@ -2866,7 +2872,11 @@ export default function ArenaFeed({ navigation, route }) {
           horizontal
           {...HSCROLL_HIDDEN_PROPS}
           contentContainerStyle={styles.filterPillRow}
-          style={[styles.filterPillScroll, styles.shelfScrollNoBar, HSCROLL_HIDDEN_PROPS.style]}
+          style={[
+            styles.filterPillScroll,
+            styles.shelfScrollNoBar,
+            HSCROLL_HIDDEN_STYLE,
+          ]}
         >
           {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
             const active = dashboardCategory === label;
@@ -3136,6 +3146,7 @@ const styles = StyleSheet.create({
   },
   shelfScrollNoBar: Platform.select({
     web: {
+      overflowX: 'scroll',
       scrollbarWidth: 'none',
       msOverflowStyle: 'none',
     },

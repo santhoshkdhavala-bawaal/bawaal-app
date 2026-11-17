@@ -74,20 +74,20 @@ const BAWAAL_SCROLLBAR_CSS = `
   }
 
   /*
-   * Arena horizontal shelves / pills — fully hide scrollbar track.
-   * Mirrors Tailwind: [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]
+   * Arena horizontal shelves / pills — permanently hide scrollbar track.
+   * Inline style companion: overflowX scroll + scrollbarWidth none + msOverflowStyle none.
    */
   .bawaal-hscroll-hidden,
   .bawaal-hscroll-hidden * {
     scrollbar-width: none !important; /* Firefox */
-    -ms-overflow-style: none !important; /* Legacy Edge / IE */
+    -ms-overflow-style: none !important; /* IE / Edge */
   }
 
   .bawaal-hscroll-hidden::-webkit-scrollbar,
   .bawaal-hscroll-hidden *::-webkit-scrollbar {
     display: none !important;
-    width: 0 !important;
-    height: 0 !important;
+    width: 0px !important;
+    height: 0px !important;
     background: transparent !important;
   }
 `;
