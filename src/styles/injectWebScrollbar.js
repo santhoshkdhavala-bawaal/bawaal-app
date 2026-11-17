@@ -13,10 +13,22 @@ const BAWAAL_SCROLLBAR_CSS = `
     scrollbar-color: #FF6600 #0A0A0C;
   }
 
-  /* Chromium / Safari / Edge */
-  *::-webkit-scrollbar {
+  /* Chromium / Safari / Edge — vertical chrome only (never a horizontal track) */
+  *::-webkit-scrollbar:vertical {
     width: 8px;
-    height: 8px;
+  }
+
+  *::-webkit-scrollbar:horizontal {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
+
+  *::-webkit-scrollbar-button {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
   }
 
   *::-webkit-scrollbar-track {
@@ -37,7 +49,7 @@ const BAWAAL_SCROLLBAR_CSS = `
     background: #0A0A0C;
   }
 
-  /* Prefer dark chrome on scrollable RN-Web nodes */
+  /* Prefer dark chrome on vertical scrollable RN-Web nodes */
   [data-testid],
   div[style*="overflow"],
   .css-view-g5y9jx {
@@ -74,17 +86,20 @@ const BAWAAL_SCROLLBAR_CSS = `
   }
 
   /*
-   * Arena horizontal shelves / pills — no scrollbar track and no reserved gutter.
-   * Inline companion: overflowX auto + scrollbarWidth none + -webkit-overflow-scrolling touch.
+   * Arena horizontal shelves / pills — zero track, thumb, or arrow buttons.
+   * Applied via className; also force-hide any nested overflow node RN-Web creates.
    */
   .bawaal-hscroll-hidden,
-  .bawaal-hscroll-hidden * {
-    scrollbar-width: none !important; /* Firefox */
-    -ms-overflow-style: none !important; /* IE / Edge */
+  .bawaal-hscroll-hidden *,
+  .bawaal-hscroll-hidden div {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
     -webkit-overflow-scrolling: touch;
   }
 
-  .bawaal-hscroll-hidden {
+  .bawaal-hscroll-hidden,
+  .bawaal-hscroll-hidden > div,
+  .bawaal-hscroll-hidden div[style*="overflow"] {
     overflow-x: auto !important;
     overflow-y: hidden !important;
     padding-bottom: 0 !important;
@@ -92,11 +107,26 @@ const BAWAAL_SCROLLBAR_CSS = `
   }
 
   .bawaal-hscroll-hidden::-webkit-scrollbar,
-  .bawaal-hscroll-hidden *::-webkit-scrollbar {
+  .bawaal-hscroll-hidden *::-webkit-scrollbar,
+  .bawaal-hscroll-hidden::-webkit-scrollbar:horizontal,
+  .bawaal-hscroll-hidden *::-webkit-scrollbar:horizontal {
     display: none !important;
     width: 0px !important;
     height: 0px !important;
     background: transparent !important;
+  }
+
+  .bawaal-hscroll-hidden::-webkit-scrollbar-button,
+  .bawaal-hscroll-hidden *::-webkit-scrollbar-button,
+  .bawaal-hscroll-hidden::-webkit-scrollbar-track,
+  .bawaal-hscroll-hidden *::-webkit-scrollbar-track,
+  .bawaal-hscroll-hidden::-webkit-scrollbar-thumb,
+  .bawaal-hscroll-hidden *::-webkit-scrollbar-thumb {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: none !important;
   }
 `;
 

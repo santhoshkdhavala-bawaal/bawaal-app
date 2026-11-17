@@ -1690,39 +1690,31 @@ const ArenaShelfCard = memo(function ArenaShelfCard({
   const sport = String(item?.sport || item?.category || 'ARENA').toUpperCase();
   const poster = !placeholder ? shelfPosterUri(item) : null;
 
-  const body = (
-    <>
-      <View style={styles.shelfThumb}>
-        {poster ? (
-          <SafeRemoteImage
-            uri={poster}
-            style={styles.shelfThumbImage}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={styles.shelfThumbFallback}>
-            {!placeholder ? (
-              <Text style={styles.shelfThumbSport} numberOfLines={1}>
-                {sport}
-              </Text>
-            ) : null}
-          </View>
-        )}
-      </View>
-      {!placeholder ? (
-        <Text style={styles.shelfCardTitle} numberOfLines={2}>
-          {title}
-        </Text>
+  /** Square card only — no title / track / chrome beneath the thumb. */
+  const thumb = (
+    <View style={styles.shelfThumb}>
+      {poster ? (
+        <SafeRemoteImage
+          uri={poster}
+          style={styles.shelfThumbImage}
+          resizeMode="cover"
+        />
       ) : (
-        <View style={styles.shelfCardTitleSpacer} />
+        <View style={styles.shelfThumbFallback}>
+          {!placeholder ? (
+            <Text style={styles.shelfThumbSport} numberOfLines={1}>
+              {sport}
+            </Text>
+          ) : null}
+        </View>
       )}
-    </>
+    </View>
   );
 
   if (placeholder) {
     return (
       <View style={styles.shelfCard} accessibilityElementsHidden>
-        {body}
+        {thumb}
       </View>
     );
   }
@@ -1735,7 +1727,7 @@ const ArenaShelfCard = memo(function ArenaShelfCard({
       accessibilityRole="button"
       accessibilityLabel={String(title)}
     >
-      {body}
+      {thumb}
     </TouchableOpacity>
   );
 });
@@ -1767,27 +1759,40 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
           </Text>
         </View>
       ) : (
-        <ScrollView
-          horizontal
-          {...HSCROLL_HIDDEN_PROPS}
-          contentContainerStyle={styles.shelfRow}
-          style={[styles.shelfScroll, styles.shelfScrollNoBar, HSCROLL_HIDDEN_STYLE]}
+        <View
+          style={styles.shelfScrollShell}
+          {...(Platform.OS === 'web'
+            ? { className: BAWAAL_HSCROLL_HIDDEN_CLASS }
+            : null)}
         >
-          {showPlaceholders
-            ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map((_, index) => (
-                <ArenaShelfCard
-                  key={`placeholder-${title}-${index}`}
-                  placeholder
-                />
-              ))
-            : list.map((item, index) => (
-                <ArenaShelfCard
-                  key={String(item?.id || `${title}-${index}`)}
-                  item={item}
-                  onPress={onPressItem}
-                />
-              ))}
-        </ScrollView>
+          <ScrollView
+            horizontal
+            {...HSCROLL_HIDDEN_PROPS}
+            contentContainerStyle={styles.shelfRow}
+            style={[
+              styles.shelfScroll,
+              styles.shelfScrollNoBar,
+              HSCROLL_HIDDEN_STYLE,
+            ]}
+          >
+            {showPlaceholders
+              ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map(
+                  (_, index) => (
+                    <ArenaShelfCard
+                      key={`placeholder-${title}-${index}`}
+                      placeholder
+                    />
+                  )
+                )
+              : list.map((item, index) => (
+                  <ArenaShelfCard
+                    key={String(item?.id || `${title}-${index}`)}
+                    item={item}
+                    onPress={onPressItem}
+                  />
+                ))}
+          </ScrollView>
+        </View>
       )}
     </View>
   );
@@ -3160,6 +3165,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
     marginBottom: 0,
   },
+  /** Outer shell clips any web scrollbar / arrow chrome under the card row */
+  shelfScrollShell: {
+    overflow: 'hidden',
+    paddingBottom: 0,
+    marginBottom: 0,
+  },
   /** Tight height — no reserved scrollbar gutter under card rows */
   shelfScroll: {
     flexGrow: 0,
@@ -3185,6 +3196,7 @@ const styles = StyleSheet.create({
   }),
   shelfCard: {
     width: SHELF_CARD_SIZE,
+    height: SHELF_CARD_SIZE,
     marginBottom: 0,
     paddingBottom: 0,
   },
@@ -3214,18 +3226,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.2,
     textAlign: 'center',
-  },
-  shelfCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 8,
-    marginBottom: 0,
-    lineHeight: 16,
-  },
-  shelfCardTitleSpacer: {
-    marginTop: 8,
-    height: 16,
   },
   shelfEmptyCard: {
     paddingVertical: 18,
