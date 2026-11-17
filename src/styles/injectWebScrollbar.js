@@ -72,7 +72,28 @@ const BAWAAL_SCROLLBAR_CSS = `
   .bawaal-terms-scroll *::-webkit-scrollbar-thumb:hover {
     background-color: #FF8533;
   }
+
+  /*
+   * Arena horizontal shelves / pills — fully hide scrollbar track.
+   * Mirrors Tailwind: [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]
+   */
+  .bawaal-hscroll-hidden,
+  .bawaal-hscroll-hidden * {
+    scrollbar-width: none !important; /* Firefox */
+    -ms-overflow-style: none !important; /* Legacy Edge / IE */
+  }
+
+  .bawaal-hscroll-hidden::-webkit-scrollbar,
+  .bawaal-hscroll-hidden *::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+  }
 `;
+
+/** RN-Web className for Arena horizontal ScrollViews with no scrollbar track. */
+export const BAWAAL_HSCROLL_HIDDEN_CLASS = 'bawaal-hscroll-hidden';
 
 export function injectWebScrollbarStyles() {
   if (Platform.OS !== 'web') return;

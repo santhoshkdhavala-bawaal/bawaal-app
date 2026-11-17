@@ -75,6 +75,7 @@ import {
   ARENA_DASHBOARD_CATEGORY_PILLS,
   resolveDashboardCategory,
 } from './src/constants/gameOnSports';
+import { BAWAAL_HSCROLL_HIDDEN_CLASS } from './src/styles/injectWebScrollbar';
 import {
   BAWAAL_ORANGE,
   REEL_MORE,
@@ -108,6 +109,23 @@ import {
   fetchChallengeMatchupRoster,
   tallyMatchupVotes,
 } from './src/services/customMatchupService';
+
+/** Horizontal reel / pill ScrollView props — hide native + web scrollbar track. */
+const HSCROLL_HIDDEN_PROPS =
+  Platform.OS === 'web'
+    ? {
+        showsHorizontalScrollIndicator: false,
+        persistentScrollbar: false,
+        className: BAWAAL_HSCROLL_HIDDEN_CLASS,
+        style: {
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+        },
+      }
+    : {
+        showsHorizontalScrollIndicator: false,
+        persistentScrollbar: false,
+      };
 
 /** Insert an inline community shelf after every N video/battle rows. */
 const COMMUNITY_SHELF_INTERVAL = 4;
@@ -1716,7 +1734,6 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
   onPressItem,
   /** When true and items empty, show square placeholder boxes instead of text. */
   showEmptyPlaceholders = false,
-  hideScrollIndicator = true,
 }) {
   const list = Array.isArray(items) ? items : [];
   const showPlaceholders = list.length === 0 && showEmptyPlaceholders;
@@ -1736,12 +1753,9 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
       ) : (
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
-          persistentScrollbar={false}
+          {...HSCROLL_HIDDEN_PROPS}
           contentContainerStyle={styles.shelfRow}
-          style={
-            hideScrollIndicator ? styles.shelfScrollNoBar : undefined
-          }
+          style={[styles.shelfScrollNoBar, HSCROLL_HIDDEN_PROPS.style]}
         >
           {showPlaceholders
             ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map((_, index) => (
@@ -2850,9 +2864,9 @@ export default function ArenaFeed({ navigation, route }) {
         {/* ========== TIER 2 · Category pills ========== */}
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator={false}
+          {...HSCROLL_HIDDEN_PROPS}
           contentContainerStyle={styles.filterPillRow}
-          style={styles.filterPillScroll}
+          style={[styles.filterPillScroll, styles.shelfScrollNoBar, HSCROLL_HIDDEN_PROPS.style]}
         >
           {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
             const active = dashboardCategory === label;
@@ -2882,7 +2896,6 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Short clips lighting up the Arena"
           items={sparkJoshShelf}
           emptyLabel="No Sparks or Josh clips yet"
-          hideScrollIndicator
           onPressItem={(item) => openReel(item, { muted: true })}
         />
 
@@ -2892,7 +2905,6 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Recorded group battle feeds"
           items={battleBawaalShelf}
           showEmptyPlaceholders
-          hideScrollIndicator
           onPressItem={(item) => openReel(item, { muted: true })}
         />
 
