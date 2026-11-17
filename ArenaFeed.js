@@ -58,6 +58,7 @@ import CommunityChallengesShelf from './src/components/CommunityChallengesShelf'
 import ArenaV2Header from './src/components/ArenaV2Header';
 import GameOnHub from './src/components/GameOnHub';
 import NotificationsDrawer from './src/components/NotificationsDrawer';
+import SplitScreenBattleCard from './src/components/SplitScreenBattleCard';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
@@ -2325,6 +2326,66 @@ export default function ArenaFeed({ navigation, route }) {
     return out;
   }, [communityCallouts, filteredChallengeVideoFeed, dashboardCategory]);
 
+  /** Featured 1v1 for Tier 3 SplitScreenBattleCard. */
+  const featuredSplitBattle = useMemo(() => {
+    const threads = (filteredChallengeVideoFeed || []).filter(
+      (item) =>
+        item?.type === 'battle_thread' ||
+        String(item?.tier || item?.mode || '')
+          .toLowerCase()
+          .includes('faceoff') ||
+        String(item?.tier || item?.mode || '')
+          .toLowerCase()
+          .includes('war')
+    );
+    if (dashboardCategory !== 'All') {
+      const matched = threads.find(
+        (item) =>
+          resolveDashboardCategory(item.sport || item.category) ===
+          dashboardCategory
+      );
+      if (matched) return matched;
+    }
+    return threads[0] || null;
+  }, [filteredChallengeVideoFeed, dashboardCategory]);
+
+  /** Dual-feed previews for Tier 2 War Cry section. */
+  const warCryDualFeeds = useMemo(() => {
+    const pool = sparkHighlights.length
+      ? sparkHighlights
+      : filteredChallengeVideoFeed || [];
+    const a = pool[0] || null;
+    const b = pool[1] || pool[0] || null;
+    return {
+      host: a
+        ? {
+            handle: a.author || a.host || '@host',
+            sport: a.sport || a.category || 'ARENA',
+            title: a.caption || a.title || 'HOST FEED',
+            raw: a,
+          }
+        : {
+            handle: '@warcry_host',
+            sport: dashboardCategory === 'All' ? 'ARENA' : dashboardCategory,
+            title: 'HOST · LIVE FEED',
+            raw: null,
+          },
+      rival: b
+        ? {
+            handle: b.author || b.host || '@rival',
+            sport: b.sport || b.category || 'ARENA',
+            title: b.caption || b.title || 'RIVAL FEED',
+            raw: b,
+          }
+        : {
+            handle: '@warcry_rival',
+            sport: dashboardCategory === 'All' ? 'ARENA' : dashboardCategory,
+            title: 'RIVAL · LIVE FEED',
+            raw: null,
+          },
+    };
+  }, [sparkHighlights, filteredChallengeVideoFeed, dashboardCategory]);
+
   const openReel = useCallback((item, opts) => {
     setImmersiveMuted(!!opts?.muted);
     setWarmReel(item);
@@ -2565,115 +2626,200 @@ export default function ArenaFeed({ navigation, route }) {
           />
         }
       >
-        {/* 1v1 Live Challenge hero marquee */}
-        <View style={styles.heroMarquee}>
-          <View style={styles.heroMarqueeGlow} pointerEvents="none" />
-          <Text style={styles.heroEyebrow}>ARENA · LIVE NOW</Text>
-          <Text style={styles.heroTitle}>1v1 LIVE CHALLENGE</Text>
-          <Text style={styles.heroSub}>
-            WAR CRY stadium — dual feeds, crowd votes, vault bursts
+        {/* ========== TIER 1 · Arena Header / Live Now ========== */}
+        <View style={styles.tierBlock}>
+          <Text style={styles.tierLabel}>TIER 1 · LIVE NOW</Text>
+          <View style={[styles.heroMarquee, styles.heroMarqueeInTier]}>
+            <View style={styles.heroMarqueeGlow} pointerEvents="none" />
+            <Text style={styles.heroEyebrow}>ARENA · LIVE NOW</Text>
+            <Text style={styles.heroTitle}>BAWAAL ARENA</Text>
+            <Text style={styles.heroSub}>
+              Dual War Cry feeds · split-screen 1v1 · live match streams
+            </Text>
+            <TouchableOpacity
+              style={styles.heroCta}
+              activeOpacity={0.88}
+              onPress={openWarCryLive}
+              accessibilityRole="button"
+              accessibilityLabel="Watch War Cry live"
+            >
+              <Text style={styles.heroCtaText}>WATCH LIVE</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.filterPillRow,
+              styles.filterPillRowInTier,
+            ]}
+            style={styles.filterPillScroll}
+          >
+            {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
+              const active = dashboardCategory === label;
+              return (
+                <TouchableOpacity
+                  key={label}
+                  style={[styles.filterPill, active && styles.filterPillOn]}
+                  activeOpacity={0.85}
+                  onPress={() => onSelectDashboardCategory(label)}
+                >
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      active && styles.filterPillTextOn,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* ========== TIER 2 · War Cry Dual Feeds ========== */}
+        <View style={styles.dashSection}>
+          <Text style={styles.tierLabel}>TIER 2 · WAR CRY</Text>
+          <Text style={styles.dashSectionTitle}>WAR CRY · DUAL FEEDS</Text>
+          <Text style={styles.dashSectionSub}>
+            Host and rival stadium lanes — tap either pane to enter live
           </Text>
+          <View style={styles.warCryDualRow}>
+            <TouchableOpacity
+              style={[styles.warCryPane, styles.warCryPaneHost]}
+              activeOpacity={0.88}
+              onPress={() => {
+                if (warCryDualFeeds.host.raw) {
+                  openReel?.(warCryDualFeeds.host.raw, { muted: true });
+                } else {
+                  openWarCryLive();
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open host War Cry feed"
+            >
+              <View style={styles.warCryPaneBadge}>
+                <Text style={styles.warCryPaneBadgeText}>HOST FEED</Text>
+              </View>
+              <Text style={styles.warCryPaneHandle} numberOfLines={1}>
+                {warCryDualFeeds.host.handle}
+              </Text>
+              <Text style={styles.warCryPaneSport} numberOfLines={1}>
+                {String(warCryDualFeeds.host.sport).toUpperCase()}
+              </Text>
+              <Text style={styles.warCryPaneTitle} numberOfLines={2}>
+                {warCryDualFeeds.host.title}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.warCryDualVs}>
+              <Text style={styles.warCryDualVsText}>VS</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.warCryPane, styles.warCryPaneRival]}
+              activeOpacity={0.88}
+              onPress={() => {
+                if (warCryDualFeeds.rival.raw) {
+                  openReel?.(warCryDualFeeds.rival.raw, { muted: true });
+                } else {
+                  openWarCryLive();
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open rival War Cry feed"
+            >
+              <View style={styles.warCryPaneBadge}>
+                <Text style={styles.warCryPaneBadgeText}>RIVAL FEED</Text>
+              </View>
+              <Text style={styles.warCryPaneHandle} numberOfLines={1}>
+                {warCryDualFeeds.rival.handle}
+              </Text>
+              <Text style={styles.warCryPaneSport} numberOfLines={1}>
+                {String(warCryDualFeeds.rival.sport).toUpperCase()}
+              </Text>
+              <Text style={styles.warCryPaneTitle} numberOfLines={2}>
+                {warCryDualFeeds.rival.title}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
-            style={styles.heroCta}
+            style={styles.warCryEnterBtn}
             activeOpacity={0.88}
             onPress={openWarCryLive}
             accessibilityRole="button"
-            accessibilityLabel="Watch War Cry live"
+            accessibilityLabel="Enter War Cry stadium"
           >
-            <Text style={styles.heroCtaText}>WATCH LIVE</Text>
+            <Text style={styles.warCryEnterBtnText}>ENTER WAR CRY STADIUM</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Locked 8-category filter bar */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterPillRow}
-          style={styles.filterPillScroll}
-        >
-          {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
-            const active = dashboardCategory === label;
-            return (
-              <TouchableOpacity
-                key={label}
-                style={[styles.filterPill, active && styles.filterPillOn]}
-                activeOpacity={0.85}
-                onPress={() => onSelectDashboardCategory(label)}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    active && styles.filterPillTextOn,
-                  ]}
-                >
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Trending Sparks */}
+        {/* ========== TIER 3 · 1v1 Split-Screen Battle ========== */}
         <View style={styles.dashSection}>
-          <Text style={styles.dashSectionTitle}>TRENDING · SPARKS</Text>
+          <Text style={styles.tierLabel}>TIER 3 · 1v1 LIVE</Text>
+          <Text style={styles.dashSectionTitle}>1v1 LIVE CHALLENGE</Text>
           <Text style={styles.dashSectionSub}>
-            Hot clips lighting up the Arena
+            Equal split · combat stats · skull_orange123 votes
           </Text>
-          {sparkHighlights.length === 0 ? (
-            <View style={styles.dashEmptyCard}>
-              <Text style={styles.dashEmptyText}>
-                {feedLoading || videoFeedLoading
-                  ? 'Loading sparks…'
-                  : 'No sparks in this category yet'}
-              </Text>
-            </View>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sparkRow}
-            >
-              {sparkHighlights.map((item) => {
-                const title =
-                  item.caption || item.title || item.target || 'SPARK';
-                const sport = item.sport || item.category || 'ARENA';
-                return (
-                  <TouchableOpacity
-                    key={String(item.id)}
-                    style={styles.sparkCard}
-                    activeOpacity={0.88}
-                    onPress={() => openReel?.(item, { muted: true })}
-                  >
-                    <View style={styles.sparkThumb}>
-                      <Text style={styles.sparkThumbLabel} numberOfLines={1}>
-                        {String(sport).toUpperCase()}
-                      </Text>
-                    </View>
-                    <Text style={styles.sparkTitle} numberOfLines={2}>
-                      {title}
-                    </Text>
-                    <Text style={styles.sparkHost} numberOfLines={1}>
-                      {item.author || item.host || '@athlete'}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          )}
+          <SplitScreenBattleCard
+            item={featuredSplitBattle}
+            playerA={
+              featuredSplitBattle
+                ? null
+                : {
+                    handle: '@blade_a',
+                    label: 'PLAYER A',
+                    sport:
+                      dashboardCategory === 'All'
+                        ? 'COMBAT'
+                        : dashboardCategory,
+                    record: '12-3',
+                    power: 84,
+                    votes: 42,
+                  }
+            }
+            playerB={
+              featuredSplitBattle
+                ? null
+                : {
+                    handle: '@storm_b',
+                    label: 'PLAYER B',
+                    sport:
+                      dashboardCategory === 'All'
+                        ? 'COMBAT'
+                        : dashboardCategory,
+                    record: '9-5',
+                    power: 79,
+                    votes: 38,
+                  }
+            }
+            title={
+              featuredSplitBattle?.title ||
+              featuredSplitBattle?.caption ||
+              featuredSplitBattle?.target ||
+              '1v1 LIVE CHALLENGE'
+            }
+            subtitle="Tap skulls to cast crowd votes · enter the split arena"
+            onPressWatch={openWarCryLive}
+            onRespond={openChallengeRespond}
+          />
         </View>
 
-        {/* Live / upcoming challenges */}
+        {/* ========== TIER 4 · Upcoming / Live match streams ========== */}
         <View style={[styles.dashSection, styles.dashSectionLast]}>
-          <Text style={styles.dashSectionTitle}>LIVE & UPCOMING</Text>
+          <Text style={styles.tierLabel}>TIER 4 · STREAMS</Text>
+          <Text style={styles.dashSectionTitle}>UPCOMING / LIVE MATCHES</Text>
           <Text style={styles.dashSectionSub}>
-            Challenges ready to join or watch
+            Match streams ready to join or watch
           </Text>
           {liveUpcomingChallenges.length === 0 ? (
             <View style={styles.dashEmptyCard}>
               <Text style={styles.dashEmptyText}>
                 {feedLoading
-                  ? 'Loading challenges…'
-                  : 'No live challenges in this category'}
+                  ? 'Loading match streams…'
+                  : 'No live or upcoming matches in this category'}
               </Text>
             </View>
           ) : (
@@ -2770,9 +2916,113 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     paddingTop: 8,
   },
+  tierBlock: {
+    marginBottom: 4,
+    paddingHorizontal: 16,
+  },
+  tierLabel: {
+    color: '#FF5A00',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.8,
+    marginBottom: 8,
+  },
+  warCryDualRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: 12,
+  },
+  warCryPane: {
+    flex: 1,
+    minHeight: 148,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  warCryPaneHost: {
+    backgroundColor: '#090D16',
+    borderColor: 'rgba(255,90,0,0.4)',
+    marginRight: 4,
+  },
+  warCryPaneRival: {
+    backgroundColor: '#121826',
+    borderColor: 'rgba(255,90,0,0.28)',
+    marginLeft: 4,
+  },
+  warCryPaneBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,90,0,0.14)',
+    borderWidth: 1,
+    borderColor: '#FF5A00',
+    marginBottom: 10,
+  },
+  warCryPaneBadgeText: {
+    color: '#FF5A00',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  warCryPaneHandle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  warCryPaneSport: {
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  warCryPaneTitle: {
+    color: '#C8C8C8',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  warCryDualVs: {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    marginLeft: -18,
+    marginTop: -18,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#000000',
+    borderWidth: 2,
+    borderColor: '#FF5A00',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  warCryDualVsText: {
+    color: '#FF5A00',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  warCryEnterBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: '#FF5A00',
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  warCryEnterBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.3,
+  },
   heroMarquee: {
     marginHorizontal: 16,
-    marginTop: 8,
+    marginTop: 0,
     marginBottom: 16,
     paddingVertical: 22,
     paddingHorizontal: 18,
@@ -2781,6 +3031,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FF5A00',
     overflow: 'hidden',
+  },
+  heroMarqueeInTier: {
+    marginHorizontal: 0,
+  },
+  filterPillRowInTier: {
+    paddingHorizontal: 0,
   },
   heroMarqueeGlow: {
     ...StyleSheet.absoluteFillObject,
