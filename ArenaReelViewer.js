@@ -527,7 +527,7 @@ export default function ArenaReelViewer({
           onPress={() => {
             setMoreOpen(false);
             setShowBanter(false);
-            setVaultOpen((open) => !open);
+            setVaultOpen(true);
           }}
           activeOpacity={0.85}
           accessibilityRole="button"

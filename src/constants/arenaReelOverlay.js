@@ -40,15 +40,18 @@ export const REEL_MORE = {
 /**
  * Glow-skull Vault trigger — stacked directly above ⋮ on the same right rail.
  * Parent sets `bottom: moreBottom + REEL_VAULT.aboveMore`.
+ * `gapAboveMore` is the only free air between ⋮ top and vault bottom.
  */
 export const REEL_VAULT = {
   right: 16,
+  /** Minimal gap between ⋮ top edge and vault bottom edge */
+  gapAboveMore: 4,
   /** Distance from ⋮ bottom edge to vault button bottom edge */
-  aboveMore: REEL_MORE.height + 8,
+  aboveMore: REEL_MORE.height + 4,
   width: 40,
   height: 40,
   zIndex: 41,
-  iconSize: 32,
+  iconSize: 36,
 };
 
 /**

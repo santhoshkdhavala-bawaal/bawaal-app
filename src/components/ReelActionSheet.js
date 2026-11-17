@@ -39,15 +39,16 @@ const BASE_ACTIONS = [
   { id: 'send', label: 'Send', icon: require('../../assets/bawaal_send.png') },
 ];
 
-/** Secondary social actions — live inside the ⋮ popup only. */
+/**
+ * Secondary social actions — live inside the ⋮ popup only.
+ * Order: Like → Banter → Share → DM → Comment (DM fully included).
+ */
 export const REEL_SECONDARY_ACTION_IDS = Object.freeze([
-  'dm',
   'like',
-  'share',
-  'save',
   'banter',
+  'share',
+  'dm',
   'comment',
-  'send',
 ]);
 
 /** Slim rail essentials (above vault skull / ⋮). */
@@ -105,6 +106,8 @@ function ReelActionSheet({
    * ⋮ popup uses secondary socials; slim rail uses essentials only.
    */
   actionIds = null,
+  /** Compact ⋮ dropdown — tighter rows, uncluttered labels. */
+  compact = false,
 }) {
   const targetKey = followTargetKey(reel);
   const [following, setFollowing] = useState(false);
@@ -222,11 +225,14 @@ function ReelActionSheet({
         />
       ) : null}
 
-      <View style={[styles.stack, style]} pointerEvents="box-none">
+      <View
+        style={[styles.stack, compact && styles.stackCompact, style]}
+        pointerEvents="box-none"
+      >
         {actions.map((action) => (
           <TouchableOpacity
             key={action.id}
-            style={styles.item}
+            style={[styles.item, compact && styles.itemCompact]}
             onPress={() => run(action.id)}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -234,11 +240,18 @@ function ReelActionSheet({
           >
             <Image
               source={action.icon}
-              style={[styles.icon, !showLabels && styles.iconSolo]}
+              style={[
+                styles.icon,
+                !showLabels && styles.iconSolo,
+                compact && styles.iconCompact,
+              ]}
               resizeMode="contain"
             />
             {showLabels ? (
-              <Text style={styles.label} numberOfLines={1}>
+              <Text
+                style={[styles.label, compact && styles.labelCompact]}
+                numberOfLines={1}
+              >
                 {action.label}
               </Text>
             ) : null}
@@ -247,7 +260,7 @@ function ReelActionSheet({
 
         {showClose && !persistent ? (
           <TouchableOpacity
-            style={styles.cancelBtn}
+            style={[styles.cancelBtn, compact && styles.cancelBtnCompact]}
             onPress={onClose}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -284,10 +297,17 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingTop: 8,
   },
+  stackCompact: {
+    paddingTop: 4,
+  },
   item: {
     alignItems: 'center',
     marginBottom: REEL_ACTION_STACK.itemGap,
     minWidth: 44,
+  },
+  itemCompact: {
+    marginBottom: 6,
+    minWidth: 52,
   },
   icon: {
     width: ICON_SIZE,
@@ -296,6 +316,10 @@ const styles = StyleSheet.create({
   iconSolo: {
     width: ICON_SIZE + 2,
     height: ICON_SIZE + 2,
+  },
+  iconCompact: {
+    width: 24,
+    height: 24,
   },
   label: {
     marginTop: 4,
@@ -307,12 +331,20 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  labelCompact: {
+    marginTop: 2,
+    fontSize: 9,
+    letterSpacing: 0.3,
+  },
   cancelBtn: {
     marginTop: 4,
     width: 36,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cancelBtnCompact: {
+    marginTop: 2,
   },
   cancelText: {
     color: ACCENT,

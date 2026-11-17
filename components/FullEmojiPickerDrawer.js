@@ -1,5 +1,6 @@
 /**
  * Full BAWAAL skeleton vault — scrollable grid of every mapped skel_* + skull_* emoji.
+ * Bottom sheet tray opened from the reel skull rail button.
  * Grid order: keys starting with `skull` first, then `skel` / skeleton assets.
  */
 import React, { memo, useMemo } from 'react';
@@ -11,6 +12,7 @@ import {
   ScrollView,
   Modal,
   Pressable,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BawaalEmoji, SKELETON_EMOJIS } from './BawaalEmoji';
@@ -48,28 +50,48 @@ export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
   const count = vaultKeys.length;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+      statusBarTranslucent
+      presentationStyle={Platform.OS === 'ios' ? 'overFullScreen' : undefined}
+    >
       <View style={styles.modalOverlay}>
-        <Pressable style={styles.backdrop} onPress={onClose} />
+        <Pressable
+          style={styles.backdrop}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss vault"
+        />
         <View
           style={[
             styles.drawerContainer,
             { paddingBottom: Math.max(insets.bottom, 16) },
           ]}
         >
+          <View style={styles.handle} />
           <View style={styles.headerRow}>
             <Text style={styles.headerTitle}>
               BAWAAL SKELETON VAULT ({count})
             </Text>
-            <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button">
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Close vault"
+            >
               <Text style={styles.closeText}>✕</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView
+            style={styles.gridScroll}
             contentContainerStyle={styles.gridContainer}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            bounces
           >
             {vaultKeys.map((key) => (
               <TouchableOpacity
@@ -77,7 +99,9 @@ export const FullEmojiPickerDrawer = memo(function FullEmojiPickerDrawer({
                 style={[styles.emojiTile, key === 'love' && styles.loveTile]}
                 activeOpacity={0.85}
                 accessibilityRole="button"
-                accessibilityLabel={key === 'love' ? 'Select love skeleton' : `Select ${key}`}
+                accessibilityLabel={
+                  key === 'love' ? 'Select love skeleton' : `Select ${key}`
+                }
                 onPress={() => {
                   try {
                     onSelectEmoji?.(key);
@@ -103,21 +127,30 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
   },
   drawerContainer: {
-    maxHeight: '58%',
-    minHeight: '42%',
+    height: '55%',
+    maxHeight: '62%',
     backgroundColor: '#0A0A0A',
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     borderTopWidth: 1.5,
     borderTopColor: BAWAAL_ORANGE,
     paddingHorizontal: 14,
-    paddingTop: 12,
+    paddingTop: 8,
+    zIndex: 2,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#333333',
+    marginBottom: 10,
   },
   headerRow: {
     flexDirection: 'row',
@@ -136,6 +169,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '900',
+  },
+  gridScroll: {
+    flex: 1,
   },
   gridContainer: {
     flexDirection: 'row',
