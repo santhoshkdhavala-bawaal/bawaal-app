@@ -13,6 +13,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  Pressable,
   RefreshControl,
   ActivityIndicator,
   Platform,
@@ -58,7 +59,7 @@ import CommunityChallengesShelf from './src/components/CommunityChallengesShelf'
 import ArenaV2Header from './src/components/ArenaV2Header';
 import GameOnHub from './src/components/GameOnHub';
 import NotificationsDrawer from './src/components/NotificationsDrawer';
-import SplitScreenBattleCard from './src/components/SplitScreenBattleCard';
+import SafeRemoteImage from './src/components/SafeRemoteImage';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
 import { fetchArenaFeed } from './src/services/api';
@@ -71,9 +72,10 @@ import {
   resolveArenaFeedTier,
 } from './src/constants/arenaFeedTiers';
 import {
-  ARENA_DASHBOARD_CATEGORY_PILLS,
-  resolveDashboardCategory,
-} from './src/constants/gameOnSports';
+  ARENA_DISCOVERY_DEFAULT,
+  ARENA_DISCOVERY_PILLS,
+  matchesArenaDiscoveryPill,
+} from './src/constants/arenaDiscoveryPills';
 import {
   BAWAAL_ORANGE,
   REEL_MORE,
@@ -1632,6 +1634,92 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   );
 });
 
+const SHELF_CARD_SIZE = 148;
+
+function shelfPosterUri(item) {
+  const raw =
+    item?.thumbnail_url ||
+    item?.thumbnailUrl ||
+    item?.poster_url ||
+    item?.posterUrl ||
+    item?.coverUrl ||
+    null;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
+const ArenaShelfCard = memo(function ArenaShelfCard({ item, onPress }) {
+  const title =
+    item?.caption || item?.title || item?.target || item?.sport || 'CLIP';
+  const sport = String(item?.sport || item?.category || 'ARENA').toUpperCase();
+  const poster = shelfPosterUri(item);
+
+  return (
+    <TouchableOpacity
+      style={styles.shelfCard}
+      activeOpacity={0.88}
+      onPress={() => onPress?.(item)}
+      accessibilityRole="button"
+      accessibilityLabel={String(title)}
+    >
+      <View style={styles.shelfThumb}>
+        {poster ? (
+          <SafeRemoteImage
+            uri={poster}
+            style={styles.shelfThumbImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.shelfThumbFallback}>
+            <Text style={styles.shelfThumbSport} numberOfLines={1}>
+              {sport}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.shelfCardTitle} numberOfLines={2}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+const ArenaShelfRow = memo(function ArenaShelfRow({
+  title,
+  subtitle,
+  items,
+  emptyLabel,
+  onPressItem,
+}) {
+  const list = Array.isArray(items) ? items : [];
+  return (
+    <View style={styles.dashSection}>
+      <Text style={styles.dashSectionTitle}>{title}</Text>
+      {subtitle ? (
+        <Text style={styles.dashSectionSub}>{subtitle}</Text>
+      ) : null}
+      {list.length === 0 ? (
+        <View style={styles.shelfEmptyCard}>
+          <Text style={styles.shelfEmptyText}>{emptyLabel || 'Nothing here yet'}</Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.shelfRow}
+        >
+          {list.map((item, index) => (
+            <ArenaShelfCard
+              key={String(item?.id || `${title}-${index}`)}
+              item={item}
+              onPress={onPressItem}
+            />
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+});
+
 export default function ArenaFeed({ navigation, route }) {
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
@@ -2238,95 +2326,121 @@ export default function ArenaFeed({ navigation, route }) {
     setArenaSportFilter(sportLabel);
   }, []);
 
-  /** Dashboard category pill — filters Sparks / challenges by GAME ON section. */
-  const [dashboardCategory, setDashboardCategory] = useState('All');
+  /** Discovery pills — For You / Football / Basketball / BMX / MMA. */
+  const [dashboardCategory, setDashboardCategory] = useState(
+    ARENA_DISCOVERY_DEFAULT
+  );
 
   const onSelectDashboardCategory = useCallback((label) => {
-    setDashboardCategory(label || 'All');
+    setDashboardCategory(label || ARENA_DISCOVERY_DEFAULT);
   }, []);
 
-  /** Sparks / trending highlights from the hydrated feed. */
-  const sparkHighlights = useMemo(() => {
-    const rows = (filteredChallengeVideoFeed || []).filter((item) => {
-      const mode = String(item.mode || item.source || item.tier || '').toUpperCase();
-      const isSpark =
+  const discoveryFeed = useMemo(
+    () =>
+      (filteredChallengeVideoFeed || []).filter((item) =>
+        matchesArenaDiscoveryPill(item, dashboardCategory)
+      ),
+    [filteredChallengeVideoFeed, dashboardCategory]
+  );
+
+  const sparkJoshShelf = useMemo(() => {
+    const rows = discoveryFeed.filter((item) => {
+      const mode = String(
+        item.mode || item.source || item.tier || ''
+      ).toUpperCase();
+      if (item.type === 'battle_thread') return false;
+      if (mode.includes('FACEOFF') || mode.includes('FACE OFF')) return false;
+      if (mode.includes('WAR') && mode.includes('CRY')) return false;
+      return (
         mode.includes('SPARK') ||
         mode.includes('JOSH') ||
         item.type === 'reel' ||
-        Boolean(item.video_url || item.videoUri || item.uri);
-      if (!isSpark) return false;
-      if (dashboardCategory === 'All') return true;
-      return (
-        resolveDashboardCategory(item.sport || item.category) === dashboardCategory
+        Boolean(item.video_url || item.videoUri || item.uri)
       );
     });
-    return rows.slice(0, 12);
-  }, [filteredChallengeVideoFeed, dashboardCategory]);
+    return rows.slice(0, 16);
+  }, [discoveryFeed]);
 
-  /** Featured 1v1 for gateway SplitScreenBattleCard. */
-  const featuredSplitBattle = useMemo(() => {
-    const threads = (filteredChallengeVideoFeed || []).filter(
-      (item) =>
-        item?.type === 'battle_thread' ||
-        String(item?.tier || item?.mode || '')
-          .toLowerCase()
-          .includes('faceoff') ||
-        String(item?.tier || item?.mode || '')
-          .toLowerCase()
-          .includes('war')
-    );
-    if (dashboardCategory !== 'All') {
-      const matched = threads.find(
-        (item) =>
-          resolveDashboardCategory(item.sport || item.category) ===
-          dashboardCategory
+  const battleBawaalShelf = useMemo(() => {
+    const rows = discoveryFeed.filter((item) => {
+      const mode = String(
+        item.mode || item.source || item.tier || item.type || ''
+      ).toLowerCase();
+      return (
+        item.type === 'battle_thread' ||
+        mode.includes('battle') ||
+        mode.includes('bawaal battle') ||
+        mode.includes('group')
       );
-      if (matched) return matched;
-    }
-    return threads[0] || null;
-  }, [filteredChallengeVideoFeed, dashboardCategory]);
+    });
+    return rows.slice(0, 16);
+  }, [discoveryFeed]);
 
-  /** Dual-feed previews for War Cry gateway section. */
+  const faceOffShelf = useMemo(() => {
+    const fromFeed = discoveryFeed.filter((item) => {
+      const mode = String(
+        item.mode || item.source || item.tier || item.type || ''
+      ).toLowerCase();
+      return (
+        mode.includes('faceoff') ||
+        mode.includes('face off') ||
+        item.isOpenChallenge === true ||
+        String(item.status || '').toUpperCase() === 'OPEN'
+      );
+    });
+    const fromCallouts = (communityCallouts || [])
+      .filter((c) => matchesArenaDiscoveryPill(c, dashboardCategory))
+      .map((c, i) => ({
+        id: c.id || `faceoff-callout-${i}`,
+        title: c.target || c.title || c.description || 'FACE OFF',
+        caption: c.target || c.title || 'FACE OFF',
+        sport: c.sport || c.category || 'ARENA',
+        author: c.host || c.author || '@athlete',
+        thumbnail_url: c.thumbnail_url || c.posterUrl || null,
+        type: 'faceoff',
+        _fromCallout: true,
+        raw: c,
+      }));
+    const merged = [...fromFeed, ...fromCallouts];
+    const seen = new Set();
+    const out = [];
+    for (const row of merged) {
+      const key = String(row.id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+      if (out.length >= 16) break;
+    }
+    return out;
+  }, [discoveryFeed, communityCallouts, dashboardCategory]);
+
+  /** War Cry LIVE dual-lane preview handles. */
   const warCryDualFeeds = useMemo(() => {
-    const pool = sparkHighlights.length
-      ? sparkHighlights
-      : filteredChallengeVideoFeed || [];
+    const pool = sparkJoshShelf.length ? sparkJoshShelf : discoveryFeed;
     const a = pool[0] || null;
     const b = pool[1] || pool[0] || null;
     return {
-      host: a
-        ? {
-            handle: a.author || a.host || '@host',
-            sport: a.sport || a.category || 'ARENA',
-            title: a.caption || a.title || 'HOST FEED',
-            raw: a,
-          }
-        : {
-            handle: '@warcry_host',
-            sport: dashboardCategory === 'All' ? 'ARENA' : dashboardCategory,
-            title: 'HOST · LIVE FEED',
-            raw: null,
-          },
-      rival: b
-        ? {
-            handle: b.author || b.host || '@rival',
-            sport: b.sport || b.category || 'ARENA',
-            title: b.caption || b.title || 'RIVAL FEED',
-            raw: b,
-          }
-        : {
-            handle: '@warcry_rival',
-            sport: dashboardCategory === 'All' ? 'ARENA' : dashboardCategory,
-            title: 'RIVAL · LIVE FEED',
-            raw: null,
-          },
+      host: {
+        handle: a?.author || a?.host || '@warcry_host',
+        sport:
+          a?.sport ||
+          a?.category ||
+          (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
+      },
+      rival: {
+        handle: b?.author || b?.host || '@warcry_rival',
+        sport:
+          b?.sport ||
+          b?.category ||
+          (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
+      },
     };
-  }, [sparkHighlights, filteredChallengeVideoFeed, dashboardCategory]);
+  }, [sparkJoshShelf, discoveryFeed, dashboardCategory]);
 
   /** Full-screen immersive War Cry / 1v1 active battle. */
   const openImmersiveBattle = useCallback(
     (opts = {}) => {
-      const battle = opts.item || featuredSplitBattle || null;
+      const battle = opts.item || null;
       const battleId = String(
         battle?.battleId ||
           battle?.challengeId ||
@@ -2349,31 +2463,42 @@ export default function ArenaFeed({ navigation, route }) {
           status: 'live',
           hostHandle:
             opts.playerA?.handle ||
-            battle?.challengerLabel ||
+            warCryDualFeeds.host.handle ||
             battle?.author ||
-            battle?.host ||
             '@host',
           rivalHandle:
             opts.playerB?.handle ||
-            battle?.leaderLabel ||
+            warCryDualFeeds.rival.handle ||
             battle?.rival ||
             '@rival',
-          sport: battle?.sport || battle?.category || dashboardCategory,
+          sport:
+            battle?.sport ||
+            battle?.category ||
+            (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
         },
       });
     },
-    [navigation, featuredSplitBattle, dashboardCategory]
+    [navigation, warCryDualFeeds, dashboardCategory]
   );
 
   const openWarCryLive = useCallback(() => {
-    openImmersiveBattle({ side: 'warcry' });
-  }, [openImmersiveBattle]);
+    openImmersiveBattle({
+      side: 'warcry',
+      playerA: warCryDualFeeds.host,
+      playerB: warCryDualFeeds.rival,
+    });
+  }, [openImmersiveBattle, warCryDualFeeds]);
 
   const openReel = useCallback((item, opts) => {
+    if (!item) return;
+    if (item._fromCallout || item.raw) {
+      openShelfCallout(item.raw || item);
+      return;
+    }
     setImmersiveMuted(!!opts?.muted);
     setWarmReel(item);
     setActiveReel(item);
-  }, []);
+  }, [openShelfCallout]);
 
   const openResponses = useCallback((item) => {
     setHubThread(item);
@@ -2609,128 +2734,119 @@ export default function ArenaFeed({ navigation, route }) {
           />
         }
       >
-        {/* ========== ARENA ========== */}
-        <View style={styles.tierBlock}>
-          <Text style={styles.sectionEyebrow}>ARENA</Text>
-          <View style={[styles.heroMarquee, styles.heroMarqueeInTier]}>
-            <View style={styles.heroMarqueeGlow} pointerEvents="none" />
-            <Text style={styles.heroEyebrow}>LIVE NOW</Text>
-            <Text style={styles.heroTitle}>BAWAAL ARENA</Text>
-            <Text style={styles.heroSub}>
-              War Cry feeds and 1v1 split battles
-            </Text>
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[
-              styles.filterPillRow,
-              styles.filterPillRowInTier,
-            ]}
-            style={styles.filterPillScroll}
-          >
-            {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
-              const active = dashboardCategory === label;
-              return (
-                <TouchableOpacity
-                  key={label}
-                  style={[styles.filterPill, active && styles.filterPillOn]}
-                  activeOpacity={0.85}
-                  onPress={() => onSelectDashboardCategory(label)}
-                >
-                  <Text
-                    style={[
-                      styles.filterPillText,
-                      active && styles.filterPillTextOn,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* ========== WAR CRY ========== */}
+        {/* ========== TIER 1 · WAR CRY · LIVE ========== */}
         <View style={styles.dashSection}>
-          <Text style={styles.sectionEyebrow}>WAR CRY</Text>
-          <Text style={styles.dashSectionTitle}>DUAL FEEDS</Text>
-          <View style={styles.warCryDualRow}>
-            <TouchableOpacity
-              style={[styles.warCryPane, styles.warCryPaneHost]}
-              activeOpacity={0.88}
-              onPress={openWarCryLive}
-              accessibilityRole="button"
-              accessibilityLabel="Open host War Cry feed"
-            >
-              <Text style={styles.warCryPaneBadgeText}>HOST</Text>
-              <Text style={styles.warCryPaneHandle} numberOfLines={1}>
-                {warCryDualFeeds.host.handle}
-              </Text>
-              <Text style={styles.warCryPaneSport} numberOfLines={1}>
-                {String(warCryDualFeeds.host.sport).toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.warCryDualVs} pointerEvents="none">
-              <Text style={styles.warCryDualVsText}>VS</Text>
+          <Pressable
+            style={styles.warCryLiveCard}
+            onPress={openWarCryLive}
+            accessibilityRole="button"
+            accessibilityLabel="Enter War Cry live battle"
+          >
+            <View style={styles.warCryLiveHeader} pointerEvents="none">
+              <View style={styles.warCryLiveDot} />
+              <Text style={styles.warCryLiveTitle}>WAR CRY · LIVE</Text>
             </View>
+            <View style={styles.warCryDualRow}>
+              <TouchableOpacity
+                style={[styles.warCryPane, styles.warCryPaneHost]}
+                activeOpacity={0.88}
+                onPress={openWarCryLive}
+                accessibilityRole="button"
+                accessibilityLabel="Open host War Cry lane"
+              >
+                <Text style={styles.warCryPaneBadgeText}>HOST</Text>
+                <Text style={styles.warCryPaneHandle} numberOfLines={1}>
+                  {warCryDualFeeds.host.handle}
+                </Text>
+                <Text style={styles.warCryPaneSport} numberOfLines={1}>
+                  {String(warCryDualFeeds.host.sport).toUpperCase()}
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.warCryPane, styles.warCryPaneRival]}
-              activeOpacity={0.88}
-              onPress={openWarCryLive}
-              accessibilityRole="button"
-              accessibilityLabel="Open rival War Cry feed"
-            >
-              <Text style={styles.warCryPaneBadgeText}>RIVAL</Text>
-              <Text style={styles.warCryPaneHandle} numberOfLines={1}>
-                {warCryDualFeeds.rival.handle}
-              </Text>
-              <Text style={styles.warCryPaneSport} numberOfLines={1}>
-                {String(warCryDualFeeds.rival.sport).toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.warCryDualVs} pointerEvents="none">
+                <Text style={styles.warCryDualVsText}>VS</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.warCryPane, styles.warCryPaneRival]}
+                activeOpacity={0.88}
+                onPress={openWarCryLive}
+                accessibilityRole="button"
+                accessibilityLabel="Open rival War Cry lane"
+              >
+                <Text style={styles.warCryPaneBadgeText}>RIVAL</Text>
+                <Text style={styles.warCryPaneHandle} numberOfLines={1}>
+                  {warCryDualFeeds.rival.handle}
+                </Text>
+                <Text style={styles.warCryPaneSport} numberOfLines={1}>
+                  {String(warCryDualFeeds.rival.sport).toUpperCase()}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
         </View>
 
-        {/* ========== 1v1 SPLIT-SCREEN GATEWAY ========== */}
+        {/* ========== TIER 2 · Category pills ========== */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillRow}
+          style={styles.filterPillScroll}
+        >
+          {ARENA_DISCOVERY_PILLS.map((label) => {
+            const active = dashboardCategory === label;
+            return (
+              <TouchableOpacity
+                key={label}
+                style={[styles.filterPill, active && styles.filterPillOn]}
+                activeOpacity={0.85}
+                onPress={() => onSelectDashboardCategory(label)}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    active && styles.filterPillTextOn,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* ========== TIER 3 · Sparks & Josh ========== */}
+        <ArenaShelfRow
+          title="SPARKS & JOSH"
+          subtitle="Short clips lighting up the Arena"
+          items={sparkJoshShelf}
+          emptyLabel="No Sparks or Josh clips yet"
+          onPressItem={(item) => openReel(item, { muted: true })}
+        />
+
+        {/* ========== TIER 4 · Battle Bawaal ========== */}
+        <ArenaShelfRow
+          title="BATTLE BAWAAL"
+          subtitle="Recorded group battle feeds"
+          items={battleBawaalShelf}
+          emptyLabel="No Battle Bawaal clips yet"
+          onPressItem={(item) => openReel(item, { muted: true })}
+        />
+
+        {/* ========== TIER 5 · Face Off ========== */}
+        <ArenaShelfRow
+          title="FACE OFF"
+          subtitle="Open challenges ready to answer"
+          items={faceOffShelf}
+          emptyLabel="No Face Off challenges yet"
+          onPressItem={(item) => openReel(item, { muted: true })}
+        />
+
+        {/* ========== Bottom · Ads slot ========== */}
         <View style={[styles.dashSection, styles.dashSectionLast]}>
-          <Text style={styles.sectionEyebrow}>1v1 BATTLE</Text>
-          <SplitScreenBattleCard
-            item={featuredSplitBattle}
-            playerA={
-              featuredSplitBattle
-                ? null
-                : {
-                    handle: '@blade_a',
-                    sport:
-                      dashboardCategory === 'All'
-                        ? 'COMBAT'
-                        : dashboardCategory,
-                  }
-            }
-            playerB={
-              featuredSplitBattle
-                ? null
-                : {
-                    handle: '@storm_b',
-                    sport:
-                      dashboardCategory === 'All'
-                        ? 'COMBAT'
-                        : dashboardCategory,
-                  }
-            }
-            title={
-              featuredSplitBattle?.title ||
-              featuredSplitBattle?.caption ||
-              featuredSplitBattle?.target ||
-              '1v1 LIVE CHALLENGE'
-            }
-            onPress={openImmersiveBattle}
-          />
+          <View style={styles.adsSlot}>
+            <Text style={styles.adsSlotLabel}>ADS</Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -2789,22 +2905,36 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     paddingTop: 8,
   },
-  tierBlock: {
-    marginBottom: 4,
-    paddingHorizontal: 16,
+  warCryLiveCard: {
+    borderRadius: 16,
+    backgroundColor: '#0A0A0A',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,0,0.5)',
+    padding: 12,
+    overflow: 'hidden',
   },
-  sectionEyebrow: {
+  warCryLiveHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  warCryLiveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#FF5A00',
+  },
+  warCryLiveTitle: {
     color: '#FF5A00',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 2,
-    marginBottom: 10,
+    letterSpacing: 1.6,
   },
   warCryDualRow: {
     position: 'relative',
     flexDirection: 'row',
     alignItems: 'stretch',
-    marginTop: 4,
   },
   warCryPane: {
     flex: 1,
@@ -2865,61 +2995,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
   },
-  heroMarquee: {
-    marginHorizontal: 16,
-    marginTop: 0,
-    marginBottom: 16,
-    paddingVertical: 22,
-    paddingHorizontal: 18,
-    borderRadius: 16,
-    backgroundColor: '#0D0D0D',
-    borderWidth: 1,
-    borderColor: '#FF5A00',
-    overflow: 'hidden',
-  },
-  heroMarqueeInTier: {
-    marginHorizontal: 0,
-  },
-  filterPillRowInTier: {
-    paddingHorizontal: 0,
-  },
-  heroMarqueeGlow: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,90,0,0.08)',
-  },
-  heroEyebrow: {
-    color: '#FF5A00',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.8,
-    marginBottom: 8,
-  },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: 0.6,
-    marginBottom: 6,
-  },
-  heroSub: {
-    color: '#A0A0A0',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  heroCta: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#FF5A00',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 999,
-  },
-  heroCtaText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 1.4,
-  },
   filterPillScroll: {
     marginBottom: 18,
     flexGrow: 0,
@@ -2968,110 +3043,74 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 12,
   },
-  dashEmptyCard: {
-    paddingVertical: 24,
+  shelfRow: {
+    gap: 12,
+    paddingRight: 8,
+  },
+  shelfCard: {
+    width: SHELF_CARD_SIZE,
+  },
+  shelfThumb: {
+    width: SHELF_CARD_SIZE,
+    height: SHELF_CARD_SIZE,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#121212',
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+  },
+  shelfThumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  shelfThumbFallback: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#14100E',
+    padding: 10,
+  },
+  shelfThumbSport: {
+    color: '#FF5A00',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    textAlign: 'center',
+  },
+  shelfCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 8,
+    minHeight: 32,
+  },
+  shelfEmptyCard: {
+    paddingVertical: 18,
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#1E1E1E',
     backgroundColor: '#0A0A0A',
   },
-  dashEmptyText: {
-    color: '#888',
-    fontSize: 13,
+  shelfEmptyText: {
+    color: '#777',
+    fontSize: 12,
     textAlign: 'center',
   },
-  sparkRow: {
-    gap: 12,
-    paddingRight: 8,
-  },
-  sparkCard: {
-    width: 148,
+  adsSlot: {
+    minHeight: 96,
     borderRadius: 12,
-    backgroundColor: '#0D0D0D',
     borderWidth: 1,
     borderColor: '#1E1E1E',
-    overflow: 'hidden',
+    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sparkThumb: {
-    height: 96,
-    backgroundColor: '#1A120E',
-    alignItems: 'flex-start',
-    justifyContent: 'flex-end',
-    padding: 10,
-  },
-  sparkThumbLabel: {
-    color: '#FF5A00',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  sparkTitle: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    minHeight: 36,
-  },
-  sparkHost: {
-    color: '#888',
+  adsSlotLabel: {
+    color: '#444',
     fontSize: 11,
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-    paddingTop: 4,
-  },
-  challengeDashCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    borderRadius: 12,
-    backgroundColor: '#0D0D0D',
-    borderWidth: 1,
-    borderColor: '#1E1E1E',
-  },
-  challengeDashLeft: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  challengeDashMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  challengeDashStatus: {
-    color: '#A0A0A0',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.2,
-  },
-  challengeDashStatusLive: {
-    color: '#FF5A00',
-  },
-  challengeDashSport: {
-    color: '#666',
-    fontSize: 10,
-    fontWeight: '700',
-    flexShrink: 1,
-  },
-  challengeDashTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 4,
-  },
-  challengeDashHost: {
-    color: '#888',
-    fontSize: 12,
-  },
-  challengeDashChevron: {
-    color: '#FF5A00',
-    fontSize: 28,
-    fontWeight: '300',
-    lineHeight: 28,
+    letterSpacing: 2,
   },
   emptySupabase: {
     color: '#fff',
