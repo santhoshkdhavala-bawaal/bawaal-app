@@ -109,6 +109,8 @@ import {
   fetchChallengeMatchupRoster,
   tallyMatchupVotes,
 } from './src/services/customMatchupService';
+import { fetchArenaDashboardSections } from './src/services/arenaDashboardService';
+import { subscribeArenaDashboardRealtime } from './src/services/arenaDashboardRealtime';
 
 const ARENA_HSCROLL_KILL_STYLE_ID = 'bawaal-arena-hscroll-kill';
 
@@ -2222,6 +2224,26 @@ export default function ArenaFeed({ navigation, route }) {
         }
         return sortFeedItems(ensureDefaultBattles(next));
       });
+      // Soft-fail dashboard shelves (war cry / sparks / battle / face-off)
+      try {
+        const sections = await fetchArenaDashboardSections();
+        setDashboardRemote({
+          warCryMatches: sections?.warCryMatches || [],
+          sparksJosh: sections?.sparksJosh || [],
+          battleBawaal: sections?.battleBawaal || [],
+          faceOff: sections?.faceOff || [],
+        });
+        const live = sections?.warCryMatches?.[0];
+        if (live) {
+          setWarCryLiveMeta({
+            hostScore: Number(live.host_score) || 0,
+            rivalScore: Number(live.rival_score) || 0,
+            spectatorCount: Number(live.spectator_count) || 0,
+          });
+        }
+      } catch {
+        /* keep prior dashboardRemote / mocks */
+      }
     } catch (err) {
       console.warn('[ArenaFeed] pull-to-refresh failed:', err?.message || err);
       setFeedItems((prev) => sortFeedItems(ensureDefaultBattles(prev)));
@@ -2464,10 +2486,157 @@ export default function ArenaFeed({ navigation, route }) {
 
   /** Category pills — All + 7 GAME ON section titles. */
   const [dashboardCategory, setDashboardCategory] = useState('All');
+  /** Supabase dashboard shelves (+ mock seeds when tables missing/empty). */
+  const [dashboardRemote, setDashboardRemote] = useState({
+    warCryMatches: [],
+    sparksJosh: [],
+    battleBawaal: [],
+    faceOff: [],
+  });
+  const [warCryLiveMeta, setWarCryLiveMeta] = useState({
+    hostScore: 0,
+    rivalScore: 0,
+    spectatorCount: 0,
+  });
 
   const onSelectDashboardCategory = useCallback((label) => {
     setDashboardCategory(label || 'All');
   }, []);
+
+  const filterByDashboardCategory = useCallback(
+    (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!dashboardCategory || dashboardCategory === 'All') return list;
+      return list.filter(
+        (item) =>
+          resolveDashboardCategory(item.sport || item.category) ===
+          dashboardCategory
+      );
+    },
+    [dashboardCategory]
+  );
+
+  const hydrateArenaDashboard = useCallback(async () => {
+    try {
+      const sections = await fetchArenaDashboardSections();
+      setDashboardRemote({
+        warCryMatches: sections.warCryMatches || [],
+        sparksJosh: sections.sparksJosh || [],
+        battleBawaal: sections.battleBawaal || [],
+        faceOff: sections.faceOff || [],
+      });
+      const live = sections.warCryMatches?.[0];
+      if (live) {
+        setWarCryLiveMeta({
+          hostScore: Number(live.host_score) || 0,
+          rivalScore: Number(live.rival_score) || 0,
+          spectatorCount: Number(live.spectator_count) || 0,
+        });
+      }
+    } catch (_) {
+      /* fetchArenaDashboardSections never throws — belt & suspenders */
+    }
+  }, []);
+
+  useEffect(() => {
+    void hydrateArenaDashboard();
+  }, [hydrateArenaDashboard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void hydrateArenaDashboard();
+      return undefined;
+    }, [hydrateArenaDashboard])
+  );
+
+  // Live scores / spectators / shelf inserts — soft-fail when offline
+  useEffect(() => {
+    const unsub = subscribeArenaDashboardRealtime({
+      onWarCryMatch: (row) => {
+        setDashboardRemote((prev) => {
+          const rest = (prev.warCryMatches || []).filter(
+            (m) => String(m.id) !== String(row.id)
+          );
+          const next = [
+            {
+              id: String(row.id),
+              status: String(row.status || 'LIVE').toUpperCase(),
+              sport: row.sport || 'COMBAT',
+              host_handle: row.host_handle || '@host',
+              rival_handle: row.rival_handle || '@rival',
+              host_score: Number(row.host_score) || 0,
+              rival_score: Number(row.rival_score) || 0,
+              spectator_count: Number(row.spectator_count) || 0,
+              room_id: row.room_id || String(row.id),
+              title: row.title || 'WAR CRY · LIVE',
+              thumbnail_url: row.thumbnail_url || null,
+              _fromDashboard: true,
+            },
+            ...rest,
+          ].slice(0, 4);
+          return { ...prev, warCryMatches: next };
+        });
+      },
+      onScoreUpdate: (payload) => {
+        setWarCryLiveMeta((prev) => ({
+          hostScore:
+            payload.hostScore != null ? Number(payload.hostScore) : prev.hostScore,
+          rivalScore:
+            payload.rivalScore != null
+              ? Number(payload.rivalScore)
+              : prev.rivalScore,
+          spectatorCount:
+            payload.spectatorCount != null
+              ? Number(payload.spectatorCount)
+              : prev.spectatorCount,
+        }));
+        if (payload.hostHandle || payload.rivalHandle) {
+          setDashboardRemote((prev) => {
+            const first = prev.warCryMatches?.[0];
+            if (!first) return prev;
+            const updated = {
+              ...first,
+              host_handle: payload.hostHandle || first.host_handle,
+              rival_handle: payload.rivalHandle || first.rival_handle,
+              host_score:
+                payload.hostScore != null
+                  ? Number(payload.hostScore)
+                  : first.host_score,
+              rival_score:
+                payload.rivalScore != null
+                  ? Number(payload.rivalScore)
+                  : first.rival_score,
+              spectator_count:
+                payload.spectatorCount != null
+                  ? Number(payload.spectatorCount)
+                  : first.spectator_count,
+              sport: payload.sport || first.sport,
+            };
+            return {
+              ...prev,
+              warCryMatches: [updated, ...(prev.warCryMatches || []).slice(1)],
+            };
+          });
+        }
+      },
+      onSparksJosh: () => {
+        void hydrateArenaDashboard();
+      },
+      onBattleBawaal: () => {
+        void hydrateArenaDashboard();
+      },
+      onFaceOff: () => {
+        void hydrateArenaDashboard();
+      },
+    });
+    return () => {
+      try {
+        unsub?.();
+      } catch (_) {
+        /* soft-fail */
+      }
+    };
+  }, [hydrateArenaDashboard]);
 
   const discoveryFeed = useMemo(() => {
     const rows = filteredChallengeVideoFeed || [];
@@ -2480,6 +2649,8 @@ export default function ArenaFeed({ navigation, route }) {
   }, [filteredChallengeVideoFeed, dashboardCategory]);
 
   const sparkJoshShelf = useMemo(() => {
+    const remote = filterByDashboardCategory(dashboardRemote.sparksJosh);
+    if (remote.length) return remote.slice(0, 16);
     const rows = discoveryFeed.filter((item) => {
       const mode = String(
         item.mode || item.source || item.tier || ''
@@ -2495,9 +2666,11 @@ export default function ArenaFeed({ navigation, route }) {
       );
     });
     return rows.slice(0, 16);
-  }, [discoveryFeed]);
+  }, [dashboardRemote.sparksJosh, discoveryFeed, filterByDashboardCategory]);
 
   const battleBawaalShelf = useMemo(() => {
+    const remote = filterByDashboardCategory(dashboardRemote.battleBawaal);
+    if (remote.length) return remote.slice(0, 16);
     const rows = discoveryFeed.filter((item) => {
       const mode = String(
         item.mode || item.source || item.tier || item.type || ''
@@ -2510,9 +2683,11 @@ export default function ArenaFeed({ navigation, route }) {
       );
     });
     return rows.slice(0, 16);
-  }, [discoveryFeed]);
+  }, [dashboardRemote.battleBawaal, discoveryFeed, filterByDashboardCategory]);
 
   const faceOffShelf = useMemo(() => {
+    const remote = filterByDashboardCategory(dashboardRemote.faceOff);
+    if (remote.length) return remote.slice(0, 16);
     const fromFeed = discoveryFeed.filter((item) => {
       const mode = String(
         item.mode || item.source || item.tier || item.type || ''
@@ -2553,10 +2728,39 @@ export default function ArenaFeed({ navigation, route }) {
       if (out.length >= 16) break;
     }
     return out;
-  }, [discoveryFeed, communityCallouts, dashboardCategory]);
+  }, [
+    dashboardRemote.faceOff,
+    discoveryFeed,
+    communityCallouts,
+    dashboardCategory,
+    filterByDashboardCategory,
+  ]);
 
-  /** War Cry LIVE dual-lane preview handles. */
+  /** War Cry LIVE dual-lane — prefer live match row from Supabase / mock. */
   const warCryDualFeeds = useMemo(() => {
+    const live = filterByDashboardCategory(dashboardRemote.warCryMatches)[0];
+    if (live) {
+      return {
+        host: {
+          handle: live.host_handle || '@warcry_host',
+          sport:
+            live.sport ||
+            (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
+        },
+        rival: {
+          handle: live.rival_handle || '@warcry_rival',
+          sport:
+            live.sport ||
+            (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
+        },
+        matchId: live.id,
+        roomId: live.room_id || live.id,
+        hostScore: Number(live.host_score) || warCryLiveMeta.hostScore || 0,
+        rivalScore: Number(live.rival_score) || warCryLiveMeta.rivalScore || 0,
+        spectatorCount:
+          Number(live.spectator_count) || warCryLiveMeta.spectatorCount || 0,
+      };
+    }
     const pool = sparkJoshShelf.length ? sparkJoshShelf : discoveryFeed;
     const a = pool[0] || null;
     const b = pool[1] || pool[0] || null;
@@ -2575,8 +2779,20 @@ export default function ArenaFeed({ navigation, route }) {
           b?.category ||
           (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
       },
+      matchId: null,
+      roomId: null,
+      hostScore: warCryLiveMeta.hostScore || 0,
+      rivalScore: warCryLiveMeta.rivalScore || 0,
+      spectatorCount: warCryLiveMeta.spectatorCount || 0,
     };
-  }, [sparkJoshShelf, discoveryFeed, dashboardCategory]);
+  }, [
+    dashboardRemote.warCryMatches,
+    sparkJoshShelf,
+    discoveryFeed,
+    dashboardCategory,
+    filterByDashboardCategory,
+    warCryLiveMeta,
+  ]);
 
   /** Full-screen immersive War Cry / 1v1 active battle. */
   const openImmersiveBattle = useCallback(
@@ -2905,6 +3121,9 @@ export default function ArenaFeed({ navigation, route }) {
                 </Text>
                 <Text style={styles.warCryPaneSport} numberOfLines={1}>
                   {String(warCryDualFeeds.host.sport).toUpperCase()}
+                  {warCryDualFeeds.hostScore
+                    ? ` · ${warCryDualFeeds.hostScore}`
+                    : ''}
                 </Text>
               </TouchableOpacity>
 
@@ -2935,9 +3154,17 @@ export default function ArenaFeed({ navigation, route }) {
                   numberOfLines={1}
                 >
                   {String(warCryDualFeeds.rival.sport).toUpperCase()}
+                  {warCryDualFeeds.rivalScore
+                    ? ` · ${warCryDualFeeds.rivalScore}`
+                    : ''}
                 </Text>
               </TouchableOpacity>
             </View>
+            {warCryDualFeeds.spectatorCount > 0 ? (
+              <Text style={styles.warCrySpectatorMeta} pointerEvents="none">
+                {warCryDualFeeds.spectatorCount} SPECTATING
+              </Text>
+            ) : null}
           </Pressable>
         </View>
 
@@ -3096,6 +3323,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.6,
+  },
+  warCrySpectatorMeta: {
+    marginTop: 10,
+    color: '#888',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textAlign: 'center',
   },
   warCryDualRow: {
     position: 'relative',
