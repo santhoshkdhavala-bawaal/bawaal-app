@@ -53,7 +53,10 @@ function followTargetKey(reel) {
 
 async function shareReel(reel) {
   const postId = reel?.id != null ? String(reel.id) : '';
-  const handle = String(reel?.author || reel?.handle || 'athlete').replace(/^@/, '');
+  const handle = String(reel?.author || reel?.handle || 'athlete').replace(
+    /^@/,
+    ''
+  );
   try {
     await Share.share({
       title: 'BAWAAL Arena',
@@ -71,7 +74,19 @@ function formatCountLabel(base, count) {
   return n > 0 ? `${base} · ${n}` : base;
 }
 
-function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
+function ReelActionSheet({
+  visible,
+  reel,
+  onClose,
+  onAction,
+  style,
+  /** Always-on rail — no dismiss backdrop; stack stays on the video. */
+  persistent = false,
+  /** Clean visual stack — icons only (no RESHARE / BANTER / MORE text). */
+  showLabels = true,
+  /** Hide the ✕ row when the stack is a permanent rail. */
+  showClose = true,
+}) {
   const targetKey = followTargetKey(reel);
   const [following, setFollowing] = useState(false);
   const [likeCount, setLikeCount] = useState(Number(reel?.likeCount) || 0);
@@ -134,12 +149,10 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
         void setFollowingReelOwner(targetKey, next).catch(() => {});
       }
       if (actionId === 'like') {
-        // Optimistic count — cloud toggle runs via onAction / dispatchReelSocialAction
         const nextLiked = !likedByMe;
         setLikedByMe(nextLiked);
         setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
       }
-      // Share = native system share. Send/DM open the DM picker via onAction.
       if (resolvedId === 'share') {
         await shareReel(reel);
       }
@@ -153,8 +166,7 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
       } catch (_) {
         /* ignore */
       }
-      // Keep stack open for like so count stays visible; close for navigation actions
-      if (resolvedId !== 'like') {
+      if (!persistent && resolvedId !== 'like') {
         onClose?.();
       }
     },
@@ -165,6 +177,7 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
       commentCount,
       onAction,
       onClose,
+      persistent,
       reel,
       targetKey,
     ]
@@ -173,14 +186,18 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
   if (!visible) return null;
 
   return (
-    <View style={styles.root} pointerEvents="box-none">
-      {/* Outside tap dismisses — transparent so video stays visible/playing */}
-      <Pressable
-        style={styles.backdrop}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Dismiss actions"
-      />
+    <View
+      style={persistent ? styles.persistentRoot : styles.root}
+      pointerEvents="box-none"
+    >
+      {!persistent ? (
+        <Pressable
+          style={styles.backdrop}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss actions"
+        />
+      ) : null}
 
       <View style={[styles.stack, style]} pointerEvents="box-none">
         {actions.map((action) => (
@@ -194,24 +211,28 @@ function ReelActionSheet({ visible, reel, onClose, onAction, style }) {
           >
             <Image
               source={action.icon}
-              style={styles.icon}
+              style={[styles.icon, !showLabels && styles.iconSolo]}
               resizeMode="contain"
             />
-            <Text style={styles.label} numberOfLines={1}>
-              {action.label}
-            </Text>
+            {showLabels ? (
+              <Text style={styles.label} numberOfLines={1}>
+                {action.label}
+              </Text>
+            ) : null}
           </TouchableOpacity>
         ))}
 
-        <TouchableOpacity
-          style={styles.cancelBtn}
-          onPress={onClose}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="Close actions"
-        >
-          <Text style={styles.cancelText}>✕</Text>
-        </TouchableOpacity>
+        {showClose && !persistent ? (
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={onClose}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Close actions"
+          >
+            <Text style={styles.cancelText}>✕</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -222,6 +243,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
   },
+  persistentRoot: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 28,
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
@@ -230,7 +255,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: REEL_ACTION_STACK.right,
     bottom: REEL_ACTION_STACK.bottom,
-    // Clears mute (top:16, h:36) on the same right rail
     top: REEL_ACTION_STACK.top,
     zIndex: REEL_ACTION_STACK.zIndex,
     alignItems: 'center',
@@ -240,11 +264,15 @@ const styles = StyleSheet.create({
   item: {
     alignItems: 'center',
     marginBottom: REEL_ACTION_STACK.itemGap,
-    minWidth: 56,
+    minWidth: 44,
   },
   icon: {
     width: ICON_SIZE,
     height: ICON_SIZE,
+  },
+  iconSolo: {
+    width: ICON_SIZE + 2,
+    height: ICON_SIZE + 2,
   },
   label: {
     marginTop: 4,
