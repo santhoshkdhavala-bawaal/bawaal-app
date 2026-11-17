@@ -40,6 +40,18 @@ export const VOTE_SKULL_A = SKULL_ASSETS.skull_fire_full;
 /** War Cry Vote B — Blue Ice Skull. */
 export const VOTE_SKULL_B = SKULL_ASSETS.skull_bluefire;
 
+/**
+ * Arena vault rail button — local \`skull_orange123.png\` aliased as \`skullOrange\`.
+ * Prefer this key for the floating vault trigger above ⋮.
+ */
+export const REEL_VAULT_SKULL = SKULL_ASSETS.skullOrange;
+
+const SKULL_ASSET_ALIASES = Object.freeze({
+  skullorange: 'skullOrange',
+  orange123: 'skull_orange123',
+  skull_orange: 'skull_orange123',
+});
+
 function normalizeSkullAssetKey(name) {
   if (name == null) return '';
   return String(name)
@@ -52,12 +64,20 @@ function normalizeSkullAssetKey(name) {
 
 /**
  * Resolve a skull key / shortcode / filename to a bundled Image source.
+ * Supports camelCase aliases (e.g. skullOrange → skull_orange123.png).
  * @param {string|null|undefined} name
  * @returns {number|undefined}
  */
 export function getSkullAsset(name) {
-  const key = normalizeSkullAssetKey(name);
+  if (name == null) return undefined;
+  const raw = String(name).trim();
+  if (!raw) return undefined;
+  // Preserve exact camelCase / dictionary keys first (skullOrange).
+  if (SKULL_ASSETS[raw]) return SKULL_ASSETS[raw];
+  const key = normalizeSkullAssetKey(raw);
   if (!key) return undefined;
+  const aliased = SKULL_ASSET_ALIASES[key] || SKULL_ASSET_ALIASES[raw.toLowerCase()];
+  if (aliased && SKULL_ASSETS[aliased]) return SKULL_ASSETS[aliased];
   if (SKULL_ASSETS[key]) return SKULL_ASSETS[key];
   const withPrefix = key.startsWith('skull_') ? key : \`skull_\${key}\`;
   return SKULL_ASSETS[withPrefix];
@@ -68,8 +88,14 @@ export function hasSkullAsset(name) {
 }
 `;
 
+// Inject camelCase vault alias after freeze block is built — rewrite entries to include it.
+const withAlias = content.replace(
+  'export const SKULL_ASSETS = Object.freeze({\n',
+  `export const SKULL_ASSETS = Object.freeze({\n  skullOrange: require('../../assets/skull_orange123.png'),\n`
+);
+
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
-fs.writeFileSync(outFile, content);
+fs.writeFileSync(outFile, withAlias);
 console.log(
-  `wrote ${path.relative(root, outFile)} (${all.length} keys); fire_full=${all.includes('skull_fire_full')} bluefire=${all.includes('skull_bluefire')}`
+  `wrote ${path.relative(root, outFile)} (${all.length + 1} keys incl. skullOrange); orange123=${all.includes('skull_orange123')}`
 );

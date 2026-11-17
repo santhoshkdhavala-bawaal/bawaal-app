@@ -51,5 +51,8 @@ export const REEL_VAULT = {
   iconSize: 32,
 };
 
-/** Asset key for the floating vault rail button (local fire skull) */
-export const REEL_VAULT_ICON_KEY = 'skull_fire_full';
+/**
+ * Asset key for the floating vault rail button above ⋮.
+ * Resolves via SKULL_ASSETS.skullOrange → assets/skull_orange123.png
+ */
+export const REEL_VAULT_ICON_KEY = 'skullOrange';

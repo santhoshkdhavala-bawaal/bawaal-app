@@ -125,6 +125,7 @@ export const SKULL_EMOJIS = Object.freeze({
   skull_offside_trap: require('../../assets/skull_offside_trap.png'),
   skull_oil_grease: require('../../assets/skull_oil_grease.png'),
   skull_old_iron_rusted: require('../../assets/skull_old_iron_rusted.png'),
+  skull_orange123: require('../../assets/skull_orange123.png'),
   skull_orange_glow_v3: require('../../assets/skull_orange_glow_v3.png'),
   skull_own_goal: require('../../assets/skull_own_goal.png'),
   skull_paragliding: require('../../assets/skull_paragliding.png'),

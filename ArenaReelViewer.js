@@ -42,7 +42,11 @@ import {
   REEL_VAULT,
   REEL_VAULT_ICON_KEY,
 } from './src/constants/arenaReelOverlay';
-import { SKULL_ASSETS } from './src/utils/skullAssets';
+import {
+  SKULL_ASSETS,
+  REEL_VAULT_SKULL,
+  getSkullAsset,
+} from './src/utils/skullAssets';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -166,9 +170,10 @@ export default function ArenaReelViewer({
   const toastTimerRef = useRef(null);
   const tapSeqRef = useRef(0);
   const vaultSkullSource =
-    SKULL_ASSETS[REEL_VAULT_ICON_KEY] ||
-    SKULL_ASSETS.skull_fire_full ||
-    SKULL_ASSETS.skull_bluefire;
+    REEL_VAULT_SKULL ||
+    getSkullAsset(REEL_VAULT_ICON_KEY) ||
+    SKULL_ASSETS.skullOrange ||
+    SKULL_ASSETS.skull_orange123;
 
   const flashToast = useCallback((msg) => {
     setToast(msg);

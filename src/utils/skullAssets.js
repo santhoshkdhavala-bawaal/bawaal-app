@@ -8,6 +8,7 @@
 
 /** @type {Readonly<Record<string, number>>} */
 export const SKULL_ASSETS = Object.freeze({
+  skullOrange: require('../../assets/skull_orange123.png'),
   skull_alien: require('../../assets/skull_alien.png'),
   skull_american_football: require('../../assets/skull_american_football.png'),
   skull_angel: require('../../assets/skull_angel.png'),
@@ -125,6 +126,7 @@ export const SKULL_ASSETS = Object.freeze({
   skull_offside_trap: require('../../assets/skull_offside_trap.png'),
   skull_oil_grease: require('../../assets/skull_oil_grease.png'),
   skull_old_iron_rusted: require('../../assets/skull_old_iron_rusted.png'),
+  skull_orange123: require('../../assets/skull_orange123.png'),
   skull_orange_glow_v3: require('../../assets/skull_orange_glow_v3.png'),
   skull_own_goal: require('../../assets/skull_own_goal.png'),
   skull_paragliding: require('../../assets/skull_paragliding.png'),
@@ -224,6 +226,18 @@ export const VOTE_SKULL_A = SKULL_ASSETS.skull_fire_full;
 /** War Cry Vote B — Blue Ice Skull. */
 export const VOTE_SKULL_B = SKULL_ASSETS.skull_bluefire;
 
+/**
+ * Arena vault rail button — local `skull_orange123.png` aliased as `skullOrange`.
+ * Prefer this key for the floating vault trigger above ⋮.
+ */
+export const REEL_VAULT_SKULL = SKULL_ASSETS.skullOrange;
+
+const SKULL_ASSET_ALIASES = Object.freeze({
+  skullorange: 'skullOrange',
+  orange123: 'skull_orange123',
+  skull_orange: 'skull_orange123',
+});
+
 function normalizeSkullAssetKey(name) {
   if (name == null) return '';
   return String(name)
@@ -236,12 +250,20 @@ function normalizeSkullAssetKey(name) {
 
 /**
  * Resolve a skull key / shortcode / filename to a bundled Image source.
+ * Supports camelCase aliases (e.g. skullOrange → skull_orange123.png).
  * @param {string|null|undefined} name
  * @returns {number|undefined}
  */
 export function getSkullAsset(name) {
-  const key = normalizeSkullAssetKey(name);
+  if (name == null) return undefined;
+  const raw = String(name).trim();
+  if (!raw) return undefined;
+  // Preserve exact camelCase / dictionary keys first (skullOrange).
+  if (SKULL_ASSETS[raw]) return SKULL_ASSETS[raw];
+  const key = normalizeSkullAssetKey(raw);
   if (!key) return undefined;
+  const aliased = SKULL_ASSET_ALIASES[key] || SKULL_ASSET_ALIASES[raw.toLowerCase()];
+  if (aliased && SKULL_ASSETS[aliased]) return SKULL_ASSETS[aliased];
   if (SKULL_ASSETS[key]) return SKULL_ASSETS[key];
   const withPrefix = key.startsWith('skull_') ? key : `skull_${key}`;
   return SKULL_ASSETS[withPrefix];
