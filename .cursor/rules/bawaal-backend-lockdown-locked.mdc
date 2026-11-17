@@ -1,0 +1,53 @@
+---
+description: BAWAAL Supabase backend lock-down — schema, RLS, realtime, soft-fail
+globs:
+  - supabase/**
+  - src/services/arenaDashboard*.js
+  - src/services/videoSocialService.js
+  - src/services/reelSocialService.js
+  - src/utils/supabaseSoftFail.js
+alwaysApply: false
+---
+
+# BAWAAL Backend Lock-down (LOCKED)
+
+Production contract for Arena dashboard + reel social Supabase tables. Do **not** reopen `for all using (true)` demo RLS or drop soft-fail mock circuits.
+
+## Canonical SQL
+
+| File | Role |
+|---|---|
+| [`supabase/ENSURE_BAWAAL_BACKEND_LOCKDOWN.sql`](supabase/ENSURE_BAWAAL_BACKEND_LOCKDOWN.sql) | **Master** — schema, FKs, indexes, strict RLS, realtime publication |
+| [`supabase/ENSURE_ARENA_DASHBOARD.sql`](supabase/ENSURE_ARENA_DASHBOARD.sql) | Shelf table bootstrap (then run lockdown) |
+| [`supabase/ENSURE_REEL_SOCIAL.sql`](supabase/ENSURE_REEL_SOCIAL.sql) | Legacy `reel_*` bootstrap (then run lockdown) |
+
+## Tables (locked)
+
+`war_cry_matches` · `sparks_josh_clips` · `battle_bawaal_reels` · `face_off_challenges` · `reel_likes` · `reel_banter`
+
+- PK + required columns + indexes
+- `creator_id` / host-rival user FKs → `auth.users` where applicable
+- `updated_at` triggers on dashboard tables
+- Public **SELECT**; authenticated **INSERT/UPDATE/DELETE** (own / creator scoped)
+
+## Client services
+
+| Module | Contract |
+|---|---|
+| `arenaDashboardService.js` | Fetch shelves; empty/missing → mock seeds |
+| `arenaDashboardRealtime.js` | Single refcounted channel; scores / spectators / live_banter |
+| `videoSocialService.js` | likes/comments + legacy reel_*; shared `arena_social_live` channel |
+| `src/utils/supabaseSoftFail.js` | Missing-table circuit + `softFailWarn` once per key |
+
+## Never re-add
+
+- Open `for all using (true)` write policies on locked tables
+- Hot-path `console.log` on soft-fail / 404
+- Unbounded realtime channels (always refcount + `removeChannel` on zero refs)
+- Unicode default seeds in `reel_banter.body`
+
+## Related
+
+- Soft-fail / stability: `bawaal-stability-checkpoint-locked.mdc`
+- Data integration: `bawaal-data-integration-locked.mdc`
+---

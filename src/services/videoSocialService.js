@@ -6,6 +6,11 @@
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
 import { softFailWarn } from '../utils/softFailLog';
+import {
+  isMissingRelationError,
+  isTableDisabled,
+  markTableMissing,
+} from '../utils/supabaseSoftFail';
 
 function actorId() {
   const u = getActiveUser?.() || {};
@@ -20,35 +25,12 @@ function videoKey(reelOrId) {
   return String(reelOrId.id || reelOrId.videoId || reelOrId.reelId || '');
 }
 
-/** Session short-circuit for missing legacy reel_* tables (stops 404 spam). */
-const missingLegacyTables = new Set();
-
-function isMissingRelationError(error) {
-  if (!error) return false;
-  const status = Number(error.status || error.statusCode || 0);
-  const code = String(error.code || '');
-  const msg = String(error.message || error.details || error.hint || error || '');
-  return (
-    status === 404 ||
-    status === 400 ||
-    code === '42P01' ||
-    code === 'PGRST116' ||
-    code === 'PGRST205' ||
-    code === 'PGRST204' ||
-    /does not exist|relation .* not found|Could not find the table|schema cache|not found|404/i.test(
-      msg
-    )
-  );
-}
-
 function markLegacyTableMissing(table, reason) {
-  if (missingLegacyTables.has(table)) return;
-  missingLegacyTables.add(table);
-  softFailWarn(`videoSocial:${table}`, `[videoSocial] ${table} unavailable — using local empty fallback`, { reason: String(reason || 'missing') });
+  markTableMissing(table, 'videoSocial', reason);
 }
 
 function isLegacyTableDisabled(table) {
-  return missingLegacyTables.has(table);
+  return isTableDisabled(table);
 }
 
 /**
@@ -330,46 +312,152 @@ export async function postVideoComment(reel, body) {
 }
 
 /**
- * Subscribe to live like/comment inserts for a set of video ids.
+ * Shared live social channel — one postgres_changes subscription fan-out.
+ * Avoids duplicate channels / leaks when multiple sheets subscribe.
+ * @type {{
+ *   channel: import('@supabase/supabase-js').RealtimeChannel | null,
+ *   refCount: number,
+ *   listeners: Set<(evt: object) => void>,
+ * }}
+ */
+const socialLive = {
+  channel: null,
+  refCount: 0,
+  listeners: new Set(),
+};
+
+function emitSocialLive(evt) {
+  socialLive.listeners.forEach((fn) => {
+    try {
+      fn(evt);
+    } catch (err) {
+      softFailWarn(
+        'videoSocial:rt:listener',
+        '[videoSocial] realtime listener soft-fail',
+        err?.message || err
+      );
+    }
+  });
+}
+
+function ensureSocialLiveChannel() {
+  if (socialLive.channel || !isSupabaseConfigured()) return socialLive.channel;
+  try {
+    const channel = supabase.channel('arena_social_live');
+
+    const bind = (table, idKeys) => {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table },
+        (payload) => {
+          try {
+            const row = payload?.new || payload?.old || {};
+            let videoId = '';
+            for (const key of idKeys) {
+              if (row?.[key] != null) {
+                videoId = String(row[key]);
+                break;
+              }
+            }
+            emitSocialLive({
+              table,
+              videoId,
+              event: String(payload?.eventType || payload?.event || 'UPDATE'),
+              payload,
+            });
+          } catch (err) {
+            softFailWarn(
+              `videoSocial:rt:${table}`,
+              `[videoSocial] ${table} realtime soft-fail`,
+              err?.message || err
+            );
+          }
+        }
+      );
+    };
+
+    bind('likes', ['video_id']);
+    bind('comments', ['video_id']);
+    bind('reel_likes', ['reel_id']);
+    bind('reel_banter', ['reel_id']);
+
+    channel.subscribe((status) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        softFailWarn(
+          'videoSocial:rt:subscribe',
+          '[videoSocial] social channel soft-fail',
+          status
+        );
+      }
+    });
+
+    socialLive.channel = channel;
+  } catch (err) {
+    softFailWarn(
+      'videoSocial:rt:subscribe',
+      '[videoSocial] subscribe soft-fail',
+      err?.message || err
+    );
+    socialLive.channel = null;
+  }
+  return socialLive.channel;
+}
+
+function teardownSocialLiveChannel() {
+  if (!socialLive.channel) return;
+  try {
+    supabase.removeChannel(socialLive.channel);
+  } catch (_) {
+    /* ignore */
+  }
+  socialLive.channel = null;
+}
+
+/**
+ * Subscribe to live like/comment/banter inserts for a set of video ids.
+ * Refcount-safe — multiple callers share one channel.
  * @returns {() => void} unsubscribe
  */
 export function subscribeVideoSocial(videoIds, onChange) {
-  if (!isSupabaseConfigured() || !Array.isArray(videoIds) || !videoIds.length) {
+  if (!isSupabaseConfigured() || typeof onChange !== 'function') {
     return () => {};
   }
-  const ids = videoIds.map(String);
-  try {
-    const channel = supabase
-      .channel(`arena-social-${ids.slice(0, 4).join('-')}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'likes' },
-        (payload) => {
-          const vid = String(
-            payload.new?.video_id || payload.old?.video_id || ''
-          );
-          if (ids.includes(vid)) onChange?.({ table: 'likes', videoId: vid, payload });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'comments' },
-        (payload) => {
-          const vid = String(
-            payload.new?.video_id || payload.old?.video_id || ''
-          );
-          if (ids.includes(vid)) onChange?.({ table: 'comments', videoId: vid, payload });
-        }
-      )
-      .subscribe();
-    return () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch (_) {
-        /* ignore */
-      }
-    };
-  } catch (_) {
-    return () => {};
-  }
+  const ids = new Set(
+    (Array.isArray(videoIds) ? videoIds : []).map(String).filter(Boolean)
+  );
+
+  const listener = (evt) => {
+    const table = String(evt?.table || '');
+    const vid = String(evt?.videoId || '');
+    if (ids.size && vid && !ids.has(vid)) return;
+    // Normalize legacy reel_* → likes / comments for consumers
+    const normalizedTable =
+      table === 'reel_likes'
+        ? 'likes'
+        : table === 'reel_banter'
+          ? 'comments'
+          : table;
+    onChange({
+      table: normalizedTable,
+      videoId: vid,
+      payload: evt?.payload,
+      sourceTable: table,
+    });
+  };
+
+  socialLive.listeners.add(listener);
+  socialLive.refCount += 1;
+  ensureSocialLiveChannel();
+
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    socialLive.listeners.delete(listener);
+    socialLive.refCount = Math.max(0, socialLive.refCount - 1);
+    if (socialLive.refCount === 0) {
+      socialLive.listeners.clear();
+      teardownSocialLiveChannel();
+    }
+  };
 }

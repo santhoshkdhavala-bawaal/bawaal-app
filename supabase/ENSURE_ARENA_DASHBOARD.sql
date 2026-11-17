@@ -1,6 +1,9 @@
 -- BAWAAL · Arena dashboard shelves + War Cry live match sync.
 -- Paste into Supabase → SQL Editor and run once per project.
 -- Tables: war_cry_matches, sparks_josh_clips, battle_bawaal_reels, face_off_challenges
+--
+-- PRODUCTION LOCK: after this file, also run ENSURE_BAWAAL_BACKEND_LOCKDOWN.sql
+-- (strict RLS, creator FKs, updated_at triggers, reel_likes / reel_banter).
 
 create extension if not exists "pgcrypto";
 

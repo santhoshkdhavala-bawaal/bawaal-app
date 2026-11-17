@@ -7,9 +7,13 @@
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { softFailWarn } from '../utils/softFailLog';
+import {
+  BAWAAL_BACKEND_SETUP_HINT,
+  isTableDisabled,
+  softSelect as softSelectShared,
+} from '../utils/supabaseSoftFail';
 
-export const ARENA_DASHBOARD_SETUP_HINT =
-  'Open Supabase → SQL Editor → run supabase/ENSURE_ARENA_DASHBOARD.sql';
+export const ARENA_DASHBOARD_SETUP_HINT = BAWAAL_BACKEND_SETUP_HINT;
 
 const TABLES = Object.freeze({
   warCry: 'war_cry_matches',
@@ -17,41 +21,6 @@ const TABLES = Object.freeze({
   battle: 'battle_bawaal_reels',
   faceOff: 'face_off_challenges',
 });
-
-/** Session short-circuit for missing / hard-fail tables. */
-const missingTables = new Set();
-
-function isMissingRelationError(error) {
-  if (!error) return false;
-  const status = Number(error.status || error.statusCode || 0);
-  const code = String(error.code || '');
-  const msg = String(error.message || error.details || error.hint || error || '');
-  return (
-    status === 404 ||
-    status === 400 ||
-    code === '42P01' ||
-    code === 'PGRST116' ||
-    code === 'PGRST205' ||
-    code === 'PGRST204' ||
-    /does not exist|relation .* not found|Could not find the table|schema cache|not found|404/i.test(
-      msg
-    )
-  );
-}
-
-function markTableMissing(table, reason) {
-  if (missingTables.has(table)) return;
-  missingTables.add(table);
-  softFailWarn(
-    `arenaDashboard:${table}`,
-    `[arenaDashboard] ${table} unavailable — using local mock seeds`,
-    { reason: String(reason || 'missing'), hint: ARENA_DASHBOARD_SETUP_HINT }
-  );
-}
-
-function isTableDisabled(table) {
-  return missingTables.has(table);
-}
 
 /** Clean local seeds — never crash shelves on cold start / empty tables. */
 export const MOCK_WAR_CRY_MATCH = Object.freeze({
@@ -256,37 +225,13 @@ async function softSelect(table, select, build) {
   if (!isSupabaseConfigured() || isTableDisabled(table)) {
     return [];
   }
-  try {
-    let query = supabase.from(table).select(select);
-    if (typeof build === 'function') {
-      query = build(query);
-    }
-    const { data, error } = await query;
-    if (error) {
-      if (isMissingRelationError(error)) {
-        markTableMissing(table, error.message || error.code);
-      } else {
-        softFailWarn(
-          `arenaDashboard:select:${table}`,
-          `[arenaDashboard] ${table} select soft-fail`,
-          error.message || error
-        );
-      }
-      return [];
-    }
-    return Array.isArray(data) ? data : [];
-  } catch (err) {
-    if (isMissingRelationError(err)) {
-      markTableMissing(table, err?.message || err);
-    } else {
-      softFailWarn(
-        `arenaDashboard:throw:${table}`,
-        `[arenaDashboard] ${table} throw soft-fail`,
-        err?.message || err
-      );
-    }
-    return [];
-  }
+  return softSelectShared(
+    supabase,
+    table,
+    select,
+    build,
+    'arenaDashboard'
+  );
 }
 
 export async function fetchWarCryMatches(limit = 4) {

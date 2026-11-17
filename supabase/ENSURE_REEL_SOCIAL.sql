@@ -1,6 +1,7 @@
 -- BAWAAL · Reel social graph (⋮ menu) — likes, follows, reposts, tags, banter
 -- Run in Supabase SQL Editor. Safe to re-run.
--- Soft-compat with Expo Go / demo; tighten RLS for production auth later.
+-- PRODUCTION LOCK: prefer ENSURE_BAWAAL_BACKEND_LOCKDOWN.sql for strict RLS
+-- on reel_likes / reel_banter (public read · authenticated own-row write).
 
 create extension if not exists "pgcrypto";
 
@@ -19,9 +20,19 @@ create unique index if not exists reel_likes_user_reel_uidx
   where reel_id is not null;
 alter table public.reel_likes enable row level security;
 drop policy if exists reel_likes_all_demo on public.reel_likes;
-create policy reel_likes_all_demo on public.reel_likes
-  for all using (true) with check (true);
-grant select, insert, update, delete on public.reel_likes to anon, authenticated;
+drop policy if exists reel_likes_select_public on public.reel_likes;
+drop policy if exists reel_likes_insert_auth on public.reel_likes;
+drop policy if exists reel_likes_delete_own on public.reel_likes;
+create policy reel_likes_select_public on public.reel_likes
+  for select using (true);
+create policy reel_likes_insert_auth on public.reel_likes
+  for insert to authenticated
+  with check (auth.uid() is not null and user_id = auth.uid()::text);
+create policy reel_likes_delete_own on public.reel_likes
+  for delete to authenticated
+  using (user_id = auth.uid()::text);
+grant select on public.reel_likes to anon, authenticated;
+grant insert, delete on public.reel_likes to authenticated;
 
 -- ── Follows ─────────────────────────────────────────────────────────
 create table if not exists public.reel_follows (
@@ -69,22 +80,43 @@ grant select, insert, update, delete on public.reel_tags to anon, authenticated;
 
 -- ── Banter threads ──────────────────────────────────────────────────
 -- Binding: reel_id, user_id, username, body (= content). Primary path is public.comments.
+-- Never seed unicode emoji defaults — body may be empty; clients use vault shortcodes.
 create table if not exists public.reel_banter (
   id text primary key,
   user_id text not null,
   reel_id text,
   username text,
-  body text not null default '🔥',
+  body text not null default '',
+  content text,
   created_at timestamptz not null default now()
 );
 alter table if exists public.reel_banter
   add column if not exists username text;
+alter table if exists public.reel_banter
+  add column if not exists content text;
+alter table if exists public.reel_banter
+  add column if not exists body text default '';
 create index if not exists reel_banter_reel_idx on public.reel_banter (reel_id, created_at desc);
 alter table public.reel_banter enable row level security;
 drop policy if exists reel_banter_all_demo on public.reel_banter;
-create policy reel_banter_all_demo on public.reel_banter
-  for all using (true) with check (true);
-grant select, insert, update, delete on public.reel_banter to anon, authenticated;
+drop policy if exists reel_banter_select_public on public.reel_banter;
+drop policy if exists reel_banter_insert_auth on public.reel_banter;
+drop policy if exists reel_banter_update_own on public.reel_banter;
+drop policy if exists reel_banter_delete_own on public.reel_banter;
+create policy reel_banter_select_public on public.reel_banter
+  for select using (true);
+create policy reel_banter_insert_auth on public.reel_banter
+  for insert to authenticated
+  with check (auth.uid() is not null and user_id = auth.uid()::text);
+create policy reel_banter_update_own on public.reel_banter
+  for update to authenticated
+  using (user_id = auth.uid()::text)
+  with check (user_id = auth.uid()::text);
+create policy reel_banter_delete_own on public.reel_banter
+  for delete to authenticated
+  using (user_id = auth.uid()::text);
+grant select on public.reel_banter to anon, authenticated;
+grant insert, update, delete on public.reel_banter to authenticated;
 
 -- DMs: see ENSURE_DIRECT_MESSAGES.sql
 -- Videos / arena_challenges / profiles: see ENSURE_* companions
