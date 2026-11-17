@@ -3,12 +3,15 @@
  * - dark_arena / pro_faceoff → public.challenges
  * - response to existing challenge → public.challenge_responses
  * - reel / story / group_battle → standard Arena post storage
+ * - shelf tags → sparks_josh_clips / battle_bawaal_reels / face_off_challenges
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { getActiveUser } from './activeUserProfile';
 import { uploadVideoToSupabase } from '../../services/videoUpload';
 import { publishRecordedClipToArena } from './recordToPostService';
 import { pushHotFeatureBattle } from '../../battlesFeedStore';
+import { softInsert } from '../utils/supabaseSoftFail';
+import { softFailWarn } from '../utils/softFailLog';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -112,11 +115,11 @@ export async function fetchIsProUser() {
   }
 }
 
-async function uploadClip(videoUri, userId, caption) {
+async function uploadClip(videoUri, userId, caption, sport = 'OTHERS') {
   const result = await uploadVideoToSupabase(
     videoUri,
     userId,
-    'OTHERS',
+    sport || 'OTHERS',
     caption || ''
   );
   const publicUrl =
@@ -138,6 +141,89 @@ async function uploadClip(videoUri, userId, caption) {
     localUri: videoUri,
     data: result.data || null,
   };
+}
+
+/**
+ * Insert into Arena dashboard shelf tables (soft-fail).
+ * @param {'sparks_josh'|'battle_bawaal'|'face_off'|string} shelf
+ */
+async function insertDashboardShelfRow({
+  shelf,
+  title,
+  sport,
+  author,
+  videoUrl,
+  userId,
+  tier,
+}) {
+  if (!isSupabaseConfigured() || !shelf) {
+    return { ok: false, skipped: true };
+  }
+
+  const authorHandle = author?.startsWith?.('@')
+    ? author
+    : `@${String(author || 'athlete').replace(/^@/, '')}`;
+  const sportLabel = String(sport || 'ARENA').toUpperCase();
+  const creatorUuid = asUuidOrNull(userId);
+
+  try {
+    if (shelf === 'sparks_josh') {
+      const mode =
+        String(tier || '').toLowerCase() === 'story' ? 'SPARK' : 'JOSH';
+      const row = {
+        title: title || mode,
+        sport: sportLabel,
+        mode,
+        author: authorHandle,
+        video_url: videoUrl || null,
+        user_id: userId || null,
+      };
+      if (creatorUuid) row.creator_id = creatorUuid;
+      return softInsert(supabase, 'sparks_josh_clips', row, 'destinationPublish');
+    }
+    if (shelf === 'battle_bawaal') {
+      const row = {
+        title: title || 'BATTLE BAWAAL',
+        sport: sportLabel,
+        author: authorHandle,
+        video_url: videoUrl || null,
+        user_id: userId || null,
+        participant_count: 1,
+      };
+      if (creatorUuid) row.creator_id = creatorUuid;
+      return softInsert(
+        supabase,
+        'battle_bawaal_reels',
+        row,
+        'destinationPublish'
+      );
+    }
+    if (shelf === 'face_off') {
+      const row = {
+        title: title || 'FACE OFF',
+        sport: sportLabel,
+        author: authorHandle,
+        status: 'OPEN',
+        video_url: videoUrl || null,
+        user_id: userId || null,
+      };
+      if (creatorUuid) row.creator_id = creatorUuid;
+      return softInsert(
+        supabase,
+        'face_off_challenges',
+        row,
+        'destinationPublish'
+      );
+    }
+    return { ok: false, skipped: true };
+  } catch (err) {
+    softFailWarn(
+      'destinationPublish:shelf',
+      '[destinationPublish] shelf insert soft-fail',
+      err?.message || err
+    );
+    return { ok: false, error: err };
+  }
 }
 
 async function insertChallengeRow({
@@ -267,6 +353,9 @@ async function insertChallengeResponseRow({
  *   tier: string,
  *   title: string,
  *   hashtag?: string,
+ *   category?: string,
+ *   shelf?: string,
+ *   sport?: string,
  *   isChallengeResponse?: boolean,
  *   challengeId?: string | null,
  *   userId?: string | null,
@@ -279,6 +368,11 @@ export async function publishToDestination(input) {
   const hashtag = String(input?.hashtag || '')
     .replace(/^#/, '')
     .trim();
+  const category = String(input?.category || 'Others').trim() || 'Others';
+  const shelf = String(input?.shelf || 'sparks_josh').trim() || 'sparks_josh';
+  const sport = String(input?.sport || category || 'OTHERS')
+    .trim()
+    .toUpperCase();
   const challengeId =
     asUuidOrNull(input?.challengeId) ||
     (typeof input?.challengeId === 'string' ? input.challengeId.trim() : null);
@@ -293,12 +387,21 @@ export async function publishToDestination(input) {
 
   // Response to an existing challenge
   if (input?.isChallengeResponse && challengeId) {
-    const uploaded = await uploadClip(videoUri, userId, title);
+    const uploaded = await uploadClip(videoUri, userId, title, sport);
     const videoUrl = uploaded.publicUrl || videoUri;
     const inserted = await insertChallengeResponseRow({
       challengeId,
       athleteId: userId,
       videoUrl,
+    });
+    void insertDashboardShelfRow({
+      shelf: shelf || 'face_off',
+      title,
+      sport,
+      author,
+      videoUrl,
+      userId,
+      tier,
     });
     return {
       ok: true,
@@ -322,6 +425,9 @@ export async function publishToDestination(input) {
         challengeId,
         athlete: author,
         author,
+        category,
+        sport,
+        shelf,
         feedTarget: 'ARENA',
         timestamp: Date.now(),
         createdAt: Date.now(),
@@ -332,7 +438,7 @@ export async function publishToDestination(input) {
 
   // Open challenge tiers
   if (tier === 'dark_arena' || tier === 'pro_faceoff') {
-    const uploaded = await uploadClip(videoUri, userId, title);
+    const uploaded = await uploadClip(videoUri, userId, title, sport);
     const videoUrl = uploaded.publicUrl || null;
     const inserted = await insertChallengeRow({
       gladiatorId: userId,
@@ -342,6 +448,15 @@ export async function publishToDestination(input) {
       videoUrl,
     });
     const playable = videoUrl || videoUri;
+    void insertDashboardShelfRow({
+      shelf: shelf || 'face_off',
+      title,
+      sport,
+      author,
+      videoUrl: playable,
+      userId,
+      tier,
+    });
     return {
       ok: true,
       kind: 'challenge',
@@ -366,6 +481,9 @@ export async function publishToDestination(input) {
         gladiator_id: userId,
         athlete: author,
         author,
+        category,
+        sport,
+        shelf,
         feedTarget: 'BATTLES',
         status: 'OPEN',
         timestamp: Date.now(),
@@ -395,7 +513,18 @@ export async function publishToDestination(input) {
     author,
     creator: 'You',
     mode,
-    sport: 'OTHERS',
+    sport,
+    category,
+  });
+
+  void insertDashboardShelfRow({
+    shelf,
+    title,
+    sport,
+    author,
+    videoUrl: published?.publicUrl || null,
+    userId,
+    tier,
   });
 
   if (tier === 'group_battle' && published?.post) {
@@ -406,8 +535,9 @@ export async function publishToDestination(input) {
         type: 'group_battle',
       });
     } catch (err) {
-      console.warn(
-        '[destinationPublish] group battle feed soft-fail:',
+      softFailWarn(
+        'destinationPublish:groupBattle',
+        '[destinationPublish] group battle feed soft-fail',
         err?.message || err
       );
     }
@@ -425,6 +555,9 @@ export async function publishToDestination(input) {
           ...published.post,
           tier,
           hashtag: hashtag || null,
+          category,
+          sport,
+          shelf,
           feedTarget: tier === 'group_battle' ? 'BATTLES' : 'ARENA',
           type:
             tier === 'story'

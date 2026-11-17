@@ -2157,7 +2157,14 @@ export default function UniversalCamera({
   }, [recordedVideoUri, handlePublishModalCancel]);
 
   const handleDestinationPublish = useCallback(
-    async (payload: { tier: ArenaTier; title: string; hashtag: string }) => {
+    async (payload: {
+      tier: ArenaTier;
+      title: string;
+      hashtag: string;
+      category?: string;
+      shelf?: string;
+      sport?: string;
+    }) => {
       const uri = recordedVideoUri;
       if (!uri || destinationPublishing) return;
 
@@ -2175,6 +2182,9 @@ export default function UniversalCamera({
           tier: payload.tier,
           title: payload.title,
           hashtag: payload.hashtag,
+          category: payload.category,
+          shelf: payload.shelf,
+          sport: payload.sport,
           isChallengeResponse,
           challengeId: battleId,
           userId: activeUser.userId || activeUser.id || null,
@@ -2196,13 +2206,16 @@ export default function UniversalCamera({
           title: payload.title,
           videoUri: result.publicUrl || uri,
           uri: result.publicUrl || uri,
+          category: payload.category || 'Others',
+          sport: payload.sport || 'OTHERS',
+          shelf: payload.shelf || 'sparks_josh',
           feedTarget: result.feedTarget || 'ARENA',
           timestamp: Date.now(),
           createdAt: Date.now(),
           _freshPublish: true,
         };
 
-        if (result.feedTarget !== 'BATTLES' && result.publicUrl) {
+        if (result.feedTarget !== 'BATTLES' && (result.publicUrl || post.uri)) {
           try {
             addNewPostToArenaFeed(post);
           } catch (err) {
@@ -2234,6 +2247,20 @@ export default function UniversalCamera({
         setIsProcessing(false);
 
         const tab = result.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
+        const shelfLabel =
+          payload.shelf === 'battle_bawaal'
+            ? 'Battle Bawaal'
+            : payload.shelf === 'face_off'
+              ? 'Face Off'
+              : 'Sparks & Josh';
+
+        showBawaalAlert({
+          title: 'PUBLISHED',
+          message: `Clip live on Arena · ${shelfLabel}${
+            payload.category ? ` · ${payload.category}` : ''
+          }`,
+        });
+
         safeNavigateHome(
           {
             tab,
@@ -2696,6 +2723,7 @@ export default function UniversalCamera({
             <PostDestinationSelector
               videoUri={recordedVideoUri}
               isProUser={isProUser}
+              mode={mode}
               onPublish={(payload) => {
                 void handleDestinationPublish(payload);
               }}
@@ -2704,7 +2732,9 @@ export default function UniversalCamera({
           {destinationPublishing ? (
             <View style={styles.destinationBusy} pointerEvents="auto">
               <ActivityIndicator color={SHUTTER_RED} size="large" />
-              <Text style={styles.destinationBusyText}>Publishing…</Text>
+              <Text style={styles.destinationBusyText}>
+                Uploading · tagging Arena…
+              </Text>
             </View>
           ) : null}
         </View>
