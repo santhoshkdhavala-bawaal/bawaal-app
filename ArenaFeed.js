@@ -2804,10 +2804,21 @@ export default function ArenaFeed({ navigation, route }) {
           battle?.id ||
           `war-cry-live-${Date.now()}`
       );
+      const hostHandle =
+        opts.playerA?.handle ||
+        warCryDualFeeds.host.handle ||
+        battle?.author ||
+        '@host';
+      const rivalHandle =
+        opts.playerB?.handle ||
+        warCryDualFeeds.rival.handle ||
+        battle?.rival ||
+        '@rival';
       navigation?.navigate?.('Live1v1Battle', {
         mode: 'spectator',
         role: 'spectator',
         battleId,
+        forceDual: true,
         focusSide: opts.side || 'card',
         match: {
           category:
@@ -2818,20 +2829,34 @@ export default function ArenaFeed({ navigation, route }) {
           timerLabel: '90',
           spectatorsLabel: 'LIVE',
           status: 'live',
-          hostHandle:
-            opts.playerA?.handle ||
-            warCryDualFeeds.host.handle ||
-            battle?.author ||
-            '@host',
-          rivalHandle:
-            opts.playerB?.handle ||
-            warCryDualFeeds.rival.handle ||
-            battle?.rival ||
-            '@rival',
+          forceDual: true,
+          hostHandle,
+          rivalHandle,
+          hostScore: warCryDualFeeds.hostScore,
+          rivalScore: warCryDualFeeds.rivalScore,
+          initialHostVotes: warCryDualFeeds.hostScore || 12,
+          initialRivalVotes: warCryDualFeeds.rivalScore || 9,
+          initialHype: warCryDualFeeds.spectatorCount || 88,
           sport:
             battle?.sport ||
             battle?.category ||
+            warCryDualFeeds.host.sport ||
             (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
+          host: {
+            handle: hostHandle,
+            label: String(hostHandle).replace(/^@/, ''),
+            flag: '🇮🇳',
+          },
+          challengers: [
+            {
+              id: 'arena-rival',
+              userId: 'arena-rival',
+              handle: rivalHandle,
+              label: String(rivalHandle).replace(/^@/, ''),
+              flag: '🇮🇳',
+              votes: warCryDualFeeds.rivalScore || 9,
+            },
+          ],
         },
       });
     },
