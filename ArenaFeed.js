@@ -828,40 +828,49 @@ const GeneralReelCard = memo(function GeneralReelCard({
   const { tabBarHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const [muted, setMuted] = useState(true);
   const [banterOpen, setBanterOpen] = useState(false);
+  /** BAWAAL Skeleton Vault bottom tray (skull rail button). */
   const [vaultOpen, setVaultOpen] = useState(false);
+  /** ⋮ More dropdown — Like / Banter / Share / DM / Comment only. */
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [dmShareOpen, setDmShareOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const cardRef = useRef(null);
   const vaultBtnRef = useRef(null);
-  /** Icon rail clears tab bar; vault skullOrange sits directly above ⋮. */
+
+  /** Right rail geometry — skull sits directly above ⋮. */
   const moreBottom = tabBarHeight + 18;
   const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
   const vaultSkullSource =
-    REEL_VAULT_SKULL ||
-    getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skullOrange ||
     SKULL_ASSETS.skull_orange123 ||
+    REEL_VAULT_SKULL ||
+    getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skull_fire_full;
   const roomId = resolveVaultBurstRoomId(item);
-  const [showActionStack, setShowActionStack] = useState(false);
 
-  /** Skull rail → toggle full BAWAAL Skeleton Vault tray (never Banter sheet). */
+  const handle = item.author?.startsWith('@')
+    ? item.author
+    : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
+
+  const toggleMute = useCallback(() => {
+    setMuted((m) => !m);
+  }, []);
+
+  /** Custom skull → toggle BAWAAL Skeleton Vault tray only. */
   const toggleVaultTray = useCallback(() => {
-    setShowActionStack(false);
+    setMoreMenuOpen(false);
     setBanterOpen(false);
     setDmShareOpen(false);
     setVaultOpen((open) => !open);
   }, []);
 
+  /** ⋮ → toggle secondary actions dropdown. */
   const toggleMoreMenu = useCallback(() => {
     setVaultOpen(false);
     setBanterOpen(false);
-    setShowActionStack((open) => !open);
+    setMoreMenuOpen((open) => !open);
   }, []);
-  const handle = item.author?.startsWith('@')
-    ? item.author
-    : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
 
   /** Open reel modal via JS navigation only — never native VideoView fullscreen. */
   const openImmersive = useCallback(() => {
@@ -871,10 +880,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
       console.warn('[ArenaFeed] openImmersive failed:', err?.message || err);
     }
   }, [item, onOpen, muted]);
-
-  const toggleMute = useCallback(() => {
-    setMuted((m) => !m);
-  }, []);
 
   const removeBurstParticle = useCallback((id) => {
     setBurstParticles((prev) => prev.filter((p) => p.id !== id));
@@ -891,7 +896,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
     }
   }, []);
 
-  /** Local center-screen vault explosion (own pick or peer broadcast). */
   const triggerLocalEmojiBurst = useCallback(
     (emojiId) => {
       if (!emojiId) return;
@@ -901,7 +905,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
     [containerSize]
   );
 
-  // Active viewport card only — subscribe to arena_${roomId} vault_burst
   useEffect(() => {
     if (!shouldPlay || !roomId || immersiveOpen) {
       return undefined;
@@ -913,7 +916,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
     });
   }, [shouldPlay, roomId, immersiveOpen, triggerLocalEmojiBurst]);
 
-  /** Vault skull pick: local burst instantly + broadcast to room peers. */
   const handleSelectSkull = useCallback(
     (emojiId) => {
       setVaultOpen(false);
@@ -927,20 +929,14 @@ const GeneralReelCard = memo(function GeneralReelCard({
     [triggerLocalEmojiBurst, roomId]
   );
 
-  const onReelAction = useCallback(
+  const onMoreMenuAction = useCallback(
     (actionId, reelSnapshot) => {
-      setShowActionStack(false);
+      setMoreMenuOpen(false);
       setVaultOpen(false);
-      // Banter from ⋮ More menu → Banter bottom sheet (not Vault)
-      if (actionId === 'banter') {
+      if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
         return;
       }
-      if (actionId === 'comment') {
-        setBanterOpen(true);
-        return;
-      }
-      // DM / Send → quick DM share picker (Share stays native in ReelActionSheet)
       if (actionId === 'dm' || actionId === 'send') {
         setDmShareOpen(true);
         return;
@@ -961,7 +957,6 @@ const GeneralReelCard = memo(function GeneralReelCard({
       collapsable={false}
       onLayout={onVideoContainerLayout}
     >
-      {/* Viewable row autoplays; mute + skull + ⋮ — long-press opens immersive */}
       <ClipSurface
         key={`clip-${item.id}`}
         uri={pickFeedClipUri(item)}
@@ -982,25 +977,14 @@ const GeneralReelCard = memo(function GeneralReelCard({
         label={null}
         style={styles.reelFullBleed}
         muted={muted}
-        // Pause feed decoder while immersive uses the same URI (no double-audio / lag)
         shouldPlay={shouldPlay && !immersiveOpen}
         isMounted={isMounted && !immersiveOpen}
-        // Long-press opens the immersive viewer. Playback stays on the active row.
         onLongPress={immersiveOpen ? null : openImmersive}
       />
 
       <View style={styles.reelScrim} pointerEvents="none" />
 
-      {/* Essential top-right mute */}
-      {!immersiveOpen ? (
-        <MuteToggleButton
-          muted={muted}
-          onPress={toggleMute}
-          style={styles.reelMuteBtn}
-        />
-      ) : null}
-
-      {/* Profile overlay: handle + caption only — no Follow CTA on canvas */}
+      {/* Profile overlay — never part of the right action rail */}
       <View
         style={[styles.reelBottomLeft, { bottom: tabBarHeight + 16 }]}
         pointerEvents="none"
@@ -1017,12 +1001,17 @@ const GeneralReelCard = memo(function GeneralReelCard({
         </Text>
       </View>
 
+      {/* ========== RIGHT ACTION RAIL (3 controls only) ========== */}
       {!immersiveOpen ? (
-        <>
-          {/*
-            Right rail (strict): mute (top) → skullOrange → ⋮
-            Banter / Like / Share / DM / Comment live only in the ⋮ popup.
-          */}
+        <View style={styles.rightActionRail} pointerEvents="box-none">
+          {/* 1) Top mute */}
+          <MuteToggleButton
+            muted={muted}
+            onPress={toggleMute}
+            style={styles.reelMuteBtn}
+          />
+
+          {/* 2) Custom skull → BAWAAL Skeleton Vault tray */}
           <TouchableOpacity
             ref={vaultBtnRef}
             style={[styles.reelVaultBtn, { bottom: vaultBottom }]}
@@ -1046,32 +1035,33 @@ const GeneralReelCard = memo(function GeneralReelCard({
             />
           </TouchableOpacity>
 
+          {/* 3) More ⋮ → secondary dropdown */}
           <TouchableOpacity
             style={[styles.reelMoreBtn, { bottom: moreBottom }]}
             onPress={toggleMoreMenu}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="More actions"
+            accessibilityState={{ expanded: moreMenuOpen }}
           >
             <Text style={styles.reelMoreText}>⋮</Text>
           </TouchableOpacity>
 
-          {/* ⋮ More: Like · Banter · Share · DM · Comment */}
+          {/* Dropdown: Like · Banter · Share · DM · Comment */}
           <ReelActionSheet
-            visible={showActionStack}
+            visible={moreMenuOpen}
             showLabels
             compact
             actionIds={REEL_SECONDARY_ACTION_IDS}
             reel={item}
-            onClose={() => setShowActionStack(false)}
-            onAction={onReelAction}
-            style={{
-              bottom: moreBottom + REEL_MORE.height + 8,
-              top: undefined,
-              right: REEL_MORE.right,
-            }}
+            onClose={() => setMoreMenuOpen(false)}
+            onAction={onMoreMenuAction}
+            style={[
+              styles.reelMoreMenu,
+              { bottom: moreBottom + REEL_MORE.height + 8 },
+            ]}
           />
-        </>
+        </View>
       ) : null}
 
       <FloatingEmojiBurstLayer
@@ -1443,6 +1433,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const [isMuted, setIsMuted] = useState(true);
   const [banterOpen, setBanterOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [dmShareOpen, setDmShareOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -1451,12 +1442,11 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
   const roomId = resolveVaultBurstRoomId(item);
-  const [showActionStack, setShowActionStack] = useState(false);
   const vaultSkullSource =
-    REEL_VAULT_SKULL ||
-    getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skullOrange ||
     SKULL_ASSETS.skull_orange123 ||
+    REEL_VAULT_SKULL ||
+    getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skull_fire_full;
 
   const toggleMute = useCallback(() => {
@@ -1464,7 +1454,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   }, []);
 
   const toggleVaultTray = useCallback(() => {
-    setShowActionStack(false);
+    setMoreMenuOpen(false);
     setBanterOpen(false);
     setDmShareOpen(false);
     setVaultOpen((open) => !open);
@@ -1473,7 +1463,7 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const toggleMoreMenu = useCallback(() => {
     setVaultOpen(false);
     setBanterOpen(false);
-    setShowActionStack((open) => !open);
+    setMoreMenuOpen((open) => !open);
   }, []);
 
   const removeBurstParticle = useCallback((id) => {
@@ -1525,9 +1515,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
     [triggerLocalEmojiBurst, roomId]
   );
 
-  const onReelAction = useCallback(
+  const onMoreMenuAction = useCallback(
     (actionId, reelSnapshot) => {
-      setShowActionStack(false);
+      setMoreMenuOpen(false);
       setVaultOpen(false);
       if (actionId === 'banter' || actionId === 'comment') {
         setBanterOpen(true);
@@ -1561,65 +1551,59 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         muted={isMuted}
       />
 
-      {/* Essential top-right mute */}
-      <MuteToggleButton
-        muted={isMuted}
-        onPress={toggleMute}
-        style={styles.challengeMuteBtn}
-      />
-
-      {/*
-        Right rail (strict): mute (top) → skullOrange → ⋮
-        No Like / Banter / Share / DM / Comment icons on the rail.
-      */}
-      <TouchableOpacity
-        ref={vaultBtnRef}
-        style={styles.challengeVaultBtn}
-        onPress={toggleVaultTray}
-        activeOpacity={0.85}
-        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        accessibilityRole="button"
-        accessibilityLabel={
-          vaultOpen
-            ? 'Close BAWAAL skeleton vault'
-            : 'Open BAWAAL skeleton vault'
-        }
-        accessibilityState={{ expanded: vaultOpen }}
-        collapsable={false}
-      >
-        <Image
-          source={vaultSkullSource}
-          style={styles.reelVaultImage}
-          resizeMode="contain"
-          accessibilityIgnoresInvertColors
+      {/* ========== RIGHT ACTION RAIL (3 controls only) ========== */}
+      <View style={styles.rightActionRail} pointerEvents="box-none">
+        <MuteToggleButton
+          muted={isMuted}
+          onPress={toggleMute}
+          style={styles.challengeMuteBtn}
         />
-      </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.challengeMoreBtn}
-        onPress={toggleMoreMenu}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel="More actions"
-      >
-        <Text style={styles.reelMoreText}>⋮</Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          ref={vaultBtnRef}
+          style={styles.challengeVaultBtn}
+          onPress={toggleVaultTray}
+          activeOpacity={0.85}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={
+            vaultOpen
+              ? 'Close BAWAAL skeleton vault'
+              : 'Open BAWAAL skeleton vault'
+          }
+          accessibilityState={{ expanded: vaultOpen }}
+          collapsable={false}
+        >
+          <Image
+            source={vaultSkullSource}
+            style={styles.reelVaultImage}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
+        </TouchableOpacity>
 
-      {/* ⋮ More: Like · Banter · Share · DM · Comment */}
-      <ReelActionSheet
-        visible={showActionStack}
-        showLabels
-        compact
-        actionIds={REEL_SECONDARY_ACTION_IDS}
-        reel={item}
-        onClose={() => setShowActionStack(false)}
-        onAction={onReelAction}
-        style={{
-          bottom: REEL_MORE.bottom + REEL_MORE.height + 8,
-          top: undefined,
-          right: REEL_MORE.right,
-        }}
-      />
+        <TouchableOpacity
+          style={styles.challengeMoreBtn}
+          onPress={toggleMoreMenu}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="More actions"
+          accessibilityState={{ expanded: moreMenuOpen }}
+        >
+          <Text style={styles.reelMoreText}>⋮</Text>
+        </TouchableOpacity>
+
+        <ReelActionSheet
+          visible={moreMenuOpen}
+          showLabels
+          compact
+          actionIds={REEL_SECONDARY_ACTION_IDS}
+          reel={item}
+          onClose={() => setMoreMenuOpen(false)}
+          onAction={onMoreMenuAction}
+          style={styles.challengeMoreMenu}
+        />
+      </View>
 
       <FloatingEmojiBurstLayer
         particles={burstParticles}
@@ -3150,6 +3134,11 @@ const styles = StyleSheet.create({
     width: REEL_VAULT.iconSize,
     height: REEL_VAULT.iconSize,
   },
+  /** Full-bleed wrapper — mute / skull / ⋮ position absolutely inside */
+  rightActionRail: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40,
+  },
   reelMuteBtn: {
     position: 'absolute',
     top: REEL_MUTE.top,
@@ -3175,6 +3164,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
+  },
+  reelMoreMenu: {
+    top: undefined,
+    right: REEL_MORE.right,
+  },
+  challengeMoreMenu: {
+    bottom: REEL_MORE.bottom + REEL_MORE.height + 8,
+    top: undefined,
+    right: REEL_MORE.right,
   },
   reelMoreText: {
     color: BAWAAL_ORANGE,
