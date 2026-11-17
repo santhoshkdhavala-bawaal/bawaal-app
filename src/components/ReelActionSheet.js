@@ -39,6 +39,20 @@ const BASE_ACTIONS = [
   { id: 'send', label: 'Send', icon: require('../../assets/bawaal_send.png') },
 ];
 
+/** Secondary social actions — live inside the ⋮ popup only. */
+export const REEL_SECONDARY_ACTION_IDS = Object.freeze([
+  'dm',
+  'like',
+  'share',
+  'save',
+  'banter',
+  'comment',
+  'send',
+]);
+
+/** Slim rail essentials (above vault skull / ⋮). */
+export const REEL_ESSENTIAL_ACTION_IDS = Object.freeze(['follow']);
+
 function followTargetKey(reel) {
   return String(
     reel?.user_id ||
@@ -86,6 +100,11 @@ function ReelActionSheet({
   showLabels = true,
   /** Hide the ✕ row when the stack is a permanent rail. */
   showClose = true,
+  /**
+   * Optional allow-list of action ids.
+   * ⋮ popup uses secondary socials; slim rail uses essentials only.
+   */
+  actionIds = null,
 }) {
   const targetKey = followTargetKey(reel);
   const [following, setFollowing] = useState(false);
@@ -116,28 +135,32 @@ function ReelActionSheet({
     setLikedByMe(!!reel?.likedByMe);
   }, [visible, reel?.id, reel?.likeCount, reel?.commentCount, reel?.likedByMe]);
 
-  const actions = useMemo(
-    () =>
-      BASE_ACTIONS.map((action) => {
-        if (action.id === 'follow') {
-          return { ...action, label: following ? 'Unfollow' : 'Follow' };
-        }
-        if (action.id === 'like') {
-          return {
-            ...action,
-            label: formatCountLabel(likedByMe ? 'Liked' : 'Like', likeCount),
-          };
-        }
-        if (action.id === 'comment' || action.id === 'banter') {
-          return {
-            ...action,
-            label: formatCountLabel(action.label, commentCount),
-          };
-        }
-        return action;
-      }),
-    [following, likeCount, commentCount, likedByMe]
-  );
+  const actions = useMemo(() => {
+    const allow =
+      Array.isArray(actionIds) && actionIds.length > 0
+        ? new Set(actionIds.map(String))
+        : null;
+    return BASE_ACTIONS.filter((action) =>
+      allow ? allow.has(action.id) : true
+    ).map((action) => {
+      if (action.id === 'follow') {
+        return { ...action, label: following ? 'Unfollow' : 'Follow' };
+      }
+      if (action.id === 'like') {
+        return {
+          ...action,
+          label: formatCountLabel(likedByMe ? 'Liked' : 'Like', likeCount),
+        };
+      }
+      if (action.id === 'comment' || action.id === 'banter') {
+        return {
+          ...action,
+          label: formatCountLabel(action.label, commentCount),
+        };
+      }
+      return action;
+    });
+  }, [actionIds, following, likeCount, commentCount, likedByMe]);
 
   const run = useCallback(
     async (actionId) => {

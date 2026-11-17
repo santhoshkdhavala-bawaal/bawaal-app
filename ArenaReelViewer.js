@@ -173,7 +173,8 @@ export default function ArenaReelViewer({
     REEL_VAULT_SKULL ||
     getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skullOrange ||
-    SKULL_ASSETS.skull_orange123;
+    SKULL_ASSETS.skull_orange123 ||
+    SKULL_ASSETS.skull_fire_full;
 
   const flashToast = useCallback((msg) => {
     setToast(msg);
@@ -520,17 +521,20 @@ export default function ArenaReelViewer({
           </View>
         )}
 
-        {/* Pinned fire-skull vault — opens bottom skeleton/skull tray */}
+        {/* Vault skull — toggles full BAWAAL Skeleton Vault tray */}
         <TouchableOpacity
           style={[styles.vaultFab, { bottom: vaultFabBottom }]}
           onPress={() => {
             setMoreOpen(false);
             setShowBanter(false);
-            setVaultOpen(true);
+            setVaultOpen((open) => !open);
           }}
           activeOpacity={0.85}
           accessibilityRole="button"
-          accessibilityLabel="Open BAWAAL skull vault"
+          accessibilityLabel={
+            vaultOpen ? 'Close BAWAAL skull vault' : 'Open BAWAAL skull vault'
+          }
+          accessibilityState={{ expanded: vaultOpen }}
         >
           <Image
             source={vaultSkullSource}
@@ -540,39 +544,90 @@ export default function ArenaReelViewer({
           />
         </TouchableOpacity>
 
-        {/* Clean visual icon stack — no RESHARE / REPOST / BANTER / MORE text */}
+        {/* Slim rail: secondary socials only inside ⋮ */}
         <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
           {moreOpen ? (
             <>
               <TouchableOpacity
                 style={styles.actionBtn}
                 onPress={() => {
+                  setHype((n) => n + 1);
+                  dropGif('head_on_fire');
                   setMoreOpen(false);
-                  flashToast('RESHARED TO ARENA');
                 }}
                 activeOpacity={0.85}
-                accessibilityLabel="Reshare"
+                accessibilityLabel={`Like ${hype}`}
+              >
+                <Image
+                  source={require('./assets/bawaal_like.png')}
+                  style={styles.actionIconImg}
+                  resizeMode="contain"
+                />
+                <Text style={styles.actionMenuLabel}>Like</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setMoreOpen(false);
+                  setShowBanter(true);
+                }}
+                activeOpacity={0.85}
+                accessibilityLabel="Banter"
+              >
+                <Image
+                  source={require('./assets/bawaal_banter.png')}
+                  style={styles.actionIconImg}
+                  resizeMode="contain"
+                />
+                <Text style={styles.actionMenuLabel}>Banter</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setMoreOpen(false);
+                  flashToast('SHARED');
+                }}
+                activeOpacity={0.85}
+                accessibilityLabel="Share"
               >
                 <Image
                   source={require('./assets/bawaal_share.png')}
                   style={styles.actionIconImg}
                   resizeMode="contain"
                 />
+                <Text style={styles.actionMenuLabel}>Share</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtn}
                 onPress={() => {
                   setMoreOpen(false);
-                  flashToast('REPOSTED');
+                  flashToast('DM READY');
                 }}
                 activeOpacity={0.85}
-                accessibilityLabel="Repost"
+                accessibilityLabel="DM"
               >
                 <Image
-                  source={require('./assets/bawaal_send.png')}
+                  source={require('./assets/bawaal_dm.png')}
                   style={styles.actionIconImg}
                   resizeMode="contain"
                 />
+                <Text style={styles.actionMenuLabel}>DM</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {
+                  setMoreOpen(false);
+                  flashToast('COMMENT');
+                }}
+                activeOpacity={0.85}
+                accessibilityLabel="Comment"
+              >
+                <Image
+                  source={require('./assets/bawaal_comment.png')}
+                  style={styles.actionIconImg}
+                  resizeMode="contain"
+                />
+                <Text style={styles.actionMenuLabel}>Comment</Text>
               </TouchableOpacity>
             </>
           ) : null}
@@ -580,36 +635,12 @@ export default function ArenaReelViewer({
           <TouchableOpacity
             style={styles.actionBtn}
             onPress={() => {
-              setHype((n) => n + 1);
-              dropGif('head_on_fire');
+              setVaultOpen(false);
+              setMoreOpen((v) => !v);
             }}
             activeOpacity={0.85}
-            accessibilityLabel={`Hype ${hype}`}
-          >
-            <Image
-              source={require('./assets/bawaal_like.png')}
-              style={styles.actionIconImg}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => setShowBanter((v) => !v)}
-            activeOpacity={0.85}
-            accessibilityLabel="Banter"
-          >
-            <Image
-              source={require('./assets/bawaal_banter.png')}
-              style={styles.actionIconImg}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => setMoreOpen((v) => !v)}
-            activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="More actions"
+            accessibilityLabel="Toggle reel actions"
           >
             <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
           </TouchableOpacity>
@@ -963,6 +994,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     lineHeight: 28,
     backgroundColor: 'transparent',
+  },
+  actionMenuLabel: {
+    marginTop: 2,
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '800',
   },
   gifChipVault: {
     borderColor: ACCENT,

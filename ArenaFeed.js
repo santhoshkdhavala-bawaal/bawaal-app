@@ -48,7 +48,10 @@ import { useMainTabs } from './mainTabContext';
 import { resolveFeedVideoUri } from './src/components/SafeFeedVideo';
 import VideoItem from './src/components/VideoItem';
 import MuteToggleButton from './src/components/MuteToggleButton';
-import ReelActionSheet from './src/components/ReelActionSheet';
+import ReelActionSheet, {
+  REEL_ESSENTIAL_ACTION_IDS,
+  REEL_SECONDARY_ACTION_IDS,
+} from './src/components/ReelActionSheet';
 import UserHandle from './src/components/UserHandle';
 import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
@@ -88,7 +91,6 @@ import {
 } from './src/stores/arenaFilterStore';
 import { dispatchReelSocialAction } from './src/services/reelSocialService';
 import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
-import { BawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
 import {
   FloatingEmojiBurstLayer,
   appendBurstParticles,
@@ -842,10 +844,15 @@ const GeneralReelCard = memo(function GeneralReelCard({
     REEL_VAULT_SKULL ||
     getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skullOrange ||
-    SKULL_ASSETS.skull_orange123;
+    SKULL_ASSETS.skull_orange123 ||
+    SKULL_ASSETS.skull_fire_full;
   const roomId = resolveVaultBurstRoomId(item);
-  const quickReactionKeys = BANTER_QUICK_KEYS.slice(0, 14);
   const [showActionStack, setShowActionStack] = useState(false);
+
+  const toggleVaultTray = useCallback(() => {
+    setShowActionStack(false);
+    setVaultOpen((open) => !open);
+  }, []);
   const handle = item.author?.startsWith('@')
     ? item.author
     : `@${String(item.author || 'athlete').replace(/^@/, '')}`;
@@ -983,7 +990,7 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       {/* Profile overlay: handle + caption only — no Follow CTA on canvas */}
       <View
-        style={[styles.reelBottomLeft, { bottom: tabBarHeight + 64 }]}
+        style={[styles.reelBottomLeft, { bottom: tabBarHeight + 16 }]}
         pointerEvents="none"
       >
         <UserHandle
@@ -1000,17 +1007,39 @@ const GeneralReelCard = memo(function GeneralReelCard({
 
       {!immersiveOpen ? (
         <>
-          {/* skullOrange vault — pinned directly above ⋮; opens Vault tray */}
+          {/* Slim rail: essential Follow → skullOrange vault → ⋮ */}
+          <ReelActionSheet
+            visible
+            persistent
+            showLabels={false}
+            showClose={false}
+            actionIds={REEL_ESSENTIAL_ACTION_IDS}
+            reel={item}
+            onClose={() => {}}
+            onAction={onReelAction}
+            style={{
+              bottom: vaultBottom + REEL_VAULT.height + 10,
+              top: REEL_ACTION_STACK.top,
+            }}
+          />
+
+          {/* Vault skull — toggles full BAWAAL Skeleton Vault tray */}
           <TouchableOpacity
             ref={vaultBtnRef}
-            style={[styles.reelVaultBtn, styles.reelVaultBtnProminent, { bottom: vaultBottom }]}
-            onPress={() => {
-              setShowActionStack(false);
-              setVaultOpen(true);
-            }}
+            style={[
+              styles.reelVaultBtn,
+              styles.reelVaultBtnProminent,
+              { bottom: vaultBottom },
+            ]}
+            onPress={toggleVaultTray}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel="Open BAWAAL skeleton vault"
+            accessibilityLabel={
+              vaultOpen
+                ? 'Close BAWAAL skeleton vault'
+                : 'Open BAWAAL skeleton vault'
+            }
+            accessibilityState={{ expanded: vaultOpen }}
             collapsable={false}
           >
             <Image
@@ -1034,57 +1063,22 @@ const GeneralReelCard = memo(function GeneralReelCard({
             <Text style={styles.reelMoreText}>⋮</Text>
           </TouchableOpacity>
 
-          {/* Clean visual icon stack — toggled from ⋮ */}
+          {/* Secondary socials (share / banter / DM / comment / like) — ⋮ only */}
           <ReelActionSheet
             visible={showActionStack}
-            showLabels={false}
+            showLabels
+            actionIds={REEL_SECONDARY_ACTION_IDS}
             reel={item}
             onClose={() => setShowActionStack(false)}
             onAction={onReelAction}
             style={{
-              bottom: Math.max(railBottom, moreBottom + REEL_VAULT.aboveMore + 48),
+              bottom: Math.max(
+                railBottom,
+                moreBottom + REEL_VAULT.aboveMore + 48
+              ),
               top: REEL_ACTION_STACK.top,
             }}
           />
-
-          {/* Quick-reaction strip — scrolls horizontally under the clip */}
-          <View
-            style={[styles.reelQuickTray, { bottom: Math.max(tabBarHeight + 8, 12) }]}
-            pointerEvents="box-none"
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.reelQuickTrayContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              {quickReactionKeys.map((key) => (
-                <TouchableOpacity
-                  key={key}
-                  style={styles.reelQuickChip}
-                  activeOpacity={0.85}
-                  onPress={() => handleSelectSkull(key)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Quick react ${key}`}
-                >
-                  <BawaalEmoji name={key} size={26} />
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[styles.reelQuickChip, styles.reelQuickChipVault]}
-                activeOpacity={0.85}
-                onPress={() => setVaultOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel="Open full vault"
-              >
-                <Image
-                  source={vaultSkullSource}
-                  style={styles.reelQuickVaultThumb}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
         </>
       ) : null}
 
@@ -1465,16 +1459,21 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
   const isActive = Math.abs(index - activeIndex) <= 1;
   const shouldPlay = index === activeIndex;
   const roomId = resolveVaultBurstRoomId(item);
-  const quickReactionKeys = BANTER_QUICK_KEYS.slice(0, 14);
   const [showActionStack, setShowActionStack] = useState(false);
   const vaultSkullSource =
     REEL_VAULT_SKULL ||
     getSkullAsset(REEL_VAULT_ICON_KEY) ||
     SKULL_ASSETS.skullOrange ||
-    SKULL_ASSETS.skull_orange123;
+    SKULL_ASSETS.skull_orange123 ||
+    SKULL_ASSETS.skull_fire_full;
 
   const toggleMute = useCallback(() => {
     setIsMuted((m) => !m);
+  }, []);
+
+  const toggleVaultTray = useCallback(() => {
+    setShowActionStack(false);
+    setVaultOpen((open) => !open);
   }, []);
 
   const removeBurstParticle = useCallback((id) => {
@@ -1568,16 +1567,34 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         style={styles.challengeMuteBtn}
       />
 
+      {/* Slim rail: essential Follow → vault skull → ⋮ */}
+      <ReelActionSheet
+        visible
+        persistent
+        showLabels={false}
+        showClose={false}
+        actionIds={REEL_ESSENTIAL_ACTION_IDS}
+        reel={item}
+        onClose={() => {}}
+        onAction={onReelAction}
+        style={{
+          bottom: REEL_MORE.bottom + REEL_VAULT.aboveMore + REEL_VAULT.height + 10,
+          top: REEL_ACTION_STACK.top,
+        }}
+      />
+
       <TouchableOpacity
         ref={vaultBtnRef}
         style={[styles.challengeVaultBtn, styles.reelVaultBtnProminent]}
-        onPress={() => {
-          setShowActionStack(false);
-          setVaultOpen(true);
-        }}
+        onPress={toggleVaultTray}
         activeOpacity={0.85}
         accessibilityRole="button"
-        accessibilityLabel="Open BAWAAL skeleton vault"
+        accessibilityLabel={
+          vaultOpen
+            ? 'Close BAWAAL skeleton vault'
+            : 'Open BAWAAL skeleton vault'
+        }
+        accessibilityState={{ expanded: vaultOpen }}
         collapsable={false}
       >
         <Image
@@ -1603,7 +1620,8 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
 
       <ReelActionSheet
         visible={showActionStack}
-        showLabels={false}
+        showLabels
+        actionIds={REEL_SECONDARY_ACTION_IDS}
         reel={item}
         onClose={() => setShowActionStack(false)}
         onAction={onReelAction}
@@ -1612,37 +1630,6 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
           top: REEL_ACTION_STACK.top,
         }}
       />
-
-      <View style={styles.challengeQuickTray} pointerEvents="box-none">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.reelQuickTrayContent}
-          keyboardShouldPersistTaps="handled"
-        >
-          {quickReactionKeys.map((key) => (
-            <TouchableOpacity
-              key={key}
-              style={styles.reelQuickChip}
-              activeOpacity={0.85}
-              onPress={() => handleSelectSkull(key)}
-            >
-              <BawaalEmoji name={key} size={26} />
-            </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={[styles.reelQuickChip, styles.reelQuickChipVault]}
-            activeOpacity={0.85}
-            onPress={() => setVaultOpen(true)}
-          >
-            <Image
-              source={vaultSkullSource}
-              style={styles.reelQuickVaultThumb}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        </ScrollView>
-      </View>
 
       <FloatingEmojiBurstLayer
         particles={burstParticles}
