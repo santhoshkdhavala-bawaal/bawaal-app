@@ -2293,12 +2293,18 @@ function Live1v1BattleScreenInner({
               }}
               activeOpacity={0.75}
               accessibilityRole="button"
-              accessibilityLabel="Open vault"
+              accessibilityLabel="Open BAWAAL skull vault"
             >
-              <BawaalEmoji name="skull_orange_glow_v3" size={22} />
-              <Text style={[styles.actionLabel, styles.actionLabelBanter]}>
-                VAULT
-              </Text>
+              <Image
+                source={
+                  SKULL_ASSETS.skull_fire_full ||
+                  SKULL_ASSETS.skull_bluefire ||
+                  VOTE_SKULL_A
+                }
+                style={styles.vaultTraySkull}
+                resizeMode="contain"
+                accessibilityIgnoresInvertColors
+              />
             </TouchableOpacity>
 
             <SkullVoteButton
@@ -2637,6 +2643,10 @@ const styles = StyleSheet.create({
   skullVoteImage: {
     width: VOTE_SKULL_SIZE,
     height: VOTE_SKULL_SIZE,
+  },
+  vaultTraySkull: {
+    width: 40,
+    height: 40,
   },
   skullVoteLabel: {
     marginTop: 4,

@@ -17,7 +17,9 @@ import {
   ActivityIndicator,
   Platform,
   Dimensions,
+  Image,
 } from 'react-native';
+import { SKULL_ASSETS } from './src/utils/skullAssets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
@@ -80,7 +82,6 @@ import {
   subscribeArenaFilters,
 } from './src/stores/arenaFilterStore';
 import { dispatchReelSocialAction } from './src/services/reelSocialService';
-import { BawaalEmoji } from './components/BawaalEmoji';
 import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
 import {
   FloatingEmojiBurstLayer,
@@ -1001,7 +1002,16 @@ const GeneralReelCard = memo(function GeneralReelCard({
             accessibilityLabel="Open BAWAAL skeleton vault"
             collapsable={false}
           >
-            <BawaalEmoji name={REEL_VAULT_ICON_KEY} size={REEL_VAULT.iconSize} />
+            <Image
+              source={
+                SKULL_ASSETS[REEL_VAULT_ICON_KEY] ||
+                SKULL_ASSETS.skull_fire_full ||
+                SKULL_ASSETS.skull_bluefire
+              }
+              style={styles.reelVaultImage}
+              resizeMode="contain"
+              accessibilityIgnoresInvertColors
+            />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.reelMoreBtn, { bottom: moreBottom }]}
@@ -1513,7 +1523,16 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
         accessibilityLabel="Open BAWAAL skeleton vault"
         collapsable={false}
       >
-        <BawaalEmoji name={REEL_VAULT_ICON_KEY} size={REEL_VAULT.iconSize} />
+        <Image
+          source={
+            SKULL_ASSETS[REEL_VAULT_ICON_KEY] ||
+            SKULL_ASSETS.skull_fire_full ||
+            SKULL_ASSETS.skull_bluefire
+          }
+          style={styles.reelVaultImage}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -3051,7 +3070,10 @@ const styles = StyleSheet.create({
     height: REEL_VAULT.height,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+  },
+  reelVaultImage: {
+    width: REEL_VAULT.iconSize,
+    height: REEL_VAULT.iconSize,
   },
   reelMuteBtn: {
     position: 'absolute',

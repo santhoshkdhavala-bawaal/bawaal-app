@@ -3,6 +3,7 @@ import {
   Modal,
   View,
   Text,
+  Image,
   TouchableOpacity,
   Pressable,
   StyleSheet,
@@ -31,6 +32,17 @@ import {
 import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
 import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
+import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
+import {
+  FloatingEmojiBurstLayer,
+  appendBurstParticles,
+  createCenteredEmojiBurst,
+} from './src/components/FloatingEmojiBurst';
+import {
+  REEL_VAULT,
+  REEL_VAULT_ICON_KEY,
+} from './src/constants/arenaReelOverlay';
+import { SKULL_ASSETS } from './src/utils/skullAssets';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -140,12 +152,23 @@ export default function ArenaReelViewer({
   const [showBanter, setShowBanter] = useState(false);
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const [paused, setPaused] = useState(false);
   const [muted, setMuted] = useState(!!initialMuted);
   /** Tap-to-react bursts — absolute (x,y) + vault key; removed after animation. */
   const [tapReacts, setTapReacts] = useState([]);
+  /** Vault modal selections — upward FloatingEmojiBurst particles. */
+  const [burstParticles, setBurstParticles] = useState([]);
+  const [containerSize, setContainerSize] = useState({
+    width: SCREEN_W,
+    height: SCREEN_H,
+  });
   const toastTimerRef = useRef(null);
   const tapSeqRef = useRef(0);
+  const vaultSkullSource =
+    SKULL_ASSETS[REEL_VAULT_ICON_KEY] ||
+    SKULL_ASSETS.skull_fire_full ||
+    SKULL_ASSETS.skull_bluefire;
 
   const flashToast = useCallback((msg) => {
     setToast(msg);
@@ -198,11 +221,13 @@ export default function ArenaReelViewer({
     setDraft('');
     setShowBanter(false);
     setMoreOpen(false);
+    setVaultOpen(false);
     setPaused(false);
     setMuted(!!initialMuted);
     setBuffering(!!uri);
     setPlaybackFailed(false);
     setTapReacts([]);
+    setBurstParticles([]);
     /* eslint-enable react-hooks/set-state-in-effect */
     if (!uri) return undefined;
     const t = setTimeout(() => setBuffering(false), 1600);
@@ -221,6 +246,31 @@ export default function ArenaReelViewer({
   const removeTapReact = useCallback((id) => {
     setTapReacts((prev) => prev.filter((r) => r.id !== id));
   }, []);
+
+  const removeBurstParticle = useCallback((id) => {
+    setBurstParticles((prev) => prev.filter((p) => p.id !== id));
+  }, []);
+
+  const onShellLayout = useCallback((event) => {
+    const { width, height } = event?.nativeEvent?.layout || {};
+    if (width > 0 && height > 0) {
+      setContainerSize((prev) =>
+        prev.width === width && prev.height === height
+          ? prev
+          : { width, height }
+      );
+    }
+  }, []);
+
+  const handleSelectVaultEmoji = useCallback(
+    (emojiId) => {
+      setVaultOpen(false);
+      if (!emojiId) return;
+      const next = createCenteredEmojiBurst(emojiId, containerSize);
+      setBurstParticles((prev) => appendBurstParticles(prev, next));
+    },
+    [containerSize]
+  );
 
   const spawnTapReactAt = useCallback((x, y, emojiKey) => {
     const nx = Number(x);
@@ -302,6 +352,8 @@ export default function ArenaReelViewer({
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 8;
   const actionStackBottom = 180 + Math.max(insets.bottom, 0);
+  /** Floating vault skull sits just above the vertical action column. */
+  const vaultFabBottom = actionStackBottom + 118;
   const bottomStackPad = Math.max(insets.bottom, 12);
 
   return (
@@ -315,7 +367,7 @@ export default function ArenaReelViewer({
       hardwareAccelerated
     >
       <StatusBar barStyle="light-content" backgroundColor={BG} translucent />
-      <View style={styles.root}>
+      <View style={styles.root} onLayout={onShellLayout}>
         <View style={styles.videoShell} pointerEvents="box-none">
           {showPosterCard ? (
             <View style={styles.posterCard} pointerEvents="none">
@@ -432,6 +484,13 @@ export default function ArenaReelViewer({
           />
         ))}
 
+        <FloatingEmojiBurstLayer
+          particles={burstParticles}
+          onParticleDone={removeBurstParticle}
+          onLayout={onShellLayout}
+          style={styles.burstOverlay}
+        />
+
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
           <View style={styles.topBar}>
             <View style={styles.topTitleBlock}>
@@ -455,6 +514,26 @@ export default function ArenaReelViewer({
             <Text style={styles.toastText}>{toast}</Text>
           </View>
         )}
+
+        {/* Floating vault skull — above the vertical action column */}
+        <TouchableOpacity
+          style={[styles.vaultFab, { bottom: vaultFabBottom }]}
+          onPress={() => {
+            setMoreOpen(false);
+            setShowBanter(false);
+            setVaultOpen(true);
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Open BAWAAL skull vault"
+        >
+          <Image
+            source={vaultSkullSource}
+            style={styles.vaultFabImage}
+            resizeMode="contain"
+            accessibilityIgnoresInvertColors
+          />
+        </TouchableOpacity>
 
         <View style={[styles.actionStack, { bottom: actionStackBottom }]}>
           {moreOpen ? (
@@ -514,6 +593,12 @@ export default function ArenaReelViewer({
             <Text style={styles.actionCount}>MORE</Text>
           </TouchableOpacity>
         </View>
+
+        <FullEmojiPickerDrawer
+          visible={vaultOpen && visible}
+          onClose={() => setVaultOpen(false)}
+          onSelectEmoji={handleSelectVaultEmoji}
+        />
 
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -800,6 +885,25 @@ const styles = StyleSheet.create({
     color: WHITE,
     fontSize: 18,
     fontWeight: '700',
+  },
+  burstOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 35,
+    elevation: 35,
+  },
+  vaultFab: {
+    position: 'absolute',
+    right: REEL_VAULT.right,
+    width: REEL_VAULT.width + 8,
+    height: REEL_VAULT.height + 8,
+    zIndex: REEL_VAULT.zIndex,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  vaultFabImage: {
+    width: REEL_VAULT.iconSize + 8,
+    height: REEL_VAULT.iconSize + 8,
   },
   actionStack: {
     position: 'absolute',
