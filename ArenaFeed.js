@@ -2852,9 +2852,39 @@ export default function ArenaFeed({ navigation, route }) {
       openShelfCallout(item.raw || item);
       return;
     }
+    // Normalize shelf / dashboard rows for ArenaReelViewer playback fields
+    const videoUri =
+      item.videoUri ||
+      item.videoUrl ||
+      item.video_url ||
+      item.uri ||
+      item.publicCloudUrl ||
+      null;
+    const normalized = {
+      ...item,
+      type: item.type || 'reel',
+      author: item.author || item.handle || item.host || '@athlete',
+      caption: item.caption || item.title || item.target || '',
+      title: item.title || item.caption || item.target || 'ARENA REEL',
+      videoUri,
+      video_url: item.video_url || videoUri,
+      uri: item.uri || videoUri,
+      thumbnailUrl:
+        item.thumbnailUrl ||
+        item.thumbnail_url ||
+        item.posterUri ||
+        item.poster_url ||
+        null,
+      thumbnail_url:
+        item.thumbnail_url ||
+        item.thumbnailUrl ||
+        item.posterUri ||
+        item.poster_url ||
+        null,
+    };
     setImmersiveMuted(!!opts?.muted);
-    setWarmReel(item);
-    setActiveReel(item);
+    setWarmReel(normalized);
+    setActiveReel(normalized);
   }, [openShelfCallout]);
 
   const openResponses = useCallback((item) => {

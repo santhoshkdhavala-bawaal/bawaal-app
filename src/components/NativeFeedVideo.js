@@ -114,6 +114,8 @@ function NativeFeedVideo({
   sport,
   posterUri = null,
   onPlaybackError = null,
+  /** Full-screen / modal — edge-to-edge (no feed 450 shell). */
+  immersive = false,
 }) {
   const playable = isPlayableFeedUri(resolved);
   const [failed, setFailed] = useState(false);
@@ -156,9 +158,12 @@ function NativeFeedVideo({
     };
   }, [videoSource]);
 
+  const shellStyle = immersive ? styles.shellImmersive : styles.shell;
+  const playerStyle = immersive ? styles.videoPlayerImmersive : styles.videoPlayer;
+
   if (!Video) {
     return (
-      <View style={[styles.shell, style]}>
+      <View style={[shellStyle, style]}>
         <SportsFeedPlaceholder
           style={StyleSheet.absoluteFill}
           sport={sport}
@@ -172,7 +177,7 @@ function NativeFeedVideo({
 
   if (!videoSource) {
     return (
-      <View style={[styles.shell, style]}>
+      <View style={[shellStyle, style]}>
         <View style={styles.blackUnderlay} />
         {posterSource ? (
           <SafeRemoteImage
@@ -195,7 +200,7 @@ function NativeFeedVideo({
       resetKey={String(resolved || 'fallback')}
       style={style}
       fallback={
-        <View style={[styles.shell, style]}>
+        <View style={[shellStyle, style]}>
           <View style={styles.blackUnderlay} />
           {posterSource ? (
             <SafeRemoteImage
@@ -215,7 +220,7 @@ function NativeFeedVideo({
         </View>
       }
     >
-      <View style={[styles.shell, style]} pointerEvents="box-none">
+      <View style={[shellStyle, style]} pointerEvents="box-none">
         {/* Solid black underlay — avoid BAWAAL logo blink while buffering */}
         <View style={styles.blackUnderlay} pointerEvents="none" />
         {posterSource ? (
@@ -231,7 +236,7 @@ function NativeFeedVideo({
 
         <Video
           ref={videoRef}
-          style={styles.videoPlayer}
+          style={playerStyle}
           source={videoSource}
           resizeMode={mapContentFit(contentFit)}
           shouldPlay={!!autoPlay && !paused}
@@ -303,6 +308,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
+  shellImmersive: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
   blackUnderlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
@@ -321,6 +333,12 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: 450,
+    backgroundColor: 'transparent',
+  },
+  videoPlayerImmersive: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
     backgroundColor: 'transparent',
   },
   loadingOverlay: {

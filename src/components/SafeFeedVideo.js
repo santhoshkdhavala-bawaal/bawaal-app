@@ -103,6 +103,8 @@ function SafeFeedVideo({
   sport = null,
   posterUri = null,
   onPlaybackError = null,
+  /** Full-screen modal — edge-to-edge fill (skips feed 450 shell). */
+  immersive = false,
 }) {
   const resolved = useMemo(() => {
     if (uriProp) return toPublicFeedVideoUrl(uriProp) || uriProp;
@@ -161,6 +163,7 @@ function SafeFeedVideo({
       sport={sport}
       posterUri={poster}
       onPlaybackError={onPlaybackError}
+      immersive={immersive}
     />
   );
 }
