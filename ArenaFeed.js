@@ -110,6 +110,59 @@ import {
   tallyMatchupVotes,
 } from './src/services/customMatchupService';
 
+const ARENA_HSCROLL_KILL_STYLE_ID = 'bawaal-arena-hscroll-kill';
+
+/**
+ * Force-inject web CSS so no horizontal scrollbar track / thumb / arrow buttons
+ * ever render under Arena shelves or pill rows.
+ */
+function injectArenaHorizontalScrollbarKillCss() {
+  if (Platform.OS !== 'web') return;
+  if (typeof document === 'undefined' || !document.head) return;
+  if (document.getElementById(ARENA_HSCROLL_KILL_STYLE_ID)) return;
+  try {
+    const style = document.createElement('style');
+    style.id = ARENA_HSCROLL_KILL_STYLE_ID;
+    style.type = 'text/css';
+    style.appendChild(
+      document.createTextNode(`
+        /* ArenaFeed — kill every horizontal scrollbar track */
+        * {
+          scrollbar-width: none !important;
+        }
+        *::-webkit-scrollbar {
+          display: none !important;
+          width: 0px !important;
+          height: 0px !important;
+          background: transparent !important;
+        }
+        *::-webkit-scrollbar:horizontal,
+        *::-webkit-scrollbar-button,
+        *::-webkit-scrollbar-track,
+        *::-webkit-scrollbar-thumb {
+          display: none !important;
+          width: 0px !important;
+          height: 0px !important;
+          background: transparent !important;
+          border: none !important;
+        }
+        .${BAWAAL_HSCROLL_HIDDEN_CLASS},
+        .${BAWAAL_HSCROLL_HIDDEN_CLASS} *,
+        .${BAWAAL_HSCROLL_HIDDEN_CLASS} div {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+      `)
+    );
+    document.head.appendChild(style);
+  } catch (_) {
+    /* soft-fail — UI still usable without the CSS hook */
+  }
+}
+
+// Top-level inject as soon as ArenaFeed module loads on web
+injectArenaHorizontalScrollbarKillCss();
+
 /**
  * Horizontal shelves / pills — no scrollbar track and no reserved bottom gutter.
  * Native: showsHorizontalScrollIndicator + overScrollMode.
@@ -1799,6 +1852,11 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
 });
 
 export default function ArenaFeed({ navigation, route }) {
+  // Re-assert web CSS kill-switch whenever Arena mounts (covers SPA remounts).
+  useEffect(() => {
+    injectArenaHorizontalScrollbarKillCss();
+  }, []);
+
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
@@ -2806,6 +2864,7 @@ export default function ArenaFeed({ navigation, route }) {
         style={styles.feedList}
         contentContainerStyle={styles.dashboardScroll}
         showsVerticalScrollIndicator={false}
+        showsHorizontalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
