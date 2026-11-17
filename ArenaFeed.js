@@ -72,10 +72,9 @@ import {
   resolveArenaFeedTier,
 } from './src/constants/arenaFeedTiers';
 import {
-  ARENA_DISCOVERY_DEFAULT,
-  ARENA_DISCOVERY_PILLS,
-  matchesArenaDiscoveryPill,
-} from './src/constants/arenaDiscoveryPills';
+  ARENA_DASHBOARD_CATEGORY_PILLS,
+  resolveDashboardCategory,
+} from './src/constants/gameOnSports';
 import {
   BAWAAL_ORANGE,
   REEL_MORE,
@@ -1647,20 +1646,18 @@ function shelfPosterUri(item) {
   return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
 }
 
-const ArenaShelfCard = memo(function ArenaShelfCard({ item, onPress }) {
+const ArenaShelfCard = memo(function ArenaShelfCard({
+  item,
+  onPress,
+  placeholder = false,
+}) {
   const title =
     item?.caption || item?.title || item?.target || item?.sport || 'CLIP';
   const sport = String(item?.sport || item?.category || 'ARENA').toUpperCase();
-  const poster = shelfPosterUri(item);
+  const poster = !placeholder ? shelfPosterUri(item) : null;
 
-  return (
-    <TouchableOpacity
-      style={styles.shelfCard}
-      activeOpacity={0.88}
-      onPress={() => onPress?.(item)}
-      accessibilityRole="button"
-      accessibilityLabel={String(title)}
-    >
+  const body = (
+    <>
       <View style={styles.shelfThumb}>
         {poster ? (
           <SafeRemoteImage
@@ -1670,18 +1667,46 @@ const ArenaShelfCard = memo(function ArenaShelfCard({ item, onPress }) {
           />
         ) : (
           <View style={styles.shelfThumbFallback}>
-            <Text style={styles.shelfThumbSport} numberOfLines={1}>
-              {sport}
-            </Text>
+            {!placeholder ? (
+              <Text style={styles.shelfThumbSport} numberOfLines={1}>
+                {sport}
+              </Text>
+            ) : null}
           </View>
         )}
       </View>
-      <Text style={styles.shelfCardTitle} numberOfLines={2}>
-        {title}
-      </Text>
+      {!placeholder ? (
+        <Text style={styles.shelfCardTitle} numberOfLines={2}>
+          {title}
+        </Text>
+      ) : (
+        <View style={styles.shelfCardTitleSpacer} />
+      )}
+    </>
+  );
+
+  if (placeholder) {
+    return (
+      <View style={styles.shelfCard} accessibilityElementsHidden>
+        {body}
+      </View>
+    );
+  }
+
+  return (
+    <TouchableOpacity
+      style={styles.shelfCard}
+      activeOpacity={0.88}
+      onPress={() => onPress?.(item)}
+      accessibilityRole="button"
+      accessibilityLabel={String(title)}
+    >
+      {body}
     </TouchableOpacity>
   );
 });
+
+const SHELF_PLACEHOLDER_COUNT = 4;
 
 const ArenaShelfRow = memo(function ArenaShelfRow({
   title,
@@ -1689,31 +1714,49 @@ const ArenaShelfRow = memo(function ArenaShelfRow({
   items,
   emptyLabel,
   onPressItem,
+  /** When true and items empty, show square placeholder boxes instead of text. */
+  showEmptyPlaceholders = false,
+  hideScrollIndicator = true,
 }) {
   const list = Array.isArray(items) ? items : [];
+  const showPlaceholders = list.length === 0 && showEmptyPlaceholders;
+
   return (
     <View style={styles.dashSection}>
       <Text style={styles.dashSectionTitle}>{title}</Text>
       {subtitle ? (
         <Text style={styles.dashSectionSub}>{subtitle}</Text>
       ) : null}
-      {list.length === 0 ? (
+      {list.length === 0 && !showPlaceholders ? (
         <View style={styles.shelfEmptyCard}>
-          <Text style={styles.shelfEmptyText}>{emptyLabel || 'Nothing here yet'}</Text>
+          <Text style={styles.shelfEmptyText}>
+            {emptyLabel || 'Nothing here yet'}
+          </Text>
         </View>
       ) : (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          persistentScrollbar={false}
           contentContainerStyle={styles.shelfRow}
+          style={
+            hideScrollIndicator ? styles.shelfScrollNoBar : undefined
+          }
         >
-          {list.map((item, index) => (
-            <ArenaShelfCard
-              key={String(item?.id || `${title}-${index}`)}
-              item={item}
-              onPress={onPressItem}
-            />
-          ))}
+          {showPlaceholders
+            ? Array.from({ length: SHELF_PLACEHOLDER_COUNT }).map((_, index) => (
+                <ArenaShelfCard
+                  key={`placeholder-${title}-${index}`}
+                  placeholder
+                />
+              ))
+            : list.map((item, index) => (
+                <ArenaShelfCard
+                  key={String(item?.id || `${title}-${index}`)}
+                  item={item}
+                  onPress={onPressItem}
+                />
+              ))}
         </ScrollView>
       )}
     </View>
@@ -2326,22 +2369,22 @@ export default function ArenaFeed({ navigation, route }) {
     setArenaSportFilter(sportLabel);
   }, []);
 
-  /** Discovery pills — For You / Football / Basketball / BMX / MMA. */
-  const [dashboardCategory, setDashboardCategory] = useState(
-    ARENA_DISCOVERY_DEFAULT
-  );
+  /** Category pills — All + 7 GAME ON section titles. */
+  const [dashboardCategory, setDashboardCategory] = useState('All');
 
   const onSelectDashboardCategory = useCallback((label) => {
-    setDashboardCategory(label || ARENA_DISCOVERY_DEFAULT);
+    setDashboardCategory(label || 'All');
   }, []);
 
-  const discoveryFeed = useMemo(
-    () =>
-      (filteredChallengeVideoFeed || []).filter((item) =>
-        matchesArenaDiscoveryPill(item, dashboardCategory)
-      ),
-    [filteredChallengeVideoFeed, dashboardCategory]
-  );
+  const discoveryFeed = useMemo(() => {
+    const rows = filteredChallengeVideoFeed || [];
+    if (!dashboardCategory || dashboardCategory === 'All') return rows;
+    return rows.filter(
+      (item) =>
+        resolveDashboardCategory(item.sport || item.category) ===
+        dashboardCategory
+    );
+  }, [filteredChallengeVideoFeed, dashboardCategory]);
 
   const sparkJoshShelf = useMemo(() => {
     const rows = discoveryFeed.filter((item) => {
@@ -2389,7 +2432,12 @@ export default function ArenaFeed({ navigation, route }) {
       );
     });
     const fromCallouts = (communityCallouts || [])
-      .filter((c) => matchesArenaDiscoveryPill(c, dashboardCategory))
+      .filter((c) => {
+        if (!dashboardCategory || dashboardCategory === 'All') return true;
+        return (
+          resolveDashboardCategory(c.sport || c.category) === dashboardCategory
+        );
+      })
       .map((c, i) => ({
         id: c.id || `faceoff-callout-${i}`,
         title: c.target || c.title || c.description || 'FACE OFF',
@@ -2425,14 +2473,14 @@ export default function ArenaFeed({ navigation, route }) {
         sport:
           a?.sport ||
           a?.category ||
-          (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
+          (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
       },
       rival: {
         handle: b?.author || b?.host || '@warcry_rival',
         sport:
           b?.sport ||
           b?.category ||
-          (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
+          (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
       },
     };
   }, [sparkJoshShelf, discoveryFeed, dashboardCategory]);
@@ -2474,7 +2522,7 @@ export default function ArenaFeed({ navigation, route }) {
           sport:
             battle?.sport ||
             battle?.category ||
-            (dashboardCategory === 'For You' ? 'ARENA' : dashboardCategory),
+            (dashboardCategory === 'All' ? 'ARENA' : dashboardCategory),
         },
       });
     },
@@ -2744,7 +2792,10 @@ export default function ArenaFeed({ navigation, route }) {
           >
             <View style={styles.warCryLiveHeader} pointerEvents="none">
               <View style={styles.warCryLiveDot} />
-              <Text style={styles.warCryLiveTitle}>WAR CRY · LIVE</Text>
+              <Text style={styles.warCryLiveTitle}>
+                WAR CRY ·{' '}
+                <Text style={styles.warCryLiveAccent}>LIVE</Text>
+              </Text>
             </View>
             <View style={styles.warCryDualRow}>
               <TouchableOpacity
@@ -2774,11 +2825,21 @@ export default function ArenaFeed({ navigation, route }) {
                 accessibilityRole="button"
                 accessibilityLabel="Open rival War Cry lane"
               >
-                <Text style={styles.warCryPaneBadgeText}>RIVAL</Text>
-                <Text style={styles.warCryPaneHandle} numberOfLines={1}>
+                <Text
+                  style={[styles.warCryPaneBadgeText, styles.warCryPaneTextEnd]}
+                >
+                  RIVAL
+                </Text>
+                <Text
+                  style={[styles.warCryPaneHandle, styles.warCryPaneTextEnd]}
+                  numberOfLines={1}
+                >
                   {warCryDualFeeds.rival.handle}
                 </Text>
-                <Text style={styles.warCryPaneSport} numberOfLines={1}>
+                <Text
+                  style={[styles.warCryPaneSport, styles.warCryPaneTextEnd]}
+                  numberOfLines={1}
+                >
                   {String(warCryDualFeeds.rival.sport).toUpperCase()}
                 </Text>
               </TouchableOpacity>
@@ -2793,7 +2854,7 @@ export default function ArenaFeed({ navigation, route }) {
           contentContainerStyle={styles.filterPillRow}
           style={styles.filterPillScroll}
         >
-          {ARENA_DISCOVERY_PILLS.map((label) => {
+          {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
             const active = dashboardCategory === label;
             return (
               <TouchableOpacity
@@ -2821,6 +2882,7 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Short clips lighting up the Arena"
           items={sparkJoshShelf}
           emptyLabel="No Sparks or Josh clips yet"
+          hideScrollIndicator
           onPressItem={(item) => openReel(item, { muted: true })}
         />
 
@@ -2829,7 +2891,8 @@ export default function ArenaFeed({ navigation, route }) {
           title="BATTLE BAWAAL"
           subtitle="Recorded group battle feeds"
           items={battleBawaalShelf}
-          emptyLabel="No Battle Bawaal clips yet"
+          showEmptyPlaceholders
+          hideScrollIndicator
           onPressItem={(item) => openReel(item, { muted: true })}
         />
 
@@ -2931,6 +2994,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.6,
   },
+  warCryLiveAccent: {
+    color: '#FF3B30',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.6,
+  },
   warCryDualRow: {
     position: 'relative',
     flexDirection: 'row',
@@ -2949,11 +3018,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#090D16',
     borderColor: 'rgba(255,90,0,0.4)',
     marginRight: 4,
+    alignItems: 'flex-start',
   },
   warCryPaneRival: {
     backgroundColor: '#121826',
     borderColor: 'rgba(255,90,0,0.28)',
     marginLeft: 4,
+    alignItems: 'flex-end',
   },
   warCryPaneBadgeText: {
     color: '#FF5A00',
@@ -2973,6 +3044,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  warCryPaneTextEnd: {
+    textAlign: 'right',
+    width: '100%',
   },
   warCryDualVs: {
     position: 'absolute',
@@ -3047,6 +3122,13 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingRight: 8,
   },
+  shelfScrollNoBar: Platform.select({
+    web: {
+      scrollbarWidth: 'none',
+      msOverflowStyle: 'none',
+    },
+    default: {},
+  }),
   shelfCard: {
     width: SHELF_CARD_SIZE,
   },
@@ -3081,6 +3163,10 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+    marginTop: 8,
+    minHeight: 32,
+  },
+  shelfCardTitleSpacer: {
     marginTop: 8,
     minHeight: 32,
   },
