@@ -37,6 +37,7 @@ import {
   StyleSheet,
   Text,
   View,
+  Image,
   TouchableOpacity,
   StatusBar,
   Platform,
@@ -49,6 +50,11 @@ import {
   KeyboardAvoidingView,
   Dimensions,
 } from 'react-native';
+import {
+  SKULL_ASSETS,
+  VOTE_SKULL_A,
+  VOTE_SKULL_B,
+} from './src/utils/skullAssets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Camera,
@@ -302,6 +308,69 @@ function formatVoteCount(n) {
     return `${k >= 10 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')}K`;
   }
   return String(v);
+}
+
+const VOTE_SKULL_SIZE = 52;
+
+/**
+ * War Cry skull vote control — spring scale on press + live tally under the art.
+ */
+function SkullVoteButton({
+  source,
+  label,
+  countLabel,
+  countColor,
+  onPress,
+  accessibilityLabel,
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const bounce = useCallback(() => {
+    scale.setValue(1);
+    Animated.sequence([
+      Animated.spring(scale, {
+        toValue: 1.22,
+        friction: 4,
+        tension: 220,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        friction: 5,
+        tension: 160,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [scale]);
+
+  const handlePress = useCallback(() => {
+    bounce();
+    onPress?.();
+  }, [bounce, onPress]);
+
+  return (
+    <TouchableOpacity
+      style={styles.skullVoteBtn}
+      onPress={handlePress}
+      activeOpacity={0.9}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel || label}
+    >
+      <Animated.View style={{ transform: [{ scale }] }}>
+        <Image
+          source={source}
+          style={styles.skullVoteImage}
+          resizeMode="contain"
+          accessibilityIgnoresInvertColors
+        />
+      </Animated.View>
+      <Text style={[styles.skullVoteLabel, { color: countColor }]}>{label}</Text>
+      <Text style={[styles.skullVoteCount, { color: countColor }]}>
+        {countLabel}
+      </Text>
+    </TouchableOpacity>
+  );
 }
 
 /**
@@ -1672,7 +1741,7 @@ function Live1v1BattleScreenInner({
     setHostVotes((n) => n + 1);
     onVote?.('host', focusedRival?.id);
     spawnFloatingReaction(null, {
-      bawaalKey: 'skull_boxing',
+      bawaalKey: 'skull_fire_full',
       placement: 'toast',
       side: 'host',
       text: `VOTED ${hostAthlete.handle || hostAthlete.label}`,
@@ -1697,7 +1766,7 @@ function Live1v1BattleScreenInner({
     );
     onVote?.('challenger', rivalId);
     spawnFloatingReaction(null, {
-      bawaalKey: 'skull_boxing',
+      bawaalKey: 'skull_bluefire',
       placement: 'toast',
       side: 'rival',
       text: `VOTED ${focusedRival?.handle || focusedRival?.label || 'RIVAL'}`,
@@ -2190,19 +2259,14 @@ function Live1v1BattleScreenInner({
           </View>
 
           <View style={styles.persistentGlovesTray} pointerEvents="auto">
-            <TouchableOpacity
-              style={styles.persistentGloveBtn}
+            <SkullVoteButton
+              source={VOTE_SKULL_A || SKULL_ASSETS.skull_fire_full}
+              label="VOTE A"
+              countLabel={hostVotesLabel}
+              countColor={ORANGE}
               onPress={handleVoteHost}
-              activeOpacity={0.75}
-              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-              accessibilityRole="button"
-              accessibilityLabel="Vote host"
-            >
-              <BawaalEmoji name="skull_boxing" size={22} />
-              <Text style={[styles.actionLabel, styles.actionLabelHost]}>
-                VOTE A
-              </Text>
-            </TouchableOpacity>
+              accessibilityLabel="Vote A — Red Fire Skull"
+            />
 
             <TouchableOpacity
               style={styles.persistentGloveBtn}
@@ -2237,19 +2301,14 @@ function Live1v1BattleScreenInner({
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.persistentGloveBtn}
+            <SkullVoteButton
+              source={VOTE_SKULL_B || SKULL_ASSETS.skull_bluefire}
+              label="VOTE B"
+              countLabel={rivalVotesLabel}
+              countColor={CYAN}
               onPress={handleVoteRival}
-              activeOpacity={0.75}
-              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-              accessibilityRole="button"
-              accessibilityLabel="Vote B"
-            >
-              <BawaalEmoji name="skull_boxing" size={22} />
-              <Text style={[styles.actionLabel, styles.actionLabelRival]}>
-                VOTE B
-              </Text>
-            </TouchableOpacity>
+              accessibilityLabel="Vote B — Blue Ice Skull"
+            />
           </View>
 
           {/* Spectator reaction tray — FIRE / ROAST / BEAST / HYPE */}
@@ -2565,6 +2624,31 @@ const styles = StyleSheet.create({
     maxWidth: 110,
     zIndex: 101,
     backgroundColor: 'transparent',
+  },
+  skullVoteBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 84,
+    maxWidth: 120,
+    zIndex: 101,
+    backgroundColor: 'transparent',
+    paddingVertical: 2,
+  },
+  skullVoteImage: {
+    width: VOTE_SKULL_SIZE,
+    height: VOTE_SKULL_SIZE,
+  },
+  skullVoteLabel: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  skullVoteCount: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   hudMidTapZone: {
     flex: 1,
