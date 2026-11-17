@@ -10,7 +10,7 @@ import {
   StyleSheet,
   Text,
   View,
-  FlatList,
+  ScrollView,
   TouchableOpacity,
   TouchableWithoutFeedback,
   RefreshControl,
@@ -61,6 +61,10 @@ import {
   applyArenaFeedFilters,
   resolveArenaFeedTier,
 } from './src/constants/arenaFeedTiers';
+import {
+  ARENA_DASHBOARD_CATEGORY_PILLS,
+  resolveDashboardCategory,
+} from './src/constants/gameOnSports';
 import {
   BAWAAL_ORANGE,
   REEL_MORE,
@@ -2162,6 +2166,94 @@ export default function ArenaFeed({ navigation, route }) {
     setArenaSportFilter(sportLabel);
   }, []);
 
+  /** Dashboard category pill — filters Sparks / challenges by GAME ON section. */
+  const [dashboardCategory, setDashboardCategory] = useState('All');
+
+  const onSelectDashboardCategory = useCallback((label) => {
+    setDashboardCategory(label || 'All');
+  }, []);
+
+  const openWarCryLive = useCallback(() => {
+    navigation?.navigate?.('Live1v1Battle', {
+      mode: 'spectator',
+      role: 'spectator',
+      battleId: `war-cry-live-${Date.now()}`,
+      match: {
+        category: '[WAR CRY] 1v1 LIVE CHALLENGE',
+        timerLabel: '90',
+        spectatorsLabel: 'LIVE',
+        status: 'live',
+      },
+    });
+  }, [navigation]);
+
+  /** Sparks / trending highlights from the hydrated feed. */
+  const sparkHighlights = useMemo(() => {
+    const rows = (filteredChallengeVideoFeed || []).filter((item) => {
+      const mode = String(item.mode || item.source || item.tier || '').toUpperCase();
+      const isSpark =
+        mode.includes('SPARK') ||
+        mode.includes('JOSH') ||
+        item.type === 'reel' ||
+        Boolean(item.video_url || item.videoUri || item.uri);
+      if (!isSpark) return false;
+      if (dashboardCategory === 'All') return true;
+      return (
+        resolveDashboardCategory(item.sport || item.category) === dashboardCategory
+      );
+    });
+    return rows.slice(0, 12);
+  }, [filteredChallengeVideoFeed, dashboardCategory]);
+
+  /** Live / upcoming challenge cards for the dashboard shelf. */
+  const liveUpcomingChallenges = useMemo(() => {
+    const fromCallouts = (communityCallouts || []).map((c, i) => ({
+      id: c.id || `callout-${i}`,
+      title: c.target || c.title || c.description || 'OPEN CHALLENGE',
+      sport: c.sport || c.category || 'OTHERS',
+      host: c.host || c.author || '@ATHLETE',
+      status: c.status || (c.liveMatch ? 'LIVE' : 'UPCOMING'),
+      raw: c,
+    }));
+    const fromFeed = (filteredChallengeVideoFeed || [])
+      .filter((item) => {
+        const tier = String(
+          item.tier || item.mode || item.source || ''
+        ).toLowerCase();
+        return (
+          tier.includes('battle') ||
+          tier.includes('war') ||
+          tier.includes('faceoff') ||
+          item.type === 'battle_thread' ||
+          item._fromArenaChallenges
+        );
+      })
+      .map((item, i) => ({
+        id: item.id || `feed-chal-${i}`,
+        title: item.title || item.caption || item.target || 'CHALLENGE',
+        sport: item.sport || item.category || 'OTHERS',
+        host: item.author || item.host || '@ATHLETE',
+        status: item.status || 'LIVE',
+        raw: item,
+      }));
+    const merged = [...fromCallouts, ...fromFeed];
+    const seen = new Set();
+    const out = [];
+    for (const row of merged) {
+      if (seen.has(row.id)) continue;
+      if (
+        dashboardCategory !== 'All' &&
+        resolveDashboardCategory(row.sport) !== dashboardCategory
+      ) {
+        continue;
+      }
+      seen.add(row.id);
+      out.push(row);
+      if (out.length >= 10) break;
+    }
+    return out;
+  }, [communityCallouts, filteredChallengeVideoFeed, dashboardCategory]);
+
   const openReel = useCallback((item, opts) => {
     setImmersiveMuted(!!opts?.muted);
     setWarmReel(item);
@@ -2387,59 +2479,170 @@ export default function ArenaFeed({ navigation, route }) {
         />
       </View>
 
-      <View style={styles.feedList}>
-        <FlatList
-          ref={listRef}
-          style={styles.feedList}
-          data={filteredChallengeVideoFeed}
-          keyExtractor={(item, index) =>
-            String(item?.id || item?.video_url || `challenge-${index}`)
-          }
-          renderItem={renderChallengeVideo}
-          ListEmptyComponent={emptyChallengeList}
-          contentContainerStyle={
-            filteredChallengeVideoFeed.length === 0
-              ? styles.scrollContentEmpty
-              : styles.scrollContent
-          }
-          pagingEnabled
-          snapToInterval={screenHeight}
-          snapToAlignment="start"
-          decelerationRate="fast"
-          showsVerticalScrollIndicator={false}
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={ARENA_VIEWABILITY_CONFIG}
-          removeClippedSubviews={Platform.OS !== 'web'}
-          maxToRenderPerBatch={5}
-          windowSize={7}
-          initialNumToRender={Math.min(
-            3,
-            Math.max(filteredChallengeVideoFeed.length, 1)
+      <ScrollView
+        style={styles.feedList}
+        contentContainerStyle={styles.dashboardScroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#FFFFFF"
+            colors={['#FFFFFF']}
+            progressBackgroundColor="#121212"
+          />
+        }
+      >
+        {/* 1v1 Live Challenge hero marquee */}
+        <View style={styles.heroMarquee}>
+          <View style={styles.heroMarqueeGlow} pointerEvents="none" />
+          <Text style={styles.heroEyebrow}>ARENA · LIVE NOW</Text>
+          <Text style={styles.heroTitle}>1v1 LIVE CHALLENGE</Text>
+          <Text style={styles.heroSub}>
+            WAR CRY stadium — dual feeds, crowd votes, vault bursts
+          </Text>
+          <TouchableOpacity
+            style={styles.heroCta}
+            activeOpacity={0.88}
+            onPress={openWarCryLive}
+            accessibilityRole="button"
+            accessibilityLabel="Watch War Cry live"
+          >
+            <Text style={styles.heroCtaText}>WATCH LIVE</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Locked 8-category filter bar */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillRow}
+          style={styles.filterPillScroll}
+        >
+          {ARENA_DASHBOARD_CATEGORY_PILLS.map((label) => {
+            const active = dashboardCategory === label;
+            return (
+              <TouchableOpacity
+                key={label}
+                style={[styles.filterPill, active && styles.filterPillOn]}
+                activeOpacity={0.85}
+                onPress={() => onSelectDashboardCategory(label)}
+              >
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    active && styles.filterPillTextOn,
+                  ]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* Trending Sparks */}
+        <View style={styles.dashSection}>
+          <Text style={styles.dashSectionTitle}>TRENDING · SPARKS</Text>
+          <Text style={styles.dashSectionSub}>
+            Hot clips lighting up the Arena
+          </Text>
+          {sparkHighlights.length === 0 ? (
+            <View style={styles.dashEmptyCard}>
+              <Text style={styles.dashEmptyText}>
+                {feedLoading || videoFeedLoading
+                  ? 'Loading sparks…'
+                  : 'No sparks in this category yet'}
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.sparkRow}
+            >
+              {sparkHighlights.map((item) => {
+                const title =
+                  item.caption || item.title || item.target || 'SPARK';
+                const sport = item.sport || item.category || 'ARENA';
+                return (
+                  <TouchableOpacity
+                    key={String(item.id)}
+                    style={styles.sparkCard}
+                    activeOpacity={0.88}
+                    onPress={() => openReel?.(item, { muted: true })}
+                  >
+                    <View style={styles.sparkThumb}>
+                      <Text style={styles.sparkThumbLabel} numberOfLines={1}>
+                        {String(sport).toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.sparkTitle} numberOfLines={2}>
+                      {title}
+                    </Text>
+                    <Text style={styles.sparkHost} numberOfLines={1}>
+                      {item.author || item.host || '@athlete'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           )}
-          getItemLayout={getFeedItemLayout}
-          extraData={`${activeIndex}:${feedLoading}:${isUploadingClip}:${filteredChallengeVideoFeed.length}:${selectedFeedTier}:${selectedSportFilter || ''}`}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#FFFFFF"
-              colors={['#FFFFFF']}
-              progressBackgroundColor="#121212"
-            />
-          }
-        />
-        {isUploadingClip ||
-        (feedLoading &&
-          filteredChallengeVideoFeed.length > 0 &&
-          !refreshing) ? (
-          <View style={styles.loadingOverlay} pointerEvents="none">
-            <ActivityIndicator color="#FFFFFF" size="large" />
-            <Text style={styles.loadingEmptyText}>
-              {isUploadingClip ? 'UPLOADING…' : 'LOADING CLIPS…'}
-            </Text>
-          </View>
-        ) : null}
-      </View>
+        </View>
+
+        {/* Live / upcoming challenges */}
+        <View style={[styles.dashSection, styles.dashSectionLast]}>
+          <Text style={styles.dashSectionTitle}>LIVE & UPCOMING</Text>
+          <Text style={styles.dashSectionSub}>
+            Challenges ready to join or watch
+          </Text>
+          {liveUpcomingChallenges.length === 0 ? (
+            <View style={styles.dashEmptyCard}>
+              <Text style={styles.dashEmptyText}>
+                {feedLoading
+                  ? 'Loading challenges…'
+                  : 'No live challenges in this category'}
+              </Text>
+            </View>
+          ) : (
+            liveUpcomingChallenges.map((row) => {
+              const isLive = String(row.status).toUpperCase().includes('LIVE');
+              return (
+                <TouchableOpacity
+                  key={String(row.id)}
+                  style={styles.challengeDashCard}
+                  activeOpacity={0.88}
+                  onPress={() => openShelfCallout(row.raw || row)}
+                >
+                  <View style={styles.challengeDashLeft}>
+                    <View style={styles.challengeDashMeta}>
+                      <Text
+                        style={[
+                          styles.challengeDashStatus,
+                          isLive && styles.challengeDashStatusLive,
+                        ]}
+                      >
+                        {isLive ? 'LIVE' : 'UPCOMING'}
+                      </Text>
+                      <Text style={styles.challengeDashSport} numberOfLines={1}>
+                        {String(row.sport || 'ARENA').toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.challengeDashTitle} numberOfLines={2}>
+                      {row.title}
+                    </Text>
+                    <Text style={styles.challengeDashHost} numberOfLines={1}>
+                      by {row.host}
+                    </Text>
+                  </View>
+                  <Text style={styles.challengeDashChevron}>›</Text>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
 
       <GameOnHub
         visible={gameOnOpen}
@@ -2491,6 +2694,212 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: 110,
     paddingTop: 0,
+  },
+  dashboardScroll: {
+    paddingBottom: 120,
+    paddingTop: 8,
+  },
+  heroMarquee: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    borderRadius: 16,
+    backgroundColor: '#0D0D0D',
+    borderWidth: 1,
+    borderColor: '#FF5A00',
+    overflow: 'hidden',
+  },
+  heroMarqueeGlow: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,90,0,0.08)',
+  },
+  heroEyebrow: {
+    color: '#FF5A00',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    marginBottom: 8,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  heroSub: {
+    color: '#A0A0A0',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  heroCta: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FF5A00',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 999,
+  },
+  heroCtaText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+  },
+  filterPillScroll: {
+    marginBottom: 18,
+    flexGrow: 0,
+  },
+  filterPillRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+    backgroundColor: '#121212',
+  },
+  filterPillOn: {
+    borderColor: '#FF5A00',
+    backgroundColor: 'rgba(255,90,0,0.18)',
+  },
+  filterPillText: {
+    color: '#B0B0B0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterPillTextOn: {
+    color: '#FF5A00',
+  },
+  dashSection: {
+    marginBottom: 22,
+    paddingHorizontal: 16,
+  },
+  dashSectionLast: {
+    marginBottom: 8,
+  },
+  dashSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1.4,
+    marginBottom: 4,
+  },
+  dashSectionSub: {
+    color: '#7A7A7A',
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  dashEmptyCard: {
+    paddingVertical: 24,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+    backgroundColor: '#0A0A0A',
+  },
+  dashEmptyText: {
+    color: '#888',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  sparkRow: {
+    gap: 12,
+    paddingRight: 8,
+  },
+  sparkCard: {
+    width: 148,
+    borderRadius: 12,
+    backgroundColor: '#0D0D0D',
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+    overflow: 'hidden',
+  },
+  sparkThumb: {
+    height: 96,
+    backgroundColor: '#1A120E',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    padding: 10,
+  },
+  sparkThumbLabel: {
+    color: '#FF5A00',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  sparkTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    minHeight: 36,
+  },
+  sparkHost: {
+    color: '#888',
+    fontSize: 11,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
+    paddingTop: 4,
+  },
+  challengeDashCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    borderRadius: 12,
+    backgroundColor: '#0D0D0D',
+    borderWidth: 1,
+    borderColor: '#1E1E1E',
+  },
+  challengeDashLeft: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  challengeDashMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  challengeDashStatus: {
+    color: '#A0A0A0',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  challengeDashStatusLive: {
+    color: '#FF5A00',
+  },
+  challengeDashSport: {
+    color: '#666',
+    fontSize: 10,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  challengeDashTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  challengeDashHost: {
+    color: '#888',
+    fontSize: 12,
+  },
+  challengeDashChevron: {
+    color: '#FF5A00',
+    fontSize: 28,
+    fontWeight: '300',
+    lineHeight: 28,
   },
   emptySupabase: {
     color: '#fff',
