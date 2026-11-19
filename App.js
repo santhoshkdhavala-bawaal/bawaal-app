@@ -405,14 +405,29 @@ function MissingSupabaseEnvScreen() {
     <View style={styles.errorRoot}>
       <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
       <Text style={styles.errorTitle}>BAWAAL</Text>
-      <Text style={styles.errorBody}>Missing Supabase Environment Variables</Text>
+      <Text style={styles.errorBody}>
+        Missing Supabase Environment Variables
+      </Text>
+      <Text style={[styles.errorBody, { marginTop: 12 }]}>
+        Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env
+        (local) or eas.json env (EAS APK builds). The client will not throw —
+        rebuild with those keys baked in to continue.
+      </Text>
     </View>
   );
 }
 
-/** Inner boundary — index.js CrashBoundary is the outermost wrapper. */
+/**
+ * Inner boundary — index.js CrashBoundary is the outermost wrapper.
+ * Missing EXPO_PUBLIC_* keys soft-fail: show a recoverable banner screen only
+ * when env is absent; createClient in lib/supabase.js never throws at import.
+ */
 export default function App() {
   if (!hasSupabaseEnv()) {
+    console.warn(
+      '[App] Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY — ' +
+        'showing soft env screen (createClient uses inert placeholder).'
+    );
     return (
       <RootErrorBoundary>
         <MissingSupabaseEnvScreen />

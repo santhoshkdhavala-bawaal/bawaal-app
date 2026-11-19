@@ -4,7 +4,7 @@
     "slug": "bawaal-mobile",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/icon_square.png",
     "userInterfaceStyle": "dark",
     "scheme": "bawaal",
     "ios": {
@@ -20,7 +20,7 @@
     "android": {
       "package": "com.bawaal.mobile",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/icon_square.png",
         "backgroundColor": "#000000"
       },
       "permissions": [
@@ -82,7 +82,9 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "extraProguardRules": "-keep class expo.modules.** { *; }\n-keep class expo.modules.ExpoModulesV2ModuleList { *; }\n-dontwarn expo.modules.**\n-keep class androidx.work.impl.WorkDatabase** { *; }"
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "extraProguardRules": "-keep class expo.modules.** { *; }\n-keep class expo.modules.ExpoModulesV2ModuleList { *; }\n-dontwarn expo.modules.**\n-keep class androidx.work.impl.WorkDatabase** { *; }\n-keep class com.swmansion.gesturehandler.** { *; }\n-keep class com.swmansion.reanimated.** { *; }\n-keep class com.swmansion.worklets.** { *; }\n-dontwarn com.swmansion.reanimated.**\n-dontwarn com.swmansion.worklets.**"
           },
           "ios": {
             "deploymentTarget": "16.4"

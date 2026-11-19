@@ -1,6 +1,26 @@
-import * as FileSystem from 'expo-file-system/legacy';
+/** Safe console + optional file breadcrumb — never throws at import time. */
 
-const LOG_FILE = `${FileSystem.documentDirectory || ''}bawaal_native_crash.txt`;
+const LOG_FILE_NAME = 'bawaal_native_crash.txt';
+
+function getFileSystem() {
+  try {
+    // Lazy require — a missing native module must not kill cold start.
+    // eslint-disable-next-line global-require
+    return require('expo-file-system/legacy');
+  } catch (_) {
+    try {
+      // eslint-disable-next-line global-require
+      return require('expo-file-system');
+    } catch (__) {
+      return null;
+    }
+  }
+}
+
+function logPath(FileSystem) {
+  const dir = FileSystem?.documentDirectory;
+  return dir ? `${dir}${LOG_FILE_NAME}` : null;
+}
 
 /** Safe console + optional file breadcrumb — never throws. */
 export function logStartup(stage, detail) {
@@ -18,8 +38,8 @@ export function logStartup(stage, detail) {
 }
 
 // Global JS uncaught exception handler — persists last fatal for on-device recovery.
-if (global.ErrorUtils) {
-  const defaultHandler = global.ErrorUtils.getGlobalHandler();
+if (typeof global !== 'undefined' && global.ErrorUtils) {
+  const defaultHandler = global.ErrorUtils.getGlobalHandler?.();
   global.ErrorUtils.setGlobalHandler(async (error, isFatal) => {
     const log = `[FATAL NATIVE/JS CRASH ${new Date().toISOString()}]\nError: ${error?.message || error}\nStack: ${error?.stack}\n`;
     try {
@@ -28,22 +48,28 @@ if (global.ErrorUtils) {
       /* soft-fail */
     }
     try {
-      if (FileSystem.documentDirectory) {
-        await FileSystem.writeAsStringAsync(LOG_FILE, log);
+      const FileSystem = getFileSystem();
+      const path = logPath(FileSystem);
+      if (FileSystem?.writeAsStringAsync && path) {
+        await FileSystem.writeAsStringAsync(path, log);
       }
     } catch (e) {
       // Soft-fail — never block the default crash path
     }
-    if (defaultHandler) defaultHandler(error, isFatal);
+    if (typeof defaultHandler === 'function') {
+      defaultHandler(error, isFatal);
+    }
   });
 }
 
 export async function readNativeCrashLog() {
   try {
-    if (!FileSystem.documentDirectory) return 'No crash file saved yet.';
-    const info = await FileSystem.getInfoAsync(LOG_FILE);
+    const FileSystem = getFileSystem();
+    const path = logPath(FileSystem);
+    if (!FileSystem || !path) return 'No crash file saved yet.';
+    const info = await FileSystem.getInfoAsync(path);
     if (info.exists) {
-      return await FileSystem.readAsStringAsync(LOG_FILE);
+      return await FileSystem.readAsStringAsync(path);
     }
   } catch (e) {
     // Soft-fail
