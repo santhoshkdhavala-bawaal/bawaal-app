@@ -82,8 +82,8 @@
         {
           "android": {
             "minSdkVersion": 24,
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
+            "compileSdkVersion": 37,
+            "targetSdkVersion": 36,
             "extraProguardRules": "-keep class expo.modules.** { *; }\n-keep class expo.modules.ExpoModulesV2ModuleList { *; }\n-dontwarn expo.modules.**\n-keep class androidx.work.impl.WorkDatabase** { *; }\n-keep class com.swmansion.gesturehandler.** { *; }\n-keep class com.swmansion.reanimated.** { *; }\n-keep class com.swmansion.worklets.** { *; }\n-dontwarn com.swmansion.reanimated.**\n-dontwarn com.swmansion.worklets.**"
           },
           "ios": {
