@@ -5,10 +5,10 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { ResizeMode, Video } from 'expo-av';
 import { resolveVideoSource } from '../utils/reelMediaFallback';
-import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
+import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 import SafeRemoteImage from './SafeRemoteImage';
+import BawaalExpoVideo from './BawaalExpoVideo';
 
 function firstPlayableUri(candidates) {
   for (const candidate of candidates) {
@@ -40,7 +40,12 @@ function ActiveClip({
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      void safeUnloadExpoAvVideo(node);
+      try {
+        safeReleaseExpoVideoPlayer(node?.player);
+        node?.pauseAsync?.();
+      } catch (_) {
+        /* soft-fail */
+      }
     };
   }, [videoUri]);
 
@@ -59,15 +64,15 @@ function ActiveClip({
             fallbackSource={null}
           />
         ) : null}
-        <Video
+        <BawaalExpoVideo
           ref={videoRef}
           source={{ uri: videoUri }}
           style={styles.video}
-          resizeMode={ResizeMode.COVER}
+          contentFit="cover"
           shouldPlay={!!shouldPlay}
           isLooping={loop !== false}
           isMuted={!!muted}
-          useNativeControls={false}
+          nativeControls={false}
           onError={(err) => {
             onError?.(err);
           }}

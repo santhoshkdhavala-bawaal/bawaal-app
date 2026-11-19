@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
-import { ResizeMode, Video } from 'expo-av';
+import BawaalExpoVideo from './src/components/BawaalExpoVideo';
 import { COLORS, RADIUS } from './theme';
 import { setLatestBattleClip } from './battleClipStore';
 import { pushArenaPost } from './arenaFeedStore';
@@ -201,7 +201,7 @@ function buildTargetMetricsLabel(rawTarget, durationSec, extras = {}) {
 }
 
 /**
- * Review player — loads the take with expo-av.
+ * Review player — loads the take with expo-video.
  * Slow-mo ON: loops inside [start, end] at 0.25x / 0.5x / 0.75x.
  * Slow-mo OFF: full-clip loop at 1x.
  */
@@ -270,7 +270,6 @@ function ReviewSlowMoPlayer({
         localRef.current
           ?.setStatusAsync?.({
             rate: cfg.rate,
-            shouldCorrectPitch: true,
             shouldPlay: true,
           })
           .catch(() => {});
@@ -288,7 +287,6 @@ function ReviewSlowMoPlayer({
       node
         .setStatusAsync?.({
           rate: cfg.rate,
-          shouldCorrectPitch: true,
           isLooping: false,
           shouldPlay: true,
           positionMillis: Math.round(cfg.start * 1000),
@@ -298,7 +296,6 @@ function ReviewSlowMoPlayer({
       node
         .setStatusAsync?.({
           rate: 1,
-          shouldCorrectPitch: true,
           isLooping: true,
           shouldPlay: true,
         })
@@ -326,26 +323,25 @@ function ReviewSlowMoPlayer({
 
   return (
     <View style={StyleSheet.absoluteFillObject} collapsable={false}>
-      <Video
+      <BawaalExpoVideo
         ref={assignRef}
-        key={`review-av-${uri}`}
+        key={`review-xv-${uri}`}
         source={{ uri }}
         style={StyleSheet.absoluteFillObject}
-        resizeMode={ResizeMode.COVER}
+        contentFit="cover"
         shouldPlay={!!active}
         isLooping={!slowMoEnabled}
         isMuted={false}
         rate={rate}
-        shouldCorrectPitch
-        useNativeControls={false}
-        progressUpdateIntervalMillis={40}
+        nativeControls={false}
+        timeUpdateIntervalSec={0.04}
         onPlaybackStatusUpdate={onPlaybackStatusUpdate}
       />
     </View>
   );
 }
 
-/** Opponent clip — expo-av, muted loop. */
+/** Opponent clip — expo-video, muted loop. */
 function OpponentTargetPlayer({ uri, active = true }) {
   const source = resolveOpponentSource(uri);
   const videoRef = useRef(null);
@@ -358,15 +354,15 @@ function OpponentTargetPlayer({ uri, active = true }) {
   }, [uri]);
 
   return (
-    <Video
+    <BawaalExpoVideo
       ref={videoRef}
       style={styles.targetVideo}
       source={source}
-      resizeMode={ResizeMode.COVER}
+      contentFit="cover"
       shouldPlay={!!active}
       isLooping
       isMuted
-      useNativeControls={false}
+      nativeControls={false}
     />
   );
 }
@@ -570,7 +566,7 @@ export default function ChallengeCam({
   const pendingPublishPayloadRef = useRef(null);
   /** Live playhead seconds — ref only (avoids re-render thrash on every tick). */
   const reviewPlayheadRef = useRef(0);
-  /** expo-av review clip (pause/unload on unmount). */
+  /** expo-video review clip (pause/unload on unmount). */
   const videoRef = useRef(null);
   const recordStartedAtRef = useRef(0);
   const didAskPermsRef = useRef(false);

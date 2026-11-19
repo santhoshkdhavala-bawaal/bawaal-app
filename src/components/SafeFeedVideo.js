@@ -1,8 +1,8 @@
 /**
  * Crash-safe Arena feed video surface.
  *
- * Expo Go → SportsFeedPlaceholder (never imports / mounts expo-av).
- * Dev-client & release → lazy-requires NativeFeedVideo (expo-av).
+ * Expo Go → SportsFeedPlaceholder (never mounts native feed player).
+ * Dev-client & release → lazy-requires NativeFeedVideo (expo-video).
  */
 import React, { memo, useMemo } from 'react';
 import {
@@ -62,7 +62,7 @@ function hashSeed(value) {
   return Math.abs(h);
 }
 
-/** JS-only path — no expo-av / ExponentAV. */
+/** JS-only path — no native video decoder. */
 function ExpoGoFeedPlaceholder({ style, label, sport, resolved }) {
   return (
     <SportsFeedPlaceholder
@@ -125,7 +125,7 @@ function SafeFeedVideo({
     return null;
   }, [posterUri, source]);
 
-  // Expo Go / missing native AV → solid placeholder, zero ExponentAV touch.
+  // Expo Go / missing native video → solid placeholder.
   if (isExpoGo || !canUseNativeVideo) {
     return (
       <ExpoGoFeedPlaceholder

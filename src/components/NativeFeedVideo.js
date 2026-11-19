@@ -1,10 +1,10 @@
 /**
- * Native-only feed video (expo-av).
+ * Native-only feed video (expo-video via BawaalExpoVideo).
  * Never import this file from Expo Go boot paths — SafeFeedVideo lazy-requires
  * it only when `canUseNativeVideo` is true.
  *
- * Declarative source / shouldPlay only — no blocking setStatusAsync loops
- * and no mid-playback sync swap to bundled mp4 (avoids black-screen freezes).
+ * Declarative URI source / shouldPlay only — no mid-playback sync swap to
+ * bundled mp4 (avoids black-screen freezes).
  */
 import React, {
   Component,
@@ -25,35 +25,12 @@ import {
   isUsablePlaybackUri,
   resolvePosterSource,
 } from '../utils/reelMediaFallback';
-import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
+import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 import SafeRemoteImage from './SafeRemoteImage';
+import BawaalExpoVideo from './BawaalExpoVideo';
 
 function isPlayableFeedUri(uri) {
   return isUsablePlaybackUri(uri);
-}
-
-function loadNativeAvBinding() {
-  try {
-    // eslint-disable-next-line global-require
-    const { loadExpoAv } = require('../native/safeNative');
-    const ExpoAv = loadExpoAv();
-    return {
-      Video: ExpoAv?.Video || null,
-      ResizeMode: ExpoAv?.ResizeMode || null,
-    };
-  } catch (err) {
-    console.warn('[NativeFeedVideo] expo-av unavailable:', err?.message || err);
-    return { Video: null, ResizeMode: null };
-  }
-}
-
-const { Video, ResizeMode } = loadNativeAvBinding();
-
-function mapContentFit(contentFit) {
-  if (!ResizeMode) return undefined;
-  if (contentFit === 'contain') return ResizeMode.CONTAIN;
-  if (contentFit === 'fill' || contentFit === 'stretch') return ResizeMode.STRETCH;
-  return ResizeMode.COVER;
 }
 
 function hashSeed(value) {
@@ -124,7 +101,6 @@ function NativeFeedVideo({
   const videoRef = useRef(null);
   const readyFallback = useRef(null);
 
-  // URI-only — never sync-swap to bundled sample_challenge.mp4
   const videoSource = useMemo(() => {
     if (!playable || failed) return null;
     return { uri: String(resolved).trim() };
@@ -150,30 +126,26 @@ function NativeFeedVideo({
     };
   }, [playable, resolved]);
 
-  // Soft unload on URI change / unmount — fire-and-forget, never await on render
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      void safeUnloadExpoAvVideo(node);
+      try {
+        safeReleaseExpoVideoPlayer(node?.player);
+        node?.pauseAsync?.();
+      } catch (_) {
+        /* soft-fail */
+      }
     };
   }, [videoSource]);
 
   const shellStyle = immersive ? styles.shellImmersive : styles.shell;
   const playerStyle = immersive ? styles.videoPlayerImmersive : styles.videoPlayer;
-
-  if (!Video) {
-    return (
-      <View style={[shellStyle, style]}>
-        <SportsFeedPlaceholder
-          style={StyleSheet.absoluteFill}
-          sport={sport}
-          label={label || 'BAWAAL CLIP'}
-          seed={hashSeed(resolved || label)}
-          showExpoBadge={false}
-        />
-      </View>
-    );
-  }
+  const fit =
+    contentFit === 'contain'
+      ? 'contain'
+      : contentFit === 'fill' || contentFit === 'stretch'
+        ? 'fill'
+        : 'cover';
 
   if (!videoSource) {
     return (
@@ -221,7 +193,6 @@ function NativeFeedVideo({
       }
     >
       <View style={[shellStyle, style]} pointerEvents="box-none">
-        {/* Solid black underlay — avoid BAWAAL logo blink while buffering */}
         <View style={styles.blackUnderlay} pointerEvents="none" />
         {posterSource ? (
           <SafeRemoteImage
@@ -234,19 +205,16 @@ function NativeFeedVideo({
           />
         ) : null}
 
-        <Video
+        <BawaalExpoVideo
           ref={videoRef}
           style={playerStyle}
           source={videoSource}
-          resizeMode={mapContentFit(contentFit)}
+          contentFit={fit}
           shouldPlay={!!autoPlay && !paused}
           isLooping={loop !== false}
           isMuted={!!muted}
           volume={muted ? 0 : 1}
-          useNativeControls={!!nativeControls}
-          usePoster={false}
-          posterStyle={styles.poster}
-          progressUpdateIntervalMillis={1000}
+          nativeControls={!!nativeControls}
           onLoadStart={() => {
             try {
               setLoading(true);
@@ -323,10 +291,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: 'transparent',
-  },
-  video: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
   videoPlayer: {

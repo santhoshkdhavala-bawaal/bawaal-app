@@ -17,42 +17,10 @@ import { showBawaalAlert } from '../src/components/BawaalAlert';
 import BawaalVideoControls, {
   PREVIEW_SPEED_RATES,
 } from '../src/components/BawaalVideoControls';
+import BawaalExpoVideo from '../src/components/BawaalExpoVideo';
 
 const CATEGORIES = BAWAAL_SPORTS_WITHOUT_ALL;
 const BAWAAL_LOGO = require('../assets/BAWAAL_white_full.png');
-
-function isRealVideoComponent(VideoComp) {
-  if (!VideoComp) return false;
-  const name = String(VideoComp.displayName || VideoComp.name || '');
-  return !/stub|mock/i.test(name);
-}
-
-function loadRealExpoAv() {
-  try {
-    // eslint-disable-next-line global-require
-    const { loadExpoAv } = require('../src/native/safeNative');
-    const mod = typeof loadExpoAv === 'function' ? loadExpoAv() : null;
-    if (mod?.Video && isRealVideoComponent(mod.Video)) {
-      return mod;
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    // eslint-disable-next-line global-require
-    const mod = require('expo-av');
-    if (mod?.Video && isRealVideoComponent(mod.Video)) {
-      return { Video: mod.Video, ResizeMode: mod.ResizeMode };
-    }
-  } catch {
-    /* Expo Go Metro stub / missing native */
-  }
-  return null;
-}
-
-const RealAv = loadRealExpoAv();
-const AvVideo = RealAv?.Video || null;
-const AvResizeMode = RealAv?.ResizeMode || null;
 
 /**
  * Normalize camera capture URI for the preview decoder.
@@ -97,7 +65,7 @@ function PreviewControlsOverlay({
   );
 }
 
-function ExpoAvPreview({
+function ExpoVideoPreview({
   uri,
   visible,
   isPlaying,
@@ -125,13 +93,13 @@ function ExpoAvPreview({
           await node.pauseAsync?.();
           return;
         }
-        await node.setRateAsync?.(playbackRate, true);
+        await node.setRateAsync?.(playbackRate);
         if (isPlaying) await node.playAsync?.();
         else await node.pauseAsync?.();
       } catch (err) {
         if (!cancelled) {
           console.warn(
-            '[VideoPublishModal] av sync failed:',
+            '[VideoPublishModal] video sync failed:',
             err?.message || err
           );
         }
@@ -144,7 +112,7 @@ function ExpoAvPreview({
 
   return (
     <View style={styles.previewShell}>
-      <AvVideo
+      <BawaalExpoVideo
         ref={videoRef}
         key={uri}
         source={{ uri }}
@@ -153,8 +121,8 @@ function ExpoAvPreview({
         rate={playbackRate}
         isLooping
         isMuted={false}
-        resizeMode={AvResizeMode?.COVER || 'cover'}
-        useNativeControls={false}
+        contentFit="cover"
+        nativeControls={false}
         onLoadStart={() => {
           try {
             setLoading(true);
@@ -214,7 +182,7 @@ function PublishClipPreview({
 }) {
   const uri = useMemo(() => normalizePreviewUri(videoUri), [videoUri]);
 
-  if (!uri || !AvVideo) {
+  if (!uri) {
     return (
       <View style={[styles.previewShell, styles.previewEmpty]}>
         <Text style={styles.previewEmptyText}>
@@ -225,7 +193,7 @@ function PublishClipPreview({
   }
 
   return (
-    <ExpoAvPreview
+    <ExpoVideoPreview
       uri={uri}
       visible={visible}
       isPlaying={isPlaying}

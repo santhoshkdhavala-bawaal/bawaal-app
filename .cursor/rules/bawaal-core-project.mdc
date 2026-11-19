@@ -9,7 +9,7 @@ alwaysApply: true
 
 - **Framework:** React Native + Expo (SDK 50+) — Web (`localhost:8081`) and Android native builds.
 - **Backend:** Supabase (Auth, Storage, Database/PostgreSQL).
-- **Video:** HTML5 / RN-Web video fallback on Web; mobile recording/live via platform modules (`expo-video` / Agora where already wired). **Arena feed playback** stays on the locked declarative `expo-av` path — see `bawaal-arena-video-playback-locked.mdc`.
+- **Video:** HTML5 / RN-Web video fallback on Web; mobile recording/live via platform modules (`expo-video` / Agora where already wired). **Arena feed playback** stays on the locked declarative `expo-video` path (`BawaalExpoVideo`) — see `bawaal-arena-video-playback-locked.mdc`. Never re-add `expo-av` (JSI `IRuntime` ABI crash on Android APK).
 - **Theme:** High-contrast dark — bg `#000000`, cards `#090D16`, white text, accent `#FF5500`.
 
 ## 2. Web vs mobile

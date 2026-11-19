@@ -1,8 +1,8 @@
 /**
  * Starts Expo Go with BAWAAL_EXPO_GO=1 so Metro stubs:
- *   - expo-av (ExponentAV) → black Video placeholder
  *   - react-native-agora
  *   - safeNative / realNativeModules bridges
+ * Video uses expo-video (SafeFeedVideo still placeholders in Expo Go).
  * Always clears Metro cache so stale transforms cannot linger.
  */
 const { spawn } = require('child_process');

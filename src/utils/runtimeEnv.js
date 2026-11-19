@@ -1,7 +1,7 @@
 /**
  * Runtime environment flags for BAWAAL.
  *
- * Expo Go cannot load custom native binaries (react-native-agora, expo-av /
+ * Expo Go cannot load custom native binaries (react-native-agora /
  * ExponentAV). Use these flags to swap in JS-only placeholders so screens
  * keep navigating without native-module crashes.
  */

@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { View, Dimensions, StyleSheet, Text, Platform } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import BawaalExpoVideo from './BawaalExpoVideo';
 
 const { height: WINDOW_HEIGHT, width: WINDOW_WIDTH } = Dimensions.get('window');
 
@@ -39,7 +39,6 @@ function resolveUserTag(item) {
     'athlete';
   const s = String(raw || 'athlete').trim();
   if (!s || s === 'null' || s === 'undefined') return '@athlete';
-  // Hide raw UUIDs in the user tag
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)) {
     return '@athlete';
   }
@@ -63,9 +62,7 @@ const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, 
   const handle = resolveUserTag(item);
   const title = resolveTitle(item);
   const playUri = resolveItemVideoUri(item);
-  // Keep the player mounted for the active row and its neighbor
   const mountPlayer = !!isActive && !!playUri;
-  // Web autoplay still needs mute until the user unmutes via the feed toggle
   const effectiveMuted =
     Platform.OS === 'web' ? !!muted || !shouldPlay : !!muted;
 
@@ -73,15 +70,13 @@ const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, 
     <View style={[styles.container, { width: w, height: h }]}>
       <View style={[StyleSheet.absoluteFill, styles.underlay]} />
       {mountPlayer ? (
-        <Video
+        <BawaalExpoVideo
           source={{ uri: playUri }}
           style={[styles.video, { width: w, height: h }]}
-          resizeMode={ResizeMode.COVER}
+          contentFit="cover"
           shouldPlay={!!shouldPlay}
           isLooping
-          // Feed chrome is mute + ⋮ only — no native play/pause / download / PiP
-          useNativeControls={false}
-          controls={false}
+          nativeControls={false}
           isMuted={effectiveMuted}
           onError={() => {
             /* soft-fail — avoid console spam on bad / 404 media URLs */
@@ -93,7 +88,6 @@ const VideoItem = memo(({ item, shouldPlay, isActive, muted = true, itemHeight, 
           <Text style={styles.missingText}>WAITING FOR CLIP</Text>
         </View>
       ) : null}
-      {/* Profile overlay: handle + title only — Follow lives in the ⋮ sheet */}
       <View style={styles.bottom} pointerEvents="box-none">
         <Text style={styles.user} numberOfLines={1}>
           {handle}

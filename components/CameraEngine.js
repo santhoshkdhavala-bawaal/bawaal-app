@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Camera, CameraType } from 'expo-camera';
-import { Video } from 'expo-av';
+import BawaalExpoVideo from '../src/components/BawaalExpoVideo';
 import VideoPublishModal from './VideoPublishModal';
 import {
   settleStopRecording,
@@ -222,11 +222,11 @@ export default function CameraEngine({
       {/* Frozen recorded clip — stays mounted under VideoPublishModal */}
       {capturedVideoUri ? (
         <View style={styles.previewContainer} pointerEvents="box-none">
-          <Video
+          <BawaalExpoVideo
             source={{ uri: capturedVideoUri }}
             style={styles.preview}
-            useNativeControls={!showPublishModal}
-            resizeMode="cover"
+            nativeControls={!showPublishModal}
+            contentFit="cover"
             isLooping
             shouldPlay={!showPublishModal}
             isMuted={!!showPublishModal}

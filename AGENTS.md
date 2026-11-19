@@ -72,7 +72,7 @@ Hubs: **ARENA** (cinematic feed; V2 GAME ON drawer filters; shelf at index 2+), 
 
 ## Arena video playback & hydrate (locked)
 
-Feed players (`ArenaClipPlayer` / `NativeFeedVideo` / `ArenaFeed` shells) use **declarative** `source={{ uri }}` + `shouldPlay` only — no render-path `setStatusAsync` loops, no sync bundled-mp4 feed fallback. Shells keep `width: '100%'`, `height: 450`, `position: 'relative'`. Load/error handlers are try/catch-wrapped. Cloud rows use `.upsert(..., { onConflict: 'id' })`; `arenaFeedStore` hydrate/warmup never throw. See `.cursor/rules/bawaal-arena-video-playback-locked.mdc` and `BAWAAL_MASTER_BLUEPRINT.md` §7.
+Feed players (`BawaalExpoVideo` / `ArenaClipPlayer` / `NativeFeedVideo` / `ArenaFeed` shells) use **declarative** `expo-video` URI sources + `shouldPlay` only — no `expo-av`, no render-path status loops, no sync bundled-mp4 feed fallback. Shells keep `width: '100%'`, `height: 450`, `position: 'relative'`. Load/error handlers are try/catch-wrapped. Cloud rows use `.upsert(..., { onConflict: 'id' })`; `arenaFeedStore` hydrate/warmup never throw. See `.cursor/rules/bawaal-arena-video-playback-locked.mdc` and `BAWAAL_MASTER_BLUEPRINT.md` §7.
 
 ## Data integration & app logic (locked)
 

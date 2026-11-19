@@ -7,13 +7,12 @@ const config = getDefaultConfig(__dirname);
 config.resolver.sourceExts.push('jsx', 'js', 'ts', 'tsx', 'json');
 
 /**
- * Expo Go / plain packager → stub expo-av (no ExponentAV).
- * Dev-client / EAS / run:android|ios → real native modules.
+ * Agora is always JS-stubbed (native binaries excluded from autolinking).
+ * Video uses expo-video (SDK 58 / Expo Go compatible) — no expo-av remaps.
  *
- *   npm run start:go  → stubs
- *   npm start         → real (BAWAAL_DEV_CLIENT=1)
- *   npx expo start    → stubs (safe Expo Go default)
- *   eas build         → real (EAS_BUILD=true)
+ *   npm run start:go  → Agora stub
+ *   npm start         → Agora stub (BAWAAL_DEV_CLIENT=1)
+ *   eas build         → Agora stub (EAS_BUILD=true)
  */
 const lifecycle = process.env.npm_lifecycle_event || '';
 
@@ -51,10 +50,6 @@ const AGORA_STUB = path.resolve(
   PROJECT_ROOT,
   'src/native/stubs/react-native-agora.js'
 );
-const EXPO_AV_STUB = path.resolve(
-  PROJECT_ROOT,
-  'src/native/stubs/expo-av.js'
-);
 
 function isSafeNativeModule(moduleName) {
   const normalized = String(moduleName || '').replace(/\\/g, '/');
@@ -84,11 +79,6 @@ function isBridgeModule(moduleName) {
   );
 }
 
-function isExpoAvModule(moduleName) {
-  const name = String(moduleName || '');
-  return name === 'expo-av' || name.startsWith('expo-av/');
-}
-
 const previousResolveRequest = config.resolver.resolveRequest;
 
 config.resolver.resolveRequest = (context, moduleName, platform) => {
@@ -111,14 +101,6 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return {
       type: 'sourceFile',
       filePath: AGORA_STUB,
-    };
-  }
-
-  // Always keep real expo-av out of Expo Go / default bundles.
-  if (stubNativeModules && isExpoAvModule(moduleName)) {
-    return {
-      type: 'sourceFile',
-      filePath: EXPO_AV_STUB,
     };
   }
 
@@ -149,26 +131,19 @@ if (Array.isArray(prevBlock)) {
 }
 
 if (stubNativeModules) {
-  const expoAvRoot = path
-    .resolve(PROJECT_ROOT, 'node_modules/expo-av')
-    .replace(/\\/g, '/');
   const realSafe = SAFE_NATIVE_REAL.replace(/\\/g, '/');
   const realBridge = REAL_BRIDGE.replace(/\\/g, '/');
 
-  const patterns = [
-    toRegex(expoAvRoot),
-    toRegex(realSafe),
-    toRegex(realBridge),
-  ];
+  const patterns = [toRegex(realSafe), toRegex(realBridge)];
 
   config.resolver.blockList = [...config.resolver.blockList, ...patterns];
 
   console.log(
-    '[metro] BAWAAL stubs ON — expo-av → placeholder, Agora → JS stub (native excluded)'
+    '[metro] BAWAAL stubs ON — Agora → JS stub (native excluded); expo-video unstubbed'
   );
 } else {
   console.log(
-    '[metro] BAWAAL native AV ON — Agora → JS stub (autolinking excluded)'
+    '[metro] BAWAAL native path ON — Agora → JS stub (autolinking excluded); expo-video live'
   );
 }
 

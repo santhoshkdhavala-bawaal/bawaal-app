@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ResizeMode, Video } from 'expo-av';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './src/components/BackLink';
+import BawaalExpoVideo from './src/components/BawaalExpoVideo';
 import { sanitizePlayableFeedUri } from './src/services/uploadService';
-import { safeUnloadExpoAvVideo } from './src/utils/safeUnloadVideo';
+import { safeReleaseExpoVideoPlayer } from './src/utils/safeUnloadVideo';
 
 const BG = '#000000';
 const WHITE = '#FFFFFF';
@@ -57,13 +57,13 @@ export default function PreviewScreen({
   title = 'PREVIEW',
 }: PreviewScreenProps) {
   const insets = useSafeAreaInsets();
-  const videoRef = useRef<Video | null>(null);
+  const videoRef = useRef<any>(null);
   const topPad = Math.max(insets.top, 12);
   const bottomPad = Math.max(insets.bottom, 16) + 12;
 
   const applyRate = useCallback(async (rate: number) => {
     try {
-      await videoRef.current?.setRateAsync?.(rate, true);
+      await videoRef.current?.setRateAsync?.(rate);
     } catch (err) {
       console.warn('[PreviewScreen] setRate failed:', (err as Error)?.message || err);
     }
@@ -73,27 +73,31 @@ export default function PreviewScreen({
     void applyRate(speedRate);
   }, [applyRate, speedRate, uri]);
 
-  // Pause → stop → unload on unmount / URI change (camera → feed hand-off)
+  // Pause → release on unmount / URI change (camera → feed hand-off)
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      void safeUnloadExpoAvVideo(node);
+      try {
+        safeReleaseExpoVideoPlayer(node?.player);
+        node?.pauseAsync?.();
+      } catch (_) {
+        /* soft-fail */
+      }
     };
   }, [uri]);
 
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
-      <Video
+      <BawaalExpoVideo
         ref={videoRef}
         style={StyleSheet.absoluteFill}
         source={{ uri }}
-        resizeMode={ResizeMode.COVER}
+        contentFit="cover"
         shouldPlay
         isLooping
         rate={speedRate}
-        shouldCorrectPitch
-        useNativeControls={false}
+        nativeControls={false}
         onLoad={() => {
           void applyRate(speedRate);
         }}

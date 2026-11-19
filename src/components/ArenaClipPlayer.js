@@ -1,6 +1,6 @@
 /**
  * Arena / Battle feed clip player.
- * Plays with expo-av. Idle rows stay black, with an optional thumbnail.
+ * Plays with expo-video (BawaalExpoVideo). Idle rows stay black, with an optional thumbnail.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,45 +14,13 @@ import {
   resolvePlayableVideoUri,
   sanitizePlayableFeedUri,
 } from '../services/uploadService';
-import { safeUnloadExpoAvVideo } from '../utils/safeUnloadVideo';
+import { safeReleaseExpoVideoPlayer } from '../utils/safeUnloadVideo';
 import {
   isUsablePlaybackUri,
   resolvePosterSource,
 } from '../utils/reelMediaFallback';
 import SafeRemoteImage from './SafeRemoteImage';
-
-function loadRealExpoAv() {
-  try {
-    // Prefer safeNative gate (null in Expo Go; real module in npm start / EAS)
-    const { loadExpoAv } = require('../native/safeNative');
-    const mod = typeof loadExpoAv === 'function' ? loadExpoAv() : null;
-    if (mod?.Video && isRealVideoComponent(mod.Video)) {
-      return mod;
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    const mod = require('expo-av');
-    if (mod?.Video && isRealVideoComponent(mod.Video)) {
-      return { Video: mod.Video, ResizeMode: mod.ResizeMode };
-    }
-  } catch (err) {
-    console.warn('[ArenaClipPlayer] expo-av unavailable:', err?.message || err);
-  }
-  return null;
-}
-
-function isRealVideoComponent(VideoComp) {
-  if (!VideoComp) return false;
-  const name = String(VideoComp.displayName || VideoComp.name || '');
-  if (/stub|mock/i.test(name)) return false;
-  return true;
-}
-
-const RealAv = loadRealExpoAv();
-const AvVideo = RealAv?.Video || null;
-const AvResizeMode = RealAv?.ResizeMode || null;
+import BawaalExpoVideo from './BawaalExpoVideo';
 
 function resolveClipUri(uri, source) {
   const direct = sanitizePlayableFeedUri(uri);
@@ -103,8 +71,8 @@ function ClipShell({ style, children, onPress, accessibilityLabel }) {
   return <View style={[styles.shell, style]}>{children}</View>;
 }
 
-/** Real expo-av path — declarative source/shouldPlay only (no blocking setStatusAsync). */
-function ExpoAvClipPlayer({
+/** Declarative expo-video path — URI source + shouldPlay only. */
+function ExpoVideoClipPlayer({
   resolved,
   style,
   label,
@@ -122,7 +90,6 @@ function ExpoAvClipPlayer({
     () => resolvePosterSource(posterUri),
     [posterUri]
   );
-  // URI-only source — never sync-swap to bundled mp4 (freezes the JS thread)
   const videoSource = useMemo(() => {
     if (!isUsablePlaybackUri(resolved)) return null;
     return { uri: String(resolved).trim() };
@@ -134,11 +101,15 @@ function ExpoAvClipPlayer({
     setPaused(!autoPlay);
   }, [autoPlay, resolved, videoSource]);
 
-  // Soft unload on URI change / unmount — never await on the render path
   useEffect(() => {
     const node = videoRef.current;
     return () => {
-      void safeUnloadExpoAvVideo(node);
+      try {
+        safeReleaseExpoVideoPlayer(node?.player);
+        node?.pauseAsync?.();
+      } catch (_) {
+        /* soft-fail */
+      }
     };
   }, [videoSource]);
 
@@ -161,7 +132,6 @@ function ExpoAvClipPlayer({
       onPress={togglePlay}
       accessibilityLabel={paused ? 'Play clip' : 'Pause clip'}
     >
-      {/* Solid black underlay — never BAWAAL logo (avoids blink on recycle) */}
       <View style={styles.blackUnderlay} pointerEvents="none" />
       {posterSource ? (
         <SafeRemoteImage
@@ -173,19 +143,16 @@ function ExpoAvClipPlayer({
           silent
         />
       ) : null}
-      <AvVideo
+      <BawaalExpoVideo
         ref={videoRef}
         style={styles.videoPlayer}
         source={videoSource}
-        resizeMode={AvResizeMode?.COVER || 'cover'}
+        contentFit="cover"
         shouldPlay={!!autoPlay && !paused && !!active}
         isLooping={loop !== false}
         isMuted={!!muted}
         volume={muted ? 0 : 1}
-        useNativeControls={false}
-        usePoster={false}
-        posterStyle={styles.poster}
-        progressUpdateIntervalMillis={1000}
+        nativeControls={false}
         onLoadStart={() => {
           try {
             setLoading(true);
@@ -247,7 +214,6 @@ function ArenaClipPlayer({
   active = true,
 }) {
   const resolved = useMemo(() => {
-    // Prefer Supabase `video_url` then local / mapped URIs
     const fromUrl =
       source && typeof source === 'object'
         ? sanitizePlayableFeedUri(source.video_url || source.videoUrl)
@@ -258,7 +224,6 @@ function ArenaClipPlayer({
 
   const posterUri = resolveClipPoster(source);
 
-  // Off-screen recycle: solid black (+ optional real thumbnail) — no decoder, no logo blink
   if (!active) {
     const idlePoster = resolvePosterSource(posterUri);
     return (
@@ -277,17 +242,9 @@ function ArenaClipPlayer({
     );
   }
 
-  if (!AvVideo) {
-    return (
-      <View style={[styles.shell, style, styles.idle]}>
-        <View style={styles.blackUnderlay} />
-      </View>
-    );
-  }
-
   return (
-    <ExpoAvClipPlayer
-      key={`av-${resolved || 'fallback'}`}
+    <ExpoVideoClipPlayer
+      key={`xv-${resolved || 'fallback'}`}
       resolved={resolved}
       style={style}
       label={label}
@@ -320,10 +277,6 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     width: '100%',
     height: '100%',
-    backgroundColor: 'transparent',
-  },
-  video: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
   videoPlayer: {
@@ -379,13 +332,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1,
-    textAlign: 'center',
-  },
-  fallbackSub: {
-    color: '#A0A0A0',
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 6,
     textAlign: 'center',
   },
 });

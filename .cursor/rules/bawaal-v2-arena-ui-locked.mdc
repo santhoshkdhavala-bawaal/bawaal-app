@@ -60,7 +60,7 @@ Also locked on this surface:
 - `src/components/ArenaV2Header.js`, `GameOnHub.js`, `NotificationsDrawer.js`, `ReelActionSheet.js`, `MuteToggleButton.js`
 - `src/constants/gameOnSports.js`, `src/constants/arenaFeedTiers.js`, `src/constants/arenaReelOverlay.js`
 - Arena wiring in `ArenaFeed.js` (header + drawer + reel actions)
-- Related: `VideoItem.js`, `src/native/stubs/expo-av.js`
+- Related: `VideoItem.js`, `src/components/BawaalExpoVideo.js`
 
 ## Related
 

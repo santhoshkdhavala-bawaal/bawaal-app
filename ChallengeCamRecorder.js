@@ -20,7 +20,7 @@ import {
   useCameraPermissions,
   useMicrophonePermissions,
 } from 'expo-camera';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 import BackLink from './src/components/BackLink';
 import {
   persistLocalVideoUri,
@@ -298,9 +298,9 @@ export default function ChallengeCamRecorder({
   }, [clearTimer]);
 
   useEffect(() => {
-    void Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      allowsRecordingIOS: true,
+    void setAudioModeAsync({
+      playsInSilentMode: true,
+      allowsRecording: true,
     }).catch(() => {});
   }, []);
 

@@ -102,7 +102,16 @@
       ],
       "expo-status-bar",
       "expo-image",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": false,
+          "supportsPictureInPicture": false
+        }
+      ],
+      "expo-audio",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

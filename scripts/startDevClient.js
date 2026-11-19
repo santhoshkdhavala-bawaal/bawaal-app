@@ -1,6 +1,7 @@
 /**
  * Starts the Expo dev-client packager with real native modules enabled.
- * Sets BAWAAL_DEV_CLIENT=1 so Metro resolves expo-av / Agora for native builds.
+ * Sets BAWAAL_DEV_CLIENT=1 so Metro resolves native bridges for native builds.
+ * Video uses expo-video; Agora stays JS-stubbed (autolinking excluded).
  */
 const { spawn } = require('child_process');
 

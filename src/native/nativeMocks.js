@@ -1,6 +1,7 @@
 /**
  * Pure-JS stand-ins for native media modules.
- * No expo-av / react-native-agora imports — safe for Expo Go bundling.
+ * No react-native-agora imports — safe for Expo Go bundling.
+ * Video playback uses expo-video via BawaalExpoVideo (not these mocks).
  */
 
 import React from 'react';

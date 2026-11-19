@@ -1,6 +1,6 @@
 /**
- * Crash-safe teardown for expo-av Video instances.
- * Pause → stop → unload in sequence; never throw into React unmount.
+ * Crash-safe teardown for video players.
+ * Supports legacy expo-av refs (if any) and expo-video VideoPlayer.release().
  */
 
 export async function safeUnloadExpoAvVideo(videoRefOrNode) {
@@ -9,6 +9,17 @@ export async function safeUnloadExpoAvVideo(videoRefOrNode) {
       ? videoRefOrNode.current
       : videoRefOrNode;
   if (!node) return;
+
+  // expo-video wrapper / player
+  try {
+    if (node.player) {
+      safeReleaseExpoVideoPlayer(node.player);
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+
   try {
     await Promise.resolve(node.setStatusAsync?.({ shouldPlay: false })).catch(() => {});
   } catch {
@@ -31,7 +42,7 @@ export async function safeUnloadExpoAvVideo(videoRefOrNode) {
   }
 }
 
-/** Best-effort release for a player that exposes pause/replace. */
+/** Best-effort release for an expo-video VideoPlayer. */
 export function safeReleaseExpoVideoPlayer(player) {
   if (!player) return;
   try {
@@ -45,6 +56,11 @@ export function safeReleaseExpoVideoPlayer(player) {
     } else if (typeof player.replaceAsync === 'function') {
       void player.replaceAsync(null).catch(() => {});
     }
+  } catch {
+    /* ignore */
+  }
+  try {
+    player.release?.();
   } catch {
     /* ignore */
   }

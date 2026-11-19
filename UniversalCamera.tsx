@@ -40,7 +40,7 @@ import {
   useMicrophonePermissions,
   type CameraType,
 } from 'expo-camera';
-import { Video as ExpoAvVideo, ResizeMode } from 'expo-av';
+import BawaalExpoVideo from './src/components/BawaalExpoVideo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BawaalCameraPermissionGate from './components/BawaalCameraPermissionGate';
 import { BawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
@@ -622,7 +622,7 @@ function NativeClipPreviewModal({
   const endSecRef = useRef(bootDur);
   const rateRef = useRef(0.5);
   const lastRateRef = useRef(1);
-  const videoRef = useRef<ExpoAvVideo>(null);
+  const videoRef = useRef<any>(null);
   const slowMoEnabled = slowMoRate > 0;
 
   useEffect(() => {
@@ -674,7 +674,7 @@ function NativeClipPreviewModal({
       if (Math.abs(nextRate - lastRateRef.current) > 0.01) {
         lastRateRef.current = nextRate;
         videoRef.current
-          ?.setStatusAsync?.({ rate: nextRate, shouldCorrectPitch: true })
+          ?.setStatusAsync?.({ rate: nextRate })
           .catch(() => {});
       }
     },
@@ -724,16 +724,16 @@ function NativeClipPreviewModal({
         <Text style={previewStyles.title}>Slow-Mo Preview</Text>
 
         <View style={previewStyles.videoWrap}>
-          <ExpoAvVideo
+          <BawaalExpoVideo
             ref={videoRef}
             source={{ uri }}
             style={previewStyles.video}
-            resizeMode={ResizeMode.COVER}
+            contentFit="cover"
             shouldPlay={playing}
             isLooping
             isMuted={false}
-            useNativeControls={false}
-            progressUpdateIntervalMillis={80}
+            nativeControls={false}
+            timeUpdateIntervalSec={0.08}
             onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           />
           <TouchableOpacity
@@ -2486,14 +2486,14 @@ export default function UniversalCamera({
           style={styles.capturedVideoOverlay}
           pointerEvents={isPublishModalOpen ? 'none' : 'box-none'}
         >
-          <ExpoAvVideo
+          <BawaalExpoVideo
             source={{ uri: recordedVideoUri }}
             style={StyleSheet.absoluteFill}
             shouldPlay
             isLooping
             isMuted={!!isPublishModalOpen}
-            resizeMode={ResizeMode.COVER}
-            useNativeControls={false}
+            contentFit="cover"
+            nativeControls={false}
           />
         </View>
       ) : null}
