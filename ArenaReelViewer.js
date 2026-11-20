@@ -14,6 +14,7 @@ import {
   Animated,
   PanResponder,
   Share,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeFeedVideo, {
@@ -139,6 +140,338 @@ async function copyTextToClipboardWeb(text) {
   }
 }
 
+/** Cross-platform copy — web clipboard, optional expo-clipboard on native. */
+async function copyShareText(text) {
+  if (Platform.OS === 'web') return copyTextToClipboardWeb(text);
+  try {
+    // Soft optional — present in Expo SDKs when installed.
+    const ExpoClipboard = require('expo-clipboard');
+    if (ExpoClipboard?.setStringAsync) {
+      await ExpoClipboard.setStringAsync(String(text || ''));
+      return true;
+    }
+    if (ExpoClipboard?.setString) {
+      ExpoClipboard.setString(String(text || ''));
+      return true;
+    }
+  } catch {
+    /* no native clipboard module */
+  }
+  return false;
+}
+
+/** Open external share targets without unhandled rejections. */
+function openExternalShareUrl(url) {
+  const href = String(url || '').trim();
+  if (!href) return;
+  if (Platform.OS === 'web') {
+    try {
+      if (typeof window !== 'undefined' && typeof window.open === 'function') {
+        window.open(href, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  Linking.openURL(href).catch(() => {
+    /* ignore — app may be missing */
+  });
+}
+
+const SHARE_SHEET_ACTIONS = [
+  { id: 'whatsapp', label: 'WhatsApp', tint: '#25D366' },
+  { id: 'facebook', label: 'Facebook', tint: '#1877F2' },
+  { id: 'x', label: 'X', tint: '#E8ECE9' },
+  { id: 'telegram', label: 'Telegram', tint: '#2AABEE' },
+  { id: 'copy', label: 'Copy Link', tint: GOLD },
+  { id: 'more', label: 'More', tint: CRIMSON },
+];
+
+/**
+ * Sleek BAWAAL share sheet — WhatsApp / Facebook / X / Telegram / Copy / More.
+ * Never jumps straight to the Windows system share picker on web.
+ */
+const BawaalShareSheet = memo(function BawaalShareSheet({
+  visible,
+  reel,
+  bottomPad = 16,
+  onClose,
+  onToast,
+}) {
+  const [copied, setCopied] = useState(false);
+  const payload = useMemo(() => buildReelSharePayload(reel), [reel]);
+
+  const closeSheet = useCallback(() => {
+    setCopied(false);
+    onClose?.();
+  }, [onClose]);
+
+  const runNativeOrWebMore = useCallback(async () => {
+    const { message, url, title } = payload;
+    try {
+      if (Platform.OS === 'web') {
+        if (
+          typeof navigator !== 'undefined' &&
+          typeof navigator.share === 'function'
+        ) {
+          await navigator.share({
+            title: title || 'BAWAAL Arena',
+            text: message,
+            url,
+          });
+          return;
+        }
+        const ok = await copyShareText(message);
+        onToast?.(ok ? 'Link copied to clipboard' : 'Share unavailable', 2000);
+        return;
+      }
+      await Share.share({
+        title: 'BAWAAL Arena',
+        message,
+        url,
+      });
+    } catch (err) {
+      const dismissed =
+        err?.name === 'AbortError' ||
+        /dismiss|cancel|abort/i.test(String(err?.message || ''));
+      if (!dismissed) onToast?.('Share unavailable', 1800);
+    }
+  }, [onToast, payload]);
+
+  const onPick = useCallback(
+    async (id) => {
+      const { message, url, title, headline } = payload;
+      const shareTitle = headline || title || 'BAWAAL Arena';
+
+      if (id === 'whatsapp') {
+        openExternalShareUrl(
+          `https://wa.me/?text=${encodeURIComponent(message)}`
+        );
+        closeSheet();
+        return;
+      }
+      if (id === 'facebook') {
+        openExternalShareUrl(
+          `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`
+        );
+        closeSheet();
+        return;
+      }
+      if (id === 'x') {
+        openExternalShareUrl(
+          `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`
+        );
+        closeSheet();
+        return;
+      }
+      if (id === 'telegram') {
+        openExternalShareUrl(
+          `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(shareTitle)}`
+        );
+        closeSheet();
+        return;
+      }
+      if (id === 'copy') {
+        const ok = await copyShareText(message);
+        if (ok) {
+          setCopied(true);
+          onToast?.('Link copied', 2200);
+          setTimeout(() => setCopied(false), 1600);
+        } else {
+          onToast?.('Could not copy link', 2000);
+        }
+        return;
+      }
+      if (id === 'more') {
+        closeSheet();
+        // Defer so the sheet closes before the system/share UI mounts.
+        setTimeout(() => {
+          void runNativeOrWebMore();
+        }, 80);
+      }
+    },
+    [closeSheet, onToast, payload, runNativeOrWebMore]
+  );
+
+  if (!visible) return null;
+
+  return (
+    <View style={shareStyles.overlay} pointerEvents="box-none">
+      <Pressable
+        style={shareStyles.backdrop}
+        onPress={closeSheet}
+        accessibilityRole="button"
+        accessibilityLabel="Close share"
+      />
+      <View style={[shareStyles.sheet, { paddingBottom: bottomPad }]}>
+        <View style={shareStyles.handle} />
+        <View style={shareStyles.header}>
+          <Text style={shareStyles.kicker}>SHARE REEL</Text>
+          <TouchableOpacity
+            onPress={closeSheet}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <Text style={shareStyles.close}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={shareStyles.preview} numberOfLines={2}>
+          {payload.headline}
+        </Text>
+        <Text style={shareStyles.handleLine} numberOfLines={1}>
+          @{payload.handle}
+        </Text>
+        <View style={shareStyles.grid}>
+          {SHARE_SHEET_ACTIONS.map((action) => {
+            const isCopy = action.id === 'copy';
+            const label = isCopy && copied ? 'Copied' : action.label;
+            return (
+              <TouchableOpacity
+                key={action.id}
+                style={[
+                  shareStyles.cell,
+                  isCopy && copied && shareStyles.cellCopied,
+                ]}
+                onPress={() => void onPick(action.id)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={label}
+              >
+                <View
+                  style={[
+                    shareStyles.iconOrb,
+                    { borderColor: action.tint },
+                  ]}
+                >
+                  <Text style={[shareStyles.iconGlyph, { color: action.tint }]}>
+                    {action.id === 'whatsapp'
+                      ? 'W'
+                      : action.id === 'facebook'
+                        ? 'f'
+                        : action.id === 'x'
+                          ? 'X'
+                          : action.id === 'telegram'
+                            ? 'T'
+                            : action.id === 'copy'
+                              ? copied
+                                ? '✓'
+                                : '⧉'
+                              : '⋯'}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    shareStyles.cellLabel,
+                    isCopy && copied && { color: GOLD },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+});
+
+const shareStyles = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    zIndex: 80,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+  },
+  sheet: {
+    backgroundColor: BG,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.28)',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    marginBottom: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  kicker: {
+    color: GOLD,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.6,
+  },
+  close: {
+    color: WHITE,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  preview: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 21,
+  },
+  handleLine: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 14,
+    marginBottom: 8,
+  },
+  cell: {
+    width: '31%',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cellCopied: {
+    opacity: 1,
+  },
+  iconOrb: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1.5,
+    backgroundColor: CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconGlyph: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  cellLabel: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+});
+
 /**
  * One-shot floating vault react at tap (x,y) — scale 0.3→1.2, rise −120, fade out.
  * Self-removes via onDone when the 800ms sequence finishes.
@@ -220,6 +553,7 @@ export default function ArenaReelViewer({
   const [hype, setHype] = useState(0);
   const [showBanter, setShowBanter] = useState(false);
   const [showDm, setShowDm] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -272,6 +606,7 @@ export default function ArenaReelViewer({
     dismissingRef.current = true;
     setShowBanter(false);
     setShowDm(false);
+    setShowShare(false);
     setMoreOpen(false);
     setVaultOpen(false);
     Animated.parallel([
@@ -293,8 +628,8 @@ export default function ArenaReelViewer({
 
   useEffect(() => {
     overlaysBlockingRef.current =
-      showBanter || showDm || vaultOpen || moreOpen;
-  }, [showBanter, showDm, vaultOpen, moreOpen]);
+      showBanter || showDm || showShare || vaultOpen || moreOpen;
+  }, [showBanter, showDm, showShare, vaultOpen, moreOpen]);
 
   // Pan dismiss — RN PanResponder + Animated refs (gesture handlers only).
   /* eslint-disable react-hooks/refs -- dismiss gesture reads refs inside handlers, not for render */
@@ -405,6 +740,7 @@ export default function ArenaReelViewer({
     setHype(reel.hypeCount || 0);
     setShowBanter(false);
     setShowDm(false);
+    setShowShare(false);
     setMoreOpen(false);
     setVaultOpen(false);
     setPaused(false);
@@ -509,58 +845,19 @@ export default function ArenaReelViewer({
     [spawnTapReactAt]
   );
 
-  const shareReel = useCallback(async () => {
-    const { message, url } = buildReelSharePayload(reel);
-    try {
-      if (Platform.OS === 'web') {
-        // Prefer clipboard on web — avoid Windows desktop share-app picker.
-        const copied = await copyTextToClipboardWeb(message);
-        if (copied) {
-          flashToast('Link copied to clipboard', 2200);
-          return;
-        }
-        // Last resort: Web Share API only if clipboard is blocked.
-        if (
-          typeof navigator !== 'undefined' &&
-          typeof navigator.share === 'function'
-        ) {
-          try {
-            await navigator.share({
-              title: 'BAWAAL Arena',
-              text: message,
-              url,
-            });
-            return;
-          } catch (shareErr) {
-            const dismissed =
-              shareErr?.name === 'AbortError' ||
-              /abort|cancel|dismiss/i.test(String(shareErr?.message || ''));
-            if (dismissed) return;
-          }
-        }
-        flashToast('Could not copy link', 2000);
-        return;
-      }
-
-      await Share.share({
-        title: 'BAWAAL Arena',
-        message,
-        url,
-      });
-    } catch (err) {
-      // Native sheet dismissed / unavailable — never throw unhandled.
-      const dismissed =
-        err?.name === 'AbortError' ||
-        /dismiss|cancel|abort/i.test(String(err?.message || ''));
-      if (dismissed) return;
-      flashToast('Share unavailable', 1800);
-    }
-  }, [flashToast, reel]);
+  const openShareSheet = useCallback(() => {
+    setMoreOpen(false);
+    setVaultOpen(false);
+    setShowBanter(false);
+    setShowDm(false);
+    setShowShare(true);
+  }, []);
 
   const openBanterFeed = useCallback(() => {
     setMoreOpen(false);
     setVaultOpen(false);
     setShowDm(false);
+    setShowShare(false);
     setShowBanter(true);
   }, []);
 
@@ -568,6 +865,7 @@ export default function ArenaReelViewer({
     setMoreOpen(false);
     setShowBanter(false);
     setShowDm(false);
+    setShowShare(false);
     setVaultOpen(true);
   }, []);
 
@@ -575,6 +873,7 @@ export default function ArenaReelViewer({
     setMoreOpen(false);
     setVaultOpen(false);
     setShowBanter(false);
+    setShowShare(false);
     setShowDm(true);
   }, []);
 
@@ -608,15 +907,14 @@ export default function ArenaReelViewer({
         return;
       }
       if (actionId === 'share') {
-        setVaultOpen(false);
-        await shareReel();
+        openShareSheet();
         return;
       }
       if (actionId === 'dm' || actionId === 'send') {
         openDmSheet();
       }
     },
-    [dropGif, openBanterFeed, openDmSheet, openReactions, shareReel]
+    [dropGif, openBanterFeed, openDmSheet, openReactions, openShareSheet]
   );
 
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly
@@ -845,6 +1143,7 @@ export default function ArenaReelViewer({
             setMoreOpen(false);
             setShowBanter(false);
             setShowDm(false);
+            setShowShare(false);
             setVaultOpen((open) => !open);
           }}
           activeOpacity={0.85}
@@ -911,6 +1210,13 @@ export default function ArenaReelViewer({
           visible={showDm && visible}
           peer={dmPeer}
           onClose={() => setShowDm(false)}
+        />
+        <BawaalShareSheet
+          visible={showShare && visible}
+          reel={reel}
+          bottomPad={Math.max(insets.bottom, 16) + 12}
+          onClose={() => setShowShare(false)}
+          onToast={flashToast}
         />
       </Animated.View>
     </Modal>
