@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Animated,
   PanResponder,
+  FlatList,
   Share,
   Linking,
 } from 'react-native';
@@ -60,6 +61,8 @@ const RAIL_GAP_VAULT_TO_SHEET = 14;
 
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 1.15;
+const DOUBLE_TAP_MS = 280;
+const WEB_WHEEL_THROTTLE_MS = 420;
 
 const BG = '#08120F';
 const WHITE = '#FFFFFF';
@@ -538,7 +541,187 @@ const FloatingTapReact = memo(function FloatingTapReact({
 });
 
 /**
- * Full-screen Arena Reel — immersive edge-to-edge player (zero-clutter Option B).
+ * One full-viewport reel page inside the vertical snap list.
+ * Only the active page runs audio/video (`paused` when off-screen).
+ */
+const ReelSlide = memo(function ReelSlide({
+  reel,
+  pageH,
+  isActive,
+  muted,
+  paused,
+  onSingleTap,
+  onDoubleTap,
+}) {
+  const uri = useMemo(() => {
+    const raw =
+      resolveFeedVideoUri(reel) ||
+      toPublicFeedVideoUrl(reel?.videoUri) ||
+      toPublicFeedVideoUrl(reel?.publicCloudUrl) ||
+      toPublicFeedVideoUrl(reel?.remoteVideoUri) ||
+      toPublicFeedVideoUrl(reel?.localVideoUri) ||
+      null;
+    if (raw && isUsablePlaybackUri(raw)) return raw;
+    return null;
+  }, [reel]);
+
+  const posterUri =
+    reel?.thumbnailUrl ||
+    reel?.thumbnail_url ||
+    reel?.posterUri ||
+    null;
+  const posterSource = useMemo(
+    () => resolvePosterSource(posterUri),
+    [posterUri]
+  );
+  const [buffering, setBuffering] = useState(true);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+  const lastTapRef = useRef(0);
+  const singleTapTimerRef = useRef(null);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- uri change reset */
+    setPlaybackFailed(false);
+    setBuffering(!!uri);
+    /* eslint-enable react-hooks/set-state-in-effect */
+    if (!uri) return undefined;
+    const t = setTimeout(() => setBuffering(false), 1600);
+    return () => clearTimeout(t);
+  }, [uri, reel?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+    };
+  }, []);
+
+  const handlePress = useCallback(
+    (e) => {
+      const now = Date.now();
+      const ne = e?.nativeEvent || {};
+      const x =
+        typeof ne.locationX === 'number'
+          ? ne.locationX
+          : typeof ne.pageX === 'number'
+            ? ne.pageX
+            : SCREEN_W / 2;
+      const y =
+        typeof ne.locationY === 'number'
+          ? ne.locationY
+          : typeof ne.pageY === 'number'
+            ? ne.pageY
+            : SCREEN_H / 2;
+
+      if (now - lastTapRef.current < DOUBLE_TAP_MS) {
+        if (singleTapTimerRef.current) {
+          clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+        lastTapRef.current = 0;
+        onDoubleTap?.(x, y);
+        return;
+      }
+      lastTapRef.current = now;
+      singleTapTimerRef.current = setTimeout(() => {
+        singleTapTimerRef.current = null;
+        onSingleTap?.();
+      }, DOUBLE_TAP_MS);
+    },
+    [onDoubleTap, onSingleTap]
+  );
+
+  const showPosterCard = !uri || playbackFailed;
+  const handle = reel?.author?.startsWith('@')
+    ? reel.author
+    : `@${String(reel?.author || 'athlete').replace(/^@/, '')}`;
+
+  return (
+    <View style={[styles.slidePage, { height: pageH, width: SCREEN_W }]}>
+      <View style={styles.videoShell} pointerEvents="box-none">
+        {showPosterCard ? (
+          <View style={styles.posterCard} pointerEvents="none">
+            <View style={[styles.posterCardImage, { backgroundColor: BG }]} />
+            {posterSource ? (
+              <SafeRemoteImage
+                source={posterSource}
+                style={styles.posterCardImage}
+                resizeMode="cover"
+                fallbackSource={null}
+              />
+            ) : null}
+            <View style={styles.posterCardScrim} />
+            <View style={styles.posterCardBody}>
+              <Text style={styles.posterCardEyebrow}>ARENA REEL</Text>
+              <UserHandle
+                handle={handle}
+                verified={reel?.verified ?? isHandleVerified(handle)}
+                size={18}
+                color={WHITE}
+                textStyle={styles.posterCardHandle}
+              />
+              <Text style={styles.posterCardCaption} numberOfLines={4}>
+                {reel?.caption ||
+                  reel?.title ||
+                  'Clip unavailable — caption locked in.'}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <>
+            <View
+              style={[styles.posterFill, { backgroundColor: BG }]}
+              pointerEvents="none"
+            />
+            {posterSource ? (
+              <SafeRemoteImage
+                source={posterSource}
+                style={styles.posterFill}
+                resizeMode="cover"
+                pointerEvents="none"
+                fallbackSource={null}
+              />
+            ) : null}
+            <SafeFeedVideo
+              uri={uri}
+              source={reel}
+              posterUri={posterUri}
+              style={styles.videoFill}
+              muted={muted || !isActive}
+              loop
+              autoPlay={isActive}
+              paused={paused || !isActive}
+              contentFit="cover"
+              nativeControls={false}
+              immersive
+              onPlaybackError={() => {
+                setPlaybackFailed(true);
+                setBuffering(false);
+              }}
+            />
+            {buffering && isActive ? (
+              <View style={styles.bufferOverlay} pointerEvents="none">
+                <ActivityIndicator color={WHITE} size="large" />
+              </View>
+            ) : null}
+            {paused && isActive ? (
+              <View style={styles.pauseBadge} pointerEvents="none">
+                <Text style={styles.pauseBadgeText}>PAUSED</Text>
+              </View>
+            ) : null}
+          </>
+        )}
+        <Pressable
+          style={styles.videoTapLayer}
+          onPress={handlePress}
+          accessibilityLabel="Tap to pause or play · double-tap to hype"
+        />
+      </View>
+    </View>
+  );
+});
+
+/**
+ * Full-screen Arena Reel — Instagram-style vertical paging (zero-clutter Option B).
  *
  * Layout: stealth full-bleed video; right rail = mute + vault skull + ⋮ only.
  * All social actions (Like/skull vault, Banter, Share, DM, Comment) live inside ⋮.
@@ -547,11 +730,31 @@ const FloatingTapReact = memo(function FloatingTapReact({
 export default function ArenaReelViewer({
   visible,
   reel,
+  /** Full Sparks/Josh (or shelf) playlist for continuous vertical browse. */
+  playlist = null,
+  initialIndex = 0,
   onClose,
   /** Inherit mute from the feed card so fullscreen doesn't flash a second control set. */
   initialMuted = false,
 }) {
   const insets = useSafeAreaInsets();
+  const listRef = useRef(null);
+  const [pageH, setPageH] = useState(SCREEN_H);
+  const resolvedPlaylist = useMemo(() => {
+    if (Array.isArray(playlist) && playlist.length > 0) return playlist;
+    if (reel) return [reel];
+    return [];
+  }, [playlist, reel]);
+  const safeInitial = useMemo(() => {
+    if (!resolvedPlaylist.length) return 0;
+    const n = Number(initialIndex);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.min(Math.floor(n), resolvedPlaylist.length - 1);
+  }, [initialIndex, resolvedPlaylist.length]);
+  const [activeIndex, setActiveIndex] = useState(safeInitial);
+  const activeIndexRef = useRef(safeInitial);
+  const activeReel = resolvedPlaylist[activeIndex] || reel || null;
+
   const [hype, setHype] = useState(0);
   const [showBanter, setShowBanter] = useState(false);
   const [showDm, setShowDm] = useState(false);
@@ -633,7 +836,11 @@ export default function ArenaReelViewer({
       showBanter || showDm || showShare || vaultOpen || moreOpen;
   }, [showBanter, showDm, showShare, vaultOpen, moreOpen]);
 
-  // Pan dismiss — RN PanResponder + Animated refs (gesture handlers only).
+  useEffect(() => {
+    activeIndexRef.current = activeIndex;
+  }, [activeIndex]);
+
+  // Pan dismiss — only when already at the first reel (pull down to close).
   /* eslint-disable react-hooks/refs -- dismiss gesture reads refs inside handlers, not for render */
   const panAnimRef = useRef({ dismissY, dismissOpacity, finishDismiss });
   panAnimRef.current = { dismissY, dismissOpacity, finishDismiss };
@@ -645,6 +852,7 @@ export default function ArenaReelViewer({
           if (overlaysBlockingRef.current || dismissingRef.current) {
             return false;
           }
+          if (activeIndexRef.current !== 0) return false;
           return (
             gesture.dy > 14 &&
             Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25
@@ -704,42 +912,18 @@ export default function ArenaReelViewer({
   );
   /* eslint-enable react-hooks/refs */
 
-  const uri = useMemo(() => {
-    const raw =
-      resolveFeedVideoUri(reel) ||
-      toPublicFeedVideoUrl(reel?.videoUri) ||
-      toPublicFeedVideoUrl(reel?.publicCloudUrl) ||
-      toPublicFeedVideoUrl(reel?.remoteVideoUri) ||
-      toPublicFeedVideoUrl(reel?.localVideoUri) ||
-      null;
-    if (raw && isUsablePlaybackUri(raw)) return raw;
-    // Mock / invalid / delayed URL → black shell (no sync bundled-mp4 swap)
-    return null;
-  }, [reel]);
-
-  const posterUri =
-    reel?.thumbnailUrl ||
-    reel?.thumbnail_url ||
-    reel?.posterUri ||
-    null;
-  const posterSource = useMemo(
-    () => resolvePosterSource(posterUri),
-    [posterUri]
-  );
-  const [buffering, setBuffering] = useState(true);
-  const [playbackFailed, setPlaybackFailed] = useState(false);
-
-  const showPosterCard = !uri || playbackFailed;
-
   useEffect(() => {
     prefetchReelPoster();
   }, []);
 
   useEffect(() => {
-    if (!visible || !reel) return undefined;
+    if (!visible || !resolvedPlaylist.length) return undefined;
+    const seed = resolvedPlaylist[safeInitial] || resolvedPlaylist[0];
     /* eslint-disable react-hooks/set-state-in-effect -- reel open reset */
     resetDismissAnim();
-    setHype(reel.hypeCount || 0);
+    setActiveIndex(safeInitial);
+    activeIndexRef.current = safeInitial;
+    setHype(Number(seed?.hypeCount) || 0);
     setShowBanter(false);
     setShowDm(false);
     setShowShare(false);
@@ -747,15 +931,137 @@ export default function ArenaReelViewer({
     setVaultOpen(false);
     setPaused(false);
     setMuted(!!initialMuted);
-    setBuffering(!!uri);
-    setPlaybackFailed(false);
     setTapReacts([]);
     setBurstParticles([]);
     /* eslint-enable react-hooks/set-state-in-effect */
-    if (!uri) return undefined;
-    const t = setTimeout(() => setBuffering(false), 1600);
+    const t = setTimeout(() => {
+      try {
+        listRef.current?.scrollToIndex?.({
+          index: safeInitial,
+          animated: false,
+        });
+      } catch (_) {
+        /* ignore */
+      }
+    }, 32);
     return () => clearTimeout(t);
-  }, [visible, reel?.id, reel, initialMuted, uri, resetDismissAnim]);
+    // Intentionally reset when the viewer opens / playlist seed changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, safeInitial, resolvedPlaylist.length, initialMuted, resetDismissAnim]);
+
+  const goToIndex = useCallback(
+    (nextIndex, { animated = true } = {}) => {
+      if (!resolvedPlaylist.length) return;
+      const clamped = Math.max(
+        0,
+        Math.min(nextIndex, resolvedPlaylist.length - 1)
+      );
+      if (clamped === activeIndexRef.current) return;
+      setPaused(false);
+      setMoreOpen(false);
+      setVaultOpen(false);
+      setShowBanter(false);
+      setShowDm(false);
+      setShowShare(false);
+      setActiveIndex(clamped);
+      activeIndexRef.current = clamped;
+      const nextReel = resolvedPlaylist[clamped];
+      setHype(Number(nextReel?.hypeCount) || 0);
+      try {
+        listRef.current?.scrollToIndex?.({ index: clamped, animated });
+      } catch (_) {
+        /* ignore */
+      }
+    },
+    [resolvedPlaylist]
+  );
+
+  const goNext = useCallback(() => {
+    if (overlaysBlockingRef.current) return;
+    const next = activeIndexRef.current + 1;
+    if (next >= resolvedPlaylist.length) return;
+    goToIndex(next);
+  }, [goToIndex, resolvedPlaylist.length]);
+
+  const goPrevOrDismiss = useCallback(() => {
+    if (overlaysBlockingRef.current) return;
+    if (activeIndexRef.current <= 0) {
+      finishDismiss();
+      return;
+    }
+    goToIndex(activeIndexRef.current - 1);
+  }, [finishDismiss, goToIndex]);
+
+  // Desktop browser: ArrowUp/Down + mouse wheel / trackpad paging
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !visible) return undefined;
+    let lastWheelAt = 0;
+    const onKeyDown = (event) => {
+      if (overlaysBlockingRef.current) return;
+      const tag = String(event?.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+        event.preventDefault?.();
+        goNext();
+      } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
+        event.preventDefault?.();
+        goPrevOrDismiss();
+      } else if (event.key === 'Escape') {
+        finishDismiss();
+      } else if (event.key === ' ' || event.code === 'Space') {
+        event.preventDefault?.();
+        setPaused((p) => !p);
+      }
+    };
+    const onWheel = (event) => {
+      if (overlaysBlockingRef.current) return;
+      const now = Date.now();
+      if (now - lastWheelAt < WEB_WHEEL_THROTTLE_MS) return;
+      const dy = Number(event?.deltaY) || 0;
+      if (Math.abs(dy) < 28) return;
+      lastWheelAt = now;
+      if (dy > 0) goNext();
+      else goPrevOrDismiss();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('wheel', onWheel, { passive: true });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('wheel', onWheel);
+    };
+  }, [finishDismiss, goNext, goPrevOrDismiss, visible]);
+
+  const playlistRef = useRef(resolvedPlaylist);
+  useEffect(() => {
+    playlistRef.current = resolvedPlaylist;
+  }, [resolvedPlaylist]);
+
+  const onViewableItemsChanged = useCallback(({ viewableItems }) => {
+    const first = viewableItems?.[0];
+    if (first == null || typeof first.index !== 'number') return;
+    if (first.index === activeIndexRef.current) return;
+    activeIndexRef.current = first.index;
+    setActiveIndex(first.index);
+    setPaused(false);
+    setMoreOpen(false);
+    setVaultOpen(false);
+    const nextReel = playlistRef.current[first.index];
+    setHype(Number(nextReel?.hypeCount) || 0);
+  }, []);
+
+  const viewabilityConfig = useMemo(
+    () => ({ itemVisiblePercentThreshold: 80 }),
+    []
+  );
+
+  const getItemLayout = useCallback(
+    (_data, index) => ({
+      length: pageH,
+      offset: pageH * index,
+      index,
+    }),
+    [pageH]
+  );
 
   const togglePlayPause = useCallback(() => {
     // JS-only play/pause — never enter native VideoView fullscreen
@@ -811,23 +1117,23 @@ export default function ArenaReelViewer({
     });
   }, []);
 
-  const handleVideoTap = useCallback(
-    (e) => {
-      const ne = e?.nativeEvent || {};
-      // Prefer local coords on the full-bleed video container
-      const x =
-        typeof ne.locationX === 'number'
-          ? ne.locationX
-          : typeof ne.pageX === 'number'
-            ? ne.pageX
-            : SCREEN_W / 2;
-      const y =
-        typeof ne.locationY === 'number'
-          ? ne.locationY
-          : typeof ne.pageY === 'number'
-            ? ne.pageY
-            : SCREEN_H / 2;
-      spawnTapReactAt(x, y);
+  /** Single tap → pause/play. */
+  const handleSingleTap = useCallback(() => {
+    togglePlayPause();
+  }, [togglePlayPause]);
+
+  /** Double tap → instant Hype / Like burst at tap point. */
+  const handleDoubleTap = useCallback(
+    (x, y) => {
+      setHype((n) => n + 1);
+      const cx = Number.isFinite(x) ? x : SCREEN_W / 2;
+      const cy = Number.isFinite(y) ? y : SCREEN_H * 0.42;
+      spawnTapReactAt(cx, cy, 'love');
+      spawnTapReactAt(
+        SCREEN_W * (0.35 + Math.random() * 0.3),
+        SCREEN_H * (0.3 + Math.random() * 0.2),
+        'head_on_fire'
+      );
     },
     [spawnTapReactAt]
   );
@@ -880,19 +1186,46 @@ export default function ArenaReelViewer({
   }, []);
 
   const dmPeer = useMemo(() => {
-    if (!reel) return null;
-    const handle = String(reel.author || reel.handle || 'athlete').replace(
-      /^@/,
-      ''
-    );
+    if (!activeReel) return null;
+    const peerHandle = String(
+      activeReel.author || activeReel.handle || 'athlete'
+    ).replace(/^@/, '');
     return {
-      id: reel.user_id || reel.userId || reel.hostId || handle,
-      userId: reel.user_id || reel.userId || reel.hostId || null,
-      handle,
-      displayName: reel.displayName || reel.realName || handle,
-      avatarUri: reel.avatarUri || reel.avatar_url || reel.avatar || null,
+      id: activeReel.user_id || activeReel.userId || activeReel.hostId || peerHandle,
+      userId: activeReel.user_id || activeReel.userId || activeReel.hostId || null,
+      handle: peerHandle,
+      displayName:
+        activeReel.displayName || activeReel.realName || peerHandle,
+      avatarUri:
+        activeReel.avatarUri ||
+        activeReel.avatar_url ||
+        activeReel.avatar ||
+        null,
     };
-  }, [reel]);
+  }, [activeReel]);
+
+  const renderSlide = useCallback(
+    ({ item, index }) => (
+      <ReelSlide
+        reel={item}
+        pageH={pageH}
+        isActive={visible && index === activeIndex}
+        muted={muted}
+        paused={paused}
+        onSingleTap={handleSingleTap}
+        onDoubleTap={handleDoubleTap}
+      />
+    ),
+    [
+      activeIndex,
+      handleDoubleTap,
+      handleSingleTap,
+      muted,
+      pageH,
+      paused,
+      visible,
+    ]
+  );
 
   const onMoreAction = useCallback(
     async (actionId) => {
@@ -920,11 +1253,11 @@ export default function ArenaReelViewer({
   );
 
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly
-  if (!reel) return null;
+  if (!activeReel && !resolvedPlaylist.length) return null;
 
-  const handle = reel.author?.startsWith('@')
-    ? reel.author
-    : `@${String(reel.author || 'athlete').replace(/^@/, '')}`;
+  const handle = activeReel?.author?.startsWith('@')
+    ? activeReel.author
+    : `@${String(activeReel?.author || 'athlete').replace(/^@/, '')}`;
 
   const topPad =
     (Platform.OS === 'android'
@@ -959,109 +1292,49 @@ export default function ArenaReelViewer({
             transform: [{ translateY: dismissY }],
           },
         ]}
-        onLayout={onShellLayout}
+        onLayout={(event) => {
+          onShellLayout(event);
+          const h = event?.nativeEvent?.layout?.height;
+          if (h > 0 && Math.abs(h - pageH) > 1) setPageH(h);
+        }}
         {...panResponder.panHandlers}
       >
-        <View style={styles.videoShell} pointerEvents="box-none">
-          {showPosterCard ? (
-            <View style={styles.posterCard} pointerEvents="none">
-              <View style={[styles.posterCardImage, { backgroundColor: BG }]} />
-              {posterSource ? (
-                <SafeRemoteImage
-                  source={posterSource}
-                  style={styles.posterCardImage}
-                  resizeMode="cover"
-                  fallbackSource={null}
-                />
-              ) : null}
-              <View style={styles.posterCardScrim} />
-              <View style={styles.posterCardBody}>
-                <Text style={styles.posterCardEyebrow}>ARENA REEL</Text>
-                <UserHandle
-                  handle={handle}
-                  verified={reel.verified ?? isHandleVerified(handle)}
-                  size={18}
-                  color={WHITE}
-                  textStyle={styles.posterCardHandle}
-                />
-                <Text style={styles.posterCardCaption} numberOfLines={4}>
-                  {reel.caption ||
-                    reel.title ||
-                    'Clip unavailable — caption locked in.'}
-                </Text>
-                {!uri ? (
-                  <Text style={styles.posterCardHint}>
-                    No playable video URL · showing poster card
-                  </Text>
-                ) : (
-                  <Text style={styles.posterCardHint}>
-                    Playback failed · showing poster card
-                  </Text>
-                )}
-              </View>
-            </View>
-          ) : (
-            <>
-              <View
-                style={[styles.posterFill, { backgroundColor: BG }]}
-                pointerEvents="none"
-              />
-              {posterSource ? (
-                <SafeRemoteImage
-                  source={posterSource}
-                  style={styles.posterFill}
-                  resizeMode="cover"
-                  pointerEvents="none"
-                  fallbackSource={null}
-                />
-              ) : null}
-              <SafeFeedVideo
-                uri={uri}
-                source={reel}
-                posterUri={posterUri}
-                style={styles.videoFill}
-                muted={muted}
-                loop
-                autoPlay={visible}
-                paused={paused || !visible}
-                contentFit="cover"
-                nativeControls={false}
-                immersive
-                onPlaybackError={() => {
-                  setPlaybackFailed(true);
-                  setBuffering(false);
-                }}
-              />
-              {buffering && visible ? (
-                <View style={styles.bufferOverlay} pointerEvents="none">
-                  <ActivityIndicator color={WHITE} size="large" />
-                </View>
-              ) : null}
-              {/* Full-bleed tap layer — spawn vault skull/skel reacts at (x,y) */}
-              <Pressable
-                style={styles.videoTapLayer}
-                onPress={handleVideoTap}
-                onLongPress={togglePlayPause}
-                delayLongPress={280}
-                accessibilityLabel="Tap to react · long-press to pause"
-              />
-              {paused ? (
-                <View style={styles.pauseBadge} pointerEvents="none">
-                  <Text style={styles.pauseBadgeText}>PAUSED</Text>
-                </View>
-              ) : null}
-            </>
-          )}
-
-          {/* Poster / no-video: still allow tap-to-react on the shell */}
-          {showPosterCard ? (
-            <Pressable
-              style={styles.videoTapLayer}
-              onPress={handleVideoTap}
-              accessibilityLabel="Tap to react"
-            />
-          ) : null}
-        </View>
+        <FlatList
+          ref={listRef}
+          style={styles.pagerList}
+          data={resolvedPlaylist}
+          keyExtractor={(item, index) =>
+            String(item?.id ?? item?.videoUri ?? item?.uri ?? `reel-${index}`)
+          }
+          renderItem={renderSlide}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          snapToAlignment="start"
+          snapToInterval={pageH}
+          decelerationRate="fast"
+          disableIntervalMomentum
+          bounces={false}
+          overScrollMode="never"
+          getItemLayout={getItemLayout}
+          initialScrollIndex={safeInitial}
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              try {
+                listRef.current?.scrollToIndex?.({
+                  index: info.index,
+                  animated: false,
+                });
+              } catch (_) {
+                /* ignore */
+              }
+            }, 64);
+          }}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          windowSize={3}
+          maxToRenderPerBatch={2}
+          removeClippedSubviews={Platform.OS !== 'web'}
+        />
 
         {tapReacts.map((rx) => (
           <FloatingTapReact
@@ -1082,14 +1355,11 @@ export default function ArenaReelViewer({
         />
 
         <View style={[styles.topSafe, { paddingTop: topPad }]} pointerEvents="box-none">
-          <View style={styles.dragHandleHit} pointerEvents="none">
-            <View style={styles.dragHandle} />
-          </View>
           <View style={styles.topBar}>
             <View style={styles.topTitleBlock}>
               <UserHandle
                 handle={handle}
-                verified={reel.verified ?? isHandleVerified(handle)}
+                verified={activeReel?.verified ?? isHandleVerified(handle)}
                 size={15}
                 color={WHITE}
                 textStyle={styles.topHandle}
@@ -1171,7 +1441,7 @@ export default function ArenaReelViewer({
           compact
           showClose={false}
           actionIds={REEL_SECONDARY_ACTION_IDS}
-          reel={reel}
+          reel={activeReel}
           onClose={() => setMoreOpen(false)}
           onAction={onMoreAction}
           style={{
@@ -1195,7 +1465,7 @@ export default function ArenaReelViewer({
         >
           <View style={styles.captionBlock}>
             <Text style={styles.caption} numberOfLines={3}>
-              {reel.caption || reel.title || ''}
+              {activeReel?.caption || activeReel?.title || ''}
             </Text>
             {hype > 0 ? (
               <Text style={styles.hypeMeta}>{hype} HYPE</Text>
@@ -1205,7 +1475,7 @@ export default function ArenaReelViewer({
 
         <BanterBottomSheet
           visible={showBanter && visible}
-          reel={reel}
+          reel={activeReel}
           onClose={() => setShowBanter(false)}
         />
         <DMChatSheet
@@ -1215,7 +1485,7 @@ export default function ArenaReelViewer({
         />
         <BawaalShareSheet
           visible={showShare && visible}
-          reel={reel}
+          reel={activeReel}
           bottomPad={Math.max(insets.bottom, 16) + 12}
           onClose={() => setShowShare(false)}
           onToast={flashToast}
@@ -1231,6 +1501,17 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: BG,
+  },
+  pagerList: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: BG,
+  },
+  slidePage: {
+    width: '100%',
+    backgroundColor: BG,
+    overflow: 'hidden',
   },
   videoShell: {
     ...StyleSheet.absoluteFillObject,

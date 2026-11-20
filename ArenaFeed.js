@@ -1890,6 +1890,9 @@ export default function ArenaFeed({ navigation, route }) {
   const [activeReel, setActiveReel] = useState(null);
   /** Keep last reel mounted under the modal so reopen skips a cold buffer. */
   const [warmReel, setWarmReel] = useState(null);
+  /** Full section playlist for Instagram-style vertical reel paging. */
+  const [reelPlaylist, setReelPlaylist] = useState([]);
+  const [reelInitialIndex, setReelInitialIndex] = useState(0);
   const [immersiveMuted, setImmersiveMuted] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   /** Initial / explicit Supabase fetch of arena_challenges. */
@@ -2871,13 +2874,8 @@ export default function ArenaFeed({ navigation, route }) {
     });
   }, [openImmersiveBattle, warCryDualFeeds]);
 
-  const openReel = useCallback((item, opts) => {
-    if (!item) return;
-    if (item._fromCallout || item.raw) {
-      openShelfCallout(item.raw || item);
-      return;
-    }
-    // Normalize shelf / dashboard rows for ArenaReelViewer playback fields
+  const normalizeReelForViewer = useCallback((item) => {
+    if (!item) return null;
     const videoUri =
       item.videoUri ||
       item.videoUrl ||
@@ -2885,7 +2883,7 @@ export default function ArenaFeed({ navigation, route }) {
       item.uri ||
       item.publicCloudUrl ||
       null;
-    const normalized = {
+    return {
       ...item,
       type: item.type || 'reel',
       author: item.author || item.handle || item.host || '@athlete',
@@ -2907,10 +2905,39 @@ export default function ArenaFeed({ navigation, route }) {
         item.poster_url ||
         null,
     };
+  }, []);
+
+  const openReel = useCallback((item, opts) => {
+    if (!item) return;
+    if (item._fromCallout || item.raw) {
+      openShelfCallout(item.raw || item);
+      return;
+    }
+    const normalized = normalizeReelForViewer(item);
+    if (!normalized) return;
+
+    const rawPlaylist = Array.isArray(opts?.playlist) ? opts.playlist : null;
+    let playlist = rawPlaylist
+      ? rawPlaylist.map(normalizeReelForViewer).filter(Boolean)
+      : [normalized];
+    if (!playlist.length) playlist = [normalized];
+
+    let initialIndex = Number(opts?.initialIndex);
+    if (!Number.isFinite(initialIndex) || initialIndex < 0) {
+      const byId =
+        normalized.id != null
+          ? playlist.findIndex((r) => String(r.id) === String(normalized.id))
+          : -1;
+      initialIndex = byId >= 0 ? byId : 0;
+    }
+    initialIndex = Math.min(initialIndex, playlist.length - 1);
+
     setImmersiveMuted(!!opts?.muted);
-    setWarmReel(normalized);
-    setActiveReel(normalized);
-  }, [openShelfCallout]);
+    setReelPlaylist(playlist);
+    setReelInitialIndex(initialIndex);
+    setWarmReel(playlist[initialIndex] || normalized);
+    setActiveReel(playlist[initialIndex] || normalized);
+  }, [normalizeReelForViewer, openShelfCallout]);
 
   const openResponses = useCallback((item) => {
     setHubThread(item);
@@ -3263,7 +3290,16 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Short clips lighting up the Arena"
           items={sparkJoshShelf}
           emptyLabel="No Sparks or Josh clips yet"
-          onPressItem={(item) => openReel(item, { muted: true })}
+          onPressItem={(item) => {
+            const idx = sparkJoshShelf.findIndex(
+              (r) => String(r?.id) === String(item?.id)
+            );
+            openReel(item, {
+              muted: true,
+              playlist: sparkJoshShelf,
+              initialIndex: idx >= 0 ? idx : 0,
+            });
+          }}
         />
 
         {/* ========== TIER 4 · Battle Bawaal ========== */}
@@ -3272,7 +3308,16 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Recorded group battle feeds"
           items={battleBawaalShelf}
           showEmptyPlaceholders
-          onPressItem={(item) => openReel(item, { muted: true })}
+          onPressItem={(item) => {
+            const idx = battleBawaalShelf.findIndex(
+              (r) => String(r?.id) === String(item?.id)
+            );
+            openReel(item, {
+              muted: true,
+              playlist: battleBawaalShelf,
+              initialIndex: idx >= 0 ? idx : 0,
+            });
+          }}
         />
 
         {/* ========== TIER 5 · Face Off ========== */}
@@ -3281,7 +3326,16 @@ export default function ArenaFeed({ navigation, route }) {
           subtitle="Open challenges ready to answer"
           items={faceOffShelf}
           emptyLabel="No Face Off challenges yet"
-          onPressItem={(item) => openReel(item, { muted: true })}
+          onPressItem={(item) => {
+            const idx = faceOffShelf.findIndex(
+              (r) => String(r?.id) === String(item?.id)
+            );
+            openReel(item, {
+              muted: true,
+              playlist: faceOffShelf,
+              initialIndex: idx >= 0 ? idx : 0,
+            });
+          }}
         />
 
         {/* ========== Bottom · Ads slot ========== */}
@@ -3309,8 +3363,14 @@ export default function ArenaFeed({ navigation, route }) {
       <ArenaReelViewer
         visible={!!activeReel}
         reel={activeReel || warmReel}
+        playlist={reelPlaylist}
+        initialIndex={reelInitialIndex}
         initialMuted={immersiveMuted}
-        onClose={() => setActiveReel(null)}
+        onClose={() => {
+          setActiveReel(null);
+          setReelPlaylist([]);
+          setReelInitialIndex(0);
+        }}
       />
       <ResponseReelDrawer
         visible={!!hubThread}
