@@ -39,7 +39,6 @@ import {
 } from './src/components/FloatingEmojiBurst';
 import {
   REEL_MORE,
-  REEL_MUTE,
   REEL_VAULT,
   REEL_VAULT_ICON_KEY,
 } from './src/constants/arenaReelOverlay';
@@ -53,6 +52,10 @@ import ReelActionSheet, {
 } from './src/components/ReelActionSheet';
 import BanterBottomSheet from './BanterBottomSheet';
 import DMChatSheet from './DMChatSheet';
+
+/** Immersive reel right-rail gaps — clear air between ⋮, skull, and ⋮ action stack. */
+const RAIL_GAP_MORE_TO_VAULT = 16;
+const RAIL_GAP_VAULT_TO_SHEET = 14;
 
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 1.15;
@@ -530,9 +533,14 @@ export default function ArenaReelViewer({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 8;
-  /** Right rail: ⋮ at bottom, vault skull tight above it (no side Like/Banter strip). */
+  /**
+   * Right rail stack (bottom → top): ⋮ → gap → skull vault → gap → action sheet.
+   * Extra gaps so the expanded Like/Banter/Share/DM/Comment stack never covers the skull.
+   */
   const moreBottom = 24 + Math.max(insets.bottom, 0);
-  const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
+  const vaultBottom = moreBottom + REEL_MORE.height + RAIL_GAP_MORE_TO_VAULT;
+  const sheetBottom =
+    vaultBottom + REEL_VAULT.height + RAIL_GAP_VAULT_TO_SHEET;
   const captionPad = Math.max(insets.bottom, 12) + 8;
 
   return (
@@ -640,14 +648,6 @@ export default function ArenaReelViewer({
                 delayLongPress={280}
                 accessibilityLabel="Tap to react · long-press to pause"
               />
-              <MuteToggleButton
-                muted={muted}
-                onPress={toggleMute}
-                style={[
-                  styles.muteBtn,
-                  { top: topPad + REEL_MUTE.top, right: REEL_MUTE.right },
-                ]}
-              />
               {paused ? (
                 <View style={styles.pauseBadge} pointerEvents="none">
                   <Text style={styles.pauseBadgeText}>PAUSED</Text>
@@ -699,15 +699,22 @@ export default function ArenaReelViewer({
               />
               <Text style={styles.topHint}>ARENA REEL</Text>
             </View>
-            <TouchableOpacity
-              onPress={finishDismiss}
-              style={styles.closeBtn}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Close reel"
-            >
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
+            <View style={styles.topBarRight}>
+              <MuteToggleButton
+                muted={muted}
+                onPress={toggleMute}
+                style={styles.headerMute}
+              />
+              <TouchableOpacity
+                onPress={finishDismiss}
+                style={styles.closeBtn}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Close reel"
+              >
+                <Text style={styles.closeText}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -718,18 +725,33 @@ export default function ArenaReelViewer({
         )}
 
         {/*
-          Right rail (strict): mute (top) → skullOrange → ⋮
-          Stripped RESHARE / REPOST / BANTER / Like / Share / DM / Comment from the side.
+          Right rail (bottom → top): ⋮ → skull vault → (⋮ action stack when open).
+          Mute lives in the top header next to ✕ (not on this rail).
         */}
+        <TouchableOpacity
+          style={[styles.moreBtn, { bottom: moreBottom }]}
+          onPress={() => {
+            setVaultOpen(false);
+            setMoreOpen((v) => !v);
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={moreOpen ? 'Close actions' : 'More actions'}
+          accessibilityState={{ expanded: moreOpen }}
+        >
+          <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={[styles.vaultFab, { bottom: vaultBottom }]}
           onPress={() => {
             setMoreOpen(false);
             setShowBanter(false);
+            setShowDm(false);
             setVaultOpen((open) => !open);
           }}
           activeOpacity={0.85}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
           accessibilityLabel={
             vaultOpen ? 'Close BAWAAL skull vault' : 'Open BAWAAL skull vault'
@@ -744,32 +766,21 @@ export default function ArenaReelViewer({
           />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.moreBtn, { bottom: moreBottom }]}
-          onPress={() => {
-            setVaultOpen(false);
-            setMoreOpen((v) => !v);
-          }}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel="More actions"
-        >
-          <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
-        </TouchableOpacity>
-
-        {/* ⋮ popup: Like (skull vault) · Banter · Share · DM · Comment */}
+        {/* ⋮ popup sits above the skull — Like · Banter · Share · DM · Comment */}
         <ReelActionSheet
           visible={moreOpen}
           showLabels
           compact
+          showClose={false}
           actionIds={REEL_SECONDARY_ACTION_IDS}
           reel={reel}
           onClose={() => setMoreOpen(false)}
           onAction={onMoreAction}
           style={{
-            bottom: moreBottom + REEL_MORE.height + 8,
+            bottom: sheetBottom,
             top: undefined,
             right: REEL_MORE.right,
+            zIndex: 60,
           }}
         />
 
@@ -908,11 +919,6 @@ const styles = StyleSheet.create({
   tapReactEmoji: {
     marginHorizontal: 0,
   },
-  muteBtn: {
-    position: 'absolute',
-    right: 16,
-    zIndex: 22,
-  },
   pauseBadge: {
     position: 'absolute',
     alignSelf: 'center',
@@ -965,13 +971,21 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingBottom: 10,
   },
   topTitleBlock: {
     flexShrink: 1,
     paddingRight: 12,
+  },
+  topBarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerMute: {
+    marginRight: 2,
   },
   topHandle: {
     color: WHITE,
@@ -1025,7 +1039,7 @@ const styles = StyleSheet.create({
     right: REEL_VAULT.right,
     width: REEL_VAULT.width,
     height: REEL_VAULT.height,
-    zIndex: REEL_VAULT.zIndex,
+    zIndex: 55,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -1039,7 +1053,7 @@ const styles = StyleSheet.create({
     right: REEL_MORE.right,
     width: REEL_MORE.width,
     height: REEL_MORE.height,
-    zIndex: REEL_MORE.zIndex,
+    zIndex: 45,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -1060,7 +1074,7 @@ const styles = StyleSheet.create({
   },
   captionBlock: {
     paddingHorizontal: 16,
-    paddingRight: 90,
+    paddingRight: 96,
     paddingBottom: 8,
   },
   caption: {
