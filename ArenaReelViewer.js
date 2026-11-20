@@ -78,6 +78,67 @@ function pickRandomVaultKey() {
   return keys[Math.floor(Math.random() * keys.length)] || 'love';
 }
 
+/** Sports-app share payload for the active reel. */
+function buildReelSharePayload(reel) {
+  const handle = String(reel?.author || reel?.handle || 'athlete')
+    .replace(/^@/, '')
+    .trim() || 'athlete';
+  const postId = reel?.id != null ? String(reel.id).trim() : '';
+  const title = String(
+    reel?.caption || reel?.title || reel?.name || 'Arena reel'
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  const category = String(
+    reel?.sport || reel?.category || reel?.sportCategory || reel?.sport_tag || ''
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  const url = postId
+    ? `https://bawaal.app/reel/${encodeURIComponent(postId)}`
+    : 'https://bawaal.app';
+  const headline = category ? `${category} · ${title}` : title;
+  const message = `Check out @${handle} on BAWAAL Arena\n${headline}\n${url}`;
+  return { handle, title, category, url, message, headline };
+}
+
+/** Web clipboard helper — Clipboard API with execCommand fallback. */
+async function copyTextToClipboardWeb(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    if (
+      typeof navigator !== 'undefined' &&
+      navigator.clipboard &&
+      typeof navigator.clipboard.writeText === 'function'
+    ) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    if (typeof document === 'undefined') return false;
+    const el = document.createElement('textarea');
+    el.value = value;
+    el.setAttribute('readonly', '');
+    el.style.position = 'fixed';
+    el.style.top = '0';
+    el.style.left = '-9999px';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    el.setSelectionRange(0, value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(el);
+    return !!ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * One-shot floating vault react at tap (x,y) — scale 0.3→1.2, rise −120, fade out.
  * Self-removes via onDone when the 800ms sequence finishes.
@@ -185,10 +246,13 @@ export default function ArenaReelViewer({
     SKULL_ASSETS.skull_orange123 ||
     SKULL_ASSETS.skull_fire_full;
 
-  const flashToast = useCallback((msg) => {
+  const flashToast = useCallback((msg, durationMs = 1400) => {
     setToast(msg);
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(''), 1400);
+    toastTimerRef.current = setTimeout(
+      () => setToast(''),
+      Math.max(900, Number(durationMs) || 1400)
+    );
   }, []);
 
   useEffect(() => {
@@ -446,17 +510,50 @@ export default function ArenaReelViewer({
   );
 
   const shareReel = useCallback(async () => {
+    const { message, url } = buildReelSharePayload(reel);
     try {
-      const handle = String(reel?.author || 'athlete').replace(/^@/, '');
-      const postId = reel?.id != null ? String(reel.id) : '';
+      if (Platform.OS === 'web') {
+        // Prefer clipboard on web — avoid Windows desktop share-app picker.
+        const copied = await copyTextToClipboardWeb(message);
+        if (copied) {
+          flashToast('Link copied to clipboard', 2200);
+          return;
+        }
+        // Last resort: Web Share API only if clipboard is blocked.
+        if (
+          typeof navigator !== 'undefined' &&
+          typeof navigator.share === 'function'
+        ) {
+          try {
+            await navigator.share({
+              title: 'BAWAAL Arena',
+              text: message,
+              url,
+            });
+            return;
+          } catch (shareErr) {
+            const dismissed =
+              shareErr?.name === 'AbortError' ||
+              /abort|cancel|dismiss/i.test(String(shareErr?.message || ''));
+            if (dismissed) return;
+          }
+        }
+        flashToast('Could not copy link', 2000);
+        return;
+      }
+
       await Share.share({
         title: 'BAWAAL Arena',
-        message: postId
-          ? `Check @${handle} on BAWAAL: https://bawaal.app/reel/${postId}`
-          : `Check @${handle} on BAWAAL`,
+        message,
+        url,
       });
-    } catch (_) {
-      flashToast('SHARE FAILED');
+    } catch (err) {
+      // Native sheet dismissed / unavailable — never throw unhandled.
+      const dismissed =
+        err?.name === 'AbortError' ||
+        /dismiss|cancel|abort/i.test(String(err?.message || ''));
+      if (dismissed) return;
+      flashToast('Share unavailable', 1800);
     }
   }, [flashToast, reel]);
 
