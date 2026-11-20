@@ -39,7 +39,7 @@ const DEMO_CHALLENGE = {
 
 /**
  * 5-tab shell — only the active screen mounts in the stage.
- * ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
+ * ARENA · BATTLES · + BATTLE · LOCKER ROOM · PROFILE (route key: Passport)
  */
 export default function MainTabs({ navigation, route }) {
   const insets = useSafeAreaInsets();

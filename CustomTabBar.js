@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const OBSIDIAN = '#000000';
-const WHITE = '#FFFFFF';
 const ACCENT = '#FF6600';
 const BORDER_TOP = 'rgba(255, 102, 0, 0.35)';
 const MUTED = '#A0A0A0';
@@ -13,13 +12,25 @@ const TABS = [
   { key: 'Battles', label: 'BATTLES' },
   { key: 'Create', label: '+ BATTLE', isFab: true },
   { key: 'Locker', label: 'LOCKER\nROOM' },
-  { key: 'Passport', label: 'PASSPORT' },
+  // key stays Passport (route/handler); display label is PROFILE
+  { key: 'Passport', label: 'PROFILE' },
 ];
 
 /**
- * LOCKED 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PASSPORT
+ * 5-tab bar: ARENA · BATTLES · + BATTLE · LOCKER ROOM · PROFILE
  * Full-width space-around row; FAB in fixed center slot — do not regress layout.
  */
+
+/** Minimal user silhouette — matches bar accent / muted, no emoji tray. */
+function ProfileTabIcon({ active }) {
+  const tint = active ? ACCENT : MUTED;
+  return (
+    <View style={styles.profileIcon} accessibilityElementsHidden>
+      <View style={[styles.profileHead, { borderColor: tint }]} />
+      <View style={[styles.profileBody, { borderColor: tint }]} />
+    </View>
+  );
+}
 export default function CustomTabBar({
   activeTab,
   onTabPress,
@@ -92,6 +103,9 @@ export default function CustomTabBar({
             onPress={() => onTabPress(item.key)}
             activeOpacity={0.8}
             hitSlop={{ top: 8, bottom: 8, left: 2, right: 2 }}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={isPassport ? 'Profile' : item.label.replace('\n', ' ')}
           >
             <View style={styles.tabLabelWrap}>
               {showThunder ? (
@@ -102,6 +116,8 @@ export default function CustomTabBar({
                 </Animated.View>
               ) : isBattles ? (
                 <View style={styles.thunderSpacer} />
+              ) : isPassport ? (
+                <ProfileTabIcon active={active} />
               ) : null}
               <Text
                 numberOfLines={isLocker ? 2 : 1}
@@ -109,7 +125,7 @@ export default function CustomTabBar({
                 minimumFontScale={0.8}
                 style={[styles.tabLabel, active && styles.tabLabelActive]}
               >
-                {isPassport ? 'PASSPORT' : item.label}
+                {item.label}
               </Text>
             </View>
             {active ? <View style={styles.tabDot} /> : <View style={styles.tabDotSpacer} />}
@@ -254,5 +270,28 @@ const styles = StyleSheet.create({
   thunderText: {
     fontSize: 9,
     marginTop: -1,
+  },
+  profileIcon: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: 1,
+    alignSelf: 'center',
+  },
+  profileHead: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    marginBottom: 1,
+  },
+  profileBody: {
+    width: 12,
+    height: 6,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+    borderWidth: 1.5,
+    borderBottomWidth: 0,
   },
 });
