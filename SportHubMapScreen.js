@@ -1,10 +1,12 @@
 /**
- * Community & Location — Interactive Sport Hub Map (Step 1).
- * Dark stealth map + sport-tagged pins + hub bottom sheet.
+ * Community & Location — Sport Hub Map (NEAR ME).
+ * Live GPS + Google Maps (PROVIDER_GOOGLE) + Overpass nearby venues
+ * merged with Supabase sports_hubs. No hardcoded Virar seed pins.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Modal,
+  ActivityIndicator,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -19,17 +21,25 @@ import { BAWAAL_DARK_MAP_STYLE } from './src/constants/darkMapStyle';
 import { BAWAAL_SPORTS } from './src/constants/sports';
 import {
   HUB_SPORT_COLORS,
-  SPORT_HUB_MAP_REGION,
-  filterVirarSportsSpots,
   hubPinColor,
   sportsSpotNeon,
 } from './src/data/sportHubs';
+import {
+  NEARBY_RADIUS_M,
+  fetchOverpassSportsVenues,
+  formatDistance,
+  mergeNearbyVenues,
+} from './src/services/nearbySportsVenuesService';
 import { fetchSportsHubs } from './src/services/sportsHubsService';
 import { canonicalizeSport } from './src/utils/sportCategory';
+import {
+  regionFromCoords,
+  resolveUserCoordinates,
+} from './src/utils/userLocation';
 
 const FILTER_ALL = 'ALL';
 
-/** Locked 11 BAWAAL_SPORTS pills → selectedCategory → sports_hubs / Virar fallback. */
+/** Locked 11 BAWAAL_SPORTS pills. */
 const CATEGORY_PILLS = BAWAAL_SPORTS.map((sport) => ({
   key: sport,
   label: sport,
@@ -40,7 +50,6 @@ let MapView = null;
 let Marker = null;
 let PROVIDER_GOOGLE = undefined;
 try {
-  // Native / Expo Go — maps unavailable on web metro without polyfill
   const Maps = require('react-native-maps');
   MapView = Maps.default;
   Marker = Maps.Marker;
@@ -49,19 +58,26 @@ try {
   MapView = null;
 }
 
-const BG = '#000000';
-const SURFACE = '#0A0A0A';
+const BG = '#08120F';
+const SURFACE = '#0A1210';
 const WHITE = '#FFFFFF';
 const OFF = '#E8ECE9';
 const MUTED = '#A0A0A0';
 const BORDER = 'rgba(255,255,255,0.22)';
-const ACCENT = '#3B82F6';
-const JOIN = '#FACC15';
+const GOLD = '#FFD700';
+const CRIMSON = '#FF2A5F';
 
 const BADGE_TEXT = '#FFFFFF';
 
+/** Soft India-center only until GPS resolves — never Virar clubs list. */
+const BOOTSTRAP_REGION = {
+  latitude: 20.5937,
+  longitude: 78.9629,
+  latitudeDelta: 12,
+  longitudeDelta: 12,
+};
+
 const HubPin = memo(function HubPin({ sport, selected }) {
-  // Category-matched accent (Gym flame, Football volt green, Cricket gold, …)
   const color = hubPinColor(sport) || sportsSpotNeon(sport);
   const label = canonicalizeSport(sport) || 'HUB';
   const short =
@@ -85,118 +101,189 @@ const HubPin = memo(function HubPin({ sport, selected }) {
   );
 });
 
-function HubBottomSheet({ hub, visible, onClose, onViewHub, onJoinSquad, bottomPad }) {
+function HubBottomSheet({ hub, visible, onClose, onDirections, bottomPad }) {
   if (!hub) return null;
   const sport = canonicalizeSport(hub.sport) || hub.sport;
   const color = hubPinColor(sport);
+  const dist = formatDistance(hub.distanceM);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent
+    <View
+      pointerEvents={visible ? 'auto' : 'none'}
+      style={[
+        styles.sheetDock,
+        { paddingBottom: bottomPad, opacity: visible ? 1 : 0 },
+      ]}
     >
-      <View style={styles.sheetOverlay}>
-        <Pressable style={styles.sheetBackdrop} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: bottomPad }]}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetEyebrow}>SPORT HUB</Text>
-            <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.75}>
-              <Text style={styles.sheetClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.hubName}>{hub.name}</Text>
-          <Text style={styles.hubAddress}>{hub.address}</Text>
-
-          <View style={styles.metaRow}>
-            <View style={[styles.sportBadge, { borderColor: color }]}>
-              <View style={[styles.sportDot, { backgroundColor: color }]} />
-              <Text style={[styles.sportBadgeText, { color }]}>{sport}</Text>
-            </View>
-            <Text style={styles.metaStat}>
-              {hub.memberCount} members · {hub.squadCount} squad
-              {hub.squadCount === 1 ? '' : 's'}
-            </Text>
-          </View>
-
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.viewBtn}
-              onPress={() => onViewHub?.(hub)}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="View Hub"
-            >
-              <Text style={styles.viewBtnText}>VIEW HUB</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.joinBtn}
-              onPress={() => onJoinSquad?.(hub)}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Join Squad"
-            >
-              <Text style={styles.joinBtnText}>JOIN SQUAD</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={styles.sheet}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetEyebrow}>NEARBY VENUE</Text>
+          <TouchableOpacity onPress={onClose} hitSlop={12} activeOpacity={0.75}>
+            <Text style={styles.sheetClose}>✕</Text>
+          </TouchableOpacity>
         </View>
+
+        <Text style={styles.hubName}>{hub.name}</Text>
+        <Text style={styles.hubAddress}>{hub.address}</Text>
+
+        <View style={styles.metaRow}>
+          <View style={[styles.sportBadge, { borderColor: color }]}>
+            <View style={[styles.sportDot, { backgroundColor: color }]} />
+            <Text style={[styles.sportBadgeText, { color }]}>{sport}</Text>
+          </View>
+          {dist ? <Text style={styles.metaStat}>{dist} away</Text> : null}
+        </View>
+
+        <TouchableOpacity
+          style={styles.directionsBtn}
+          onPress={() => onDirections?.(hub)}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Open directions in Google Maps"
+        >
+          <Text style={styles.directionsBtnText}>DIRECTIONS</Text>
+        </TouchableOpacity>
       </View>
-    </Modal>
+    </View>
   );
 }
 
 export default function SportHubMapScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
+  const userCoordsRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(FILTER_ALL);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [tracksPins, setTracksPins] = useState(true);
-  const [filteredSportsSpots, setFilteredSportsSpots] = useState(() =>
-    filterVirarSportsSpots(FILTER_ALL)
-  );
+  const [venues, setVenues] = useState([]);
+  const [userCoords, setUserCoords] = useState(null);
+  const [locating, setLocating] = useState(true);
+  const [loadingVenues, setLoadingVenues] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('Finding your location…');
+  const [locationError, setLocationError] = useState(null);
   const mapsReady = Boolean(MapView) && Platform.OS !== 'web';
 
   useEffect(() => {
     const t = setTimeout(() => setTracksPins(false), 600);
     return () => clearTimeout(t);
+  }, [venues, selectedCategory]);
+
+  const animateToUser = useCallback((coords, animated = true) => {
+    if (!coords) return;
+    const region = regionFromCoords(coords.latitude, coords.longitude, 0.04);
+    mapRef.current?.animateToRegion?.(region, animated ? 420 : 0);
   }, []);
 
-  // Live `public.sports_hubs` by selectedCategory; Virar seeds if offline / empty
+  const loadNearby = useCallback(
+    async (coords, category = selectedCategory) => {
+      if (!coords) return;
+      setLoadingVenues(true);
+      setStatusMsg('Scanning nearby gyms, clubs & grounds…');
+      try {
+        const [cloud, overpass] = await Promise.all([
+          fetchSportsHubs(category, {
+            allowLocalFallback: false,
+            near: coords,
+            radiusM: NEARBY_RADIUS_M,
+          }),
+          fetchOverpassSportsVenues(
+            coords.latitude,
+            coords.longitude,
+            NEARBY_RADIUS_M
+          ),
+        ]);
+        const merged = mergeNearbyVenues({
+          cloudHubs: cloud?.hubs || [],
+          overpassVenues: overpass || [],
+          origin: coords,
+          selectedCategory: category,
+          radiusM: NEARBY_RADIUS_M,
+        });
+        setVenues(merged);
+        setStatusMsg(
+          merged.length
+            ? `${merged.length} venues within ~${Math.round(NEARBY_RADIUS_M / 1000)} km`
+            : 'No venues found nearby — try Recenter'
+        );
+        setTracksPins(true);
+      } catch {
+        setVenues([]);
+        setStatusMsg('Could not load nearby venues');
+      } finally {
+        setLoadingVenues(false);
+      }
+    },
+    [selectedCategory]
+  );
+
+  const locateAndLoad = useCallback(async () => {
+    setLocating(true);
+    setLocationError(null);
+    setStatusMsg('Finding your location…');
+    try {
+      const coords = await resolveUserCoordinates({ timeoutMs: 8000 });
+      userCoordsRef.current = coords;
+      setUserCoords(coords);
+      animateToUser(coords);
+      await loadNearby(coords, selectedCategory);
+    } catch (err) {
+      const denied = err?.code === 'PERMISSION_DENIED';
+      setLocationError(
+        denied
+          ? 'Location permission is required to find hubs near you.'
+          : 'Could not get GPS. Check location services and try again.'
+      );
+      setStatusMsg(denied ? 'Permission needed' : 'GPS unavailable');
+    } finally {
+      setLocating(false);
+    }
+  }, [animateToUser, loadNearby, selectedCategory]);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const { hubs } = await fetchSportsHubs(selectedCategory);
-      if (!cancelled) {
-        setFilteredSportsSpots(Array.isArray(hubs) ? hubs : filterVirarSportsSpots(selectedCategory));
-        setTracksPins(true);
-        setTimeout(() => setTracksPins(false), 600);
-      }
-    })();
+    const boot = async () => {
+      // Yield so permission/GPS work is not sync setState inside the effect body.
+      await Promise.resolve();
+      if (cancelled) return;
+      await locateAndLoad();
+    };
+    void boot();
     return () => {
       cancelled = true;
     };
-  }, [selectedCategory]);
+    // Mount-only cold start — category changes re-filter via onSelectCategory.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredVenues = useMemo(() => {
+    const cat = String(selectedCategory || FILTER_ALL).toUpperCase();
+    if (!cat || cat === FILTER_ALL) return venues;
+    return venues.filter(
+      (v) => (canonicalizeSport(v.sport || v.category) || '') === cat
+    );
+  }, [venues, selectedCategory]);
 
   const selectedHub = useMemo(
-    () => filteredSportsSpots.find((h) => h.id === selectedId) || null,
-    [selectedId, filteredSportsSpots]
+    () => filteredVenues.find((h) => h.id === selectedId) || null,
+    [selectedId, filteredVenues]
   );
 
-  const onSelectCategory = useCallback((category) => {
-    const next = String(category || FILTER_ALL).trim() || FILTER_ALL;
-    setSelectedCategory(next);
-    setSelectedId(null);
-    setSheetOpen(false);
-    setTracksPins(true);
-    setTimeout(() => setTracksPins(false), 600);
-    // Snap camera to Virar so filtered glowing badges appear immediately
-    mapRef.current?.animateToRegion?.(SPORT_HUB_MAP_REGION, 320);
-  }, []);
+  const onSelectCategory = useCallback(
+    (category) => {
+      const next = String(category || FILTER_ALL).trim() || FILTER_ALL;
+      setSelectedCategory(next);
+      setSelectedId(null);
+      setSheetOpen(false);
+      const coords = userCoordsRef.current || userCoords;
+      if (coords) {
+        void loadNearby(coords, next);
+        animateToUser(coords);
+      }
+    },
+    [animateToUser, loadNearby, userCoords]
+  );
 
   const goBack = useCallback(() => {
     if (navigation?.canGoBack?.()) navigation.goBack();
@@ -210,8 +297,8 @@ export default function SportHubMapScreen({ navigation }) {
       {
         latitude: hub.coordinate.latitude,
         longitude: hub.coordinate.longitude,
-        latitudeDelta: 0.06,
-        longitudeDelta: 0.04,
+        latitudeDelta: 0.03,
+        longitudeDelta: 0.02,
       },
       280
     );
@@ -221,46 +308,59 @@ export default function SportHubMapScreen({ navigation }) {
     setSheetOpen(false);
   }, []);
 
-  const openLockerForHub = useCallback(
-    (hub, join) => {
-      setSheetOpen(false);
-      const params = {
-        tab: 'Locker',
-        focusHubId: hub?.lockerHubId || undefined,
-        joinSquadHint: join ? hub?.name : undefined,
-      };
-      if (navigation?.canGoBack?.()) {
-        navigation.navigate('Main', params);
-      } else {
-        navigation?.navigate?.('Main', params);
-      }
-    },
-    [navigation]
-  );
+  const openDirections = useCallback((hub) => {
+    const lat = hub?.coordinate?.latitude;
+    const lng = hub?.coordinate?.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const label = encodeURIComponent(hub?.name || 'Venue');
+    const url =
+      Platform.OS === 'ios'
+        ? `http://maps.apple.com/?daddr=${lat},${lng}&q=${label}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=&travelmode=driving`;
+    Linking.openURL(url).catch(() => {
+      Linking.openURL(
+        `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+      );
+    });
+  }, []);
 
-  const onViewHub = useCallback(
-    (hub) => openLockerForHub(hub, false),
-    [openLockerForHub]
-  );
-
-  const onJoinSquad = useCallback(
-    (hub) => openLockerForHub(hub, true),
-    [openLockerForHub]
-  );
+  const onRecenter = useCallback(() => {
+    void locateAndLoad();
+  }, [locateAndLoad]);
 
   const topPad = Math.max(insets.top, 12);
   const bottomPad = Math.max(insets.bottom, 16) + 12;
   const mapProvider = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
+  const initialRegion = userCoords
+    ? regionFromCoords(userCoords.latitude, userCoords.longitude, 0.04)
+    : BOOTSTRAP_REGION;
 
   return (
     <View style={styles.root}>
       <View style={[styles.topBar, { paddingTop: topPad }]}>
-        <BackLink label="Back" onPress={goBack} />
+        <BackLink label="Back" onPress={goBack} accent="#3B82F6" />
         <View style={styles.topTitles}>
           <Text style={styles.topTitle}>SPORT HUB MAP</Text>
-          <Text style={styles.topSub}>Community · Location</Text>
+          <Text style={styles.topSub}>NEAR ME · Live GPS</Text>
         </View>
-        <View style={{ width: 72 }} />
+        <TouchableOpacity
+          style={styles.recenterBtn}
+          onPress={onRecenter}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Recenter on my location"
+        >
+          <Text style={styles.recenterBtnText}>RECENTER</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.statusRow}>
+        {(locating || loadingVenues) && (
+          <ActivityIndicator size="small" color={GOLD} style={{ marginRight: 8 }} />
+        )}
+        <Text style={styles.statusText} numberOfLines={1}>
+          {locationError || statusMsg}
+        </Text>
       </View>
 
       <View style={styles.mapStage}>
@@ -269,20 +369,20 @@ export default function SportHubMapScreen({ navigation }) {
             ref={mapRef}
             style={{ flex: 1, width: '100%', height: '100%' }}
             provider={mapProvider}
-            initialRegion={SPORT_HUB_MAP_REGION}
+            initialRegion={initialRegion}
             customMapStyle={BAWAAL_DARK_MAP_STYLE}
             userInterfaceStyle="dark"
-            showsUserLocation={false}
-            showsMyLocationButton={false}
+            showsUserLocation
+            showsMyLocationButton
             showsCompass={false}
-            showsPointsOfInterest
+            showsPointsOfInterest={false}
             toolbarEnabled={false}
             moveOnMarkerPress={false}
             onPress={() => {
               if (sheetOpen) closeSheet();
             }}
           >
-            {filteredSportsSpots.map((spot) => (
+            {filteredVenues.map((spot) => (
               <Marker
                 key={`${selectedCategory}-${spot.id}`}
                 coordinate={spot.coordinate}
@@ -307,9 +407,10 @@ export default function SportHubMapScreen({ navigation }) {
             showsVerticalScrollIndicator={false}
           >
             <Text style={styles.fallbackHint}>
-              Map preview — tap a hub card (native map loads in Expo Go / dev builds).
+              Native Google Map loads in Android / iOS builds. Nearby venues
+              still list below.
             </Text>
-            {filteredSportsSpots.map((spot) => {
+            {filteredVenues.map((spot) => {
               const color = hubPinColor(spot.sport || spot.category);
               return (
                 <TouchableOpacity
@@ -326,8 +427,8 @@ export default function SportHubMapScreen({ navigation }) {
                   <Text style={styles.fallbackAddr}>{spot.address}</Text>
                   <Text style={[styles.fallbackSport, { color }]}>
                     ★ {canonicalizeSport(spot.sport || spot.category)}
-                    {spot.memberCount
-                      ? ` · ${spot.memberCount} members`
+                    {spot.distanceM != null
+                      ? ` · ${formatDistance(spot.distanceM)}`
                       : ''}
                   </Text>
                 </TouchableOpacity>
@@ -335,6 +436,55 @@ export default function SportHubMapScreen({ navigation }) {
             })}
           </ScrollView>
         )}
+
+        {/* Bottom venue cards */}
+        {filteredVenues.length > 0 && !sheetOpen ? (
+          <View
+            style={[
+              styles.cardRailWrap,
+              { bottom: Math.max(insets.bottom, 12) + 56 },
+            ]}
+          >
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.cardRail}
+              keyboardShouldPersistTaps="handled"
+            >
+              {filteredVenues.slice(0, 24).map((spot) => {
+                const color = hubPinColor(spot.sport || spot.category);
+                const active = selectedId === spot.id;
+                return (
+                  <Pressable
+                    key={`card-${spot.id}`}
+                    style={[
+                      styles.venueCard,
+                      active && { borderColor: GOLD },
+                    ]}
+                    onPress={() => onMarkerPress(spot)}
+                  >
+                    <Text style={styles.venueCardName} numberOfLines={1}>
+                      {spot.name}
+                    </Text>
+                    <Text style={[styles.venueCardMeta, { color }]} numberOfLines={1}>
+                      {canonicalizeSport(spot.sport || spot.category)}
+                      {spot.distanceM != null
+                        ? ` · ${formatDistance(spot.distanceM)}`
+                        : ''}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.venueCardDir}
+                      onPress={() => openDirections(spot)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.venueCardDirText}>DIRECTIONS</Text>
+                    </TouchableOpacity>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {/* Category filter pills */}
         <View style={[styles.legend, { bottom: Math.max(insets.bottom, 12) + 8 }]}>
@@ -381,16 +531,15 @@ export default function SportHubMapScreen({ navigation }) {
             })}
           </ScrollView>
         </View>
-      </View>
 
-      <HubBottomSheet
-        hub={selectedHub}
-        visible={sheetOpen && !!selectedHub}
-        onClose={closeSheet}
-        onViewHub={onViewHub}
-        onJoinSquad={onJoinSquad}
-        bottomPad={bottomPad}
-      />
+        <HubBottomSheet
+          hub={selectedHub}
+          visible={sheetOpen && !!selectedHub}
+          onClose={closeSheet}
+          onDirections={openDirections}
+          bottomPad={bottomPad + 48}
+        />
+      </View>
     </View>
   );
 }
@@ -404,8 +553,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
     backgroundColor: BG,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: BORDER,
@@ -422,22 +571,46 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
   },
   topSub: {
-    color: MUTED,
+    color: GOLD,
     fontSize: 10,
     fontWeight: '700',
     marginTop: 2,
     letterSpacing: 0.6,
+  },
+  recenterBtn: {
+    borderWidth: 1,
+    borderColor: CRIMSON,
+    backgroundColor: 'rgba(255,42,95,0.16)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    minWidth: 84,
+    alignItems: 'center',
+  },
+  recenterBtnText: {
+    color: CRIMSON,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: BG,
+  },
+  statusText: {
+    flex: 1,
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
   },
   mapStage: {
     flex: 1,
     width: '100%',
     height: '100%',
     backgroundColor: BG,
-  },
-  map: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
   },
   fallbackList: {
     flex: 1,
@@ -479,33 +652,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
     letterSpacing: 0.5,
   },
-  pinWrap: {
-    alignItems: 'center',
-  },
   pinWrapOn: {
     transform: [{ scale: 1.08 }],
-  },
-  pinDot: {
-    minWidth: 54,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 2,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.94)',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.85,
-    shadowRadius: 6,
-    elevation: 8,
-  },
-  pinText: {
-    color: BADGE_TEXT,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.4,
-    textShadowColor: 'rgba(0,0,0,0.9)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   glowWrap: {
     alignItems: 'center',
@@ -556,11 +704,55 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
     marginTop: -1,
   },
+  cardRailWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+  },
+  cardRail: {
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+  venueCard: {
+    width: 200,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: 'rgba(8,18,15,0.94)',
+    padding: 12,
+  },
+  venueCardName: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  venueCardMeta: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  venueCardDir: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,215,0,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  venueCardDirText: {
+    color: GOLD,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
   legend: {
     position: 'absolute',
     left: 0,
     right: 0,
     paddingHorizontal: 12,
+    zIndex: 3,
   },
   legendRow: {
     gap: 8,
@@ -570,7 +762,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.82)',
+    backgroundColor: 'rgba(8,18,15,0.88)',
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 999,
@@ -598,13 +790,12 @@ const styles = StyleSheet.create({
   legendTextActive: {
     fontWeight: '900',
   },
-  sheetOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheetBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+  sheetDock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 5,
   },
   sheet: {
     backgroundColor: SURFACE,
@@ -630,7 +821,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sheetEyebrow: {
-    color: ACCENT,
+    color: GOLD,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.6,
@@ -685,36 +876,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  viewBtn: {
-    flex: 1,
+  directionsBtn: {
     borderWidth: 1.5,
-    borderColor: ACCENT,
-    backgroundColor: 'rgba(59,130,246,0.16)',
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,215,0,0.14)',
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
   },
-  viewBtnText: {
-    color: ACCENT,
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1.1,
-  },
-  joinBtn: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: JOIN,
-    backgroundColor: 'rgba(250,204,21,0.16)',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  joinBtnText: {
-    color: JOIN,
+  directionsBtnText: {
+    color: GOLD,
     fontSize: 12,
     fontWeight: '900',
     letterSpacing: 1.1,

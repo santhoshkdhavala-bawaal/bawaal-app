@@ -1,6 +1,7 @@
 /**
  * Sport Hub Map ↔ Supabase `public.sports_hubs`.
- * Falls back to local VIRAR_SPORTS_SPOTS when offline / empty / misconfigured.
+ * Default soft-fail is empty hubs (live GPS map merges Overpass).
+ * Optional `allowLocalFallback` still exposes Virar seeds for legacy callers.
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import {
@@ -8,6 +9,7 @@ import {
   virarSpotToHub,
 } from '../data/sportHubs';
 import { canonicalizeSport } from '../utils/sportCategory';
+import { haversineMeters } from './nearbySportsVenuesService';
 
 export const SPORTS_HUBS_SETUP_HINT =
   'Open Supabase → SQL Editor → run supabase/ENSURE_PROFILES_SPORTS_HUBS.sql';
@@ -42,20 +44,43 @@ function localFallback(selectedCategory) {
   };
 }
 
+function emptyResult(error = null) {
+  return { hubs: [], fromCloud: false, error };
+}
+
+function filterHubsNear(hubs, near, radiusM) {
+  const lat = Number(near?.latitude);
+  const lng = Number(near?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return hubs;
+  const r = Number(radiusM) || 8000;
+  return hubs.filter((hub) => {
+    const d = haversineMeters(
+      lat,
+      lng,
+      hub.coordinate.latitude,
+      hub.coordinate.longitude
+    );
+    return Number.isFinite(d) && d <= r * 1.15;
+  });
+}
+
 /**
  * Fetch map pins for `selectedCategory`.
  * ALL / SPORTS SPOTS → all rows; else filter by category.
- * Empty / error → Virar seed spots.
  *
  * @param {string} [selectedCategory]
+ * @param {{ allowLocalFallback?: boolean, near?: {latitude:number,longitude:number}, radiusM?: number }} [options]
  */
-export async function fetchSportsHubs(selectedCategory = 'ALL') {
+export async function fetchSportsHubs(selectedCategory = 'ALL', options = {}) {
   const key = String(selectedCategory || 'ALL').trim();
   const upper = key.toUpperCase();
   const showAll = !key || upper === 'ALL' || upper === 'SPORTS SPOTS';
+  const allowLocalFallback = options?.allowLocalFallback === true;
+  const near = options?.near || null;
+  const radiusM = options?.radiusM ?? 8000;
 
   if (!isSupabaseConfigured()) {
-    return localFallback(selectedCategory);
+    return allowLocalFallback ? localFallback(selectedCategory) : emptyResult();
   }
 
   try {
@@ -68,18 +93,24 @@ export async function fetchSportsHubs(selectedCategory = 'ALL') {
     const { data, error } = await query;
     if (error) throw error;
 
-    const hubs = (data || []).map(mapHubRow).filter(Boolean);
+    let hubs = (data || []).map(mapHubRow).filter(Boolean);
+    if (near) hubs = filterHubsNear(hubs, near, radiusM);
     if (!hubs.length) {
-      return localFallback(selectedCategory);
+      return allowLocalFallback
+        ? localFallback(selectedCategory)
+        : { hubs: [], fromCloud: true, error: null };
     }
     return { hubs, fromCloud: true, error: null };
   } catch (error) {
     console.warn('[sportsHubsService] fetchSportsHubs:', error?.message || error);
-    return {
-      hubs: filterVirarSportsSpots(selectedCategory),
-      fromCloud: false,
-      error,
-    };
+    if (allowLocalFallback) {
+      return {
+        hubs: filterVirarSportsSpots(selectedCategory),
+        fromCloud: false,
+        error,
+      };
+    }
+    return emptyResult(error);
   }
 }
 
