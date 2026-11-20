@@ -13,7 +13,6 @@ import {
   StyleSheet,
   Pressable,
   TouchableOpacity,
-  Share,
 } from 'react-native';
 import {
   isFollowingReelOwner,
@@ -64,24 +63,6 @@ function followTargetKey(reel) {
       reel?.id ||
       ''
   ).trim();
-}
-
-async function shareReel(reel) {
-  const postId = reel?.id != null ? String(reel.id) : '';
-  const handle = String(reel?.author || reel?.handle || 'athlete').replace(
-    /^@/,
-    ''
-  );
-  try {
-    await Share.share({
-      title: 'BAWAAL Arena',
-      message: postId
-        ? `Check @${handle} on BAWAAL: https://bawaal.app/reel/${postId}`
-        : `Check @${handle} on BAWAAL`,
-    });
-  } catch (err) {
-    console.warn('[ReelActionSheet] share failed:', err?.message || err);
-  }
 }
 
 function formatCountLabel(base, count) {
@@ -189,9 +170,8 @@ function ReelActionSheet({
         setLikedByMe(nextLiked);
         setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
       }
-      if (resolvedId === 'share') {
-        await shareReel(reel);
-      }
+      // Share must NOT auto-trigger Share.share / navigator.share here —
+      // parents open BAWAAL SHARE REEL (or their own handler) via onAction only.
       try {
         onAction?.(resolvedId, {
           ...reel,

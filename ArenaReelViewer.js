@@ -190,7 +190,7 @@ const SHARE_SHEET_ACTIONS = [
 
 /**
  * Sleek BAWAAL share sheet — WhatsApp / Facebook / X / Telegram / Copy / More.
- * Never jumps straight to the Windows system share picker on web.
+ * System share (navigator.share / Share.share) ONLY runs from the More button.
  */
 const BawaalShareSheet = memo(function BawaalShareSheet({
   visible,
@@ -207,6 +207,7 @@ const BawaalShareSheet = memo(function BawaalShareSheet({
     onClose?.();
   }, [onClose]);
 
+  /** Explicit More (⋯) only — never called when opening SHARE REEL. */
   const runNativeOrWebMore = useCallback(async () => {
     const { message, url, title } = payload;
     try {
@@ -284,8 +285,8 @@ const BawaalShareSheet = memo(function BawaalShareSheet({
         return;
       }
       if (id === 'more') {
+        // ONLY path that may invoke Share.share / navigator.share
         closeSheet();
-        // Defer so the sheet closes before the system/share UI mounts.
         setTimeout(() => {
           void runNativeOrWebMore();
         }, 80);
@@ -295,6 +296,8 @@ const BawaalShareSheet = memo(function BawaalShareSheet({
   );
 
   if (!visible) return null;
+
+  const cellW = Math.floor((Math.min(SCREEN_W, 480) - 32 - 20) / 3);
 
   return (
     <View style={shareStyles.overlay} pointerEvents="box-none">
@@ -332,6 +335,7 @@ const BawaalShareSheet = memo(function BawaalShareSheet({
                 key={action.id}
                 style={[
                   shareStyles.cell,
+                  { width: cellW },
                   isCopy && copied && shareStyles.cellCopied,
                 ]}
                 onPress={() => void onPick(action.id)}
@@ -384,19 +388,24 @@ const shareStyles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
     zIndex: 80,
+    elevation: 80,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.62)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
   },
   sheet: {
     backgroundColor: BG,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderWidth: 1,
+    borderBottomWidth: 0,
     borderColor: 'rgba(255,215,0,0.28)',
     paddingHorizontal: 16,
     paddingTop: 10,
+    maxWidth: 480,
+    width: '100%',
+    alignSelf: 'center',
   },
   handle: {
     alignSelf: 'center',
@@ -434,31 +443,32 @@ const shareStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 4,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 14,
-    marginBottom: 8,
+    alignContent: 'flex-start',
+    rowGap: 18,
+    marginBottom: 10,
   },
   cell: {
-    width: '31%',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 2,
   },
   cellCopied: {
     opacity: 1,
   },
   iconOrb: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     borderWidth: 1.5,
     backgroundColor: CARD,
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 8,
   },
   iconGlyph: {
     fontSize: 18,
@@ -469,6 +479,7 @@ const shareStyles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.2,
+    textAlign: 'center',
   },
 });
 
