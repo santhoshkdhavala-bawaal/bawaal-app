@@ -723,35 +723,38 @@ function NativeClipPreviewModal({
         <StatusBar barStyle="light-content" />
         <Text style={previewStyles.title}>Slow-Mo Preview</Text>
 
-        <View style={previewStyles.videoWrap}>
-          <BawaalExpoVideo
-            ref={videoRef}
-            source={{ uri }}
-            style={previewStyles.video}
-            contentFit="cover"
-            shouldPlay={playing}
-            isLooping
-            isMuted={false}
-            nativeControls={false}
-            timeUpdateIntervalSec={0.08}
-            onPlaybackStatusUpdate={onPlaybackStatusUpdate}
-          />
-          <TouchableOpacity
-            style={previewStyles.playOverlay}
-            onPress={() => setPlaying((p) => !p)}
-            activeOpacity={0.85}
-          >
-            <View style={previewStyles.playCircle}>
-              <Text style={previewStyles.playIcon}>
-                {playing ? '❚❚' : '▶'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-          {reactionKey ? (
-            <View style={previewStyles.reactionBadge} pointerEvents="none">
-              <BawaalEmoji name={reactionKey} size={36} />
-            </View>
-          ) : null}
+        <View style={previewStyles.videoFrame}>
+          <View style={previewStyles.videoWrap}>
+            <BawaalExpoVideo
+              ref={videoRef}
+              source={{ uri }}
+              style={previewStyles.video}
+              contentFit="contain"
+              resizeMode="contain"
+              shouldPlay={playing}
+              isLooping
+              isMuted={false}
+              nativeControls={false}
+              timeUpdateIntervalSec={0.08}
+              onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+            />
+            <TouchableOpacity
+              style={previewStyles.playOverlay}
+              onPress={() => setPlaying((p) => !p)}
+              activeOpacity={0.85}
+            >
+              <View style={previewStyles.playCircle}>
+                <Text style={previewStyles.playIcon}>
+                  {playing ? '❚❚' : '▶'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {reactionKey ? (
+              <View style={previewStyles.reactionBadge} pointerEvents="none">
+                <BawaalEmoji name={reactionKey} size={36} />
+              </View>
+            ) : null}
+          </View>
         </View>
 
         <Text style={previewStyles.rateLabel}>Skull reaction (vault)</Text>
@@ -883,13 +886,23 @@ const previewStyles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: 12,
   },
-  videoWrap: {
-    flex: 1,
+  /** Balanced preview frame — keeps 9:16 phone clips centered without a left strip. */
+  videoFrame: {
+    width: '100%',
+    maxHeight: '46%',
+    aspectRatio: 9 / 16,
+    alignSelf: 'center',
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#000',
     borderWidth: 1,
     borderColor: '#333333',
+  },
+  videoWrap: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   expoGoPlaceholder: {
     flex: 1,
@@ -911,7 +924,12 @@ const previewStyles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 17,
   },
-  video: { flex: 1 },
+  video: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
+  },
   playOverlay: {
     ...ABSOLUTE_FILL,
     alignItems: 'center',
@@ -2200,22 +2218,44 @@ export default function UniversalCamera({
           return;
         }
 
-        const post = result.post || {
-          id: `dest-${Date.now()}`,
-          mode,
-          title: payload.title,
-          videoUri: result.publicUrl || uri,
-          uri: result.publicUrl || uri,
-          category: payload.category || 'Others',
-          sport: payload.sport || 'OTHERS',
-          shelf: payload.shelf || 'sparks_josh',
+        const playable =
+          result.publicUrl ||
+          (typeof result.post?.videoUri === 'string' && result.post.videoUri) ||
+          (typeof result.post?.uri === 'string' && result.post.uri) ||
+          uri;
+        const shelfId = payload.shelf || result.post?.shelf || 'sparks_josh';
+        const post = {
+          ...(result.post || {}),
+          id: result.post?.id || `dest-${Date.now()}`,
+          mode:
+            shelfId === 'face_off'
+              ? 'FACEOFF'
+              : result.post?.mode || mode,
+          type:
+            shelfId === 'face_off'
+              ? 'faceoff'
+              : result.post?.type || 'reel',
+          title: payload.title || result.post?.title || 'BAWAAL Drop',
+          caption: payload.title || result.post?.caption || '',
+          videoUri: playable,
+          video_url: playable,
+          uri: playable,
+          localVideoUri: uri,
+          publicCloudUrl: result.publicUrl || result.post?.publicCloudUrl || null,
+          category: payload.category || result.post?.category || 'Others',
+          sport: payload.sport || result.post?.sport || 'OTHERS',
+          shelf: shelfId,
           feedTarget: result.feedTarget || 'ARENA',
+          status: result.post?.status || (shelfId === 'face_off' ? 'OPEN' : null),
+          isOpenChallenge:
+            shelfId === 'face_off' ? true : result.post?.isOpenChallenge,
           timestamp: Date.now(),
           createdAt: Date.now(),
           _freshPublish: true,
         };
 
-        if (result.feedTarget !== 'BATTLES' && (result.publicUrl || post.uri)) {
+        // Prefer HTTPS Arena prepend; still pass local/blob via navigation params
+        if (result.feedTarget !== 'BATTLES' && playable) {
           try {
             addNewPostToArenaFeed(post);
           } catch (err) {
@@ -2246,7 +2286,11 @@ export default function UniversalCamera({
         setIsFinalizingClip(false);
         setIsProcessing(false);
 
-        const tab = result.feedTarget === 'BATTLES' ? 'Battles' : 'Arena';
+        // Face Off / Dark Arena land on Arena so the Face Off shelf picks up the clip
+        const tab =
+          shelfId === 'face_off' || result.feedTarget !== 'BATTLES'
+            ? 'Arena'
+            : 'Battles';
         const shelfLabel =
           payload.shelf === 'battle_bawaal'
             ? 'Battle Bawaal'

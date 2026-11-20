@@ -436,20 +436,22 @@ export async function publishToDestination(input) {
     };
   }
 
-  // Open challenge tiers
+  // Open challenge tiers (Dark Arena / Pro Faceoff → Face Off shelf on Arena)
   if (tier === 'dark_arena' || tier === 'pro_faceoff') {
     const uploaded = await uploadClip(videoUri, userId, title, sport);
-    const videoUrl = uploaded.publicUrl || null;
+    // Keep playable local/blob URI when cloud upload soft-fails — never drop media
+    const playable = uploaded.publicUrl || videoUri;
+    const cloudUrl = uploaded.publicUrl || null;
     const inserted = await insertChallengeRow({
       gladiatorId: userId,
       title,
       hashtag,
       tier,
-      videoUrl,
+      videoUrl: cloudUrl || playable,
     });
-    const playable = videoUrl || videoUri;
+    const shelfId = shelf || 'face_off';
     void insertDashboardShelfRow({
-      shelf: shelf || 'face_off',
+      shelf: shelfId,
       title,
       sport,
       author,
@@ -461,31 +463,33 @@ export async function publishToDestination(input) {
       ok: true,
       kind: 'challenge',
       tier,
-      publicUrl: videoUrl,
+      publicUrl: cloudUrl,
       localUri: videoUri,
       data: inserted.data || null,
       softFail: !inserted.ok || !uploaded.ok,
-      feedTarget: 'BATTLES',
+      feedTarget: 'ARENA',
       post: {
         id: inserted.data?.id || `challenge-${Date.now()}`,
-        type: 'open_challenge',
-        mode: 'BATTLE_BAWAAL',
+        type: 'faceoff',
+        mode: 'FACEOFF',
         title,
         caption: hashtag ? `${title} #${hashtag}` : title,
         hashtag,
         tier,
         videoUri: playable,
+        video_url: playable,
         uri: playable,
-        publicCloudUrl: videoUrl,
+        publicCloudUrl: cloudUrl,
         localVideoUri: videoUri,
         gladiator_id: userId,
         athlete: author,
         author,
         category,
         sport,
-        shelf,
-        feedTarget: 'BATTLES',
+        shelf: shelfId,
+        feedTarget: 'ARENA',
         status: 'OPEN',
+        isOpenChallenge: true,
         timestamp: Date.now(),
         createdAt: Date.now(),
         _freshPublish: true,
@@ -517,12 +521,13 @@ export async function publishToDestination(input) {
     category,
   });
 
+  const shelfPlayable = published?.publicUrl || videoUri || null;
   void insertDashboardShelfRow({
     shelf,
     title,
     sport,
     author,
-    videoUrl: published?.publicUrl || null,
+    videoUrl: shelfPlayable,
     userId,
     tier,
   });
@@ -543,13 +548,19 @@ export async function publishToDestination(input) {
     }
   }
 
+  const feedTarget = tier === 'group_battle' ? 'BATTLES' : 'ARENA';
+  const playableUri =
+    published?.publicUrl ||
+    published?.post?.videoUri ||
+    published?.post?.uri ||
+    videoUri;
   return {
     ok: !!published?.ok,
     kind: tier,
     publicUrl: published?.publicUrl || null,
     localUri: published?.localUri || videoUri,
     error: published?.error || null,
-    feedTarget: tier === 'group_battle' ? 'BATTLES' : 'ARENA',
+    feedTarget,
     post: published?.post
       ? {
           ...published.post,
@@ -558,13 +569,26 @@ export async function publishToDestination(input) {
           category,
           sport,
           shelf,
-          feedTarget: tier === 'group_battle' ? 'BATTLES' : 'ARENA',
+          feedTarget,
+          videoUri: playableUri,
+          video_url: playableUri,
+          uri: playableUri,
+          localVideoUri: videoUri,
+          publicCloudUrl: published?.publicUrl || published?.post?.publicCloudUrl || null,
+          mode:
+            shelf === 'face_off'
+              ? 'FACEOFF'
+              : published.post.mode ||
+                (tier === 'story' ? 'SPARKS' : 'JOSH'),
           type:
-            tier === 'story'
-              ? 'story'
-              : tier === 'group_battle'
-                ? 'group_battle'
-                : 'reel',
+            shelf === 'face_off'
+              ? 'faceoff'
+              : tier === 'story'
+                ? 'story'
+                : tier === 'group_battle'
+                  ? 'group_battle'
+                  : 'reel',
+          _freshPublish: true,
         }
       : null,
   };

@@ -1744,6 +1744,13 @@ const ArenaShelfCard = memo(function ArenaShelfCard({
     item?.caption || item?.title || item?.target || item?.sport || 'CLIP';
   const sport = String(item?.sport || item?.category || 'ARENA').toUpperCase();
   const poster = !placeholder ? shelfPosterUri(item) : null;
+  const hasVideo = !!(
+    item?.videoUri ||
+    item?.video_url ||
+    item?.uri ||
+    item?.localVideoUri ||
+    item?.publicCloudUrl
+  );
 
   /** Square card only — no title / track / chrome beneath the thumb. */
   const thumb = (
@@ -1757,9 +1764,14 @@ const ArenaShelfCard = memo(function ArenaShelfCard({
       ) : (
         <View style={styles.shelfThumbFallback}>
           {!placeholder ? (
-            <Text style={styles.shelfThumbSport} numberOfLines={1}>
-              {sport}
-            </Text>
+            <>
+              <Text style={styles.shelfThumbSport} numberOfLines={1}>
+                {sport}
+              </Text>
+              {hasVideo ? (
+                <Text style={styles.shelfThumbPlay}>▶</Text>
+              ) : null}
+            </>
           ) : null}
         </View>
       )}
@@ -2690,17 +2702,40 @@ export default function ArenaFeed({ navigation, route }) {
 
   const faceOffShelf = useMemo(() => {
     const remote = filterByDashboardCategory(dashboardRemote.faceOff);
-    if (remote.length) return remote.slice(0, 16);
-    const fromFeed = discoveryFeed.filter((item) => {
+    const isFaceOffItem = (item) => {
+      if (!item) return false;
       const mode = String(
         item.mode || item.source || item.tier || item.type || ''
       ).toLowerCase();
+      const shelf = String(item.shelf || '').toLowerCase();
       return (
+        shelf === 'face_off' ||
         mode.includes('faceoff') ||
         mode.includes('face off') ||
         item.isOpenChallenge === true ||
         String(item.status || '').toUpperCase() === 'OPEN'
       );
+    };
+    // Fresh publishes (incl. local/blob URIs) must lead — remote alone used to hide them
+    const fromFeed = discoveryFeed.filter(isFaceOffItem).map((item) => {
+      const playable =
+        item.videoUri ||
+        item.video_url ||
+        item.uri ||
+        item.publicCloudUrl ||
+        item.localVideoUri ||
+        null;
+      return {
+        ...item,
+        type: 'faceoff',
+        mode: item.mode || 'FACEOFF',
+        videoUri: playable,
+        video_url: playable,
+        uri: playable,
+        title: item.title || item.caption || 'FACE OFF',
+        caption: item.caption || item.title || 'FACE OFF',
+        _freshPublish: item._freshPublish === true,
+      };
     });
     const fromCallouts = (communityCallouts || [])
       .filter((c) => {
@@ -2716,16 +2751,20 @@ export default function ArenaFeed({ navigation, route }) {
         sport: c.sport || c.category || 'ARENA',
         author: c.host || c.author || '@athlete',
         thumbnail_url: c.thumbnail_url || c.posterUrl || null,
+        videoUri:
+          c.videoUri || c.video_url || c.uri || c.openerVideoUri || null,
+        video_url:
+          c.video_url || c.videoUri || c.uri || c.openerVideoUri || null,
         type: 'faceoff',
         _fromCallout: true,
         raw: c,
       }));
-    const merged = [...fromFeed, ...fromCallouts];
+    const merged = [...fromFeed, ...remote, ...fromCallouts];
     const seen = new Set();
     const out = [];
     for (const row of merged) {
-      const key = String(row.id);
-      if (seen.has(key)) continue;
+      const key = String(row.id || row.videoUri || row.uri || '');
+      if (!key || seen.has(key)) continue;
       seen.add(key);
       out.push(row);
       if (out.length >= 16) break;
@@ -3635,6 +3674,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1.2,
     textAlign: 'center',
+  },
+  shelfThumbPlay: {
+    marginTop: 6,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
   },
   shelfEmptyCard: {
     paddingVertical: 18,
