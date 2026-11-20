@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
   Platform,
   Dimensions,
   StatusBar,
@@ -30,7 +28,7 @@ import {
   prefetchReelPoster,
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
-import { BawaalEmoji, hasBawaalEmoji, BANTER_QUICK_KEYS } from './components/BawaalEmoji';
+import { BawaalEmoji, hasBawaalEmoji } from './components/BawaalEmoji';
 import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
 import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
@@ -40,7 +38,6 @@ import {
   createCenteredEmojiBurst,
 } from './src/components/FloatingEmojiBurst';
 import {
-  BAWAAL_ORANGE,
   REEL_MORE,
   REEL_MUTE,
   REEL_VAULT,
@@ -55,26 +52,22 @@ import ReelActionSheet, {
   REEL_SECONDARY_ACTION_IDS,
 } from './src/components/ReelActionSheet';
 import BanterBottomSheet from './BanterBottomSheet';
-
-const SHARE_ICON = require('./assets/bawaal_share.png');
-const BANTER_ICON = require('./assets/bawaal_banter.png');
-const COMMENT_ICON = require('./assets/bawaal_comment.png');
+import DMChatSheet from './DMChatSheet';
 
 const DISMISS_DISTANCE = 120;
 const DISMISS_VELOCITY = 1.15;
 
-const BG = '#000000';
+const BG = '#08120F';
 const WHITE = '#FFFFFF';
 const MUTED = '#A0A0A0';
-const ACCENT = BAWAAL_ORANGE || '#FF5500';
-const CARD = '#121212';
+const GOLD = '#FFD700';
+const CRIMSON = '#FF2A5F';
+const ACCENT = GOLD;
+const CARD = '#0A1210';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const TAP_REACT_SIZE = 64;
 const TAP_REACT_MS = 800;
 const TAP_REACT_MAX = 14;
-
-/** Banter / floating reactions — skulls first, then skeletons (never unicode). */
-const BANTER_REACTIONS = BANTER_QUICK_KEYS;
 
 function pickRandomVaultKey() {
   const keys = ALL_SKELETON_KEYS;
@@ -93,7 +86,7 @@ const FloatingTapReact = memo(function FloatingTapReact({
   y,
   onDone,
 }) {
-  const progress = useRef(new Animated.Value(0)).current;
+  const [progress] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     progress.setValue(0);
@@ -146,10 +139,11 @@ const FloatingTapReact = memo(function FloatingTapReact({
 });
 
 /**
- * Full-screen Arena Reel — immersive edge-to-edge player + banter / reactions.
+ * Full-screen Arena Reel — immersive edge-to-edge player (zero-clutter Option B).
  *
- * Layout: pitch-black full-bleed video (no letterbox); right rail = mute + vault + ⋮;
- * bottom quick actions = Share · React · Banter; swipe-down or ✕ dismisses to Arena.
+ * Layout: stealth full-bleed video; right rail = mute + vault skull + ⋮ only.
+ * All social actions (Like/skull vault, Banter, Share, DM, Comment) live inside ⋮.
+ * No bottom Share/React/Banter/Chat bar or always-on reaction strip.
  */
 export default function ArenaReelViewer({
   visible,
@@ -161,6 +155,7 @@ export default function ArenaReelViewer({
   const insets = useSafeAreaInsets();
   const [hype, setHype] = useState(0);
   const [showBanter, setShowBanter] = useState(false);
+  const [showDm, setShowDm] = useState(false);
   const [toast, setToast] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -176,8 +171,8 @@ export default function ArenaReelViewer({
   });
   const toastTimerRef = useRef(null);
   const tapSeqRef = useRef(0);
-  const dismissY = useRef(new Animated.Value(0)).current;
-  const dismissOpacity = useRef(new Animated.Value(1)).current;
+  const [dismissY] = useState(() => new Animated.Value(0));
+  const [dismissOpacity] = useState(() => new Animated.Value(1));
   const dismissingRef = useRef(false);
   const overlaysBlockingRef = useRef(false);
   const vaultSkullSource =
@@ -209,6 +204,7 @@ export default function ArenaReelViewer({
     if (dismissingRef.current) return;
     dismissingRef.current = true;
     setShowBanter(false);
+    setShowDm(false);
     setMoreOpen(false);
     setVaultOpen(false);
     Animated.parallel([
@@ -229,15 +225,22 @@ export default function ArenaReelViewer({
   }, [dismissY, dismissOpacity, onClose, resetDismissAnim]);
 
   useEffect(() => {
-    overlaysBlockingRef.current = showBanter || vaultOpen || moreOpen;
-  }, [showBanter, vaultOpen, moreOpen]);
+    overlaysBlockingRef.current =
+      showBanter || showDm || vaultOpen || moreOpen;
+  }, [showBanter, showDm, vaultOpen, moreOpen]);
 
+  // Pan dismiss — RN PanResponder + Animated refs (gesture handlers only).
+  /* eslint-disable react-hooks/refs -- dismiss gesture reads refs inside handlers, not for render */
+  const panAnimRef = useRef({ dismissY, dismissOpacity, finishDismiss });
+  panAnimRef.current = { dismissY, dismissOpacity, finishDismiss };
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
         onMoveShouldSetPanResponder: (_, gesture) => {
-          if (overlaysBlockingRef.current || dismissingRef.current) return false;
+          if (overlaysBlockingRef.current || dismissingRef.current) {
+            return false;
+          }
           return (
             gesture.dy > 14 &&
             Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25
@@ -246,27 +249,31 @@ export default function ArenaReelViewer({
         onPanResponderTerminationRequest: () => false,
         onPanResponderMove: (_, gesture) => {
           if (gesture.dy <= 0) return;
-          dismissY.setValue(gesture.dy);
-          dismissOpacity.setValue(
-            Math.max(0.28, 1 - gesture.dy / (SCREEN_H * 0.55))
-          );
+          const { dismissY: dy, dismissOpacity: dop } = panAnimRef.current;
+          dy.setValue(gesture.dy);
+          dop.setValue(Math.max(0.28, 1 - gesture.dy / (SCREEN_H * 0.55)));
         },
         onPanResponderRelease: (_, gesture) => {
+          const {
+            dismissY: dy,
+            dismissOpacity: dop,
+            finishDismiss: dismiss,
+          } = panAnimRef.current;
           if (
             gesture.dy > DISMISS_DISTANCE ||
             gesture.vy > DISMISS_VELOCITY
           ) {
-            finishDismiss();
+            dismiss();
             return;
           }
           Animated.parallel([
-            Animated.spring(dismissY, {
+            Animated.spring(dy, {
               toValue: 0,
               useNativeDriver: true,
               bounciness: 5,
               speed: 18,
             }),
-            Animated.timing(dismissOpacity, {
+            Animated.timing(dop, {
               toValue: 1,
               duration: 140,
               useNativeDriver: true,
@@ -274,13 +281,14 @@ export default function ArenaReelViewer({
           ]).start();
         },
         onPanResponderTerminate: () => {
+          const { dismissY: dy, dismissOpacity: dop } = panAnimRef.current;
           Animated.parallel([
-            Animated.spring(dismissY, {
+            Animated.spring(dy, {
               toValue: 0,
               useNativeDriver: true,
               bounciness: 5,
             }),
-            Animated.timing(dismissOpacity, {
+            Animated.timing(dop, {
               toValue: 1,
               duration: 120,
               useNativeDriver: true,
@@ -288,8 +296,9 @@ export default function ArenaReelViewer({
           ]).start();
         },
       }),
-    [dismissY, dismissOpacity, finishDismiss]
+    []
   );
+  /* eslint-enable react-hooks/refs */
 
   const uri = useMemo(() => {
     const raw =
@@ -328,6 +337,7 @@ export default function ArenaReelViewer({
     resetDismissAnim();
     setHype(reel.hypeCount || 0);
     setShowBanter(false);
+    setShowDm(false);
     setMoreOpen(false);
     setVaultOpen(false);
     setPaused(false);
@@ -445,27 +455,52 @@ export default function ArenaReelViewer({
     } catch (_) {
       flashToast('SHARE FAILED');
     }
-  }, [flashToast, reel?.author, reel?.id]);
+  }, [flashToast, reel]);
 
   const openBanterFeed = useCallback(() => {
     setMoreOpen(false);
     setVaultOpen(false);
+    setShowDm(false);
     setShowBanter(true);
   }, []);
 
   const openReactions = useCallback(() => {
     setMoreOpen(false);
     setShowBanter(false);
+    setShowDm(false);
     setVaultOpen(true);
   }, []);
+
+  const openDmSheet = useCallback(() => {
+    setMoreOpen(false);
+    setVaultOpen(false);
+    setShowBanter(false);
+    setShowDm(true);
+  }, []);
+
+  const dmPeer = useMemo(() => {
+    if (!reel) return null;
+    const handle = String(reel.author || reel.handle || 'athlete').replace(
+      /^@/,
+      ''
+    );
+    return {
+      id: reel.user_id || reel.userId || reel.hostId || handle,
+      userId: reel.user_id || reel.userId || reel.hostId || null,
+      handle,
+      displayName: reel.displayName || reel.realName || handle,
+      avatarUri: reel.avatarUri || reel.avatar_url || reel.avatar || null,
+    };
+  }, [reel]);
 
   const onMoreAction = useCallback(
     async (actionId) => {
       setMoreOpen(false);
-      setVaultOpen(false);
       if (actionId === 'like') {
         setHype((n) => n + 1);
         dropGif('head_on_fire');
+        // Like → skull / vault reaction picker (no duplicate bottom React bar)
+        openReactions();
         return;
       }
       if (actionId === 'banter' || actionId === 'comment') {
@@ -473,14 +508,15 @@ export default function ArenaReelViewer({
         return;
       }
       if (actionId === 'share') {
+        setVaultOpen(false);
         await shareReel();
         return;
       }
       if (actionId === 'dm' || actionId === 'send') {
-        flashToast('DM READY');
+        openDmSheet();
       }
     },
-    [dropGif, flashToast, openBanterFeed, shareReel]
+    [dropGif, openBanterFeed, openDmSheet, openReactions, shareReel]
   );
 
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly
@@ -494,10 +530,10 @@ export default function ArenaReelViewer({
     (Platform.OS === 'android'
       ? StatusBar.currentHeight || 40
       : Math.max(insets.top, 44)) + 8;
-  /** Right rail: ⋮ at bottom, skullOrange tight above it (no side Like/Banter/etc). */
+  /** Right rail: ⋮ at bottom, vault skull tight above it (no side Like/Banter strip). */
   const moreBottom = 24 + Math.max(insets.bottom, 0);
   const vaultBottom = moreBottom + REEL_VAULT.aboveMore;
-  const bottomStackPad = Math.max(insets.bottom, 12);
+  const captionPad = Math.max(insets.bottom, 12) + 8;
 
   return (
     <Modal
@@ -721,7 +757,7 @@ export default function ArenaReelViewer({
           <Text style={styles.moreDots}>{moreOpen ? '✕' : '⋮'}</Text>
         </TouchableOpacity>
 
-        {/* ⋮ popup: Like · Banter · Share · DM · Comment */}
+        {/* ⋮ popup: Like (skull vault) · Banter · Share · DM · Comment */}
         <ReelActionSheet
           visible={moreOpen}
           showLabels
@@ -743,104 +779,11 @@ export default function ArenaReelViewer({
           onSelectEmoji={handleSelectVaultEmoji}
         />
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.bottomStack, { paddingBottom: bottomStackPad }]}
+        {/* Caption only — no bottom Share/React/Banter/Chat bar or reaction strip */}
+        <View
+          style={[styles.captionDock, { paddingBottom: captionPad }]}
           pointerEvents="box-none"
         >
-          {!showBanter ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.gifTray}
-              keyboardShouldPersistTaps="handled"
-            >
-              {BANTER_REACTIONS.map((key) => (
-                <TouchableOpacity
-                  key={key}
-                  style={styles.gifChip}
-                  onPress={() => dropGif(key)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={`React with ${key}`}
-                >
-                  <BawaalEmoji name={key} size={26} style={styles.gifChipEmoji} />
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[styles.gifChip, styles.gifChipVault]}
-                onPress={openReactions}
-                activeOpacity={0.85}
-                accessibilityLabel="Open full vault"
-              >
-                <Image
-                  source={vaultSkullSource}
-                  style={styles.gifVaultThumb}
-                  resizeMode="contain"
-                />
-              </TouchableOpacity>
-            </ScrollView>
-          ) : null}
-
-          <View style={styles.quickActions} pointerEvents="box-none">
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={shareReel}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Share reel"
-            >
-              <Image
-                source={SHARE_ICON}
-                style={[styles.quickActionIcon, styles.quickActionIconTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.quickActionLabel}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={openReactions}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Open reactions vault"
-            >
-              <Image
-                source={vaultSkullSource}
-                style={styles.quickActionIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.quickActionLabel}>React</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={openBanterFeed}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Open banter feed"
-            >
-              <Image
-                source={BANTER_ICON}
-                style={[styles.quickActionIcon, styles.quickActionIconTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.quickActionLabel}>Banter</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickActionBtn}
-              onPress={openBanterFeed}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Open comments"
-            >
-              <Image
-                source={COMMENT_ICON}
-                style={[styles.quickActionIcon, styles.quickActionIconTint]}
-                resizeMode="contain"
-              />
-              <Text style={styles.quickActionLabel}>Chat</Text>
-            </TouchableOpacity>
-          </View>
-
           <View style={styles.captionBlock}>
             <Text style={styles.caption} numberOfLines={3}>
               {reel.caption || reel.title || ''}
@@ -849,12 +792,17 @@ export default function ArenaReelViewer({
               <Text style={styles.hypeMeta}>{hype} HYPE</Text>
             ) : null}
           </View>
-        </KeyboardAvoidingView>
+        </View>
 
         <BanterBottomSheet
           visible={showBanter && visible}
           reel={reel}
           onClose={() => setShowBanter(false)}
+        />
+        <DMChatSheet
+          visible={showDm && visible}
+          peer={dmPeer}
+          onClose={() => setShowDm(false)}
         />
       </Animated.View>
     </Modal>
@@ -1042,10 +990,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignSelf: 'center',
     zIndex: 30,
-    backgroundColor: 'rgba(18, 18, 18,0.92)',
+    backgroundColor: 'rgba(8, 18, 15,0.94)',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: ACCENT,
+    borderColor: CRIMSON,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -1103,14 +1051,7 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     backgroundColor: 'transparent',
   },
-  gifChipVault: {
-    borderColor: ACCENT,
-  },
-  gifVaultThumb: {
-    width: 26,
-    height: 26,
-  },
-  bottomStack: {
+  captionDock: {
     position: 'absolute',
     left: 0,
     right: 0,
@@ -1130,56 +1071,9 @@ const styles = StyleSheet.create({
   },
   hypeMeta: {
     marginTop: 6,
-    color: ACCENT,
+    color: GOLD,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.1,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingBottom: 10,
-    gap: 10,
-  },
-  quickActionBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 56,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-  },
-  quickActionIcon: {
-    width: 26,
-    height: 26,
-  },
-  quickActionIconTint: {
-    tintColor: ACCENT,
-  },
-  quickActionLabel: {
-    marginTop: 4,
-    color: WHITE,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  gifTray: {
-    paddingHorizontal: 12,
-    paddingBottom: 8,
-    gap: 8,
-  },
-  gifChip: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(0, 0, 0,0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(160,176,168,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  gifChipEmoji: {
-    marginHorizontal: 0,
   },
 });
