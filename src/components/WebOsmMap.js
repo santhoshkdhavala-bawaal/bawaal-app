@@ -46,6 +46,10 @@ function buildLeafletHtml({ latitude, longitude, venues, selectedId, zoom }) {
   <style>
     html, body, #map { margin:0; padding:0; width:100%; height:100%; background:#08120F; }
     .leaflet-container { background:#08120F; font-family: system-ui, sans-serif; }
+    /* Stealth-dark OSM tiles — no third-party basemap API key */
+    .leaflet-tile-pane {
+      filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(90%);
+    }
     .bawaal-pin {
       background:#000; color:#fff; border:2px solid #FFD700; border-radius:8px;
       padding:3px 6px; font-size:10px; font-weight:800; white-space:nowrap;
@@ -66,9 +70,9 @@ function buildLeafletHtml({ latitude, longitude, venues, selectedId, zoom }) {
       var markers = ${markersJson};
       var map = L.map('map', { zoomControl: true, attributionControl: true })
         .setView(center, ${z});
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: '&copy; OpenStreetMap &copy; CARTO'
+        attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
       L.circleMarker(center, {
         radius: 8, color: '#FF2A5F', fillColor: '#FFD700', fillOpacity: 0.9, weight: 2

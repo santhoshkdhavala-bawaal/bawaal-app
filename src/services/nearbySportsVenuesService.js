@@ -11,7 +11,8 @@ const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
 ];
-const FETCH_TIMEOUT_MS = 14000;
+/** Hard client timeout so UI never sticks on "Scanning…". */
+export const OVERPASS_FETCH_TIMEOUT_MS = 6000;
 
 const EARTH_RADIUS_M = 6371000;
 
@@ -85,8 +86,9 @@ export function mapOsmTagsToSport(tags = {}) {
 function buildOverpassQuery(lat, lng, radiusM) {
   const r = Math.round(radiusM);
   const around = `around:${r},${lat},${lng}`;
+  // Keep Overpass server timeout under the client AbortController budget.
   return `
-[out:json][timeout:20];
+[out:json][timeout:5];
 (
   node["leisure"="fitness_centre"](${around});
   node["leisure"="sports_centre"](${around});
@@ -106,7 +108,7 @@ function buildOverpassQuery(lat, lng, radiusM) {
   relation["leisure"="sports_centre"](${around});
   relation["leisure"="stadium"](${around});
 );
-out center tags 90;
+out center tags 60;
 `.trim();
 }
 
@@ -149,71 +151,124 @@ function elementToVenue(el, origin) {
   };
 }
 
-async function fetchWithTimeout(url, options, timeoutMs) {
+function parseOverpassVenues(json, origin) {
+  const elements = Array.isArray(json?.elements) ? json.elements : [];
+  const venues = elements
+    .map((el) => elementToVenue(el, origin))
+    .filter(Boolean);
+  const seen = new Set();
+  const unique = [];
+  for (const v of venues) {
+    const key = `${v.name.toLowerCase()}|${v.coordinate.latitude.toFixed(4)}|${v.coordinate.longitude.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(v);
+  }
+  unique.sort((a, b) => (a.distanceM || 0) - (b.distanceM || 0));
+  return unique.slice(0, 80);
+}
+
+/**
+ * POST one Overpass mirror with AbortController timeout.
+ */
+async function fetchOverpassEndpoint(endpoint, body, timeoutMs, externalSignal) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => {
+    try {
+      controller.abort();
+    } catch {
+      /* ignore */
+    }
+  };
+  if (externalSignal) {
+    if (externalSignal.aborted) onAbort();
+    else externalSignal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = setTimeout(onAbort, timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        Accept: 'application/json',
+      },
+      body: `data=${encodeURIComponent(body)}`,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`Overpass HTTP ${res.status}`);
+    }
+    return await res.json();
   } finally {
     clearTimeout(timer);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onAbort);
+    }
   }
 }
 
 /**
  * Query Overpass for sports venues near lat/lng.
+ * Races both mirrors under a 6s AbortController — never hangs the UI.
  * @returns {Promise<object[]>}
  */
 export async function fetchOverpassSportsVenues(
   latitude,
   longitude,
-  radiusM = NEARBY_RADIUS_M
+  radiusM = NEARBY_RADIUS_M,
+  options = {}
 ) {
   const lat = Number(latitude);
   const lng = Number(longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
 
+  const timeoutMs = Number(options.timeoutMs) || OVERPASS_FETCH_TIMEOUT_MS;
   const body = buildOverpassQuery(lat, lng, radiusM);
   const origin = { latitude: lat, longitude: lng };
+  const parentController = new AbortController();
+  const killTimer = setTimeout(() => parentController.abort(), timeoutMs);
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const res = await fetchWithTimeout(
+  try {
+    const attempts = OVERPASS_ENDPOINTS.map((endpoint) =>
+      fetchOverpassEndpoint(
         endpoint,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-            Accept: 'application/json',
-          },
-          body: `data=${encodeURIComponent(body)}`,
-        },
-        FETCH_TIMEOUT_MS
-      );
-      if (!res.ok) continue;
-      const json = await res.json();
-      const elements = Array.isArray(json?.elements) ? json.elements : [];
-      const venues = elements
-        .map((el) => elementToVenue(el, origin))
-        .filter(Boolean);
-      // Dedupe by rounded coords + name
-      const seen = new Set();
-      const unique = [];
-      for (const v of venues) {
-        const key = `${v.name.toLowerCase()}|${v.coordinate.latitude.toFixed(4)}|${v.coordinate.longitude.toFixed(4)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        unique.push(v);
+        body,
+        timeoutMs,
+        parentController.signal
+      ).then((json) => {
+        const venues = parseOverpassVenues(json, origin);
+        if (!venues.length) {
+          throw new Error('Overpass empty');
+        }
+        return venues;
+      })
+    );
+
+    // First mirror with usable results wins (Promise.any + sequential fallback).
+    let venues = null;
+    if (typeof Promise.any === 'function') {
+      venues = await Promise.any(attempts);
+    } else {
+      for (const attempt of attempts) {
+        try {
+          venues = await attempt;
+          break;
+        } catch {
+          /* try next */
+        }
       }
-      unique.sort((a, b) => (a.distanceM || 0) - (b.distanceM || 0));
-      return unique.slice(0, 80);
-    } catch (err) {
-      softFailWarn(
-        'overpass.nearby',
-        err?.message || err || 'Overpass fetch failed'
-      );
     }
+    parentController.abort();
+    return Array.isArray(venues) ? venues : [];
+  } catch (err) {
+    softFailWarn(
+      'overpass.nearby',
+      err?.message || err || 'Overpass fetch failed'
+    );
+    return [];
+  } finally {
+    clearTimeout(killTimer);
   }
-  return [];
 }
 
 /**

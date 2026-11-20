@@ -25,12 +25,18 @@ import {
   resolveDashboardCategory,
 } from './src/constants/gameOnSports';
 import {
+  CITY_COORDS,
+  getCityVenueFallbacks,
+  resolveNearestCityId,
+} from './src/data/citySportsVenueFallbacks';
+import {
   HUB_SPORT_COLORS,
   hubPinColor,
   sportsSpotNeon,
 } from './src/data/sportHubs';
 import {
   NEARBY_RADIUS_M,
+  OVERPASS_FETCH_TIMEOUT_MS,
   fetchOverpassSportsVenues,
   formatDistance,
   mergeNearbyVenues,
@@ -62,19 +68,13 @@ const CATEGORY_PILLS = GAME_ON_CATEGORY_PILLS.map((label) => ({
   color: CATEGORY_PILL_COLORS[label] || HUB_SPORT_COLORS.OTHERS || '#FF5500',
 }));
 
-const DEFAULT_CITY = {
-  id: 'hyd',
-  label: 'Hyderabad',
-  latitude: 17.385,
-  longitude: 78.4867,
-};
-
+const DEFAULT_CITY = CITY_COORDS.hyd;
 const CITY_PRESETS = [
-  DEFAULT_CITY,
-  { id: 'del', label: 'Delhi', latitude: 28.6139, longitude: 77.209 },
-  { id: 'mum', label: 'Mumbai', latitude: 19.076, longitude: 72.8777 },
-  { id: 'blr', label: 'Bengaluru', latitude: 12.9716, longitude: 77.5946 },
-  { id: 'che', label: 'Chennai', latitude: 13.0827, longitude: 80.2707 },
+  CITY_COORDS.hyd,
+  CITY_COORDS.del,
+  CITY_COORDS.mum,
+  CITY_COORDS.blr,
+  CITY_COORDS.che,
 ];
 
 let MapView = null;
@@ -178,6 +178,7 @@ export default function SportHubMapScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
   const originRef = useRef(null);
+  const loadSeqRef = useRef(0);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(FILTER_ALL);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -204,45 +205,113 @@ export default function SportHubMapScreen({ navigation }) {
     mapRef.current?.animateToRegion?.(region, animated ? 420 : 0);
   }, [nativeMapsReady]);
 
-  const loadNearby = useCallback(async (coords, category = selectedCategory) => {
-    if (!coords) return;
-    setLoadingVenues(true);
-    setStatusMsg('Scanning nearby gyms, clubs & grounds…');
-    try {
-      // Cloud fetch is unfiltered; GAME ON category applied in merge.
-      const [cloud, overpass] = await Promise.all([
-        fetchSportsHubs('ALL', {
-          allowLocalFallback: false,
-          near: coords,
-          radiusM: NEARBY_RADIUS_M,
-        }),
-        fetchOverpassSportsVenues(
-          coords.latitude,
-          coords.longitude,
-          NEARBY_RADIUS_M
-        ),
-      ]);
-      const merged = mergeNearbyVenues({
-        cloudHubs: cloud?.hubs || [],
-        overpassVenues: overpass || [],
+  const loadNearby = useCallback(
+    async (coords, category = selectedCategory, cityIdHint = null) => {
+      if (!coords) return;
+      const seq = ++loadSeqRef.current;
+      const cityId =
+        cityIdHint && cityIdHint !== 'gps'
+          ? cityIdHint
+          : resolveNearestCityId(coords.latitude, coords.longitude);
+
+      // Instant curated pins so UI never sits on "Scanning…" with an empty map.
+      const curatedSeed = mergeNearbyVenues({
+        cloudHubs: [],
+        overpassVenues: getCityVenueFallbacks(cityId),
         origin: coords,
         selectedCategory: category,
-        radiusM: NEARBY_RADIUS_M,
+        radiusM: NEARBY_RADIUS_M * 4,
       });
-      setVenues(merged);
-      setStatusMsg(
-        merged.length
-          ? `${merged.length} venues within ~${Math.round(NEARBY_RADIUS_M / 1000)} km`
-          : 'No OSM venues in range — try another city'
-      );
+      setVenues(curatedSeed);
       setTracksPins(true);
-    } catch {
-      setVenues([]);
-      setStatusMsg('Could not load nearby venues');
-    } finally {
-      setLoadingVenues(false);
-    }
-  }, [selectedCategory]);
+      setLoadingVenues(true);
+      setStatusMsg(
+        curatedSeed.length
+          ? `${curatedSeed.length} local hubs · refreshing live…`
+          : 'Scanning nearby gyms, clubs & grounds…'
+      );
+
+      try {
+        const livePromise = Promise.all([
+          fetchSportsHubs('ALL', {
+            allowLocalFallback: false,
+            near: coords,
+            radiusM: NEARBY_RADIUS_M,
+          }).catch(() => ({ hubs: [] })),
+          fetchOverpassSportsVenues(
+            coords.latitude,
+            coords.longitude,
+            NEARBY_RADIUS_M,
+            { timeoutMs: OVERPASS_FETCH_TIMEOUT_MS }
+          ),
+        ]);
+
+        // Hard UI budget — clear spinner even if a request misbehaves.
+        const budget = new Promise((resolve) =>
+          setTimeout(() => resolve('timeout'), OVERPASS_FETCH_TIMEOUT_MS + 400)
+        );
+        const raced = await Promise.race([
+          livePromise.then((result) => ({ type: 'ok', result })),
+          budget.then(() => ({ type: 'timeout' })),
+        ]);
+
+        if (seq !== loadSeqRef.current) return;
+
+        if (raced.type === 'ok') {
+          const [cloud, overpass] = raced.result;
+          const liveMerged = mergeNearbyVenues({
+            cloudHubs: cloud?.hubs || [],
+            overpassVenues: overpass || [],
+            origin: coords,
+            selectedCategory: category,
+            radiusM: NEARBY_RADIUS_M,
+          });
+          if (liveMerged.length) {
+            // Prefer live results; keep curated that don't collide by name+coord.
+            const combined = mergeNearbyVenues({
+              cloudHubs: liveMerged,
+              overpassVenues: curatedSeed,
+              origin: coords,
+              selectedCategory: category,
+              radiusM: NEARBY_RADIUS_M * 4,
+            });
+            setVenues(combined);
+            setStatusMsg(
+              `${combined.length} venues within ~${Math.round(NEARBY_RADIUS_M / 1000)} km`
+            );
+          } else {
+            setVenues(curatedSeed);
+            setStatusMsg(
+              curatedSeed.length
+                ? `${curatedSeed.length} curated hubs · live feed timed out`
+                : 'No venues found — try another city'
+            );
+          }
+        } else {
+          setVenues(curatedSeed);
+          setStatusMsg(
+            curatedSeed.length
+              ? `${curatedSeed.length} curated hubs · live feed timed out`
+              : 'Live scan timed out — try Recenter'
+          );
+        }
+        setTracksPins(true);
+      } catch {
+        if (seq !== loadSeqRef.current) return;
+        setVenues(curatedSeed);
+        setStatusMsg(
+          curatedSeed.length
+            ? `${curatedSeed.length} curated hubs ready`
+            : 'Could not load nearby venues'
+        );
+      } finally {
+        if (seq === loadSeqRef.current) {
+          setLoadingVenues(false);
+        }
+      }
+    },
+    [selectedCategory]
+  );
 
   const applyOrigin = useCallback(
     async (coords, { cityId = null, gps = false, hint = null } = {}) => {
@@ -253,13 +322,17 @@ export default function SportHubMapScreen({ navigation }) {
       if (!Number.isFinite(next.latitude) || !Number.isFinite(next.longitude)) {
         return;
       }
+      const resolvedCityId =
+        cityId && cityId !== 'gps'
+          ? cityId
+          : resolveNearestCityId(next.latitude, next.longitude);
       originRef.current = next;
       setOrigin(next);
       setUsingGps(!!gps);
-      setActiveCityId(cityId || (gps ? 'gps' : DEFAULT_CITY.id));
+      setActiveCityId(gps ? 'gps' : resolvedCityId);
       setLocationHint(hint);
       animateNativeTo(next);
-      await loadNearby(next, selectedCategory);
+      await loadNearby(next, selectedCategory, resolvedCityId);
     },
     [animateNativeTo, loadNearby, selectedCategory]
   );
@@ -343,11 +416,12 @@ export default function SportHubMapScreen({ navigation }) {
       setSheetOpen(false);
       const coords = originRef.current || origin;
       if (coords) {
-        void loadNearby(coords, next);
+        const cityHint = activeCityId === 'gps' ? null : activeCityId;
+        void loadNearby(coords, next, cityHint);
         animateNativeTo(coords);
       }
     },
-    [animateNativeTo, loadNearby, origin]
+    [activeCityId, animateNativeTo, loadNearby, origin]
   );
 
   const goBack = useCallback(() => {
