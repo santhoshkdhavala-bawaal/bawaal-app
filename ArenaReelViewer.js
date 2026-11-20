@@ -308,7 +308,6 @@ const BawaalShareSheet = memo(function BawaalShareSheet({
         accessibilityLabel="Close share"
       />
       <View style={[shareStyles.sheet, { paddingBottom: bottomPad }]}>
-        <View style={shareStyles.handle} />
         <View style={shareStyles.header}>
           <Text style={shareStyles.kicker}>SHARE REEL</Text>
           <TouchableOpacity
@@ -402,18 +401,10 @@ const shareStyles = StyleSheet.create({
     borderBottomWidth: 0,
     borderColor: 'rgba(255,215,0,0.28)',
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 14,
     maxWidth: 480,
     width: '100%',
     alignSelf: 'center',
-  },
-  handle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    marginBottom: 12,
   },
   header: {
     flexDirection: 'row',
