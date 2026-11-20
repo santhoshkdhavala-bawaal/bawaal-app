@@ -1,0 +1,86 @@
+---
+description: Lock GAME ON 8-category taxonomy and NEAR ME live-GPS SportHubMapScreen behavior
+alwaysApply: true
+---
+
+# BAWAAL GAME ON · NEAR ME map (LOCKED)
+
+Production-final lock for the GAME ON sports category bar and the NEAR ME / `SportHubMapScreen` live-GPS + city-hub map. Do **not** modify, restyle, reorder, or rewire these surfaces unless the user explicitly unlocks this rule (`bawaal-gameon-map-locked.mdc`).
+
+This lock **supersedes** older GAME ON multi-row sport grids and the Virar-centered Sport Hub Map contract for `SportHubMapScreen.js` / `GameOnHub.js` sports UI. Form taxonomy remains `BAWAAL_SPORTS` (see `bawaal-sport-taxonomy-locked.mdc`). Native dark map style tokens remain in `darkMapStyle.js`.
+
+## 1. GAME ON Sports Categories (LOCKED)
+
+Surface: `GameOnHub.js` → **SPORTS CATEGORIES** (driven by `src/constants/gameOnSports.js` → `GAME_ON_CATEGORY_PILLS` / `ARENA_DASHBOARD_CATEGORY_PILLS`).
+
+The drawer must keep **ONLY** these exact **8** top-level categories in this exact order:
+
+1. All  
+2. Ball Sports  
+3. Combat Sports  
+4. Racing & Speed  
+5. Water & Surf  
+6. Extreme & Adventure  
+7. Strength & Fitness  
+8. Others  
+
+### Contract
+
+- Single clean horizontal pill row (or equivalent single-row selector) — **not** multi-row titled sub-sport grids.
+- Selection filters the Arena feed via `applyArenaFeedFilters` / `filterArenaFeedBySport` / `matchesGameOnCategory` (map categories onto legacy `BAWAAL_SPORTS` + granular tags so existing clips still match).
+- **Never re-add** multi-row sub-sport pill grids inside GAME ON (Cricket, Football, Basketball, MMA, Boxing, Formula 1, Surfing, etc. as nested chip rows).
+- Keep GAME ON header chrome intact: **SEARCH · NEAR ME · FILTERS**, search field, **NEAR ME** button, and **BATTLE CATEGORIES** (`All`, `Bawaal Battle`, `Dark Arena`, `Faceoff`, `War Cry` from `ARENA_FEED_TIERS`).
+
+### Locked files (GAME ON sports UI)
+
+- `src/components/GameOnHub.js`
+- `src/constants/gameOnSports.js` (`GAME_ON_SPORT_SECTIONS` resolution maps, `GAME_ON_CATEGORY_PILLS`, `resolveDashboardCategory`, `matchesGameOnCategory`)
+
+## 2. NEAR ME / SportHubMapScreen (LOCKED)
+
+Surface: `SportHubMapScreen.js` (+ helpers below). Theme: stealth `#08120F` / gold `#FFD700` / crimson `#FF2A5F` with BAWAAL category accents.
+
+### Android / iOS native
+
+- Detect live GPS via `expo-location` (`requestForegroundPermissionsAsync` + `getCurrentPositionAsync` with **last-known fallback** + **timeout** — never hang).
+- Center native `react-native-maps` with `provider={PROVIDER_GOOGLE}`, `showsUserLocation`, `showsMyLocationButton` on the user's real coordinates (Hyderabad, Delhi, Mumbai, or any city).
+- Fetch nearby gyms, MMA/boxing clubs, stadiums, grounds, and sports hubs (Overpass + Supabase `sports_hubs` merge).
+- Instant curated city hubs while live query runs; 6s AbortController Overpass budget; never leave the map empty on "Scanning…".
+
+### Web (`Platform.OS === 'web'`)
+
+- Keep the dark-filtered OpenStreetMap Leaflet view via `src/components/WebOsmMap.js`.
+- Tiles: `https://tile.openstreetmap.org/{z}/{x}/{y}.png` with attribution `© OpenStreetMap contributors`.
+- Tile pane CSS: `filter: invert(100%) hue-rotate(180deg) brightness(92%) contrast(90%);`
+- **Never** re-add CARTO / `basemaps.cartocdn.com` raster URLs that require an API key watermark.
+- Instant city switcher: **Hyderabad**, **Delhi**, **Mumbai**, **Bengaluru**, **Chennai** (`src/data/citySportsVenueFallbacks.js`).
+- Instant curated/cached fallback hubs merged with live Overpass results.
+- Bottom filter bar uses the same **8** GAME ON categories (not the 11 `BAWAAL_SPORTS` form pills).
+
+### Locked files (NEAR ME map)
+
+- `SportHubMapScreen.js`
+- `src/components/WebOsmMap.js`
+- `src/utils/userLocation.js`
+- `src/services/nearbySportsVenuesService.js`
+- `src/data/citySportsVenueFallbacks.js`
+- Related (soft-fail / merge only): `src/services/sportsHubsService.js` nearby options — do not restore Virar as the primary map seed path
+
+## Never re-add
+
+- Multi-row GAME ON sub-sport grids  
+- Virar-hardcoded primary map region / Virar club list as the default NEAR ME experience  
+- CARTO API-key basemap tiles on web  
+- Blocking Overpass scans with no curated fallback / no timeout  
+- 11-pill `BAWAAL_SPORTS` footer on `SportHubMapScreen` (forms still use `BAWAAL_SPORTS`)
+
+## Unlock
+
+Do **not** modify GAME ON categories or `SportHubMapScreen.js` (or the locked helper files above) unless the user explicitly asks to unlock `bawaal-gameon-map-locked.mdc`.
+
+## Related
+
+- Form taxonomy: `bawaal-sport-taxonomy-locked.mdc` (`BAWAAL_SPORTS`)
+- Arena V2 chrome: `bawaal-v2-arena-ui-locked.mdc` (header / battle tiers; sports row contract → this file)
+- Native map style tokens: `bawaal-sport-hub-map-locked.mdc` (`BAWAAL_DARK_MAP_STYLE`) — screen behavior superseded here
+---

@@ -2,15 +2,22 @@
 
 Session summary of completed updates (Expo / React Native).
 
+## 0. GAME ON 8-categories + NEAR ME map (LOCKED)
+
+**Status: LOCKED** — rule `.cursor/rules/bawaal-gameon-map-locked.mdc` (`alwaysApply: true`). Do not regress without an explicit unlock.
+
+| Surface | Locked behavior |
+|---|---|
+| **GAME ON → SPORTS CATEGORIES** | Exact 8 pills: `All`, `Ball Sports`, `Combat Sports`, `Racing & Speed`, `Water & Surf`, `Extreme & Adventure`, `Strength & Fitness`, `Others`. No multi-row sub-sport grids. Files: `GameOnHub.js`, `gameOnSports.js`. |
+| **NEAR ME / `SportHubMapScreen.js` (native)** | Live GPS (`expo-location` + timeout/last-known) → `react-native-maps` `PROVIDER_GOOGLE`; Overpass + Supabase + curated city hubs. |
+| **NEAR ME (web)** | Dark-filtered OSM Leaflet (`tile.openstreetmap.org`, never CARTO API-key tiles); city switcher Hyderabad / Delhi / Mumbai / Bengaluru / Chennai; same 8-category footer. |
+
+Related helpers: `WebOsmMap.js`, `userLocation.js`, `nearbySportsVenuesService.js`, `citySportsVenueFallbacks.js`. Blueprint: `BAWAAL_MASTER_BLUEPRINT.md` §2.1.
+
 ## 1. Permanent Categories Locked
 
-Locked sports & adventure category tabs in `ArenaFeed.js`:
-
-```js
-['ALL', 'CRICKET', 'FOOTBALL', 'GYM', 'KABADDI', 'COMBAT', 'THROTTLE', 'WAVE & BLADE', 'COURT KINGS', 'SKY & SUMMIT']
-```
-
-These tabs are the permanent Arena filter set (no ad-hoc / mutable category list).
+Form / publish taxonomy remains `BAWAAL_SPORTS` in `src/constants/sports.js` (ALL → … → OTHERS).  
+GAME ON drawer + NEAR ME map footer use the **8** locked categories in §0 (not the nested 11-pill form list).
 
 ## 2. Stability & Crash Fixes
 

@@ -22,7 +22,7 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 
 - Opens from `▶ GAME ON` — Search + **NEAR ME** → `SportHubMap`
 - Battle chips from `ARENA_FEED_TIERS` (All · Bawaal Battle · Dark Arena · Faceoff · War Cry) filter Arena feed
-- Sports chips from `GAME_ON_SPORT_SECTIONS` (`src/constants/gameOnSports.js`) — **7** titled rows, each a **horizontal** `ScrollView` (`horizontal`, `showsHorizontalScrollIndicator={false}`) beside the title
+- Sports chips from `GAME_ON_CATEGORY_PILLS` (`src/constants/gameOnSports.js`) — **LOCKED 8** top-level pills only (`All` → `Others`); single horizontal row — **never** multi-row sub-sport grids. Full contract: `bawaal-gameon-map-locked.mdc`
 - **No** live scores / `ScoresSportsPanel` / vertical chip wrap inside the drawer
 
 ## 3. Arena video feed overlay (FINAL — do not shift)

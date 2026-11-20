@@ -62,9 +62,9 @@ Live viewfinder is **untouchable** — Close/Cancel, Flip, spinning dotted red s
 
 Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOTBALL → GYM → KABADDI → COMBAT → THROTTLE → WAVE & BLADE → COURT KINGS → SKY & SUMMIT → OTHERS. Single-line horizontal pills; no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
 
-## Sport Hub Map (locked)
+## GAME ON 8-categories + NEAR ME map (locked)
 
-`SportHubMapScreen` + `darkMapStyle.js` + `sportsHubsService` are **untouchable** — white roads, orange `#FF6600` / cyan `#00F0FF` / gold `#FFE082` labels with black stroke weight 4, `BAWAAL_SPORTS` pills → `fetchSportsHubs` (`public.sports_hubs`) with Virar seed fallback. See `.cursor/rules/bawaal-sport-hub-map-locked.mdc`.
+GAME ON **SPORTS CATEGORIES** = exact 8 pills (`All` → `Others`); no sub-sport grids. NEAR ME `SportHubMapScreen` = live GPS + `PROVIDER_GOOGLE` (native), dark OSM Leaflet web (`tile.openstreetmap.org`, never CARTO), city hubs + Overpass. See `.cursor/rules/bawaal-gameon-map-locked.mdc`. Native dark map style tokens: `bawaal-sport-hub-map-locked.mdc`.
 
 ## Arena challenge architecture (locked)
 

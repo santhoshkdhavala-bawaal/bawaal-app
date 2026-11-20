@@ -34,8 +34,8 @@ Sport interest / filter chips are a **single-line horizontal** `ScrollView` of p
 - Upload challenge category — `UploadScreen`
 - Arena / BATTLES sport filters — `ARENA_SPORT_TABS` / `BAWAAL_SPORTS`
 - Arena GAME ON battle pills — `ARENA_FEED_TIERS` in `arenaFeedTiers.js` (All / Battle / Dark Arena / Faceoff / War Cry) — not a sport array; live in the GAME ON drawer
-- Arena GAME ON sports rows — `GAME_ON_SPORT_SECTIONS` in `gameOnSports.js` (drawer-only horizontal chip rows; forms still use `BAWAAL_SPORTS`)
-- Sport Hub Map category pills — may add ALL / SPORTS SPOTS chrome but sport keys must match taxonomy (see `bawaal-sport-hub-map-locked.mdc`)
+- Arena GAME ON sports pills — `GAME_ON_CATEGORY_PILLS` in `gameOnSports.js` (**LOCKED 8** top-level only; see `bawaal-gameon-map-locked.mdc`; forms still use `BAWAAL_SPORTS`)
+- Sport Hub Map / NEAR ME footer — same **8** GAME ON categories (see `bawaal-gameon-map-locked.mdc`); dark style tokens in `bawaal-sport-hub-map-locked.mdc`
 
 ## Accent
 

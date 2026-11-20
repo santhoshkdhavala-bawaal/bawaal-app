@@ -11,10 +11,22 @@ BAWAAL is a high-performance, stealth-black global sports network centered aroun
 | Hub | Surface | Role |
 |---|---|---|
 | **ARENA** | Main tab — cinematic single-stream video feed | V2 combined-logo header + **▶ GAME ON** + bell. Inline **🔥 LIVE COMMUNITY CHALLENGES** shelf starts at list index **2+** only. No floating toasts. |
-| **GAME ON** | Command drawer from Arena header | Search + **NEAR ME** map + battle tiers (`ARENA_FEED_TIERS`) + horizontal sports rows (`gameOnSports.js`) driving `applyArenaFeedFilters`. No live-score tickers. No Open Callouts. |
+| **GAME ON** | Command drawer from Arena header | Search + **NEAR ME** map + battle tiers (`ARENA_FEED_TIERS`) + **LOCKED 8 sports category pills** (`gameOnSports.js` → `GAME_ON_CATEGORY_PILLS`) driving `applyArenaFeedFilters`. No multi-row sub-sport grids. No live-score tickers. No Open Callouts. |
 | **BATTLES** | Bottom tab | Active 1v1 engagements **and** Open Callouts: **OPEN CHALLENGES** + **TIPS & BREAKDOWNS**. Source of truth for callouts; Arena shelf deep-links here. |
 
 Related: Locker Room / Passport / Clinic remain as separately locked product surfaces (see `.cursor/rules/`).
+
+### 2.1 GAME ON 8-category filter + NEAR ME map (LOCKED)
+
+Authoritative rule: `.cursor/rules/bawaal-gameon-map-locked.mdc` — do **not** regress without an explicit unlock.
+
+| Surface | Locked contract |
+|---|---|
+| **GAME ON → SPORTS CATEGORIES** | Exact 8 pills in order: **All → Ball Sports → Combat Sports → Racing & Speed → Water & Surf → Extreme & Adventure → Strength & Fitness → Others**. Single-row selector only — never nested Cricket/Football/MMA/… grids. Files: `GameOnHub.js`, `gameOnSports.js`. |
+| **NEAR ME → `SportHubMapScreen.js` (native)** | Live GPS via `expo-location` (last-known + timeout) → `react-native-maps` `PROVIDER_GOOGLE` centered on the user; Overpass + Supabase hubs + curated city fallbacks. |
+| **NEAR ME (web)** | Dark-filtered OSM Leaflet (`tile.openstreetmap.org` — **never** CARTO API-key tiles); city switcher Hyderabad / Delhi / Mumbai / Bengaluru / Chennai; same 8-category bottom bar. |
+
+Forms / briefs / publish pickers still use immutable `BAWAAL_SPORTS` (§3). GAME ON filter categories map onto those tags via `resolveDashboardCategory` / `matchesGameOnCategory`.
 
 ## 3. Immutable Sports Taxonomy (LOCKED CORE)
 Source of truth: `src/constants/sports.js` → `BAWAAL_SPORTS`  
@@ -50,7 +62,8 @@ export const BAWAAL_SPORTS = [
 ];
 ```
 
-All forms, GAME ON score pills, BATTLES filters, Arena publish pickers, and briefs **must** import this constant (or its re-exports). Never local sport arrays.
+All forms, BATTLES filters, Arena publish pickers, and briefs **must** import this constant (or its re-exports). Never local sport arrays.  
+**Exception (LOCKED):** GAME ON drawer **SPORTS CATEGORIES** and NEAR ME map footer use the **8** `GAME_ON_CATEGORY_PILLS` — see §2.1 / `bawaal-gameon-map-locked.mdc`.
 
 ## 4. Feed & Startup Logic (LOCKED)
 - Arena FlatList **strictly initializes** full-screen video/battle content at indices **0** and **1**.
@@ -64,7 +77,7 @@ All forms, GAME ON score pills, BATTLES filters, Arena publish pickers, and brie
 - Publish: opener → Supabase Storage + `arena_challenges`; prepend to Arena (`pushOpenChallenge`); BATTLES Open Callouts + Arena shelves surface new open cards.
 
 ## 6. Cursor Re-hydration Prompt
-"Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + shelf at index 2+), GAME ON (scores + BAWAAL_SPORTS pills only), and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js is the immutable taxonomy — never invent local sport arrays. Arena feed indices 0–1 are always video; shelves inject at index 2+. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay. Arena clips use declarative expo-av source={{uri}} + shouldPlay (no setStatusAsync loops); videos upsert onConflict id; arenaFeedStore hydrate never throws."
+"Load project context for BAWAAL: Navigation hubs are ARENA (cinematic feed + shelf at index 2+), GAME ON (battle tiers + LOCKED 8 sports categories All/Ball Sports/Combat/Racing/Water/Extreme/Strength/Others — no sub-sport grids), NEAR ME SportHubMapScreen (live GPS + Google Maps native / dark OSM web + city hubs — locked), and BATTLES (OPEN CHALLENGES | TIPS & BREAKDOWNS). BAWAAL_SPORTS in src/constants/sports.js remains the immutable form taxonomy. Arena feed indices 0–1 are always video; shelves inject at index 2+. Keep 1-tap UniversalCamera challenge creation and the 200ms recording teardown delay. Arena clips use declarative expo-video URI + shouldPlay (no setStatusAsync loops); videos upsert onConflict id; arenaFeedStore hydrate never throws. See bawaal-gameon-map-locked.mdc."
 
 ## 7. Stable client baseline — Arena video & publish (LOCKED)
 

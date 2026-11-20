@@ -1,19 +1,21 @@
 ---
-description: Locked BAWAAL Sport Hub Map — dark map style, sports_hubs fetch, Virar fallback, category pills
+description: Locked BAWAAL Sport Hub Map — dark map style tokens (screen/GPS behavior superseded by bawaal-gameon-map-locked)
 alwaysApply: true
 ---
 
-# BAWAAL Sport Hub Map (LOCKED)
+# BAWAAL Sport Hub Map — dark style tokens (LOCKED)
 
-`SportHubMapScreen` + dark map style + sports hubs data are **production-final**. Do **not** restyle labels or reshape filter pills unless the user explicitly unlocks this rule.
+**Supersession:** Live GPS / web OSM / 8-category NEAR ME behavior for `SportHubMapScreen.js` is locked by **`bawaal-gameon-map-locked.mdc`**. Do not restore Virar-primary seeds or 11-pill `BAWAAL_SPORTS` footers on that screen.
 
-## Locked files (do not edit)
+This rule keeps **native Google Map dark style tokens** and shared pin color helpers production-final. Do **not** restyle `BAWAAL_DARK_MAP_STYLE` unless the user explicitly unlocks this rule.
 
-- `SportHubMapScreen.js` — map, Markers, footer category pills, sheet
+## Locked files (style / data helpers)
+
 - `src/constants/darkMapStyle.js` — `BAWAAL_DARK_MAP_STYLE`
-- `src/data/sportHubs.js` — Virar seed spots, pin colors, region
-- `src/services/sportsHubsService.js` — `fetchSportsHubs` → `public.sports_hubs`
+- `src/data/sportHubs.js` — pin colors / helpers (`HUB_SPORT_COLORS`, `hubPinColor`) — Virar seed list is **legacy offline only**, not the NEAR ME default
+- `src/services/sportsHubsService.js` — `fetchSportsHubs` → `public.sports_hubs` (nearby soft-fail; no Virar-primary path)
 - `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` — table + seed
+- `SportHubMapScreen.js` behavior → see `bawaal-gameon-map-locked.mdc`
 
 ## Locked map chrome (`BAWAAL_DARK_MAP_STYLE`)
 
@@ -27,14 +29,13 @@ alwaysApply: true
 | **All** `labels.text.stroke` | `#000000`, **weight 4** |
 | Business POIs + transit | Hidden |
 
-## Live pins + filter (LOCKED)
+## Live pins + filter
 
-- Footer pills = locked **11** `BAWAAL_SPORTS` → `selectedCategory`
-- Markers from `fetchSportsHubs(selectedCategory)` (`public.sports_hubs`); **fallback** `filterVirarSportsSpots` when offline / empty
-- Glowing category badges via `HubPin` / `HUB_SPORT_COLORS`
-- Camera snaps to `SPORT_HUB_MAP_REGION` (Virar) on filter change
+Deferred to **`bawaal-gameon-map-locked.mdc`**: 8 GAME ON category pills, live GPS / city switcher, Overpass + curated hubs, web OSM Leaflet.
+
+Glowing pin accents still use `HubPin` / `HUB_SPORT_COLORS` from `sportHubs.js`.
 
 ## Allowed elsewhere
 
-- Features outside this map stack. Crash/security fixes: ask first; preserve this contract.
+- Features outside this map stack. Crash/security fixes: ask first; preserve dark style tokens + the GAME ON / NEAR ME lock.
 ---
