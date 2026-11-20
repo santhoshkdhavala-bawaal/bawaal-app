@@ -1,11 +1,14 @@
 /**
  * Persistent athlete registration session (Passport / Profile).
  * Primary: AsyncStorage. Fallback: expo-file-system/legacy (migrates into AsyncStorage).
+ * Also mirrors a lightweight `bawaal_registered_user` flag for fast boot routing.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 
 const ASYNC_KEY = '@bawaal/athlete_session_v1';
+/** Explicit registration-complete flag — used by AppBoot to skip Entry. */
+export const REGISTERED_USER_FLAG_KEY = 'bawaal_registered_user';
 const SESSION_FILE = `${FileSystem.documentDirectory || ''}bawaal_user_session.json`;
 
 let memorySession = null;
@@ -50,9 +53,23 @@ async function readFromAsyncStorage() {
 async function writeToAsyncStorage(payload) {
   try {
     await AsyncStorage.setItem(ASYNC_KEY, JSON.stringify(payload));
+    await AsyncStorage.setItem(REGISTERED_USER_FLAG_KEY, '1');
     return true;
   } catch (err) {
     console.warn('[session] AsyncStorage write failed:', err?.message || err);
+    return false;
+  }
+}
+
+/** Fast boolean check — session JSON or explicit registered flag. */
+export async function hasRegisteredUserFlag() {
+  try {
+    if (memorySession?.registered) return true;
+    const flag = await AsyncStorage.getItem(REGISTERED_USER_FLAG_KEY);
+    if (flag === '1' || flag === 'true') return true;
+    const session = await readFromAsyncStorage();
+    return Boolean(session?.registered);
+  } catch (_) {
     return false;
   }
 }
@@ -81,12 +98,21 @@ async function writeToFileSystem(payload) {
   }
 }
 
+async function ensureRegisteredFlag() {
+  try {
+    await AsyncStorage.setItem(REGISTERED_USER_FLAG_KEY, '1');
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 export async function getRegisteredSession() {
   if (memorySession?.registered) return memorySession;
 
   const fromAsync = await readFromAsyncStorage();
   if (fromAsync?.registered) {
     memorySession = fromAsync;
+    void ensureRegisteredFlag();
     return fromAsync;
   }
 
@@ -117,9 +143,14 @@ export async function setRegisteredSession(userData = {}) {
 export async function clearRegisteredSession() {
   memorySession = null;
   try {
-    await AsyncStorage.removeItem(ASYNC_KEY);
+    await AsyncStorage.multiRemove([ASYNC_KEY, REGISTERED_USER_FLAG_KEY]);
   } catch (_) {
-    /* ignore */
+    try {
+      await AsyncStorage.removeItem(ASYNC_KEY);
+      await AsyncStorage.removeItem(REGISTERED_USER_FLAG_KEY);
+    } catch (__) {
+      /* ignore */
+    }
   }
   try {
     if (!FileSystem.documentDirectory) return;

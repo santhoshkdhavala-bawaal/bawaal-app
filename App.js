@@ -15,12 +15,16 @@ import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
 import SportHubMapScreen from './SportHubMapScreen';
 import { COLORS } from './theme';
-import { getRegisteredSession, setRegisteredSession } from './sessionStore';
+import {
+  getRegisteredSession,
+  setRegisteredSession,
+  hasRegisteredUserFlag,
+} from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
-import { hasSupabaseEnv } from './src/services/supabase';
+import { getSupabase, hasSupabaseEnv } from './src/services/supabase';
 import { logStartup } from './NativeLogger';
 import {
   hideSplashSafe,
@@ -28,12 +32,14 @@ import {
 } from './src/boot/safeSplash';
 
 const ROOT_BG = '#000000';
+/** Brief boot / session-restore surface while deciding Entry vs Arena. */
+const BOOT_BG = '#08120F';
 
 /**
- * When true, always open Entry (onboarding / OTP landing) and ignore AsyncStorage session.
- * TEMP: true for OTP testing — set false so returning athletes restore Passport on reload.
+ * When true, always open Entry (onboarding / OTP landing) and ignore saved session.
+ * Keep false in production so registered users land on Arena after reload / relaunch.
  */
-const FORCE_ONBOARDING_ENTRY = true;
+const FORCE_ONBOARDING_ENTRY = false;
 
 const Stack = createNativeStackNavigator();
 const navTheme = {
@@ -117,11 +123,51 @@ function EntryScreen({ navigation }) {
           } catch (err) {
             console.warn('Failed to persist registration:', err?.message || err);
           }
-          navigation.replace('Main', { tab: 'Arena' });
+          // Replace stack so registration cannot be reached via Back
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Main', params: { tab: 'Arena' } }],
+          });
         }}
       />
     </View>
   );
+}
+
+/** Resolve Entry vs Main from local session flag and/or live Supabase auth. */
+async function resolveLaunchRoute() {
+  if (FORCE_ONBOARDING_ENTRY) return 'Entry';
+
+  try {
+    const session = await getRegisteredSession();
+    if (session?.registered) {
+      try {
+        applyRegisteredProfile(session);
+      } catch (_) {
+        /* soft-fail profile apply */
+      }
+      return 'Main';
+    }
+  } catch (_) {
+    /* continue to flag / auth checks */
+  }
+
+  try {
+    if (await hasRegisteredUserFlag()) return 'Main';
+  } catch (_) {
+    /* ignore */
+  }
+
+  try {
+    if (hasSupabaseEnv()) {
+      const { data } = await getSupabase().auth.getSession();
+      if (data?.session?.user) return 'Main';
+    }
+  } catch (_) {
+    /* soft-fail auth restore */
+  }
+
+  return 'Entry';
 }
 
 function AppBoot() {
@@ -184,42 +230,24 @@ function AppBoot() {
 
     (async () => {
       try {
-        if (FORCE_ONBOARDING_ENTRY) {
-          if (!cancelled) setInitialRoute('Entry');
-        } else {
-          // AsyncStorage session restore — short race so Expo Go never hangs
-          const bootTimeoutMs = isExpoGo ? 900 : 3500;
-          let session = null;
-          try {
-            session = await Promise.race([
-              getRegisteredSession(),
-              new Promise((resolve) =>
-                setTimeout(() => resolve(null), bootTimeoutMs)
-              ),
-            ]);
-          } catch (sessionErr) {
-            // Parsing / storage failure → empty session, continue to Entry
-            console.warn(
-              'Session hydrate failed — defaulting to Entry:',
-              sessionErr?.message || sessionErr
-            );
-            session = null;
-          }
-          if (!cancelled && session?.registered) {
-            try {
-              applyRegisteredProfile(session);
-              setInitialRoute('Main');
-            } catch (profileErr) {
-              console.warn(
-                'Profile apply failed — defaulting to Entry:',
-                profileErr?.message || profileErr
-              );
-              if (!cancelled) setInitialRoute('Entry');
-            }
-          } else if (!cancelled) {
-            setInitialRoute('Entry');
-          }
+        // AsyncStorage + flag + auth restore — short race so Expo Go never hangs
+        const bootTimeoutMs = isExpoGo ? 900 : 3500;
+        let route = 'Entry';
+        try {
+          route = await Promise.race([
+            resolveLaunchRoute(),
+            new Promise((resolve) =>
+              setTimeout(() => resolve('Entry'), bootTimeoutMs)
+            ),
+          ]);
+        } catch (sessionErr) {
+          console.warn(
+            'Session hydrate failed — defaulting to Entry:',
+            sessionErr?.message || sessionErr
+          );
+          route = 'Entry';
         }
+        if (!cancelled) setInitialRoute(route === 'Main' ? 'Main' : 'Entry');
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
         // Soft-fail — never crash the UI thread; land on Entry with empty state
@@ -273,7 +301,7 @@ function AppBoot() {
   if (showSplash || !bootReady) {
     return (
       <View style={styles.jsSplash}>
-        <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} hidden />
+        <StatusBar barStyle="light-content" backgroundColor={BOOT_BG} hidden />
         <Image
           source={require('./assets/splash_android_PROPER_1080x1920_black.png')}
           style={styles.splashImage}
@@ -449,7 +477,7 @@ const styles = StyleSheet.create({
   },
   jsSplash: {
     flex: 1,
-    backgroundColor: ROOT_BG,
+    backgroundColor: BOOT_BG,
     justifyContent: 'center',
     alignItems: 'center',
   },
