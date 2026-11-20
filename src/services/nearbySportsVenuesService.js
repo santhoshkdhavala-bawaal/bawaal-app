@@ -2,6 +2,7 @@
  * Nearby sports venues around live GPS — OpenStreetMap Overpass + helpers.
  * Soft-fails to [] on network / timeout so the map never hangs.
  */
+import { matchesGameOnCategory } from '../constants/gameOnSports';
 import { softFailWarn } from '../utils/softFailLog';
 import { canonicalizeSport } from '../utils/sportCategory';
 
@@ -228,8 +229,12 @@ export function mergeNearbyVenues({
   const originLat = Number(origin?.latitude);
   const originLng = Number(origin?.longitude);
   const hasOrigin = Number.isFinite(originLat) && Number.isFinite(originLng);
-  const cat = String(selectedCategory || 'ALL').toUpperCase();
-  const showAll = !cat || cat === 'ALL' || cat === 'SPORTS SPOTS';
+  const catRaw = String(selectedCategory || 'All').trim();
+  const showAll =
+    !catRaw ||
+    catRaw === 'All' ||
+    catRaw.toUpperCase() === 'ALL' ||
+    catRaw.toUpperCase() === 'SPORTS SPOTS';
 
   const annotate = (hub) => {
     if (!hub?.coordinate) return null;
@@ -250,13 +255,14 @@ export function mergeNearbyVenues({
     const sport =
       canonicalizeSport(hub.sport || hub.category) ||
       String(hub.sport || hub.category || 'OTHERS').toUpperCase();
-    if (!showAll && sport !== cat) return null;
-    return {
+    const next = {
       ...hub,
       sport,
       category: sport,
       distanceM,
     };
+    if (!showAll && !matchesGameOnCategory(next, catRaw)) return null;
+    return next;
   };
 
   const merged = [];

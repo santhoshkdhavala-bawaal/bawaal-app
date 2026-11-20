@@ -1,7 +1,8 @@
 /**
  * Community & Location — Sport Hub Map (NEAR ME).
- * Live GPS + Google Maps (PROVIDER_GOOGLE) + Overpass nearby venues
- * merged with Supabase sports_hubs. No hardcoded Virar seed pins.
+ * Native: react-native-maps + PROVIDER_GOOGLE + live GPS.
+ * Web: interactive Leaflet/OSM iframe (localhost:8081).
+ * GPS fail → Hyderabad (or city switcher) + always load nearby venues.
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,8 +18,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackLink from './src/components/BackLink';
+import WebOsmMap from './src/components/WebOsmMap';
 import { BAWAAL_DARK_MAP_STYLE } from './src/constants/darkMapStyle';
-import { BAWAAL_SPORTS } from './src/constants/sports';
+import {
+  GAME_ON_CATEGORY_PILLS,
+  resolveDashboardCategory,
+} from './src/constants/gameOnSports';
 import {
   HUB_SPORT_COLORS,
   hubPinColor,
@@ -37,23 +42,51 @@ import {
   resolveUserCoordinates,
 } from './src/utils/userLocation';
 
-const FILTER_ALL = 'ALL';
+const FILTER_ALL = 'All';
 
-/** Locked 11 BAWAAL_SPORTS pills. */
-const CATEGORY_PILLS = BAWAAL_SPORTS.map((sport) => ({
-  key: sport,
-  label: sport,
-  color: HUB_SPORT_COLORS[sport] || (sport === 'ALL' ? '#FFFFFF' : '#FF5500'),
+const CATEGORY_PILL_COLORS = {
+  All: '#FFFFFF',
+  'Ball Sports': '#FFD700',
+  'Combat Sports': '#FF2A5F',
+  'Racing & Speed': '#A855F7',
+  'Water & Surf': '#00E5FF',
+  'Extreme & Adventure': '#39FF14',
+  'Strength & Fitness': '#FF5500',
+  Others: '#E8ECE9',
+};
+
+/** Exact 8 GAME ON category pills. */
+const CATEGORY_PILLS = GAME_ON_CATEGORY_PILLS.map((label) => ({
+  key: label,
+  label,
+  color: CATEGORY_PILL_COLORS[label] || HUB_SPORT_COLORS.OTHERS || '#FF5500',
 }));
+
+const DEFAULT_CITY = {
+  id: 'hyd',
+  label: 'Hyderabad',
+  latitude: 17.385,
+  longitude: 78.4867,
+};
+
+const CITY_PRESETS = [
+  DEFAULT_CITY,
+  { id: 'del', label: 'Delhi', latitude: 28.6139, longitude: 77.209 },
+  { id: 'mum', label: 'Mumbai', latitude: 19.076, longitude: 72.8777 },
+  { id: 'blr', label: 'Bengaluru', latitude: 12.9716, longitude: 77.5946 },
+  { id: 'che', label: 'Chennai', latitude: 13.0827, longitude: 80.2707 },
+];
 
 let MapView = null;
 let Marker = null;
 let PROVIDER_GOOGLE = undefined;
 try {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+  if (Platform.OS !== 'web') {
+    const Maps = require('react-native-maps');
+    MapView = Maps.default;
+    Marker = Maps.Marker;
+    PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+  }
 } catch {
   MapView = null;
 }
@@ -66,16 +99,7 @@ const MUTED = '#A0A0A0';
 const BORDER = 'rgba(255,255,255,0.22)';
 const GOLD = '#FFD700';
 const CRIMSON = '#FF2A5F';
-
 const BADGE_TEXT = '#FFFFFF';
-
-/** Soft India-center only until GPS resolves — never Virar clubs list. */
-const BOOTSTRAP_REGION = {
-  latitude: 20.5937,
-  longitude: 78.9629,
-  latitudeDelta: 12,
-  longitudeDelta: 12,
-};
 
 const HubPin = memo(function HubPin({ sport, selected }) {
   const color = hubPinColor(sport) || sportsSpotNeon(sport);
@@ -104,6 +128,7 @@ const HubPin = memo(function HubPin({ sport, selected }) {
 function HubBottomSheet({ hub, visible, onClose, onDirections, bottomPad }) {
   if (!hub) return null;
   const sport = canonicalizeSport(hub.sport) || hub.sport;
+  const dashCat = resolveDashboardCategory(sport);
   const color = hubPinColor(sport);
   const dist = formatDistance(hub.distanceM);
 
@@ -130,7 +155,7 @@ function HubBottomSheet({ hub, visible, onClose, onDirections, bottomPad }) {
         <View style={styles.metaRow}>
           <View style={[styles.sportBadge, { borderColor: color }]}>
             <View style={[styles.sportDot, { backgroundColor: color }]} />
-            <Text style={[styles.sportBadgeText, { color }]}>{sport}</Text>
+            <Text style={[styles.sportBadgeText, { color }]}>{dashCat}</Text>
           </View>
           {dist ? <Text style={styles.metaStat}>{dist} away</Text> : null}
         </View>
@@ -152,99 +177,140 @@ function HubBottomSheet({ hub, visible, onClose, onDirections, bottomPad }) {
 export default function SportHubMapScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef(null);
-  const userCoordsRef = useRef(null);
+  const originRef = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(FILTER_ALL);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [tracksPins, setTracksPins] = useState(true);
   const [venues, setVenues] = useState([]);
-  const [userCoords, setUserCoords] = useState(null);
+  const [origin, setOrigin] = useState(null);
+  const [activeCityId, setActiveCityId] = useState(DEFAULT_CITY.id);
+  const [usingGps, setUsingGps] = useState(false);
   const [locating, setLocating] = useState(true);
   const [loadingVenues, setLoadingVenues] = useState(false);
   const [statusMsg, setStatusMsg] = useState('Finding your location…');
-  const [locationError, setLocationError] = useState(null);
-  const mapsReady = Boolean(MapView) && Platform.OS !== 'web';
+  const [locationHint, setLocationHint] = useState(null);
+  const isWeb = Platform.OS === 'web';
+  const nativeMapsReady = Boolean(MapView) && !isWeb;
 
   useEffect(() => {
     const t = setTimeout(() => setTracksPins(false), 600);
     return () => clearTimeout(t);
   }, [venues, selectedCategory]);
 
-  const animateToUser = useCallback((coords, animated = true) => {
-    if (!coords) return;
+  const animateNativeTo = useCallback((coords, animated = true) => {
+    if (!coords || !nativeMapsReady) return;
     const region = regionFromCoords(coords.latitude, coords.longitude, 0.04);
     mapRef.current?.animateToRegion?.(region, animated ? 420 : 0);
-  }, []);
+  }, [nativeMapsReady]);
 
-  const loadNearby = useCallback(
-    async (coords, category = selectedCategory) => {
-      if (!coords) return;
-      setLoadingVenues(true);
-      setStatusMsg('Scanning nearby gyms, clubs & grounds…');
-      try {
-        const [cloud, overpass] = await Promise.all([
-          fetchSportsHubs(category, {
-            allowLocalFallback: false,
-            near: coords,
-            radiusM: NEARBY_RADIUS_M,
-          }),
-          fetchOverpassSportsVenues(
-            coords.latitude,
-            coords.longitude,
-            NEARBY_RADIUS_M
-          ),
-        ]);
-        const merged = mergeNearbyVenues({
-          cloudHubs: cloud?.hubs || [],
-          overpassVenues: overpass || [],
-          origin: coords,
-          selectedCategory: category,
+  const loadNearby = useCallback(async (coords, category = selectedCategory) => {
+    if (!coords) return;
+    setLoadingVenues(true);
+    setStatusMsg('Scanning nearby gyms, clubs & grounds…');
+    try {
+      // Cloud fetch is unfiltered; GAME ON category applied in merge.
+      const [cloud, overpass] = await Promise.all([
+        fetchSportsHubs('ALL', {
+          allowLocalFallback: false,
+          near: coords,
           radiusM: NEARBY_RADIUS_M,
+        }),
+        fetchOverpassSportsVenues(
+          coords.latitude,
+          coords.longitude,
+          NEARBY_RADIUS_M
+        ),
+      ]);
+      const merged = mergeNearbyVenues({
+        cloudHubs: cloud?.hubs || [],
+        overpassVenues: overpass || [],
+        origin: coords,
+        selectedCategory: category,
+        radiusM: NEARBY_RADIUS_M,
+      });
+      setVenues(merged);
+      setStatusMsg(
+        merged.length
+          ? `${merged.length} venues within ~${Math.round(NEARBY_RADIUS_M / 1000)} km`
+          : 'No OSM venues in range — try another city'
+      );
+      setTracksPins(true);
+    } catch {
+      setVenues([]);
+      setStatusMsg('Could not load nearby venues');
+    } finally {
+      setLoadingVenues(false);
+    }
+  }, [selectedCategory]);
+
+  const applyOrigin = useCallback(
+    async (coords, { cityId = null, gps = false, hint = null } = {}) => {
+      const next = {
+        latitude: Number(coords.latitude),
+        longitude: Number(coords.longitude),
+      };
+      if (!Number.isFinite(next.latitude) || !Number.isFinite(next.longitude)) {
+        return;
+      }
+      originRef.current = next;
+      setOrigin(next);
+      setUsingGps(!!gps);
+      setActiveCityId(cityId || (gps ? 'gps' : DEFAULT_CITY.id));
+      setLocationHint(hint);
+      animateNativeTo(next);
+      await loadNearby(next, selectedCategory);
+    },
+    [animateNativeTo, loadNearby, selectedCategory]
+  );
+
+  const applyCity = useCallback(
+    async (city) => {
+      setLocating(true);
+      setStatusMsg(`Loading ${city.label}…`);
+      try {
+        await applyOrigin(city, {
+          cityId: city.id,
+          gps: false,
+          hint: `Showing ${city.label} (city preset)`,
         });
-        setVenues(merged);
-        setStatusMsg(
-          merged.length
-            ? `${merged.length} venues within ~${Math.round(NEARBY_RADIUS_M / 1000)} km`
-            : 'No venues found nearby — try Recenter'
-        );
-        setTracksPins(true);
-      } catch {
-        setVenues([]);
-        setStatusMsg('Could not load nearby venues');
       } finally {
-        setLoadingVenues(false);
+        setLocating(false);
       }
     },
-    [selectedCategory]
+    [applyOrigin]
   );
 
   const locateAndLoad = useCallback(async () => {
     setLocating(true);
-    setLocationError(null);
+    setLocationHint(null);
     setStatusMsg('Finding your location…');
     try {
       const coords = await resolveUserCoordinates({ timeoutMs: 8000 });
-      userCoordsRef.current = coords;
-      setUserCoords(coords);
-      animateToUser(coords);
-      await loadNearby(coords, selectedCategory);
+      await applyOrigin(coords, {
+        cityId: 'gps',
+        gps: true,
+        hint: null,
+      });
     } catch (err) {
       const denied = err?.code === 'PERMISSION_DENIED';
-      setLocationError(
-        denied
-          ? 'Location permission is required to find hubs near you.'
-          : 'Could not get GPS. Check location services and try again.'
-      );
-      setStatusMsg(denied ? 'Permission needed' : 'GPS unavailable');
+      const hint = denied
+        ? 'GPS blocked — showing Hyderabad. Tap Use My GPS or pick a city.'
+        : 'GPS unavailable — showing Hyderabad. Tap Use My GPS or pick a city.';
+      setLocationHint(hint);
+      await applyOrigin(DEFAULT_CITY, {
+        cityId: DEFAULT_CITY.id,
+        gps: false,
+        hint,
+      });
     } finally {
       setLocating(false);
     }
-  }, [animateToUser, loadNearby, selectedCategory]);
+  }, [applyOrigin]);
 
   useEffect(() => {
     let cancelled = false;
     const boot = async () => {
-      // Yield so permission/GPS work is not sync setState inside the effect body.
       await Promise.resolve();
       if (cancelled) return;
       await locateAndLoad();
@@ -253,15 +319,14 @@ export default function SportHubMapScreen({ navigation }) {
     return () => {
       cancelled = true;
     };
-    // Mount-only cold start — category changes re-filter via onSelectCategory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredVenues = useMemo(() => {
-    const cat = String(selectedCategory || FILTER_ALL).toUpperCase();
-    if (!cat || cat === FILTER_ALL) return venues;
+    if (!selectedCategory || selectedCategory === FILTER_ALL) return venues;
     return venues.filter(
-      (v) => (canonicalizeSport(v.sport || v.category) || '') === cat
+      (v) =>
+        resolveDashboardCategory(v.sport || v.category) === selectedCategory
     );
   }, [venues, selectedCategory]);
 
@@ -276,13 +341,13 @@ export default function SportHubMapScreen({ navigation }) {
       setSelectedCategory(next);
       setSelectedId(null);
       setSheetOpen(false);
-      const coords = userCoordsRef.current || userCoords;
+      const coords = originRef.current || origin;
       if (coords) {
         void loadNearby(coords, next);
-        animateToUser(coords);
+        animateNativeTo(coords);
       }
     },
-    [animateToUser, loadNearby, userCoords]
+    [animateNativeTo, loadNearby, origin]
   );
 
   const goBack = useCallback(() => {
@@ -290,19 +355,32 @@ export default function SportHubMapScreen({ navigation }) {
     else navigation?.navigate?.('Main', { tab: 'Locker' });
   }, [navigation]);
 
-  const onMarkerPress = useCallback((hub) => {
-    setSelectedId(hub.id);
-    setSheetOpen(true);
-    mapRef.current?.animateToRegion?.(
-      {
-        latitude: hub.coordinate.latitude,
-        longitude: hub.coordinate.longitude,
-        latitudeDelta: 0.03,
-        longitudeDelta: 0.02,
-      },
-      280
-    );
-  }, []);
+  const onMarkerPress = useCallback(
+    (hub) => {
+      setSelectedId(hub.id);
+      setSheetOpen(true);
+      if (nativeMapsReady) {
+        mapRef.current?.animateToRegion?.(
+          {
+            latitude: hub.coordinate.latitude,
+            longitude: hub.coordinate.longitude,
+            latitudeDelta: 0.03,
+            longitudeDelta: 0.02,
+          },
+          280
+        );
+      }
+    },
+    [nativeMapsReady]
+  );
+
+  const onWebSelectVenue = useCallback(
+    (id) => {
+      const hub = filteredVenues.find((v) => String(v.id) === String(id));
+      if (hub) onMarkerPress(hub);
+    },
+    [filteredVenues, onMarkerPress]
+  );
 
   const closeSheet = useCallback(() => {
     setSheetOpen(false);
@@ -316,7 +394,7 @@ export default function SportHubMapScreen({ navigation }) {
     const url =
       Platform.OS === 'ios'
         ? `http://maps.apple.com/?daddr=${lat},${lng}&q=${label}`
-        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=&travelmode=driving`;
+        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
     Linking.openURL(url).catch(() => {
       Linking.openURL(
         `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
@@ -324,16 +402,15 @@ export default function SportHubMapScreen({ navigation }) {
     });
   }, []);
 
-  const onRecenter = useCallback(() => {
-    void locateAndLoad();
-  }, [locateAndLoad]);
-
   const topPad = Math.max(insets.top, 12);
   const bottomPad = Math.max(insets.bottom, 16) + 12;
   const mapProvider = Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined;
-  const initialRegion = userCoords
-    ? regionFromCoords(userCoords.latitude, userCoords.longitude, 0.04)
-    : BOOTSTRAP_REGION;
+  const mapCenter = origin || DEFAULT_CITY;
+  const initialRegion = regionFromCoords(
+    mapCenter.latitude,
+    mapCenter.longitude,
+    0.04
+  );
 
   return (
     <View style={styles.root}>
@@ -341,16 +418,20 @@ export default function SportHubMapScreen({ navigation }) {
         <BackLink label="Back" onPress={goBack} accent="#3B82F6" />
         <View style={styles.topTitles}>
           <Text style={styles.topTitle}>SPORT HUB MAP</Text>
-          <Text style={styles.topSub}>NEAR ME · Live GPS</Text>
+          <Text style={styles.topSub}>
+            {isWeb ? 'NEAR ME · Web map' : 'NEAR ME · Live GPS'}
+          </Text>
         </View>
         <TouchableOpacity
-          style={styles.recenterBtn}
-          onPress={onRecenter}
+          style={styles.gpsBtn}
+          onPress={() => void locateAndLoad()}
           activeOpacity={0.85}
           accessibilityRole="button"
-          accessibilityLabel="Recenter on my location"
+          accessibilityLabel="Use my GPS"
         >
-          <Text style={styles.recenterBtnText}>RECENTER</Text>
+          <Text style={styles.gpsBtnText}>
+            {usingGps ? 'RECENTER' : 'USE GPS'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -358,13 +439,40 @@ export default function SportHubMapScreen({ navigation }) {
         {(locating || loadingVenues) && (
           <ActivityIndicator size="small" color={GOLD} style={{ marginRight: 8 }} />
         )}
-        <Text style={styles.statusText} numberOfLines={1}>
-          {locationError || statusMsg}
+        <Text style={styles.statusText} numberOfLines={2}>
+          {locationHint || statusMsg}
         </Text>
       </View>
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.cityRow}
+        style={styles.cityScroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        {CITY_PRESETS.map((city) => {
+          const active = !usingGps && activeCityId === city.id;
+          return (
+            <TouchableOpacity
+              key={city.id}
+              style={[styles.cityChip, active && styles.cityChipOn]}
+              onPress={() => void applyCity(city)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={`Show map in ${city.label}`}
+            >
+              <Text style={[styles.cityChipText, active && styles.cityChipTextOn]}>
+                {city.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
       <View style={styles.mapStage}>
-        {mapsReady ? (
+        {nativeMapsReady ? (
           <MapView
             ref={mapRef}
             style={{ flex: 1, width: '100%', height: '100%' }}
@@ -400,44 +508,23 @@ export default function SportHubMapScreen({ navigation }) {
               </Marker>
             ))}
           </MapView>
+        ) : isWeb ? (
+          <WebOsmMap
+            latitude={mapCenter.latitude}
+            longitude={mapCenter.longitude}
+            venues={filteredVenues}
+            selectedId={selectedId}
+            onSelectVenue={onWebSelectVenue}
+            zoom={13}
+          />
         ) : (
-          <ScrollView
-            style={styles.fallbackList}
-            contentContainerStyle={styles.fallbackContent}
-            showsVerticalScrollIndicator={false}
-          >
+          <View style={styles.fallbackList}>
             <Text style={styles.fallbackHint}>
-              Native Google Map loads in Android / iOS builds. Nearby venues
-              still list below.
+              Map unavailable on this platform. Venue list still loads below.
             </Text>
-            {filteredVenues.map((spot) => {
-              const color = hubPinColor(spot.sport || spot.category);
-              return (
-                <TouchableOpacity
-                  key={spot.id}
-                  style={[
-                    styles.fallbackCard,
-                    selectedId === spot.id && { borderColor: color },
-                    { borderColor: color, borderWidth: 1.5 },
-                  ]}
-                  onPress={() => onMarkerPress(spot)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.fallbackName}>{spot.name}</Text>
-                  <Text style={styles.fallbackAddr}>{spot.address}</Text>
-                  <Text style={[styles.fallbackSport, { color }]}>
-                    ★ {canonicalizeSport(spot.sport || spot.category)}
-                    {spot.distanceM != null
-                      ? ` · ${formatDistance(spot.distanceM)}`
-                      : ''}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          </View>
         )}
 
-        {/* Bottom venue cards */}
         {filteredVenues.length > 0 && !sheetOpen ? (
           <View
             style={[
@@ -467,7 +554,7 @@ export default function SportHubMapScreen({ navigation }) {
                       {spot.name}
                     </Text>
                     <Text style={[styles.venueCardMeta, { color }]} numberOfLines={1}>
-                      {canonicalizeSport(spot.sport || spot.category)}
+                      {resolveDashboardCategory(spot.sport || spot.category)}
                       {spot.distanceM != null
                         ? ` · ${formatDistance(spot.distanceM)}`
                         : ''}
@@ -486,7 +573,6 @@ export default function SportHubMapScreen({ navigation }) {
           </View>
         ) : null}
 
-        {/* Category filter pills */}
         <View style={[styles.legend, { bottom: Math.max(insets.bottom, 12) + 8 }]}>
           <ScrollView
             horizontal
@@ -577,7 +663,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
     letterSpacing: 0.6,
   },
-  recenterBtn: {
+  gpsBtn: {
     borderWidth: 1,
     borderColor: CRIMSON,
     backgroundColor: 'rgba(255,42,95,0.16)',
@@ -587,7 +673,7 @@ const styles = StyleSheet.create({
     minWidth: 84,
     alignItems: 'center',
   },
-  recenterBtnText: {
+  gpsBtnText: {
     color: CRIMSON,
     fontSize: 10,
     fontWeight: '900',
@@ -597,7 +683,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 6,
     backgroundColor: BG,
   },
   statusText: {
@@ -605,6 +691,36 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 11,
     fontWeight: '700',
+  },
+  cityScroll: {
+    maxHeight: 44,
+    backgroundColor: BG,
+  },
+  cityRow: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    gap: 8,
+    alignItems: 'center',
+  },
+  cityChip: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: SURFACE,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cityChipOn: {
+    borderColor: GOLD,
+    backgroundColor: 'rgba(255,215,0,0.14)',
+  },
+  cityChipText: {
+    color: OFF,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cityChipTextOn: {
+    color: GOLD,
   },
   mapStage: {
     flex: 1,
@@ -615,42 +731,13 @@ const styles = StyleSheet.create({
   fallbackList: {
     flex: 1,
     backgroundColor: BG,
-  },
-  fallbackContent: {
     padding: 16,
-    paddingBottom: 80,
-    gap: 10,
   },
   fallbackHint: {
     color: MUTED,
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 8,
     lineHeight: 17,
-  },
-  fallbackCard: {
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 12,
-    backgroundColor: SURFACE,
-    padding: 14,
-  },
-  fallbackName: {
-    color: WHITE,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  fallbackAddr: {
-    color: MUTED,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  fallbackSport: {
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 8,
-    letterSpacing: 0.5,
   },
   pinWrapOn: {
     transform: [{ scale: 1.08 }],
