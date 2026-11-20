@@ -2,7 +2,7 @@
  * GAME ON interactive command drawer —
  * search + Near Me map, battle-tier filters, sports category chips.
  */
-import React, { memo, useState } from 'react';
+import React, { memo, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -16,13 +16,29 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ARENA_FEED_TIERS } from '../constants/arenaFeedTiers';
-import { GAME_ON_SPORT_SECTIONS } from '../constants/gameOnSports';
+import {
+  GAME_ON_CATEGORY_PILLS,
+  resolveDashboardCategory,
+} from '../constants/gameOnSports';
 
 const WHITE = '#FFFFFF';
 const BG = '#0A0A0A';
 const SURFACE = '#121212';
 const MUTED = '#A9A9A9';
 const ACCENT = '#FF5A00';
+
+function resolveSelectedCategory(selectedSportFilter) {
+  if (
+    selectedSportFilter == null ||
+    String(selectedSportFilter).trim() === '' ||
+    String(selectedSportFilter).trim().toUpperCase() === 'ALL'
+  ) {
+    return 'All';
+  }
+  const raw = String(selectedSportFilter).trim();
+  if (GAME_ON_CATEGORY_PILLS.includes(raw)) return raw;
+  return resolveDashboardCategory(raw);
+}
 
 function GameOnHub({
   visible,
@@ -35,11 +51,25 @@ function GameOnHub({
 }) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const selectedSport = selectedSportFilter;
+  const activeCategory = useMemo(
+    () => resolveSelectedCategory(selectedSportFilter),
+    [selectedSportFilter]
+  );
 
   const openMap = () => {
     onClose?.();
     onOpenSportHubMap?.();
+  };
+
+  const selectCategory = (label) => {
+    if (label === 'All') {
+      onSelectSportFilter?.(null);
+    } else if (activeCategory === label) {
+      onSelectSportFilter?.(null);
+    } else {
+      onSelectSportFilter?.(label);
+    }
+    onClose?.();
   };
 
   return (
@@ -154,55 +184,37 @@ function GameOnHub({
 
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>SPORTS CATEGORIES</Text>
-              {GAME_ON_SPORT_SECTIONS.map((group) => (
-                <View key={group.id} style={styles.sportGroup}>
-                  <View style={styles.sportGroupRow}>
-                    <Text style={styles.sportGroupTitle} numberOfLines={2}>
-                      {group.title}
-                    </Text>
-                    <ScrollView
-                      horizontal={true}
-                      nestedScrollEnabled
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.chipRow}
-                      keyboardShouldPersistTaps="handled"
-                      style={styles.chipScroll}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tierRow}
+                keyboardShouldPersistTaps="handled"
+              >
+                {GAME_ON_CATEGORY_PILLS.map((label) => {
+                  const active = activeCategory === label;
+                  return (
+                    <TouchableOpacity
+                      key={label}
+                      style={[styles.sportChip, active && styles.sportChipActive]}
+                      onPress={() => selectCategory(label)}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={`Filter ${label}`}
                     >
-                      {group.sports.map((sport) => {
-                        const active = selectedSport === sport;
-                        return (
-                          <TouchableOpacity
-                            key={`${group.id}-${sport}`}
-                            style={[
-                              styles.sportChip,
-                              active && styles.sportChipActive,
-                            ]}
-                            onPress={() => {
-                              const next = selectedSport === sport ? null : sport;
-                              onSelectSportFilter?.(next);
-                              onClose?.();
-                            }}
-                            activeOpacity={0.85}
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: active }}
-                            accessibilityLabel={sport}
-                          >
-                            <Text
-                              style={[
-                                styles.sportChipText,
-                                active && styles.sportChipTextActive,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {sport}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
-                </View>
-              ))}
+                      <Text
+                        style={[
+                          styles.sportChipText,
+                          active && styles.sportChipTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </ScrollView>
         </View>
@@ -374,39 +386,9 @@ const styles = StyleSheet.create({
   tierPillTextActive: {
     color: WHITE,
   },
-  sportGroup: {
-    marginBottom: 12,
-    paddingLeft: 16,
-  },
-  sportGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'nowrap',
-  },
-  sportGroupTitle: {
-    color: WHITE,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-    width: 96,
-    marginRight: 10,
-    flexShrink: 0,
-  },
-  chipScroll: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  chipRow: {
-    paddingRight: 16,
-    alignItems: 'center',
-    flexDirection: 'row',
-    flexWrap: 'nowrap',
-  },
   sportChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    marginRight: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 999,
     backgroundColor: SURFACE,
     borderWidth: 1,
@@ -419,8 +401,9 @@ const styles = StyleSheet.create({
   },
   sportChipText: {
     color: MUTED,
-    fontSize: 11,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   sportChipTextActive: {
     color: WHITE,

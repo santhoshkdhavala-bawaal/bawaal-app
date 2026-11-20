@@ -80,9 +80,10 @@ function defaultTierForMode(mode?: string | null): ArenaTier {
   return 'reel';
 }
 
-/** First sport label inside a GAME ON section (fallback OTHERS). */
+/** Canonical BAWAAL_SPORTS seed for a GAME ON category (fallback OTHERS). */
 function sportSeedForCategory(categoryTitle: string): string {
   const section = GAME_ON_SPORT_SECTIONS.find((s) => s.title === categoryTitle);
+  if (section?.bawaalSports?.[0]) return String(section.bawaalSports[0]);
   if (section?.sports?.[0]) return String(section.sports[0]).toUpperCase();
   return 'OTHERS';
 }

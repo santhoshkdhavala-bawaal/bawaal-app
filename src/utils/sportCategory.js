@@ -9,6 +9,10 @@ import {
   BAWAAL_SPORT_TAXONOMY,
   BAWAAL_SPORTS_WITHOUT_ALL,
 } from '../constants/sports';
+import {
+  ARENA_DASHBOARD_CATEGORY_PILLS,
+  matchesGameOnCategory,
+} from '../constants/gameOnSports';
 
 export {
   BAWAAL_SPORTS,
@@ -107,7 +111,15 @@ const ALIASES = {
 export function filterArenaFeedBySport(items, sportLabel) {
   const list = Array.isArray(items) ? items : [];
   if (sportLabel == null || String(sportLabel).trim() === '') return list;
-  const tab = canonicalizeSport(sportLabel) || 'ALL';
+  const raw = String(sportLabel).trim();
+  if (!raw || raw.toUpperCase() === 'ALL') return list;
+
+  // GAME ON drawer / dashboard category pills (Ball Sports, Combat Sports, …)
+  if (ARENA_DASHBOARD_CATEGORY_PILLS.includes(raw)) {
+    return list.filter((item) => matchesGameOnCategory(item, raw));
+  }
+
+  const tab = canonicalizeSport(raw) || 'ALL';
   if (!tab || tab === 'ALL') return list;
   return list.filter((item) => matchesSportFilter(item, tab));
 }
