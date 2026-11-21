@@ -33,16 +33,19 @@ export const LIVE_MATCH_REACTION_PILLS = Object.freeze([
 ]);
 
 /**
- * Compact banter-tray icons (fire / devil / skull / flame-skull / blast).
- * Vault equivalents of 🔥 😈 💀 ☠️ 💥 — never unicode on live reactions.
+ * Compact banter-tray flaming skulls (silver / black / bronze / purple / yellow).
+ * Sources: assets/skull_{color}.png — vault keys for Realtime reaction bursts.
  */
 export const LIVE_MATCH_BANTER_EMOJIS = Object.freeze([
-  { id: 'flame', emojiKey: 'skull_fire' },
-  { id: 'devil', emojiKey: 'skull_devil' },
-  { id: 'skull', emojiKey: 'skull_dead_xx' },
-  { id: 'flame_skull', emojiKey: 'skull_burning' },
-  { id: 'blast', emojiKey: 'skull_exploding_head' },
+  { id: 'silver', emojiKey: 'skull_silver' },
+  { id: 'black', emojiKey: 'skull_black' },
+  { id: 'bronze', emojiKey: 'skull_bronze' },
+  { id: 'purple', emojiKey: 'skull_purple' },
+  { id: 'yellow', emojiKey: 'skull_yellow' },
 ]);
+
+/** Alias for Live Match flaming-skull strip consumers. */
+export { LIVE_MATCH_FLAMING_SKULLS } from '../constants/liveMatchFlamingSkulls';
 
 /** @type {Map<string, object>} */
 const localMatches = new Map();

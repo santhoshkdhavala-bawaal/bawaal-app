@@ -46,13 +46,13 @@ import {
   broadcastVotePulse,
   pushBanterCapped,
   LIVE_MATCH_REACTION_PILLS,
-  LIVE_MATCH_BANTER_EMOJIS,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import {
   SKULL_TEAM_A,
   SKULL_TEAM_B,
 } from './src/constants/liveMatchTeamSkulls';
+import { LIVE_MATCH_FLAMING_SKULLS } from './src/constants/liveMatchFlamingSkulls';
 
 const BG = '#08120F';
 const ORANGE = '#FF5A1F';
@@ -711,25 +711,29 @@ function LiveMatchRoomScreen({ navigation, route }) {
             ))}
           </View>
 
-          {/* Compact banter bar + vault fire/devil/skull tray (🔥😈💀☠️💥 equivalents) */}
+          {/* 5 flaming skulls — silver/black/bronze/purple/yellow + compact banter */}
           <View style={styles.banterRow}>
             <View style={styles.emojiTray}>
-              {LIVE_MATCH_BANTER_EMOJIS.map((emo) => (
+              {LIVE_MATCH_FLAMING_SKULLS.map((skull) => (
                 <TouchableOpacity
-                  key={emo.id}
+                  key={skull.id}
                   style={styles.emojiTrayBtn}
                   onPress={() =>
                     fireReactionPill({
-                      id: emo.id,
-                      label: emo.id.toUpperCase(),
-                      emojiKey: emo.emojiKey,
+                      id: skull.id,
+                      label: skull.id.toUpperCase(),
+                      emojiKey: skull.emojiKey,
                     })
                   }
                   activeOpacity={0.85}
                   accessibilityRole="button"
-                  accessibilityLabel={`${emo.id} reaction`}
+                  accessibilityLabel={`${skull.id} flaming skull reaction`}
                 >
-                  <BawaalEmoji name={emo.emojiKey} size={26} />
+                  <Image
+                    source={skull.source}
+                    style={styles.flamingSkullIcon}
+                    resizeMode="contain"
+                  />
                 </TouchableOpacity>
               ))}
             </View>
@@ -1188,13 +1192,17 @@ const styles = StyleSheet.create({
   emojiTray: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
   },
   emojiTrayBtn: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  flamingSkullIcon: {
+    width: 28,
+    height: 28,
   },
   banterBar: {
     flex: 1,
