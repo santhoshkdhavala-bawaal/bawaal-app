@@ -98,6 +98,24 @@ function truthyScoreboard(value) {
   return true;
 }
 
+/** Format legal balls as cricket overs.balls (e.g. 16 → "2.4"). */
+export function formatCricketOvers(balls) {
+  const total = Math.max(0, Math.floor(Number(balls) || 0));
+  return `${Math.floor(total / 6)}.${total % 6}`;
+}
+
+export function isCricketSport(sport) {
+  return (
+    String(sport || '')
+      .trim()
+      .toUpperCase() === 'CRICKET'
+  );
+}
+
+function normalizeBattingTeam(value) {
+  return String(value || '').toUpperCase() === 'B' ? 'B' : 'A';
+}
+
 function normalizeMatch(row) {
   if (!row || typeof row !== 'object') return null;
   const adminRaw =
@@ -110,6 +128,11 @@ function normalizeMatch(row) {
     row.scorer_name != null && String(row.scorer_name).trim()
       ? String(row.scorer_name).trim()
       : adminRaw;
+  const battingTeam = normalizeBattingTeam(
+    row.batting_team ?? row.battingTeam
+  );
+  const cricketRunsA = Math.max(0, Number(row.cricket_runs_a) || 0);
+  const cricketRunsB = Math.max(0, Number(row.cricket_runs_b) || 0);
   return {
     id: String(row.id || ''),
     host_id: String(row.host_id || ''),
@@ -130,6 +153,29 @@ function normalizeMatch(row) {
     has_scoreboard: truthyScoreboard(row.has_scoreboard),
     admin_name: adminRaw,
     scorer_name: scorerRaw,
+    batting_team: battingTeam,
+    cricket_runs_a: cricketRunsA,
+    cricket_wickets_a: Math.max(
+      0,
+      Math.min(10, Number(row.cricket_wickets_a) || 0)
+    ),
+    cricket_balls_a: Math.max(0, Math.floor(Number(row.cricket_balls_a) || 0)),
+    cricket_runs_b: cricketRunsB,
+    cricket_wickets_b: Math.max(
+      0,
+      Math.min(10, Number(row.cricket_wickets_b) || 0)
+    ),
+    cricket_balls_b: Math.max(0, Math.floor(Number(row.cricket_balls_b) || 0)),
+    // Convenience aliases for batting side (UI / docs)
+    runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
+    wickets:
+      battingTeam === 'B'
+        ? Math.max(0, Math.min(10, Number(row.cricket_wickets_b) || 0))
+        : Math.max(0, Math.min(10, Number(row.cricket_wickets_a) || 0)),
+    balls:
+      battingTeam === 'B'
+        ? Math.max(0, Math.floor(Number(row.cricket_balls_b) || 0))
+        : Math.max(0, Math.floor(Number(row.cricket_balls_a) || 0)),
   };
 }
 
@@ -243,6 +289,13 @@ export async function createLiveMatch({
     has_scoreboard: scoreboardOn,
     admin_name: scoreboardOn ? adminLabel : '',
     scorer_name: scoreboardOn ? scorerLabel : '',
+    batting_team: 'A',
+    cricket_runs_a: 0,
+    cricket_wickets_a: 0,
+    cricket_balls_a: 0,
+    cricket_runs_b: 0,
+    cricket_wickets_b: 0,
+    cricket_balls_b: 0,
   });
 
   localMatches.set(id, row);
@@ -272,6 +325,13 @@ export async function createLiveMatch({
     has_scoreboard: row.has_scoreboard,
     admin_name: row.admin_name || null,
     scorer_name: row.scorer_name || null,
+    batting_team: row.batting_team,
+    cricket_runs_a: row.cricket_runs_a,
+    cricket_wickets_a: row.cricket_wickets_a,
+    cricket_balls_a: row.cricket_balls_a,
+    cricket_runs_b: row.cricket_runs_b,
+    cricket_wickets_b: row.cricket_wickets_b,
+    cricket_balls_b: row.cricket_balls_b,
   };
 
   try {
@@ -328,6 +388,21 @@ export async function createLiveMatch({
   }
 }
 
+async function broadcastScoreSync(matchId, match) {
+  const id = String(matchId || '').trim();
+  const room = rooms.get(id);
+  if (!room?.channel || !isSupabaseConfigured()) return;
+  try {
+    await room.channel.send({
+      type: 'broadcast',
+      event: 'score_sync',
+      payload: match,
+    });
+  } catch (_) {
+    /* soft-fail score broadcast */
+  }
+}
+
 /**
  * @param {string} matchId
  * @param {{ score_a?: number, score_b?: number }} scores
@@ -351,6 +426,7 @@ export async function updateMatchScore(matchId, scores = {}) {
   localMatches.set(id, { ...prev, ...next });
   emitListListeners();
   emitRoomHandlers(id, { type: 'score', match: localMatches.get(id) });
+  void broadcastScoreSync(id, localMatches.get(id));
 
   if (shouldUseLocalOnly()) {
     return { ok: true, local: true, match: localMatches.get(id) };
@@ -374,7 +450,7 @@ export async function updateMatchScore(matchId, scores = {}) {
       }
       return { ok: true, local: true, match: localMatches.get(id) };
     }
-    const saved = normalizeMatch(data) || localMatches.get(id);
+    const saved = normalizeMatch({ ...next, ...(data || {}) }) || localMatches.get(id);
     if (saved) localMatches.set(id, saved);
     emitListListeners();
     return { ok: true, match: saved };
@@ -382,6 +458,148 @@ export async function updateMatchScore(matchId, scores = {}) {
     softFailWarn(
       'liveMatch:scoreEx',
       '[liveMatch] score exception',
+      err?.message
+    );
+    return { ok: true, local: true, match: localMatches.get(id) };
+  }
+}
+
+/**
+ * Cricket score sync — runs / wickets / balls / batting_team.
+ * Soft-fails when DB columns are missing; peers still get score_sync broadcast.
+ * @param {string} matchId
+ * @param {object} patch
+ */
+export async function updateMatchCricket(matchId, patch = {}) {
+  const id = String(matchId || '').trim();
+  if (!id) return { ok: false, reason: 'no-id' };
+
+  const prev = localMatches.get(id) || {
+    id,
+    batting_team: 'A',
+    cricket_runs_a: 0,
+    cricket_wickets_a: 0,
+    cricket_balls_a: 0,
+    cricket_runs_b: 0,
+    cricket_wickets_b: 0,
+    cricket_balls_b: 0,
+    score_a: 0,
+    score_b: 0,
+  };
+
+  const battingTeam = normalizeBattingTeam(
+    patch.batting_team != null ? patch.batting_team : prev.batting_team
+  );
+  const runsA =
+    patch.cricket_runs_a != null
+      ? Math.max(0, Number(patch.cricket_runs_a) || 0)
+      : prev.cricket_runs_a || 0;
+  const wicketsA =
+    patch.cricket_wickets_a != null
+      ? Math.max(0, Math.min(10, Number(patch.cricket_wickets_a) || 0))
+      : prev.cricket_wickets_a || 0;
+  const ballsA =
+    patch.cricket_balls_a != null
+      ? Math.max(0, Math.floor(Number(patch.cricket_balls_a) || 0))
+      : prev.cricket_balls_a || 0;
+  const runsB =
+    patch.cricket_runs_b != null
+      ? Math.max(0, Number(patch.cricket_runs_b) || 0)
+      : prev.cricket_runs_b || 0;
+  const wicketsB =
+    patch.cricket_wickets_b != null
+      ? Math.max(0, Math.min(10, Number(patch.cricket_wickets_b) || 0))
+      : prev.cricket_wickets_b || 0;
+  const ballsB =
+    patch.cricket_balls_b != null
+      ? Math.max(0, Math.floor(Number(patch.cricket_balls_b) || 0))
+      : prev.cricket_balls_b || 0;
+
+  const next = normalizeMatch({
+    ...prev,
+    batting_team: battingTeam,
+    cricket_runs_a: runsA,
+    cricket_wickets_a: wicketsA,
+    cricket_balls_a: ballsA,
+    cricket_runs_b: runsB,
+    cricket_wickets_b: wicketsB,
+    cricket_balls_b: ballsB,
+    // Keep hub scoreline aligned with cricket runs
+    score_a: runsA,
+    score_b: runsB,
+  });
+
+  localMatches.set(id, { ...prev, ...next });
+  emitListListeners();
+  emitRoomHandlers(id, { type: 'score', match: localMatches.get(id) });
+  void broadcastScoreSync(id, localMatches.get(id));
+
+  if (shouldUseLocalOnly()) {
+    return { ok: true, local: true, match: localMatches.get(id) };
+  }
+
+  const cricketPayload = {
+    batting_team: next.batting_team,
+    cricket_runs_a: next.cricket_runs_a,
+    cricket_wickets_a: next.cricket_wickets_a,
+    cricket_balls_a: next.cricket_balls_a,
+    cricket_runs_b: next.cricket_runs_b,
+    cricket_wickets_b: next.cricket_wickets_b,
+    cricket_balls_b: next.cricket_balls_b,
+    score_a: next.score_a,
+    score_b: next.score_b,
+  };
+
+  try {
+    let { data, error } = await supabase
+      .from(TABLE)
+      .update(cricketPayload)
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
+
+    if (error && isMissingColumnError(error)) {
+      softFailWarn(
+        'liveMatch:cricketCols',
+        '[liveMatch] cricket columns missing — score_a/b only',
+        error?.message || error
+      );
+      ({ data, error } = await supabase
+        .from(TABLE)
+        .update({ score_a: next.score_a, score_b: next.score_b })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle());
+      if (!error) {
+        const saved =
+          normalizeMatch({ ...next, ...(data || {}) }) || localMatches.get(id);
+        if (saved) localMatches.set(id, saved);
+        emitListListeners();
+        return { ok: true, local: true, match: saved };
+      }
+    }
+
+    if (error) {
+      if (isMissingRelationError(error)) {
+        markTableMissing(TABLE, 'liveMatch', error.message || error);
+      } else {
+        softFailWarn(
+          'liveMatch:cricket',
+          '[liveMatch] cricket update soft-fail',
+          error
+        );
+      }
+      return { ok: true, local: true, match: localMatches.get(id) };
+    }
+    const saved =
+      normalizeMatch({ ...next, ...(data || {}) }) || localMatches.get(id);
+    if (saved) localMatches.set(id, saved);
+    emitListListeners();
+    return { ok: true, match: saved };
+  } catch (err) {
+    softFailWarn(
+      'liveMatch:cricketEx',
+      '[liveMatch] cricket exception',
       err?.message
     );
     return { ok: true, local: true, match: localMatches.get(id) };
@@ -590,6 +808,14 @@ export function joinLiveMatchRoom(matchId, handlers = {}) {
             type: 'vote_pulse',
             data: msg?.payload || {},
           });
+        });
+        channel.on('broadcast', { event: 'score_sync' }, (msg) => {
+          const row = normalizeMatch(msg?.payload);
+          if (!row?.id) return;
+          const merged = { ...(localMatches.get(id) || {}), ...row, id };
+          localMatches.set(id, merged);
+          emitRoomHandlers(id, { type: 'score', match: merged });
+          emitListListeners();
         });
 
         channel.on(

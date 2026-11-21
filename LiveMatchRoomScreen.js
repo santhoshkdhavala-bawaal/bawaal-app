@@ -37,11 +37,14 @@ import {
   fetchLiveMatch,
   joinLiveMatchRoom,
   updateMatchScore,
+  updateMatchCricket,
   endLiveMatch,
   broadcastBanter,
   broadcastReaction,
   broadcastVotePulse,
   pushBanterCapped,
+  formatCricketOvers,
+  isCricketSport,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import {
@@ -276,6 +279,134 @@ function CompactScorePill({ teamA, teamB, scoreA, scoreB }) {
       </Text>
     </View>
   );
+}
+
+/**
+ * Cricket top bar: BATTING  RUNS/WICKETS (O.B)  vs  bowling side.
+ */
+function CricketScorePill({
+  teamA,
+  teamB,
+  battingTeam,
+  runsA,
+  wicketsA,
+  ballsA,
+  runsB,
+  wicketsB,
+  ballsB,
+  canSwap,
+  onSwapBatting,
+}) {
+  const nameA = displayTeamName(teamA, 'TEAM A');
+  const nameB = displayTeamName(teamB, 'TEAM B');
+  const battingIsA = battingTeam !== 'B';
+  const batName = battingIsA ? nameA : nameB;
+  const bowlName = battingIsA ? nameB : nameA;
+  const batColor = battingIsA ? TEAM_A_GLOW : TEAM_B_GLOW;
+  const bowlColor = battingIsA ? TEAM_B_GLOW : TEAM_A_GLOW;
+  const runs = battingIsA ? runsA : runsB;
+  const wickets = battingIsA ? wicketsA : wicketsB;
+  const balls = battingIsA ? ballsA : ballsB;
+  const overs = formatCricketOvers(balls);
+
+  return (
+    <View style={styles.cricketScoreWrap}>
+      <View style={styles.scorePill} accessibilityRole="text">
+        <Text style={[styles.scorePillName, { color: batColor }]} numberOfLines={1}>
+          {batName}
+        </Text>
+        <Text style={styles.scorePillNums} numberOfLines={1}>
+          {runs}/{wickets} ({overs})
+        </Text>
+        <Text style={styles.cricketVsMuted}>vs</Text>
+        <Text
+          style={[styles.scorePillName, { color: bowlColor }]}
+          numberOfLines={1}
+        >
+          {bowlName}
+        </Text>
+      </View>
+      {canSwap ? (
+        <TouchableOpacity
+          style={styles.swapBattingBtn}
+          onPress={onSwapBatting}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Swap batting team"
+        >
+          <Text style={styles.swapBattingText}>SWAP BATTING</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+/** Host-only one-thumb cricket scorer pad. */
+function CricketScorerPad({ onRuns, onDot, onWicket, onUndo, canUndo }) {
+  return (
+    <View style={styles.cricketPad}>
+      <View style={styles.cricketRunRow}>
+        {[1, 2, 4, 6].map((n) => (
+          <TouchableOpacity
+            key={`run-${n}`}
+            style={styles.cricketRunBtn}
+            onPress={() => onRuns?.(n)}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={`Plus ${n} runs`}
+          >
+            <Text style={styles.cricketRunBtnText}>+{n}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.cricketActionRow}>
+        <TouchableOpacity
+          style={[styles.cricketActionBtn, styles.cricketDotBtn]}
+          onPress={onDot}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Dot ball"
+        >
+          <Text style={styles.cricketActionText}>DOT / +1 BALL</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.cricketActionBtn, styles.cricketWicketBtn]}
+          onPress={onWicket}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Wicket"
+        >
+          <Text style={styles.cricketActionText}>WICKET</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.cricketActionBtn,
+            styles.cricketUndoBtn,
+            !canUndo && styles.cricketBtnDisabled,
+          ]}
+          onPress={onUndo}
+          disabled={!canUndo}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Undo last cricket score"
+        >
+          <Text style={styles.cricketActionText}>UNDO</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function snapshotCricket(match) {
+  return {
+    batting_team: match?.batting_team === 'B' ? 'B' : 'A',
+    cricket_runs_a: Math.max(0, Number(match?.cricket_runs_a) || 0),
+    cricket_wickets_a: Math.max(0, Number(match?.cricket_wickets_a) || 0),
+    cricket_balls_a: Math.max(0, Number(match?.cricket_balls_a) || 0),
+    cricket_runs_b: Math.max(0, Number(match?.cricket_runs_b) || 0),
+    cricket_wickets_b: Math.max(0, Number(match?.cricket_wickets_b) || 0),
+    cricket_balls_b: Math.max(0, Number(match?.cricket_balls_b) || 0),
+  };
 }
 
 /**
@@ -534,6 +665,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const [votesB, setVotesB] = useState(Number(initialMatch?.votes_b) || 0);
   const seenReactionsRef = useRef(new Set());
   const reactionBusyRef = useRef(false);
+  const cricketUndoRef = useRef([]);
+  const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
 
   const spawnReactionBurst = useCallback((data) => {
     const key = String(data?.emojiKey || 'skull_fire').trim();
@@ -557,6 +690,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const scoreA = match?.score_a ?? 0;
   const scoreB = match?.score_b ?? 0;
   const hasScoreboard = match?.has_scoreboard !== false;
+  const cricketMode = isCricketSport(match?.sport) && hasScoreboard;
+  const battingTeam = match?.batting_team === 'B' ? 'B' : 'A';
+  const cricketRunsA = Math.max(0, Number(match?.cricket_runs_a) || 0);
+  const cricketWicketsA = Math.max(0, Number(match?.cricket_wickets_a) || 0);
+  const cricketBallsA = Math.max(0, Number(match?.cricket_balls_a) || 0);
+  const cricketRunsB = Math.max(0, Number(match?.cricket_runs_b) || 0);
+  const cricketWicketsB = Math.max(0, Number(match?.cricket_wickets_b) || 0);
+  const cricketBallsB = Math.max(0, Number(match?.cricket_balls_b) || 0);
   const adminLabel = String(
     match?.admin_name || match?.scorer_name || match?.host_handle || ''
   )
@@ -568,7 +709,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
       !!match?.host_id &&
       String(match.host_id) === userId);
   const role = isHost ? 'host' : 'viewer';
-  /** Horned +1/−1 only for host/admin when scoreboard is enabled. */
+  /** Score controls only for host/admin when scoreboard is enabled. */
   const canPunchScore = isHost && hasScoreboard;
 
   useEffect(() => {
@@ -648,7 +789,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const bumpScore = useCallback(
     async (side, delta) => {
-      if (!canPunchScore || !matchId) return;
+      if (!canPunchScore || !matchId || cricketMode) return;
       const nextA = side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
       const nextB = side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
       setMatch((prev) => ({
@@ -658,8 +799,67 @@ function LiveMatchRoomScreen({ navigation, route }) {
       }));
       await updateMatchScore(matchId, { score_a: nextA, score_b: nextB });
     },
-    [canPunchScore, matchId, scoreA, scoreB]
+    [canPunchScore, matchId, scoreA, scoreB, cricketMode]
   );
+
+  const pushCricketUndo = useCallback((snap) => {
+    cricketUndoRef.current = [...cricketUndoRef.current, snap].slice(-24);
+    setCricketUndoDepth(cricketUndoRef.current.length);
+  }, []);
+
+  const commitCricket = useCallback(
+    async (nextSnap, { pushUndo = true } = {}) => {
+      if (!canPunchScore || !matchId || !cricketMode) return;
+      if (pushUndo) pushCricketUndo(snapshotCricket(match));
+      const patch = {
+        ...nextSnap,
+        score_a: nextSnap.cricket_runs_a,
+        score_b: nextSnap.cricket_runs_b,
+      };
+      setMatch((prev) => ({ ...(prev || {}), ...patch }));
+      await updateMatchCricket(matchId, patch);
+    },
+    [canPunchScore, matchId, cricketMode, match, pushCricketUndo]
+  );
+
+  const applyCricketBall = useCallback(
+    async ({ runs = 0, wicket = false } = {}) => {
+      if (!canPunchScore || !matchId || !cricketMode) return;
+      const bat = battingTeam === 'B' ? 'B' : 'A';
+      const snap = snapshotCricket(match);
+      if (bat === 'A') {
+        snap.cricket_runs_a += Math.max(0, Number(runs) || 0);
+        if (wicket) {
+          snap.cricket_wickets_a = Math.min(10, snap.cricket_wickets_a + 1);
+        }
+        snap.cricket_balls_a += 1;
+      } else {
+        snap.cricket_runs_b += Math.max(0, Number(runs) || 0);
+        if (wicket) {
+          snap.cricket_wickets_b = Math.min(10, snap.cricket_wickets_b + 1);
+        }
+        snap.cricket_balls_b += 1;
+      }
+      await commitCricket(snap);
+    },
+    [canPunchScore, matchId, cricketMode, battingTeam, match, commitCricket]
+  );
+
+  const swapBatting = useCallback(async () => {
+    if (!canPunchScore || !matchId || !cricketMode) return;
+    const snap = snapshotCricket(match);
+    snap.batting_team = snap.batting_team === 'B' ? 'A' : 'B';
+    await commitCricket(snap);
+  }, [canPunchScore, matchId, cricketMode, match, commitCricket]);
+
+  const undoCricket = useCallback(async () => {
+    if (!canPunchScore || !matchId || !cricketMode) return;
+    const prev = cricketUndoRef.current.pop();
+    setCricketUndoDepth(cricketUndoRef.current.length);
+    if (!prev) return;
+    setMatch((m) => ({ ...(m || {}), ...prev }));
+    await updateMatchCricket(matchId, prev);
+  }, [canPunchScore, matchId, cricketMode]);
 
   const handleEnd = useCallback(async () => {
     setEndConfirm(false);
@@ -749,12 +949,28 @@ function LiveMatchRoomScreen({ navigation, route }) {
           </View>
           {hasScoreboard ? (
             <View style={styles.scoreboardHud}>
-              <CompactScorePill
-                teamA={teamA}
-                teamB={teamB}
-                scoreA={scoreA}
-                scoreB={scoreB}
-              />
+              {cricketMode ? (
+                <CricketScorePill
+                  teamA={teamA}
+                  teamB={teamB}
+                  battingTeam={battingTeam}
+                  runsA={cricketRunsA}
+                  wicketsA={cricketWicketsA}
+                  ballsA={cricketBallsA}
+                  runsB={cricketRunsB}
+                  wicketsB={cricketWicketsB}
+                  ballsB={cricketBallsB}
+                  canSwap={canPunchScore}
+                  onSwapBatting={swapBatting}
+                />
+              ) : (
+                <CompactScorePill
+                  teamA={teamA}
+                  teamB={teamB}
+                  scoreA={scoreA}
+                  scoreB={scoreB}
+                />
+              )}
               {adminLabel ? (
                 <Text style={styles.adminChip} numberOfLines={1}>
                   ADMIN @{adminLabel}
@@ -838,7 +1054,15 @@ function LiveMatchRoomScreen({ navigation, route }) {
             { paddingBottom: Math.max(insets.bottom, 10) + 8 },
           ]}
         >
-          {canPunchScore ? (
+          {canPunchScore && cricketMode ? (
+            <CricketScorerPad
+              onRuns={(n) => applyCricketBall({ runs: n })}
+              onDot={() => applyCricketBall({ runs: 0 })}
+              onWicket={() => applyCricketBall({ runs: 0, wicket: true })}
+              onUndo={undoCricket}
+              canUndo={cricketUndoDepth > 0}
+            />
+          ) : canPunchScore ? (
             <View style={styles.hostScoreRow}>
               <View style={styles.hostScoreCol}>
                 <HornedSkullScoreButton
@@ -1088,7 +1312,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    maxWidth: 300,
+    maxWidth: 320,
     minWidth: 0,
     paddingHorizontal: 4,
   },
@@ -1117,6 +1341,88 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     letterSpacing: 0.6,
+  },
+  cricketScoreWrap: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 5,
+  },
+  cricketVsMuted: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  swapBattingBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,90,31,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.45)',
+  },
+  swapBattingText: {
+    color: ORANGE,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  cricketPad: {
+    gap: 8,
+    marginBottom: 2,
+  },
+  cricketRunRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cricketRunBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,18,15,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.55)',
+  },
+  cricketRunBtnText: {
+    color: WHITE,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  cricketActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cricketActionBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+  },
+  cricketDotBtn: {
+    backgroundColor: 'rgba(8,18,15,0.88)',
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  cricketWicketBtn: {
+    backgroundColor: 'rgba(229,57,53,0.35)',
+    borderColor: CRIMSON,
+  },
+  cricketUndoBtn: {
+    backgroundColor: 'rgba(8,18,15,0.88)',
+    borderColor: 'rgba(148,163,184,0.45)',
+  },
+  cricketBtnDisabled: {
+    opacity: 0.4,
+  },
+  cricketActionText: {
+    color: WHITE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   adminChip: {
     marginTop: 4,
