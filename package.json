@@ -47,6 +47,8 @@
     "web": "expo start --web",
     "prebuild": "expo prebuild",
     "build:android:dev": "eas build --platform android --profile development",
+    "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:preview": "eas build --platform android --profile preview",
     "lint": "expo lint"
   },
   "private": true,

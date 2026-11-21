@@ -599,12 +599,15 @@ function ViewerVideoStage({ sport, title }) {
 
 function HostCameraStage({ facing }) {
   const [permission, requestPermission] = useCameraPermissions();
+  const [mountFailed, setMountFailed] = useState(false);
 
   useEffect(() => {
     if (permission && !permission.granted) {
-      void requestPermission();
+      // Soft-fail: emulator / denied permission must never crash the room.
+      void Promise.resolve(requestPermission()).catch(() => {});
     }
   }, [permission, requestPermission]);
+
 
   if (!permission) {
     return (
@@ -613,24 +616,36 @@ function HostCameraStage({ facing }) {
       </View>
     );
   }
-  if (!permission.granted) {
+  if (!permission.granted || mountFailed) {
     return (
       <View style={styles.cameraFallback}>
         <Text style={styles.cameraFallbackText}>
-          Camera permission needed to go live
+          {mountFailed
+            ? 'Camera unavailable on this device — telecast HUD stays live'
+            : 'Camera permission needed to go live'}
         </Text>
-        <TouchableOpacity
-          style={styles.permBtn}
-          onPress={() => requestPermission()}
-        >
-          <Text style={styles.permBtnText}>ALLOW CAMERA</Text>
-        </TouchableOpacity>
+        {!permission.granted ? (
+          <TouchableOpacity
+            style={styles.permBtn}
+            onPress={() => {
+              void Promise.resolve(requestPermission()).catch(() => {});
+            }}
+            hitSlop={10}
+          >
+            <Text style={styles.permBtnText}>ALLOW CAMERA</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   }
 
   return (
-    <CameraView style={StyleSheet.absoluteFill} facing={facing} mute />
+    <CameraView
+      style={StyleSheet.absoluteFill}
+      facing={facing}
+      mute
+      onMountError={() => setMountFailed(true)}
+    />
   );
 }
 
@@ -665,9 +680,21 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const [votesB, setVotesB] = useState(Number(initialMatch?.votes_b) || 0);
   const seenReactionsRef = useRef(new Set());
   const reactionBusyRef = useRef(false);
+  const reactionBusyTimerRef = useRef(null);
   const cricketUndoRef = useRef([]);
   const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+
+  useEffect(
+    () => () => {
+      if (reactionBusyTimerRef.current) {
+        clearTimeout(reactionBusyTimerRef.current);
+        reactionBusyTimerRef.current = null;
+      }
+    },
+    []
+  );
+
 
   const scoreActor = useMemo(
     () => ({
@@ -930,13 +957,18 @@ function LiveMatchRoomScreen({ navigation, route }) {
           label: skull.label || skull.id,
         });
       } finally {
-        setTimeout(() => {
+        if (reactionBusyTimerRef.current) {
+          clearTimeout(reactionBusyTimerRef.current);
+        }
+        reactionBusyTimerRef.current = setTimeout(() => {
           reactionBusyRef.current = false;
+          reactionBusyTimerRef.current = null;
         }, 350);
       }
     },
     [matchId, handle]
   );
+
 
   const vote = useCallback(
     async (team) => {
@@ -967,7 +999,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
       <StatusBar barStyle="light-content" backgroundColor={BG} />
       <View style={styles.stage}>
         {role === 'host' ? (
-          <HostCameraStage facing={facing} />
+          <HostCameraStage key={facing} facing={facing} />
+
         ) : (
           <ViewerVideoStage sport={match?.sport} title={match?.title} />
         )}
