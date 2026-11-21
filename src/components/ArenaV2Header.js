@@ -2,7 +2,7 @@
  * V2 Arena top header — combined BAWAAL mark, ARENA label,
  * pulsing ● LIVE pill, glowing ▶ GAME ON pill, notification bell.
  */
-import React, { useEffect, useRef, memo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ const MUTED = '#A9A9A9';
 const COMBINED_LOGO = require('../../assets/BAWAAL_logo_combined.png');
 
 function LivePill({ onPress, liveCount = 0 }) {
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [pulse] = useState(() => new Animated.Value(0));
   const count = Math.max(0, Number(liveCount) || 0);
 
   useEffect(() => {
@@ -64,8 +64,8 @@ function LivePill({ onPress, liveCount = 0 }) {
       accessibilityRole="button"
       accessibilityLabel={
         count > 0
-          ? `Open Live Arena Hub, ${count} live`
-          : 'Open Live Arena Hub'
+          ? `Open BAWAAL LIVE hub, ${count} live`
+          : 'Open BAWAAL LIVE hub'
       }
       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
     >
@@ -91,7 +91,7 @@ function LivePill({ onPress, liveCount = 0 }) {
 }
 
 function GameOnPill({ onPress }) {
-  const pulse = useRef(new Animated.Value(0)).current;
+  const [pulse] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const loop = Animated.loop(

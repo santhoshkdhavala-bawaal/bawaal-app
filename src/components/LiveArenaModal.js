@@ -1,5 +1,5 @@
 /**
- * Live Arena Hub — list live matches + 5-second GO LIVE setup.
+ * BAWAAL LIVE hub — list live matches + 5-second GO LIVE setup.
  * Theme: #08120F / #FF5A1F / #E53935
  */
 import React, { memo, useCallback, useEffect, useState } from 'react';
@@ -277,7 +277,7 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
           style={styles.scrimHit}
           activeOpacity={1}
           onPress={onClose}
-          accessibilityLabel="Close Live Arena Hub"
+          accessibilityLabel="Close BAWAAL LIVE hub"
         />
         <View
           style={[
@@ -298,7 +298,7 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
           ) : (
             <>
               <View style={styles.headerRow}>
-                <Text style={styles.headerTitle}>LIVE ARENA</Text>
+                <Text style={styles.headerTitle}>BAWAAL LIVE</Text>
                 <TouchableOpacity
                   onPress={() => {
                     setMode('hub');
