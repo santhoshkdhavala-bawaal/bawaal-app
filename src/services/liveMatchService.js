@@ -73,8 +73,43 @@ function channelName(matchId) {
   return `live-match-${String(matchId || '').trim()}`;
 }
 
+function isMissingColumnError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(
+    error.message || error.details || error.hint || error || ''
+  );
+  return (
+    code === 'PGRST204' ||
+    /schema cache|PGRST204|Could not find .* column|column .* does not exist/i.test(
+      msg
+    )
+  );
+}
+
+function truthyScoreboard(value) {
+  if (value === false || value === 0 || value === 'false' || value === '0') {
+    return false;
+  }
+  if (value === true || value === 1 || value === 'true' || value === '1') {
+    return true;
+  }
+  // Unmigrated / legacy rows → keep scoreboard (prior default UX)
+  return true;
+}
+
 function normalizeMatch(row) {
   if (!row || typeof row !== 'object') return null;
+  const adminRaw =
+    row.admin_name != null && String(row.admin_name).trim()
+      ? String(row.admin_name).trim()
+      : row.scorer_name != null
+        ? String(row.scorer_name).trim()
+        : '';
+  const scorerRaw =
+    row.scorer_name != null && String(row.scorer_name).trim()
+      ? String(row.scorer_name).trim()
+      : adminRaw;
   return {
     id: String(row.id || ''),
     host_id: String(row.host_id || ''),
@@ -92,6 +127,9 @@ function normalizeMatch(row) {
     created_at: row.created_at || new Date().toISOString(),
     ended_at: row.ended_at || null,
     watching: Math.max(0, Number(row.watching) || 0),
+    has_scoreboard: truthyScoreboard(row.has_scoreboard),
+    admin_name: adminRaw,
+    scorer_name: scorerRaw,
   };
 }
 
@@ -171,16 +209,30 @@ export async function createLiveMatch({
   title,
   teamAName,
   teamBName,
+  hasScoreboard = false,
+  adminName = '',
+  scorerName = '',
 } = {}) {
   const id = newMatchId();
+  const scoreboardOn = !!hasScoreboard;
+  const adminLabel = String(adminName || scorerName || hostHandle || '')
+    .trim()
+    .replace(/^@/, '');
+  const scorerLabel = String(scorerName || adminName || hostHandle || '')
+    .trim()
+    .replace(/^@/, '');
   const row = normalizeMatch({
     id,
     host_id: String(hostId || `local:${Date.now()}`),
     host_handle: String(hostHandle || 'athlete'),
     sport: String(sport || DEFAULT_LIVE_MATCH_SPORT).toUpperCase(),
-    title: String(title || '').trim(),
-    team_a_name: String(teamAName || 'TEAM A').trim() || 'TEAM A',
-    team_b_name: String(teamBName || 'TEAM B').trim() || 'TEAM B',
+    title: scoreboardOn ? String(title || '').trim() : '',
+    team_a_name: scoreboardOn
+      ? String(teamAName || 'TEAM A').trim() || 'TEAM A'
+      : 'TEAM A',
+    team_b_name: scoreboardOn
+      ? String(teamBName || 'TEAM B').trim() || 'TEAM B'
+      : 'TEAM B',
     score_a: 0,
     score_b: 0,
     votes_a: 0,
@@ -188,6 +240,9 @@ export async function createLiveMatch({
     status: 'live',
     stream_room_id: id,
     created_at: new Date().toISOString(),
+    has_scoreboard: scoreboardOn,
+    admin_name: scoreboardOn ? adminLabel : '',
+    scorer_name: scoreboardOn ? scorerLabel : '',
   });
 
   localMatches.set(id, row);
@@ -197,26 +252,59 @@ export async function createLiveMatch({
     return { ok: true, local: true, match: row };
   }
 
+  const basePayload = {
+    id: row.id,
+    host_id: row.host_id,
+    host_handle: row.host_handle,
+    sport: row.sport,
+    title: row.title || null,
+    team_a_name: row.team_a_name,
+    team_b_name: row.team_b_name,
+    score_a: 0,
+    score_b: 0,
+    votes_a: 0,
+    votes_b: 0,
+    status: 'live',
+    stream_room_id: row.stream_room_id,
+  };
+  const extendedPayload = {
+    ...basePayload,
+    has_scoreboard: row.has_scoreboard,
+    admin_name: row.admin_name || null,
+    scorer_name: row.scorer_name || null,
+  };
+
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from(TABLE)
-      .insert({
-        id: row.id,
-        host_id: row.host_id,
-        host_handle: row.host_handle,
-        sport: row.sport,
-        title: row.title || null,
-        team_a_name: row.team_a_name,
-        team_b_name: row.team_b_name,
-        score_a: 0,
-        score_b: 0,
-        votes_a: 0,
-        votes_b: 0,
-        status: 'live',
-        stream_room_id: row.stream_room_id,
-      })
+      .insert(extendedPayload)
       .select('*')
       .maybeSingle();
+
+    // Unmigrated DB: strip new columns and retry once (local row keeps flags)
+    if (error && isMissingColumnError(error)) {
+      softFailWarn(
+        'liveMatch:createCols',
+        '[liveMatch] scoreboard columns missing — retry base insert',
+        error?.message || error
+      );
+      ({ data, error } = await supabase
+        .from(TABLE)
+        .insert(basePayload)
+        .select('*')
+        .maybeSingle());
+      if (!error) {
+        const saved = normalizeMatch({
+          ...(data || {}),
+          has_scoreboard: row.has_scoreboard,
+          admin_name: row.admin_name,
+          scorer_name: row.scorer_name,
+        }) || row;
+        localMatches.set(saved.id, saved);
+        emitListListeners();
+        return { ok: true, local: true, match: saved };
+      }
+    }
 
     if (error) {
       if (isMissingRelationError(error)) {

@@ -415,12 +415,20 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const teamB = match?.team_b_name || 'TEAM B';
   const scoreA = match?.score_a ?? 0;
   const scoreB = match?.score_b ?? 0;
+  const hasScoreboard = match?.has_scoreboard !== false;
+  const adminLabel = String(
+    match?.admin_name || match?.scorer_name || match?.host_handle || ''
+  )
+    .replace(/^@/, '')
+    .trim();
   const isHost =
     isHostParam ||
     (!!userId &&
       !!match?.host_id &&
       String(match.host_id) === userId);
   const role = isHost ? 'host' : 'viewer';
+  /** Horned +1/−1 only for host/admin when scoreboard is enabled. */
+  const canPunchScore = isHost && hasScoreboard;
 
   useEffect(() => {
     let alive = true;
@@ -486,7 +494,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const bumpScore = useCallback(
     async (side, delta) => {
-      if (!isHost || !matchId) return;
+      if (!canPunchScore || !matchId) return;
       const nextA = side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
       const nextB = side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
       setMatch((prev) => ({
@@ -496,7 +504,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
       }));
       await updateMatchScore(matchId, { score_a: nextA, score_b: nextB });
     },
-    [isHost, matchId, scoreA, scoreB]
+    [canPunchScore, matchId, scoreA, scoreB]
   );
 
   const handleEnd = useCallback(async () => {
@@ -585,13 +593,37 @@ function LiveMatchRoomScreen({ navigation, route }) {
               <Text style={styles.watchCount}>{watching}</Text>
             </View>
           </View>
-          <Scoreboard
-            teamA={teamA}
-            teamB={teamB}
-            scoreA={scoreA}
-            scoreB={scoreB}
-            compact
-          />
+          {hasScoreboard ? (
+            <View style={styles.scoreboardHud}>
+              <Scoreboard
+                teamA={teamA}
+                teamB={teamB}
+                scoreA={scoreA}
+                scoreB={scoreB}
+                compact
+              />
+              {adminLabel ? (
+                <Text style={styles.adminChip} numberOfLines={1}>
+                  ADMIN @{adminLabel}
+                </Text>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.telecastHud}>
+              <Text style={styles.telecastHudSport} numberOfLines={1}>
+                {String(match?.sport || 'LIVE').toUpperCase()}
+              </Text>
+              {match?.title ? (
+                <Text style={styles.telecastHudTitle} numberOfLines={1}>
+                  {match.title}
+                </Text>
+              ) : (
+                <Text style={styles.telecastHudTitle} numberOfLines={1}>
+                  LIVE TELECAST
+                </Text>
+              )}
+            </View>
+          )}
           <View style={styles.topRight}>
             {role === 'host' ? (
               <>
@@ -651,7 +683,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
             { paddingBottom: Math.max(insets.bottom, 10) + 8 },
           ]}
         >
-          {isHost ? (
+          {canPunchScore ? (
             <View style={styles.hostScoreRow}>
               <View style={styles.hostScoreCol}>
                 <HornedSkullScoreButton
@@ -683,7 +715,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
+          ) : hasScoreboard ? (
             <VoteTugBar
               votesA={votesA}
               votesB={votesB}
@@ -692,7 +724,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
               onVoteA={() => vote('A')}
               onVoteB={() => vote('B')}
             />
-          )}
+          ) : null}
 
           {/* FIRE · ROAST · BEAST · WEAK · HYPE — above banter */}
           <View style={styles.pillRow}>
@@ -896,6 +928,39 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 6,
     minWidth: 72,
+  },
+  scoreboardHud: {
+    flex: 1,
+    alignItems: 'center',
+    maxWidth: 280,
+  },
+  adminChip: {
+    marginTop: 4,
+    color: MUTED,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textAlign: 'center',
+  },
+  telecastHud: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    maxWidth: 220,
+  },
+  telecastHudSport: {
+    color: ORANGE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  telecastHudTitle: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 2,
+    textAlign: 'center',
   },
   liveChip: {
     flexDirection: 'row',

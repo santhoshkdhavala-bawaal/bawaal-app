@@ -38,13 +38,19 @@ const INPUT = '#12201B';
 
 function MatchCard({ item, onPress }) {
   const watching = Math.max(0, Number(item.watching) || 0);
+  const hasScoreboard = item?.has_scoreboard !== false;
+  const vsLabel = hasScoreboard
+    ? `${item.team_a_name || 'TEAM A'} vs ${item.team_b_name || 'TEAM B'}`
+    : item.title
+      ? String(item.title)
+      : `${item.sport || 'LIVE'} TELECAST`;
   return (
     <TouchableOpacity
       style={styles.card}
       onPress={() => onPress?.(item)}
       activeOpacity={0.88}
       accessibilityRole="button"
-      accessibilityLabel={`Watch ${item.team_a_name} versus ${item.team_b_name}`}
+      accessibilityLabel={`Watch ${vsLabel}`}
     >
       <View style={styles.cardTop}>
         <View style={styles.sportBadge}>
@@ -56,16 +62,18 @@ function MatchCard({ item, onPress }) {
         </View>
       </View>
       <Text style={styles.vsTitle} numberOfLines={1}>
-        {item.team_a_name || 'TEAM A'} vs {item.team_b_name || 'TEAM B'}
+        {vsLabel}
       </Text>
-      {item.title ? (
+      {hasScoreboard && item.title ? (
         <Text style={styles.matchTitle} numberOfLines={1}>
           {item.title}
         </Text>
       ) : null}
       <View style={styles.cardBottom}>
         <Text style={styles.scoreText}>
-          {item.score_a ?? 0} — {item.score_b ?? 0}
+          {hasScoreboard
+            ? `${item.score_a ?? 0} — ${item.score_b ?? 0}`
+            : 'TELECAST'}
         </Text>
         <View style={styles.watchRow}>
           <Ionicons name="eye-outline" size={14} color={MUTED} />
@@ -176,28 +184,48 @@ function SportDropdown({ value, options, onChange }) {
   );
 }
 
+function defaultAdminLabel(user) {
+  const raw =
+    user?.displayName ||
+    user?.name ||
+    user?.handle ||
+    user?.username ||
+    'athlete';
+  return String(raw).replace(/^@/, '').trim() || 'athlete';
+}
+
 function GoLiveSetup({ onBack, onStarted }) {
+  const user = getActiveUser();
   const [sport, setSport] = useState(DEFAULT_LIVE_MATCH_SPORT);
+  const [scoreboardOn, setScoreboardOn] = useState(false);
   const [teamA, setTeamA] = useState('TEAM A');
   const [teamB, setTeamB] = useState('TEAM B');
   const [title, setTitle] = useState('');
+  const [adminName, setAdminName] = useState(() => defaultAdminLabel(user));
   const [starting, setStarting] = useState(false);
 
   const handleStart = useCallback(async () => {
     if (starting) return;
     setStarting(true);
     try {
-      const user = getActiveUser();
+      const active = getActiveUser();
+      const hostHandle = String(
+        active?.handle || active?.username || 'athlete'
+      ).replace(/^@/, '');
       const result = await createLiveMatch({
-        hostId: String(user?.id || user?.userId || `local:${Date.now()}`),
-        hostHandle: String(user?.handle || user?.username || 'athlete').replace(
-          /^@/,
-          ''
-        ),
+        hostId: String(active?.id || active?.userId || `local:${Date.now()}`),
+        hostHandle,
         sport,
-        title,
-        teamAName: teamA,
-        teamBName: teamB,
+        title: scoreboardOn ? title : '',
+        teamAName: scoreboardOn ? teamA : 'TEAM A',
+        teamBName: scoreboardOn ? teamB : 'TEAM B',
+        hasScoreboard: scoreboardOn,
+        adminName: scoreboardOn
+          ? String(adminName || hostHandle).trim()
+          : '',
+        scorerName: scoreboardOn
+          ? String(adminName || hostHandle).trim()
+          : '',
       });
       if (result?.match) {
         onStarted?.(result.match);
@@ -206,7 +234,16 @@ function GoLiveSetup({ onBack, onStarted }) {
     } finally {
       setStarting(false);
     }
-  }, [starting, sport, title, teamA, teamB, onStarted]);
+  }, [
+    starting,
+    sport,
+    title,
+    teamA,
+    teamB,
+    scoreboardOn,
+    adminName,
+    onStarted,
+  ]);
 
   return (
     <KeyboardAvoidingView
@@ -233,37 +270,92 @@ function GoLiveSetup({ onBack, onStarted }) {
         onChange={setSport}
       />
 
-      <Text style={styles.fieldLabel}>TEAM A</Text>
-      <TextInput
-        style={styles.input}
-        value={teamA}
-        onChangeText={setTeamA}
-        placeholder="TEAM A"
-        placeholderTextColor={MUTED}
-        maxLength={32}
-        autoCapitalize="characters"
-      />
+      <TouchableOpacity
+        style={[
+          styles.scoreboardToggleRow,
+          scoreboardOn && styles.scoreboardToggleRowOn,
+        ]}
+        onPress={() => setScoreboardOn((v) => !v)}
+        activeOpacity={0.88}
+        accessibilityRole="switch"
+        accessibilityState={{ checked: scoreboardOn }}
+        accessibilityLabel={`Scoreboard ${scoreboardOn ? 'on' : 'off'}`}
+      >
+        <View style={styles.scoreboardToggleCopy}>
+          <Text style={styles.scoreboardToggleTitle}>SCOREBOARD</Text>
+          <Text style={styles.scoreboardToggleHint}>
+            {scoreboardOn
+              ? 'Teams, title & admin scorer enabled'
+              : 'Pure telecast — banter & reactions only'}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.scoreboardSwitch,
+            scoreboardOn && styles.scoreboardSwitchOn,
+          ]}
+        >
+          <Text
+            style={[
+              styles.scoreboardSwitchText,
+              scoreboardOn && styles.scoreboardSwitchTextOn,
+            ]}
+          >
+            {scoreboardOn ? 'ON' : 'OFF'}
+          </Text>
+        </View>
+      </TouchableOpacity>
 
-      <Text style={styles.fieldLabel}>TEAM B</Text>
-      <TextInput
-        style={styles.input}
-        value={teamB}
-        onChangeText={setTeamB}
-        placeholder="TEAM B"
-        placeholderTextColor={MUTED}
-        maxLength={32}
-        autoCapitalize="characters"
-      />
+      {scoreboardOn ? (
+        <View style={styles.scoreboardDrawer}>
+          <Text style={styles.fieldLabel}>TEAM A</Text>
+          <TextInput
+            style={styles.input}
+            value={teamA}
+            onChangeText={setTeamA}
+            placeholder="TEAM A"
+            placeholderTextColor={MUTED}
+            maxLength={32}
+            autoCapitalize="characters"
+          />
 
-      <Text style={styles.fieldLabel}>TITLE (OPTIONAL)</Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Friendly School Match"
-        placeholderTextColor={MUTED}
-        maxLength={80}
-      />
+          <Text style={styles.fieldLabel}>TEAM B</Text>
+          <TextInput
+            style={styles.input}
+            value={teamB}
+            onChangeText={setTeamB}
+            placeholder="TEAM B"
+            placeholderTextColor={MUTED}
+            maxLength={32}
+            autoCapitalize="characters"
+          />
+
+          <Text style={styles.fieldLabel}>TITLE (OPTIONAL)</Text>
+          <TextInput
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Friendly School Match"
+            placeholderTextColor={MUTED}
+            maxLength={80}
+          />
+
+          <Text style={styles.fieldLabel}>ADMIN</Text>
+          <TextInput
+            style={styles.input}
+            value={adminName}
+            onChangeText={setAdminName}
+            placeholder="Scorer handle or name"
+            placeholderTextColor={MUTED}
+            maxLength={40}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={styles.adminHint}>
+            Who punches the score — you or a friend/umpire
+          </Text>
+        </View>
+      ) : null}
 
       <TouchableOpacity
         style={[styles.startBtn, starting && styles.startBtnDisabled]}
@@ -615,6 +707,75 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     marginBottom: 8,
     marginTop: 10,
+  },
+  scoreboardToggleRow: {
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  scoreboardToggleRowOn: {
+    borderColor: 'rgba(255,90,31,0.55)',
+    backgroundColor: 'rgba(255,90,31,0.08)',
+  },
+  scoreboardToggleCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scoreboardToggleTitle: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  scoreboardToggleHint: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 3,
+    lineHeight: 15,
+  },
+  scoreboardSwitch: {
+    minWidth: 48,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+  },
+  scoreboardSwitchOn: {
+    backgroundColor: CRIMSON,
+    borderColor: ORANGE,
+  },
+  scoreboardSwitchText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  scoreboardSwitchTextOn: {
+    color: WHITE,
+  },
+  scoreboardDrawer: {
+    marginTop: 4,
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  adminHint: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 6,
+    lineHeight: 14,
   },
   dropdownTrigger: {
     flexDirection: 'row',
