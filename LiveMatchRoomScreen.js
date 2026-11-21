@@ -25,17 +25,14 @@ import {
   Modal,
   Platform,
   Animated,
+  Easing,
   KeyboardAvoidingView,
   StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import {
-  FloatingEmojiBurstLayer,
-  appendBurstParticles,
-  createCenteredEmojiBurst,
-} from './src/components/FloatingEmojiBurst';
+import { BawaalEmoji } from './components/BawaalEmoji';
 import {
   fetchLiveMatch,
   joinLiveMatchRoom,
@@ -53,7 +50,7 @@ import {
 } from './src/constants/liveMatchTeamSkulls';
 import {
   LIVE_MATCH_FLAMING_SKULLS,
-  SKULL_SILVER,
+  SKULL_FIRE,
 } from './src/constants/liveMatchFlamingSkulls';
 
 const BG = '#08120F';
@@ -64,6 +61,157 @@ const TEAM_B_GLOW = '#2A7BFF';
 const WHITE = '#FFFFFF';
 const MUTED = '#94A3B8';
 const PANEL = 'rgba(8,18,15,0.78)';
+
+/** Single-tap live reaction burst — short-lived, never loops. */
+const LIVE_REACTION_BURST_MS = 1500;
+const LIVE_REACTION_CLEANUP_MS = 1800;
+const LIVE_REACTION_MAX_PARTICLES = 3;
+const LIVE_BANTER_TTL_MS = 4500;
+const LIVE_BANTER_VISIBLE_CAP = 4;
+
+let liveBurstSeq = 0;
+
+function createLiveMatchReactionBurst(emojiKey) {
+  const key = String(emojiKey || 'skull_fire').toLowerCase();
+  const count = 2;
+  const particles = [];
+  for (let i = 0; i < count; i += 1) {
+    liveBurstSeq += 1;
+    particles.push({
+      id: `live-rx-${Date.now()}-${liveBurstSeq}-${i}`,
+      emojiKey: key,
+      targetX: (Math.random() - 0.5) * 110,
+      kickY: 18 + Math.random() * 10,
+      floatY: -160 - Math.random() * 40,
+      delay: i * 40,
+      duration: LIVE_REACTION_BURST_MS,
+      size: 44 + Math.floor((Math.random() - 0.5) * 8),
+    });
+  }
+  return particles;
+}
+
+const LiveReactionParticle = memo(function LiveReactionParticle({
+  id,
+  emojiKey,
+  targetX,
+  kickY,
+  floatY,
+  delay,
+  duration,
+  size,
+  originX,
+  originY,
+  onDone,
+}) {
+  const [progress] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    progress.setValue(0);
+    const wait = Math.max(0, delay || 0);
+    const life = Math.min(
+      LIVE_REACTION_BURST_MS + 300,
+      Math.max(1200, duration || LIVE_REACTION_BURST_MS)
+    );
+    const cleanupMs = Math.min(
+      LIVE_REACTION_CLEANUP_MS + 200,
+      wait + life + 120
+    );
+    const anim = Animated.sequence([
+      Animated.delay(wait),
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: life,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+    anim.start();
+    const cleanupTimer = setTimeout(() => {
+      onDone?.(id);
+    }, cleanupMs);
+    return () => {
+      anim.stop();
+      clearTimeout(cleanupTimer);
+    };
+  }, [progress, id, onDone, delay, duration]);
+
+  const opacity = progress.interpolate({
+    inputRange: [0, 0.08, 0.72, 1],
+    outputRange: [0, 1, 1, 0],
+    extrapolate: 'clamp',
+  });
+  const scale = progress.interpolate({
+    inputRange: [0, 0.22, 1],
+    outputRange: [0.45, 1.12, 1],
+    extrapolate: 'clamp',
+  });
+  const translateX = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, targetX || 0],
+    extrapolate: 'clamp',
+  });
+  const translateY = progress.interpolate({
+    inputRange: [0, 0.16, 1],
+    outputRange: [0, Math.abs(kickY || 20), floatY || -160],
+    extrapolate: 'clamp',
+  });
+  const dim = typeof size === 'number' && size > 0 ? size : 44;
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        left: originX - dim / 2,
+        top: originY - dim / 2,
+        width: dim,
+        height: dim,
+        opacity,
+        transform: [{ translateX }, { translateY }, { scale }],
+      }}
+    >
+      <BawaalEmoji name={emojiKey || 'skull_fire'} size={dim} />
+    </Animated.View>
+  );
+});
+
+const LiveReactionBurstLayer = memo(function LiveReactionBurstLayer({
+  particles,
+  onParticleDone,
+}) {
+  const [bounds, setBounds] = useState({ width: 0, height: 0 });
+  const originX = bounds.width / 2;
+  const originY = bounds.height * 0.55;
+
+  return (
+    <View
+      pointerEvents="none"
+      collapsable={false}
+      onLayout={(e) => {
+        const { width, height } = e?.nativeEvent?.layout || {};
+        if (width > 0 && height > 0) {
+          setBounds((prev) =>
+            prev.width === width && prev.height === height
+              ? prev
+              : { width, height }
+          );
+        }
+      }}
+      style={StyleSheet.absoluteFillObject}
+    >
+      {(particles || []).slice(-LIVE_REACTION_MAX_PARTICLES * 2).map((p) => (
+        <LiveReactionParticle
+          key={p.id}
+          {...p}
+          originX={originX}
+          originY={originY}
+          onDone={onParticleDone}
+        />
+      ))}
+    </View>
+  );
+});
 
 /** Show team name exactly as entered (trimmed); fallback if blank. */
 function displayTeamName(raw, fallback) {
@@ -384,7 +532,25 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const [burstParticles, setBurstParticles] = useState([]);
   const [votesA, setVotesA] = useState(Number(initialMatch?.votes_a) || 0);
   const [votesB, setVotesB] = useState(Number(initialMatch?.votes_b) || 0);
-  const stageSizeRef = useRef({ width: 0, height: 0 });
+  const seenReactionsRef = useRef(new Set());
+  const reactionBusyRef = useRef(false);
+
+  const spawnReactionBurst = useCallback((data) => {
+    const key = String(data?.emojiKey || 'skull_fire').trim();
+    if (!key) return;
+    const rid = String(
+      data?.reactionId ||
+        `${data?.at || ''}|${data?.handle || ''}|${key}`
+    );
+    if (!rid || seenReactionsRef.current.has(rid)) return;
+    seenReactionsRef.current.add(rid);
+    if (seenReactionsRef.current.size > 40) {
+      const keep = Array.from(seenReactionsRef.current).slice(-20);
+      seenReactionsRef.current = new Set(keep);
+    }
+    // Replace active burst — never stack endless spawn loops
+    setBurstParticles(createLiveMatchReactionBurst(key));
+  }, []);
 
   const teamA = match?.team_a_name || 'TEAM A';
   const teamB = match?.team_b_name || 'TEAM B';
@@ -439,16 +605,15 @@ function LiveMatchRoomScreen({ navigation, route }) {
         }
       },
       onBanter: (data) => {
-        setBanter((prev) => pushBanterCapped(prev, data));
+        setBanter((prev) =>
+          pushBanterCapped(prev, {
+            ...data,
+            at: data?.at || Date.now(),
+          }, LIVE_BANTER_VISIBLE_CAP)
+        );
       },
       onReaction: (data) => {
-        const key = data?.emojiKey || 'skull_fire';
-        setBurstParticles((prev) =>
-          appendBurstParticles(
-            prev,
-            createCenteredEmojiBurst(key, stageSizeRef.current, { count: 5 })
-          )
-        );
+        spawnReactionBurst(data);
       },
       onVotePulse: (data) => {
         if (data?.team === 'B') setVotesB((v) => v + 1);
@@ -465,7 +630,21 @@ function LiveMatchRoomScreen({ navigation, route }) {
         /* ignore */
       }
     };
-  }, [matchId, role, navigation]);
+  }, [matchId, role, navigation, spawnReactionBurst]);
+
+  // Auto-expire center banter bubbles so the camera stays readable
+  useEffect(() => {
+    if (!banter.length) return undefined;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setBanter((prev) =>
+        (Array.isArray(prev) ? prev : []).filter(
+          (b) => now - Number(b?.at || 0) < LIVE_BANTER_TTL_MS
+        )
+      );
+    }, 700);
+    return () => clearInterval(timer);
+  }, [banter.length]);
 
   const bumpScore = useCallback(
     async (side, delta) => {
@@ -497,13 +676,20 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const fireFlamingSkull = useCallback(
     async (skull) => {
-      if (!matchId || !skull?.emojiKey) return;
+      if (!matchId || !skull?.emojiKey || reactionBusyRef.current) return;
+      reactionBusyRef.current = true;
       setSkullTrayOpen(false);
-      await broadcastReaction(matchId, {
-        emojiKey: skull.emojiKey,
-        handle,
-        label: skull.id,
-      });
+      try {
+        await broadcastReaction(matchId, {
+          emojiKey: skull.emojiKey,
+          handle,
+          label: skull.label || skull.id,
+        });
+      } finally {
+        setTimeout(() => {
+          reactionBusyRef.current = false;
+        }, 350);
+      }
     },
     [matchId, handle]
   );
@@ -516,7 +702,10 @@ function LiveMatchRoomScreen({ navigation, route }) {
     [matchId, handle]
   );
 
-  const latestBanter = useMemo(() => banter.slice(-3).reverse(), [banter]);
+  const latestBanter = useMemo(
+    () => banter.slice(-LIVE_BANTER_VISIBLE_CAP),
+    [banter]
+  );
 
   if (!matchId) {
     return (
@@ -532,20 +721,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
-      <View
-        style={styles.stage}
-        onLayout={(e) => {
-          const { width, height } = e.nativeEvent.layout;
-          stageSizeRef.current = { width, height };
-        }}
-      >
+      <View style={styles.stage}>
         {role === 'host' ? (
           <HostCameraStage facing={facing} />
         ) : (
           <ViewerVideoStage sport={match?.sport} title={match?.title} />
         )}
 
-        <FloatingEmojiBurstLayer
+        <LiveReactionBurstLayer
           particles={burstParticles}
           onParticleDone={(id) => {
             setBurstParticles((prev) => prev.filter((p) => p.id !== id));
@@ -630,19 +813,21 @@ function LiveMatchRoomScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Banter ticker */}
+        {/* Center banter stream */}
         <View style={styles.banterTicker} pointerEvents="none">
-          {latestBanter.map((b, i) => (
-            <Text
-              key={`${b.at || i}-${b.message}`}
-              style={styles.banterLine}
-              numberOfLines={1}
-            >
-              <Text style={styles.banterHandle}>@{b.handle || 'fan'}</Text>
-              {'  '}
-              {b.message}
-            </Text>
-          ))}
+          <View style={styles.banterCenterCol}>
+            {latestBanter.map((b, i) => (
+              <Text
+                key={`${b.reactionId || b.at || i}-${b.message}`}
+                style={styles.banterLine}
+                numberOfLines={2}
+              >
+                <Text style={styles.banterHandle}>@{b.handle || 'fan'}</Text>
+                {'  '}
+                {b.message}
+              </Text>
+            ))}
+          </View>
         </View>
 
         {/* Bottom controls */}
@@ -708,13 +893,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
                       onPress={() => fireFlamingSkull(skull)}
                       activeOpacity={0.85}
                       accessibilityRole="button"
-                      accessibilityLabel={`${skull.id} flaming skull reaction`}
+                      accessibilityLabel={`${skull.label} skull reaction`}
                     >
                       <Image
                         source={skull.source}
                         style={styles.skullPopupIcon}
                         resizeMode="contain"
                       />
+                      <Text style={styles.skullPopupLabel}>{skull.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -728,10 +914,10 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 activeOpacity={0.88}
                 accessibilityRole="button"
                 accessibilityState={{ expanded: skullTrayOpen }}
-                accessibilityLabel="Open flaming skull reactions"
+                accessibilityLabel="Open skull reactions"
               >
                 <Image
-                  source={SKULL_SILVER}
+                  source={SKULL_FIRE}
                   style={styles.skullTriggerIcon}
                   resizeMode="contain"
                 />
@@ -1019,22 +1205,35 @@ const styles = StyleSheet.create({
   },
   banterTicker: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 118,
-    gap: 4,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 28,
+    paddingBottom: 72,
     zIndex: 15,
+  },
+  banterCenterCol: {
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    gap: 6,
   },
   banterLine: {
     color: WHITE,
-    fontSize: 12,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    fontSize: 13,
+    backgroundColor: PANEL,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
     overflow: 'hidden',
-    alignSelf: 'flex-start',
-    maxWidth: '92%',
+    alignSelf: 'center',
+    textAlign: 'center',
+    maxWidth: '100%',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   banterHandle: {
     color: ORANGE,
@@ -1198,24 +1397,30 @@ const styles = StyleSheet.create({
   skullPopupTray: {
     position: 'absolute',
     left: 0,
-    bottom: 42,
+    bottom: 44,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 14,
+    alignItems: 'flex-end',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    borderRadius: 16,
     backgroundColor: 'rgba(8,18,15,0.55)',
   },
   skullPopupBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
   },
   skullPopupIcon: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
+  },
+  skullPopupLabel: {
+    color: MUTED,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   banterBar: {
     flex: 1,

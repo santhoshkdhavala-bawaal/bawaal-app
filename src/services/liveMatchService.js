@@ -33,18 +33,18 @@ export const LIVE_MATCH_REACTION_PILLS = Object.freeze([
 ]);
 
 /**
- * Compact banter-tray flaming skulls (silver / black / bronze / purple / yellow).
- * Sources: assets/skull_{color}.png — vault keys for Realtime reaction bursts.
+ * Banter-tray skull vibes: Fire · Devil · Winning · Sad · Scream.
+ * Sources + labels live in liveMatchFlamingSkulls.js (static Metro requires).
  */
 export const LIVE_MATCH_BANTER_EMOJIS = Object.freeze([
-  { id: 'silver', emojiKey: 'skull_silver' },
-  { id: 'black', emojiKey: 'skull_black' },
-  { id: 'bronze', emojiKey: 'skull_bronze' },
-  { id: 'purple', emojiKey: 'skull_purple' },
-  { id: 'yellow', emojiKey: 'skull_yellow' },
+  { id: 'fire', emojiKey: 'skull_fire', label: 'FIRE' },
+  { id: 'devil', emojiKey: 'skull_devil', label: 'DEVIL' },
+  { id: 'winning', emojiKey: 'skull_champion', label: 'WIN' },
+  { id: 'crying', emojiKey: 'skull_crying', label: 'SAD' },
+  { id: 'screaming', emojiKey: 'skull_screaming', label: 'SCREAM' },
 ]);
 
-/** Alias for Live Match flaming-skull strip consumers. */
+/** Alias for Live Match skull-picker consumers. */
 export { LIVE_MATCH_FLAMING_SKULLS } from '../constants/liveMatchFlamingSkulls';
 
 /** @type {Map<string, object>} */
@@ -724,13 +724,17 @@ export function broadcastBanter(matchId, { handle, message } = {}) {
   });
 }
 
-export function broadcastReaction(matchId, { emojiKey, handle } = {}) {
+export function broadcastReaction(matchId, { emojiKey, handle, label } = {}) {
   const key = String(emojiKey || '').trim();
   if (!key) return Promise.resolve({ ok: false });
+  const at = Date.now();
+  const reactionId = `rx-${at}-${Math.random().toString(36).slice(2, 9)}`;
   return sendBroadcast(matchId, 'reaction', {
+    reactionId,
     emojiKey: key,
     handle: String(handle || 'fan').slice(0, 32),
-    at: Date.now(),
+    label: label ? String(label).slice(0, 16) : undefined,
+    at,
   });
 }
 

@@ -1,21 +1,49 @@
 /**
- * Live Match Telecast — flaming skull reaction assets (static Metro requires).
+ * Live Match Telecast — skull reaction vibes (static Metro requires).
  * Paths relative to src/constants/ → ../../assets/
+ * emojiKey must match skullEmojiRegistry for BawaalEmoji / bursts.
  */
+export const SKULL_FIRE = require('../../assets/skull_fire.png');
+export const SKULL_DEVIL = require('../../assets/skull_devil.png');
+export const SKULL_WINNING = require('../../assets/skull_champion.png');
+export const SKULL_CRYING = require('../../assets/skull_crying.png');
+export const SKULL_SCREAMING = require('../../assets/skull_screaming.png');
+
+/** @deprecated Prefer SKULL_FIRE as banter-tray trigger icon */
 export const SKULL_SILVER = require('../../assets/skull_silver.png');
-export const SKULL_BLACK = require('../../assets/skull_black.png');
-export const SKULL_BRONZE = require('../../assets/skull_bronze.png');
-export const SKULL_PURPLE = require('../../assets/skull_purple.png');
-export const SKULL_YELLOW = require('../../assets/skull_yellow.png');
 
 /**
- * Compact quick-tap strip order for Live Match banter / reaction bursts.
- * emojiKey must match skullEmojiRegistry keys for FloatingEmojiBurst.
+ * Compact skull-picker vibes: Fire · Devil · Winning · Crying/Sad · Screaming.
  */
 export const LIVE_MATCH_FLAMING_SKULLS = Object.freeze([
-  { id: 'silver', emojiKey: 'skull_silver', source: SKULL_SILVER },
-  { id: 'black', emojiKey: 'skull_black', source: SKULL_BLACK },
-  { id: 'bronze', emojiKey: 'skull_bronze', source: SKULL_BRONZE },
-  { id: 'purple', emojiKey: 'skull_purple', source: SKULL_PURPLE },
-  { id: 'yellow', emojiKey: 'skull_yellow', source: SKULL_YELLOW },
+  {
+    id: 'fire',
+    label: 'FIRE',
+    emojiKey: 'skull_fire',
+    source: SKULL_FIRE,
+  },
+  {
+    id: 'devil',
+    label: 'DEVIL',
+    emojiKey: 'skull_devil',
+    source: SKULL_DEVIL,
+  },
+  {
+    id: 'winning',
+    label: 'WIN',
+    emojiKey: 'skull_champion',
+    source: SKULL_WINNING,
+  },
+  {
+    id: 'crying',
+    label: 'SAD',
+    emojiKey: 'skull_crying',
+    source: SKULL_CRYING,
+  },
+  {
+    id: 'screaming',
+    label: 'SCREAM',
+    emojiKey: 'skull_screaming',
+    source: SKULL_SCREAMING,
+  },
 ]);
