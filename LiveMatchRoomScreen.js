@@ -49,6 +49,10 @@ import {
   LIVE_MATCH_BANTER_EMOJIS,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
+import {
+  SKULL_TEAM_A,
+  SKULL_TEAM_B,
+} from './src/constants/liveMatchTeamSkulls';
 
 const BG = '#08120F';
 const ORANGE = '#FF5A1F';
@@ -58,9 +62,6 @@ const TEAM_B_GLOW = '#2A7BFF';
 const WHITE = '#FFFFFF';
 const MUTED = '#94A3B8';
 const PANEL = 'rgba(8,18,15,0.78)';
-
-const SKULL_TEAM_A = require('./assets/skull_teamA.png');
-const SKULL_TEAM_B = require('./assets/skull_teamB.png');
 
 /** Show team name exactly as entered (trimmed); fallback if blank. */
 function displayTeamName(raw, fallback) {
@@ -128,7 +129,9 @@ function TeamScoreCard({ side, teamName, score, compact }) {
       >
         {name}
       </Text>
-      <Text style={styles.teamCardScore}>{score}</Text>
+      <Text style={styles.teamCardScore} numberOfLines={1}>
+        {score}
+      </Text>
     </View>
   );
 }
@@ -154,8 +157,8 @@ function Scoreboard({ teamA, teamB, scoreA, scoreB, compact }) {
 }
 
 /**
- * Host +1 control — compact horned skull only (no wide +1 TEAM bars).
- * Left = red Team A, right = blue Team B. Team names live on the scoreboard cards.
+ * Host/scorer +1 control — static Image skull (Metro-bundled), never wide text bars.
+ * Left = red Team A · Right = blue Team B. Team names live on scoreboard cards only.
  */
 function HornedSkullScoreButton({ side, teamName, onPress }) {
   const isA = side === 'A';
@@ -163,13 +166,14 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
   const glow = isA ? TEAM_A_GLOW : TEAM_B_GLOW;
   const name = displayTeamName(teamName, isA ? 'TEAM A' : 'TEAM B');
   const [scale] = useState(() => new Animated.Value(1));
-  const [glowOp] = useState(() => new Animated.Value(0.3));
+  const [glowOp] = useState(() => new Animated.Value(0.35));
+  const [imgFailed, setImgFailed] = useState(false);
 
   const handlePress = useCallback(() => {
     Animated.parallel([
       Animated.sequence([
         Animated.timing(scale, {
-          toValue: 1.16,
+          toValue: 1.18,
           duration: 85,
           useNativeDriver: true,
         }),
@@ -182,12 +186,12 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
       ]),
       Animated.sequence([
         Animated.timing(glowOp, {
-          toValue: 0.95,
+          toValue: 1,
           duration: 85,
           useNativeDriver: true,
         }),
         Animated.timing(glowOp, {
-          toValue: 0.3,
+          toValue: 0.35,
           duration: 240,
           useNativeDriver: true,
         }),
@@ -211,15 +215,26 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
           {
             backgroundColor: glow,
             opacity: glowOp,
-            transform: [{ scale }],
           },
         ]}
       />
-      <Animated.Image
-        source={skull}
-        style={[styles.skullBtnImage, { transform: [{ scale }] }]}
-        resizeMode="contain"
-      />
+      <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
+        {imgFailed ? (
+          <View style={[styles.skullBtnFallback, { borderColor: glow }]}>
+            <Text style={[styles.skullBtnFallbackText, { color: glow }]}>
+              +1
+            </Text>
+          </View>
+        ) : (
+          <Image
+            source={skull}
+            style={styles.skullBtnImage}
+            resizeMode="contain"
+            onError={() => setImgFailed(true)}
+            accessibilityIgnoresInvertColors
+          />
+        )}
+      </Animated.View>
     </TouchableOpacity>
   );
 }
@@ -237,21 +252,27 @@ function VoteTugBar({ votesA, votesB, teamA, teamB, onVoteA, onVoteB }) {
           style={[styles.voteBtn, styles.voteBtnA]}
           onPress={onVoteA}
           activeOpacity={0.88}
+          accessibilityLabel={`Vote ${nameA}`}
         >
-          <Image source={SKULL_TEAM_A} style={styles.voteSkull} resizeMode="contain" />
-          <Text style={styles.voteBtnText} numberOfLines={1}>
-            VOTE {nameA}
-          </Text>
+          <Image
+            source={SKULL_TEAM_A}
+            style={styles.voteSkull}
+            resizeMode="contain"
+          />
+          <Text style={styles.voteBtnText}>VOTE</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.voteBtn, styles.voteBtnB]}
           onPress={onVoteB}
           activeOpacity={0.88}
+          accessibilityLabel={`Vote ${nameB}`}
         >
-          <Image source={SKULL_TEAM_B} style={styles.voteSkull} resizeMode="contain" />
-          <Text style={styles.voteBtnText} numberOfLines={1}>
-            VOTE {nameB}
-          </Text>
+          <Image
+            source={SKULL_TEAM_B}
+            style={styles.voteSkull}
+            resizeMode="contain"
+          />
+          <Text style={styles.voteBtnText}>VOTE</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.tugTrack}>
@@ -360,7 +381,6 @@ function HostCameraStage({ facing }) {
 
 function LiveMatchRoomScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
-  const role = route?.params?.role === 'host' ? 'host' : 'viewer';
   const initialMatch = route?.params?.match || null;
   const matchId = String(
     route?.params?.matchId || initialMatch?.id || ''
@@ -371,6 +391,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
     /^@/,
     ''
   );
+  const userId = String(user?.id || user?.userId || '').trim();
+
+  // Host/scorer only — never show +1 skull controls to remote viewers
+  const roleParam = String(route?.params?.role || '').toLowerCase();
+  const isHostParam =
+    roleParam === 'host' ||
+    route?.params?.isHost === true ||
+    route?.params?.isScorer === true;
 
   const [match, setMatch] = useState(initialMatch);
   const [watching, setWatching] = useState(1);
@@ -387,6 +415,12 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const teamB = match?.team_b_name || 'TEAM B';
   const scoreA = match?.score_a ?? 0;
   const scoreB = match?.score_b ?? 0;
+  const isHost =
+    isHostParam ||
+    (!!userId &&
+      !!match?.host_id &&
+      String(match.host_id) === userId);
+  const role = isHost ? 'host' : 'viewer';
 
   useEffect(() => {
     let alive = true;
@@ -452,7 +486,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const bumpScore = useCallback(
     async (side, delta) => {
-      if (role !== 'host' || !matchId) return;
+      if (!isHost || !matchId) return;
       const nextA = side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
       const nextB = side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
       setMatch((prev) => ({
@@ -462,7 +496,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
       }));
       await updateMatchScore(matchId, { score_a: nextA, score_b: nextB });
     },
-    [role, matchId, scoreA, scoreB]
+    [isHost, matchId, scoreA, scoreB]
   );
 
   const handleEnd = useCallback(async () => {
@@ -617,7 +651,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
             { paddingBottom: Math.max(insets.bottom, 10) + 8 },
           ]}
         >
-          {role === 'host' ? (
+          {isHost ? (
             <View style={styles.hostScoreRow}>
               <View style={styles.hostScoreCol}>
                 <HornedSkullScoreButton
@@ -929,20 +963,21 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   teamCardSkull: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
   },
   teamCardSkullSm: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
   },
   teamCardName: {
-    marginTop: 2,
+    marginTop: 3,
     fontSize: 9,
     fontWeight: '900',
     letterSpacing: 0.3,
     textAlign: 'center',
     maxWidth: '100%',
+    paddingHorizontal: 2,
   },
   teamCardScore: {
     marginTop: 2,
@@ -1019,26 +1054,39 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   skullBtnHit: {
-    width: 96,
-    height: 96,
+    width: 104,
+    height: 104,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
   },
   skullBtnGlow: {
     position: 'absolute',
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+  },
+  skullBtnImage: {
+    width: 92,
+    height: 92,
+  },
+  skullBtnFallback: {
     width: 72,
     height: 72,
     borderRadius: 36,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  skullBtnImage: {
-    width: 84,
-    height: 84,
+  skullBtnFallbackText: {
+    fontSize: 22,
+    fontWeight: '900',
   },
   undoBtn: {
-    minWidth: 44,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
+    minWidth: 48,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.55)',
     borderWidth: 1,
@@ -1059,33 +1107,33 @@ const styles = StyleSheet.create({
   },
   voteBtn: {
     flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 10,
+    flexDirection: 'column',
+    gap: 4,
+    paddingVertical: 8,
     paddingHorizontal: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   voteBtnA: {
-    backgroundColor: 'rgba(255,42,42,0.28)',
+    backgroundColor: 'rgba(255,42,42,0.22)',
     borderWidth: 1,
     borderColor: TEAM_A_GLOW,
   },
   voteBtnB: {
-    backgroundColor: 'rgba(42,123,255,0.28)',
+    backgroundColor: 'rgba(42,123,255,0.22)',
     borderWidth: 1,
     borderColor: TEAM_B_GLOW,
   },
   voteSkull: {
-    width: 26,
-    height: 26,
+    width: 48,
+    height: 48,
   },
   voteBtnText: {
     color: WHITE,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
-    flexShrink: 1,
+    letterSpacing: 0.8,
   },
   tugTrack: {
     flexDirection: 'row',
