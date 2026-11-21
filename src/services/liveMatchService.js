@@ -20,6 +20,18 @@ const TABLE = 'live_matches';
 const BANTER_CAP = 40;
 const VOTE_FLUSH_MS = 8000;
 
+/**
+ * High-octane quick pills above banter (vault skull keys only — no unicode).
+ * FIRE · ROAST · BEAST · WEAK · HYPE
+ */
+export const LIVE_MATCH_REACTION_PILLS = Object.freeze([
+  { id: 'fire', label: 'FIRE', emojiKey: 'skull_fire' },
+  { id: 'roast', label: 'ROAST', emojiKey: 'skull_devil' },
+  { id: 'beast', label: 'BEAST', emojiKey: 'skull_rage' },
+  { id: 'weak', label: 'WEAK', emojiKey: 'skull_dead_xx' },
+  { id: 'hype', label: 'HYPE', emojiKey: 'skull_hyped' },
+]);
+
 /** @type {Map<string, object>} */
 const localMatches = new Map();
 /** @type {Set<Function>} */

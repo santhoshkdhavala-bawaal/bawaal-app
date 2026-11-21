@@ -3,7 +3,8 @@
  * Option A: Host = real CameraView preview; Viewer = HOST IS LIVE stage
  * with // PHASE 2: LIVE_VIDEO_STREAM_SLOT for LiveKit/Agora later.
  *
- * Theme: #08120F / #FF5A1F / #E53935
+ * High-octane HUD: horned team skulls (A red / B blue), FIRE·ROAST·BEAST·WEAK·HYPE
+ * vault pills, compact banter bar. Theme: #08120F / #FF5A1F / #E53935
  */
 import React, {
   memo,
@@ -16,6 +17,7 @@ import React, {
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   TextInput,
@@ -43,17 +45,27 @@ import {
   broadcastReaction,
   broadcastVotePulse,
   pushBanterCapped,
+  LIVE_MATCH_REACTION_PILLS,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 
 const BG = '#08120F';
 const ORANGE = '#FF5A1F';
 const CRIMSON = '#E53935';
+const TEAM_A_GLOW = '#FF2A2A';
+const TEAM_B_GLOW = '#2A7BFF';
 const WHITE = '#FFFFFF';
 const MUTED = '#94A3B8';
-const PANEL = 'rgba(8,18,15,0.72)';
+const PANEL = 'rgba(8,18,15,0.78)';
 
-const REACTION_KEYS = Object.freeze(['skull_fire', 'skull_burning']);
+const SKULL_TEAM_A = require('./assets/skull_teamA.png');
+const SKULL_TEAM_B = require('./assets/skull_teamB.png');
+
+/** Show team name exactly as entered (trimmed); fallback if blank. */
+function displayTeamName(raw, fallback) {
+  const t = String(raw || '').trim();
+  return t || fallback;
+}
 
 function PulsingLiveChip({ label = 'LIVE' }) {
   const [pulse] = useState(() => new Animated.Value(0));
@@ -87,19 +99,131 @@ function PulsingLiveChip({ label = 'LIVE' }) {
   );
 }
 
+/**
+ * Team score card — horned skull + team name directly below + score.
+ */
+function TeamScoreCard({ side, teamName, score, compact }) {
+  const isA = side === 'A';
+  const skull = isA ? SKULL_TEAM_A : SKULL_TEAM_B;
+  const accent = isA ? TEAM_A_GLOW : TEAM_B_GLOW;
+  const name = displayTeamName(teamName, isA ? 'TEAM A' : 'TEAM B');
+  return (
+    <View
+      style={[
+        styles.teamCard,
+        compact && styles.teamCardCompact,
+        { borderColor: `${accent}66` },
+      ]}
+    >
+      <Image
+        source={skull}
+        style={compact ? styles.teamCardSkullSm : styles.teamCardSkull}
+        resizeMode="contain"
+        accessibilityLabel={isA ? 'Team A skull' : 'Team B skull'}
+      />
+      <Text
+        style={[styles.teamCardName, { color: accent }]}
+        numberOfLines={2}
+      >
+        {name}
+      </Text>
+      <Text style={styles.teamCardScore}>{score}</Text>
+    </View>
+  );
+}
+
 function Scoreboard({ teamA, teamB, scoreA, scoreB, compact }) {
   return (
     <View style={[styles.scoreboard, compact && styles.scoreboardCompact]}>
-      <Text style={styles.scoreTeam} numberOfLines={1}>
-        {teamA}
-      </Text>
-      <Text style={styles.scoreNums}>
-        {scoreA} — {scoreB}
-      </Text>
-      <Text style={styles.scoreTeam} numberOfLines={1}>
-        {teamB}
-      </Text>
+      <TeamScoreCard
+        side="A"
+        teamName={teamA}
+        score={scoreA}
+        compact={compact}
+      />
+      <Text style={styles.scoreVs}>VS</Text>
+      <TeamScoreCard
+        side="B"
+        teamName={teamB}
+        score={scoreB}
+        compact={compact}
+      />
     </View>
+  );
+}
+
+/**
+ * Host +1 control — tappable horned skull with snappy scale/glow.
+ */
+function HornedSkullScoreButton({ side, teamName, onPress }) {
+  const isA = side === 'A';
+  const skull = isA ? SKULL_TEAM_A : SKULL_TEAM_B;
+  const glow = isA ? TEAM_A_GLOW : TEAM_B_GLOW;
+  const name = displayTeamName(teamName, isA ? 'TEAM A' : 'TEAM B');
+  const [scale] = useState(() => new Animated.Value(1));
+  const [glowOp] = useState(() => new Animated.Value(0.35));
+
+  const handlePress = useCallback(() => {
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(scale, {
+          toValue: 1.14,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          friction: 4,
+          tension: 160,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.timing(glowOp, {
+          toValue: 0.95,
+          duration: 90,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowOp, {
+          toValue: 0.35,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+    onPress?.();
+  }, [onPress, scale, glowOp]);
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.92}
+      accessibilityRole="button"
+      accessibilityLabel={`Score plus one for ${name}`}
+      style={styles.skullBtnHit}
+    >
+      <Animated.View
+        style={[
+          styles.skullBtnGlow,
+          {
+            backgroundColor: glow,
+            opacity: glowOp,
+            transform: [{ scale }],
+          },
+        ]}
+      />
+      <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
+        <Image
+          source={skull}
+          style={styles.skullBtnImage}
+          resizeMode="contain"
+        />
+        <Text style={[styles.skullBtnName, { color: glow }]} numberOfLines={2}>
+          {name}
+        </Text>
+        <Text style={styles.skullBtnPlus}>+1</Text>
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -107,6 +231,8 @@ function VoteTugBar({ votesA, votesB, teamA, teamB, onVoteA, onVoteB }) {
   const total = Math.max(1, votesA + votesB);
   const pctA = Math.round((votesA / total) * 100);
   const pctB = 100 - pctA;
+  const nameA = displayTeamName(teamA, 'TEAM A');
+  const nameB = displayTeamName(teamB, 'TEAM B');
   return (
     <View style={styles.voteBlock}>
       <View style={styles.voteBtns}>
@@ -115,14 +241,20 @@ function VoteTugBar({ votesA, votesB, teamA, teamB, onVoteA, onVoteB }) {
           onPress={onVoteA}
           activeOpacity={0.88}
         >
-          <Text style={styles.voteBtnText}>VOTE {teamA}</Text>
+          <Image source={SKULL_TEAM_A} style={styles.voteSkull} resizeMode="contain" />
+          <Text style={styles.voteBtnText} numberOfLines={1}>
+            VOTE {nameA}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.voteBtn, styles.voteBtnB]}
           onPress={onVoteB}
           activeOpacity={0.88}
         >
-          <Text style={styles.voteBtnText}>VOTE {teamB}</Text>
+          <Image source={SKULL_TEAM_B} style={styles.voteSkull} resizeMode="contain" />
+          <Text style={styles.voteBtnText} numberOfLines={1}>
+            VOTE {nameB}
+          </Text>
         </TouchableOpacity>
       </View>
       <View style={styles.tugTrack}>
@@ -174,9 +306,7 @@ function ViewerVideoStage({ sport, title }) {
         accessibilityLabel="Live video stream slot phase 2"
       >
         <Text style={styles.hostIsLive}>HOST IS LIVE</Text>
-        <Animated.View
-          style={[styles.signalRow, { opacity: signalOpacity }]}
-        >
+        <Animated.View style={[styles.signalRow, { opacity: signalOpacity }]}>
           <View style={styles.signalDot} />
           <Text style={styles.signalText}>LIVE SIGNAL</Text>
         </Animated.View>
@@ -194,7 +324,7 @@ function ViewerVideoStage({ sport, title }) {
   );
 }
 
-function HostCameraStage({ facing, onReady }) {
+function HostCameraStage({ facing }) {
   const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
@@ -227,12 +357,7 @@ function HostCameraStage({ facing, onReady }) {
   }
 
   return (
-    <CameraView
-      style={StyleSheet.absoluteFill}
-      facing={facing}
-      mute
-      onCameraReady={onReady}
-    />
+    <CameraView style={StyleSheet.absoluteFill} facing={facing} mute />
   );
 }
 
@@ -331,10 +456,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const bumpScore = useCallback(
     async (side, delta) => {
       if (role !== 'host' || !matchId) return;
-      const nextA =
-        side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
-      const nextB =
-        side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
+      const nextA = side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
+      const nextB = side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
       setMatch((prev) => ({
         ...(prev || {}),
         score_a: nextA,
@@ -358,11 +481,19 @@ function LiveMatchRoomScreen({ navigation, route }) {
     await broadcastBanter(matchId, { handle, message: text });
   }, [banterDraft, matchId, handle]);
 
-  const sendReaction = useCallback(
-    async (emojiKey) => {
-      if (!matchId) return;
-      // Burst comes via room onReaction (sendBroadcast emits locally once)
-      await broadcastReaction(matchId, { emojiKey, handle });
+  const fireReactionPill = useCallback(
+    async (pill) => {
+      if (!matchId || !pill?.emojiKey) return;
+      const shortcode = `:${pill.emojiKey}:`;
+      setBanterDraft((prev) => {
+        const base = String(prev || '').trimEnd();
+        return base ? `${base} ${shortcode}` : shortcode;
+      });
+      await broadcastReaction(matchId, {
+        emojiKey: pill.emojiKey,
+        handle,
+        label: pill.label,
+      });
     },
     [matchId, handle]
   );
@@ -370,7 +501,6 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const vote = useCallback(
     async (team) => {
       if (!matchId) return;
-      // Count comes via room onVotePulse (sendBroadcast emits locally once)
       await broadcastVotePulse(matchId, { team, handle });
     },
     [matchId, handle]
@@ -441,7 +571,11 @@ function LiveMatchRoomScreen({ navigation, route }) {
                   }
                   accessibilityLabel="Flip camera"
                 >
-                  <Ionicons name="camera-reverse-outline" size={20} color={WHITE} />
+                  <Ionicons
+                    name="camera-reverse-outline"
+                    size={20}
+                    color={WHITE}
+                  />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.endBtn}
@@ -463,10 +597,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
           </View>
         </View>
 
-        {/* Banter ticker (non-blocking) */}
+        {/* Banter ticker */}
         <View style={styles.banterTicker} pointerEvents="none">
           {latestBanter.map((b, i) => (
-            <Text key={`${b.at || i}-${b.message}`} style={styles.banterLine} numberOfLines={1}>
+            <Text
+              key={`${b.at || i}-${b.message}`}
+              style={styles.banterLine}
+              numberOfLines={1}
+            >
               <Text style={styles.banterHandle}>@{b.handle || 'fan'}</Text>
               {'  '}
               {b.message}
@@ -485,31 +623,29 @@ function LiveMatchRoomScreen({ navigation, route }) {
           {role === 'host' ? (
             <View style={styles.hostScoreRow}>
               <View style={styles.hostScoreCol}>
-                <TouchableOpacity
-                  style={styles.plusBtn}
+                <HornedSkullScoreButton
+                  side="A"
+                  teamName={teamA}
                   onPress={() => bumpScore('A', 1)}
-                  activeOpacity={0.88}
-                >
-                  <Text style={styles.plusBtnText}>+1 {teamA}</Text>
-                </TouchableOpacity>
+                />
                 <TouchableOpacity
                   style={styles.undoBtn}
                   onPress={() => bumpScore('A', -1)}
+                  accessibilityLabel="Undo Team A point"
                 >
                   <Text style={styles.undoText}>−1</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.hostScoreCol}>
-                <TouchableOpacity
-                  style={styles.plusBtn}
+                <HornedSkullScoreButton
+                  side="B"
+                  teamName={teamB}
                   onPress={() => bumpScore('B', 1)}
-                  activeOpacity={0.88}
-                >
-                  <Text style={styles.plusBtnText}>+1 {teamB}</Text>
-                </TouchableOpacity>
+                />
                 <TouchableOpacity
                   style={styles.undoBtn}
                   onPress={() => bumpScore('B', -1)}
+                  accessibilityLabel="Undo Team B point"
                 >
                   <Text style={styles.undoText}>−1</Text>
                 </TouchableOpacity>
@@ -526,36 +662,41 @@ function LiveMatchRoomScreen({ navigation, route }) {
             />
           )}
 
-          <View style={styles.reactRow}>
-            {REACTION_KEYS.map((key) => (
+          {/* FIRE · ROAST · BEAST · WEAK · HYPE — vault skulls only */}
+          <View style={styles.pillRow}>
+            {LIVE_MATCH_REACTION_PILLS.map((pill) => (
               <TouchableOpacity
-                key={key}
-                style={styles.reactBtn}
-                onPress={() => sendReaction(key)}
+                key={pill.id}
+                style={styles.hypePill}
+                onPress={() => fireReactionPill(pill)}
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`${pill.label} reaction`}
               >
-                <BawaalEmoji name={key} size={36} />
+                <BawaalEmoji name={pill.emojiKey} size={28} />
+                <Text style={styles.hypePillLabel}>{pill.label}</Text>
               </TouchableOpacity>
             ))}
-            <View style={styles.banterInputWrap}>
-              <TextInput
-                style={styles.banterInput}
-                value={banterDraft}
-                onChangeText={setBanterDraft}
-                placeholder="Banter…"
-                placeholderTextColor={MUTED}
-                maxLength={160}
-                returnKeyType="send"
-                onSubmitEditing={sendBanter}
-              />
-              <TouchableOpacity
-                style={styles.sendBtn}
-                onPress={sendBanter}
-                accessibilityLabel="Send banter"
-              >
-                <Ionicons name="send" size={16} color={WHITE} />
-              </TouchableOpacity>
-            </View>
+          </View>
+
+          <View style={styles.banterBar}>
+            <TextInput
+              style={styles.banterInput}
+              value={banterDraft}
+              onChangeText={setBanterDraft}
+              placeholder="Banter…"
+              placeholderTextColor={MUTED}
+              maxLength={160}
+              returnKeyType="send"
+              onSubmitEditing={sendBanter}
+            />
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={sendBanter}
+              accessibilityLabel="Send banter"
+            >
+              <Ionicons name="send" size={15} color={WHITE} />
+            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -678,25 +819,24 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
     zIndex: 20,
   },
   topLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
     gap: 6,
-    minWidth: 90,
+    minWidth: 72,
   },
   topRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
     gap: 6,
-    minWidth: 90,
-    justifyContent: 'flex-end',
+    minWidth: 72,
   },
   liveChip: {
     flexDirection: 'row',
@@ -737,28 +877,56 @@ const styles = StyleSheet.create({
   scoreboard: {
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PANEL,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,90,31,0.28)',
+    gap: 6,
+    maxWidth: 260,
   },
   scoreboardCompact: {
-    maxWidth: 220,
+    maxWidth: 260,
   },
-  scoreTeam: {
+  scoreVs: {
+    alignSelf: 'center',
     color: MUTED,
     fontSize: 10,
-    fontWeight: '800',
-    maxWidth: 56,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
-  scoreNums: {
+  teamCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: PANEL,
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
+    borderWidth: 1,
+    minWidth: 0,
+  },
+  teamCardCompact: {
+    paddingTop: 4,
+    paddingBottom: 6,
+  },
+  teamCardSkull: {
+    width: 44,
+    height: 44,
+  },
+  teamCardSkullSm: {
+    width: 36,
+    height: 36,
+  },
+  teamCardName: {
+    marginTop: 2,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    textAlign: 'center',
+    maxWidth: '100%',
+  },
+  teamCardScore: {
+    marginTop: 2,
     color: WHITE,
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '900',
     letterSpacing: 0.5,
   },
@@ -787,7 +955,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 168,
+    bottom: 210,
     gap: 4,
     zIndex: 15,
   },
@@ -812,32 +980,49 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 12,
-    gap: 10,
+    gap: 8,
     zIndex: 25,
   },
   hostScoreRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 14,
   },
   hostScoreCol: {
     flex: 1,
     alignItems: 'center',
     gap: 6,
   },
-  plusBtn: {
+  skullBtnHit: {
     width: '100%',
-    backgroundColor: CRIMSON,
-    borderRadius: 14,
-    paddingVertical: 16,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: ORANGE,
+    justifyContent: 'center',
+    paddingVertical: 4,
+    position: 'relative',
   },
-  plusBtnText: {
-    color: WHITE,
-    fontSize: 14,
+  skullBtnGlow: {
+    position: 'absolute',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    top: 4,
+  },
+  skullBtnImage: {
+    width: 78,
+    height: 78,
+  },
+  skullBtnName: {
+    marginTop: 2,
+    fontSize: 11,
     fontWeight: '900',
-    letterSpacing: 0.4,
+    textAlign: 'center',
+    maxWidth: 140,
+  },
+  skullBtnPlus: {
+    marginTop: 2,
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   undoBtn: {
     paddingHorizontal: 14,
@@ -861,20 +1046,33 @@ const styles = StyleSheet.create({
   },
   voteBtn: {
     flex: 1,
-    paddingVertical: 12,
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   voteBtnA: {
-    backgroundColor: 'rgba(255,90,31,0.85)',
+    backgroundColor: 'rgba(255,42,42,0.28)',
+    borderWidth: 1,
+    borderColor: TEAM_A_GLOW,
   },
   voteBtnB: {
-    backgroundColor: 'rgba(229,57,53,0.9)',
+    backgroundColor: 'rgba(42,123,255,0.28)',
+    borderWidth: 1,
+    borderColor: TEAM_B_GLOW,
+  },
+  voteSkull: {
+    width: 26,
+    height: 26,
   },
   voteBtnText: {
     color: WHITE,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
+    flexShrink: 1,
   },
   tugTrack: {
     flexDirection: 'row',
@@ -884,10 +1082,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.08)',
   },
   tugA: {
-    backgroundColor: ORANGE,
+    backgroundColor: TEAM_A_GLOW,
   },
   tugB: {
-    backgroundColor: CRIMSON,
+    backgroundColor: TEAM_B_GLOW,
   },
   tugLabels: {
     flexDirection: 'row',
@@ -898,23 +1096,30 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  reactRow: {
+  pillRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    gap: 6,
   },
-  reactBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  hypePill: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    borderRadius: 12,
     backgroundColor: PANEL,
     borderWidth: 1,
-    borderColor: 'rgba(255,90,31,0.3)',
+    borderColor: 'rgba(255,90,31,0.35)',
   },
-  banterInputWrap: {
-    flex: 1,
+  hypePillLabel: {
+    color: ORANGE,
+    fontSize: 8,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  banterBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: PANEL,
@@ -923,18 +1128,19 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     paddingLeft: 14,
     paddingRight: 4,
+    minHeight: 42,
   },
   banterInput: {
     flex: 1,
     color: WHITE,
     fontSize: 13,
-    paddingVertical: Platform.OS === 'web' ? 10 : 9,
+    paddingVertical: Platform.OS === 'web' ? 9 : 8,
     outlineStyle: 'none',
   },
   sendBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: CRIMSON,
