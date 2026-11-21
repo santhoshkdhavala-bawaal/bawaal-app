@@ -40,7 +40,8 @@ Underground-arena brand: `#000000` / `#FF5500` / white type; zero-clutter feeds;
 
 ## UI baseline (locked)
 
-Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header + GAME ON drawer (search / NEAR ME / battle + sports rows) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack; **no** like/share counters on the primary overlay) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
+Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header (`● LIVE` → `NEAR ME` → Bell; NEAR ME opens map directly) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack; **no** like/share counters on the primary overlay) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
+
 
 ## ChallengeCam / UniversalCamera (locked)
 
@@ -62,9 +63,9 @@ Live viewfinder is **untouchable** — Close/Cancel, Flip, spinning dotted red s
 
 Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOTBALL → GYM → KABADDI → COMBAT → THROTTLE → WAVE & BLADE → COURT KINGS → SKY & SUMMIT → OTHERS. Single-line horizontal pills; no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
 
-## GAME ON 8-categories + NEAR ME map (locked)
+## Arena NEAR ME + map (locked)
 
-GAME ON **SPORTS CATEGORIES** = exact 8 pills (`All` → `Others`); no sub-sport grids. NEAR ME `SportHubMapScreen` = live GPS + `PROVIDER_GOOGLE` (native), dark OSM Leaflet web (`tile.openstreetmap.org`, never CARTO), city hubs + Overpass. See `.cursor/rules/bawaal-gameon-map-locked.mdc`. Native dark map style tokens: `bawaal-sport-hub-map-locked.mdc`.
+Arena header right chrome = **`● LIVE` → `NEAR ME` → Bell**. `NEAR ME` opens `SportHubMapScreen` **directly** (no GAME ON drawer). Map category pills = exact 8 (`All` → `Others`). Map = live GPS + `PROVIDER_GOOGLE` (native), dark OSM Leaflet web (`tile.openstreetmap.org`, never CARTO), city hubs + Overpass; default city if GPS denied. See `.cursor/rules/bawaal-gameon-map-locked.mdc` and `bawaal-v2-arena-ui-locked.mdc`.
 
 ## BAWAAL LIVE telecast (locked)
 

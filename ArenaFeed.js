@@ -57,7 +57,6 @@ import { isHandleVerified } from './src/data/athleteSocial';
 import { resolvePostSport } from './src/utils/sportCategory';
 import CommunityChallengesShelf from './src/components/CommunityChallengesShelf';
 import ArenaV2Header from './src/components/ArenaV2Header';
-import GameOnHub from './src/components/GameOnHub';
 import NotificationsDrawer from './src/components/NotificationsDrawer';
 import LiveArenaModal from './src/components/LiveArenaModal';
 import {
@@ -1879,7 +1878,6 @@ export default function ArenaFeed({ navigation, route }) {
   const screenHeight = Dimensions.get('window').height;
   const { headerHeight } = arenaOverlayClearance(useSafeAreaInsets());
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
-  const [gameOnOpen, setGameOnOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [liveArenaOpen, setLiveArenaOpen] = useState(false);
   const [liveMatchCount, setLiveMatchCount] = useState(0);
@@ -3234,7 +3232,7 @@ export default function ArenaFeed({ navigation, route }) {
           onBrandPress={openProfileGateway}
           onLivePress={() => setLiveArenaOpen(true)}
           liveCount={liveMatchCount}
-          onGameOnPress={() => setGameOnOpen(true)}
+          onNearMePress={() => navigation?.navigate?.('SportHubMap')}
           onNotificationsPress={() => setNotificationsOpen(true)}
         />
       </View>
@@ -3427,15 +3425,6 @@ export default function ArenaFeed({ navigation, route }) {
         </View>
       </ScrollView>
 
-      <GameOnHub
-        visible={gameOnOpen}
-        onClose={() => setGameOnOpen(false)}
-        selectedFeedTier={selectedFeedTier}
-        onSelectFeedTier={onSelectFeedTier}
-        selectedSportFilter={selectedSportFilter}
-        onSelectSportFilter={onSelectSportFilter}
-        onOpenSportHubMap={() => navigation?.navigate?.('SportHubMap')}
-      />
       <LiveArenaModal
         visible={liveArenaOpen}
         onClose={() => setLiveArenaOpen(false)}

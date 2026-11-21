@@ -13,19 +13,20 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 |---|---|
 | Combined logo | `assets/BAWAAL_logo_combined.png` only — `resizeMode="contain"`, fixed height (~38) |
 | Brand stack | Column `alignItems: 'flex-start'`; `ARENA` under **BAWAAL** wordmark (`marginLeft: 72`, `fontSize: 12`, bold) |
-| Right chrome | Pulsing `● LIVE` pill (Live Match Telecast hub) **left of** `▶ GAME ON` glow pill + notification bell |
-| Theme | `#0A0A0A` / `#FF5A00` (LIVE accents `#FF5A1F` / `#E53935`) |
+| Right chrome | Exact order: pulsing `● LIVE` → `NEAR ME` (pin + label, `#FF5A1F`) → notification bell |
+| Theme | `#0A0A0A` / `#FF5A00` (LIVE / NEAR ME accents `#FF5A1F` / `#E53935`) |
 
-**LIVE pill contract:** `onLivePress` + `liveCount` badge when ≥1 `live_matches` row is live. Opens `LiveArenaModal` — do not change GAME ON / bell behavior.
+**LIVE pill contract:** `onLivePress` + `liveCount` badge when ≥1 `live_matches` row is live. Opens `LiveArenaModal`.
 
-**Never re-add:** split `B_solo` + `BAWAAL_text` header pair, header `⋮` / three-dots, tier pills under the header, `BrandHeader` on Arena.
+**NEAR ME contract:** `onNearMePress` → `navigation.navigate('SportHubMap')` **directly** — never open `GameOnHub` / GAME ON drawers from this tap. Full map contract: `bawaal-gameon-map-locked.mdc`.
 
-## 2. GAME ON command drawer (`GameOnHub.js`)
+**Never re-add:** split `B_solo` + `BAWAAL_text` header pair, header `⋮` / three-dots, tier pills under the header, `BrandHeader` on Arena, Arena-header `▶ GAME ON` pill.
 
-- Opens from `▶ GAME ON` — Search + **NEAR ME** → `SportHubMap`
-- Battle chips from `ARENA_FEED_TIERS` (All · Bawaal Battle · Dark Arena · Faceoff · War Cry) filter Arena feed
-- Sports chips from `GAME_ON_CATEGORY_PILLS` (`src/constants/gameOnSports.js`) — **LOCKED 8** top-level pills only (`All` → `Others`); single horizontal row — **never** multi-row sub-sport grids. Full contract: `bawaal-gameon-map-locked.mdc`
-- **No** live scores / `ScoresSportsPanel` / vertical chip wrap inside the drawer
+## 2. Feed filters / legacy GameOnHub
+
+- Arena header no longer opens `GameOnHub`. Category constants stay in `gameOnSports.js` (**LOCKED 8** pills for the map footer). Full contract: `bawaal-gameon-map-locked.mdc`
+- Battle tier helpers may still use `ARENA_FEED_TIERS` in feed logic — not as a header drawer gate before the map
+- **No** live scores / `ScoresSportsPanel` under the Arena header
 
 ## 3. Arena video feed overlay (FINAL — do not shift)
 

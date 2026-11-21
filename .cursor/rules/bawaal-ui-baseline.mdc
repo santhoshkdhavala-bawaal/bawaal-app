@@ -19,8 +19,9 @@ This is the **finalized visual baseline**. Do **not** alter these layout structu
 ## 2. Arena header & feed discovery (`ArenaFeed.js` + V2 chrome)
 
 - **Keep:** Main Arena as a single clutter-free video feed.
-- **Keep:** V2 header (`ArenaV2Header`) — combined logo + `ARENA` + `▶ GAME ON` + bell. Full contract: `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`.
-- **Keep:** Battle-tier + sports filters inside the **GAME ON** drawer (not under the header).
+- **Keep:** V2 header (`ArenaV2Header`) — combined logo + `ARENA` + right chrome **`● LIVE` → `NEAR ME` → Bell**. `NEAR ME` opens `SportHubMap` directly. Full contract: `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `bawaal-gameon-map-locked.mdc`.
+- **Keep:** Map category filters on `SportHubMapScreen` (8 GAME ON category pills) — not as an Arena-header GAME ON drawer gate.
+
 - **Keep:** Inline horizontal **LIVE COMMUNITY CHALLENGES** shelf every 4–5 feed items **after** leading videos (`CommunityChallengesShelf`) deep-linking to BATTLES.
 - **Keep:** Open Callouts (OPEN CHALLENGES | TIPS & BREAKDOWNS) on the **BATTLES** tab via `OpenCalloutsPanel`.
 - **Never re-add:** header `⋮`, under-header tier pills, live-score tickers / `ScoresSportsPanel` on Arena.

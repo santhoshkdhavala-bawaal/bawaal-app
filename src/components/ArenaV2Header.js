@@ -1,6 +1,6 @@
 /**
  * V2 Arena top header — combined BAWAAL mark, ARENA label,
- * pulsing ● LIVE pill, glowing ▶ GAME ON pill, notification bell.
+ * pulsing ● LIVE · NEAR ME · notification bell (exact order).
  */
 import React, { useEffect, useState, memo } from 'react';
 import {
@@ -90,7 +90,7 @@ function LivePill({ onPress, liveCount = 0 }) {
   );
 }
 
-function GameOnPill({ onPress }) {
+function NearMePill({ onPress }) {
   const [pulse] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -126,22 +126,23 @@ function GameOnPill({ onPress }) {
       onPress={onPress}
       activeOpacity={0.88}
       accessibilityRole="button"
-      accessibilityLabel="Open GAME ON command drawer"
+      accessibilityLabel="Open NEAR ME sports map"
       hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
     >
-      <View style={styles.gameOnWrap}>
+      <View style={styles.nearMeWrap}>
         <Animated.View
           pointerEvents="none"
           style={[
-            styles.gameOnGlow,
+            styles.nearMeGlow,
             {
               opacity: glowOpacity,
               transform: [{ scale: glowScale }],
             },
           ]}
         />
-        <View style={styles.gameOnPill}>
-          <Text style={styles.gameOnText}>▶ GAME ON</Text>
+        <View style={styles.nearMePill}>
+          <Ionicons name="location" size={13} color={WHITE} />
+          <Text style={styles.nearMeText}>NEAR ME</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -152,10 +153,13 @@ function ArenaV2Header({
   onBrandPress,
   onLivePress,
   liveCount = 0,
+  onNearMePress,
+  /** @deprecated Prefer onNearMePress — kept for soft compat */
   onGameOnPress,
   onNotificationsPress,
 }) {
   const insets = useSafeAreaInsets();
+  const openNearMe = onNearMePress || onGameOnPress;
 
   return (
     <View style={[styles.wrap, { paddingTop: Math.max(insets.top, 12) }]}>
@@ -183,7 +187,7 @@ function ArenaV2Header({
 
         <View style={styles.rightCol}>
           <LivePill onPress={onLivePress} liveCount={liveCount} />
-          <GameOnPill onPress={onGameOnPress} />
+          <NearMePill onPress={openNearMe} />
           <TouchableOpacity
             onPress={onNotificationsPress}
             activeOpacity={0.8}
@@ -308,18 +312,18 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '900',
   },
-  gameOnWrap: {
+  nearMeWrap: {
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  gameOnGlow: {
+  nearMeGlow: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 999,
-    backgroundColor: ACCENT,
+    backgroundColor: LIVE_ORANGE,
     ...Platform.select({
       ios: {
-        shadowColor: ACCENT,
+        shadowColor: LIVE_ORANGE,
         shadowOpacity: 0.9,
         shadowRadius: 10,
         shadowOffset: { width: 0, height: 0 },
@@ -328,26 +332,28 @@ const styles = StyleSheet.create({
         elevation: 8,
       },
       default: {
-        shadowColor: ACCENT,
+        shadowColor: LIVE_ORANGE,
         shadowOpacity: 0.75,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 0 },
       },
     }),
   },
-  gameOnPill: {
-    backgroundColor: ACCENT,
-    paddingHorizontal: 12,
+  nearMePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: LIVE_ORANGE,
+    paddingHorizontal: 11,
     paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
   },
-  gameOnText: {
+  nearMeText: {
     color: WHITE,
     fontSize: 11,
     fontWeight: '900',
-    fontStyle: 'italic',
     letterSpacing: 0.6,
   },
   bellBtn: {
