@@ -112,6 +112,41 @@ export function isCricketSport(sport) {
   );
 }
 
+function normalizeActorLabel(value) {
+  return String(value || '')
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Host (starter) or designated admin/scorer may punch scores — audience never.
+ * @param {object|null} match
+ * @param {{ id?: string, userId?: string, handle?: string, username?: string, displayName?: string, name?: string }|null} actor
+ */
+export function canUserScoreMatch(match, actor = null) {
+  if (!match || !actor) return false;
+  const userId = String(actor.id || actor.userId || '').trim();
+  const hostId = String(match.host_id || '').trim();
+  if (userId && hostId && userId === hostId) return true;
+
+  const adminLabel = normalizeActorLabel(
+    match.admin_name || match.scorer_name || ''
+  );
+  if (!adminLabel) return false;
+
+  const candidates = [
+    actor.handle,
+    actor.username,
+    actor.displayName,
+    actor.name,
+  ]
+    .map(normalizeActorLabel)
+    .filter(Boolean);
+
+  return candidates.some((c) => c === adminLabel);
+}
+
 function normalizeBattingTeam(value) {
   return String(value || '').toUpperCase() === 'B' ? 'B' : 'A';
 }
@@ -406,12 +441,16 @@ async function broadcastScoreSync(matchId, match) {
 /**
  * @param {string} matchId
  * @param {{ score_a?: number, score_b?: number }} scores
+ * @param {object|null} [actor] — when provided, rejects non-host / non-admin
  */
-export async function updateMatchScore(matchId, scores = {}) {
+export async function updateMatchScore(matchId, scores = {}, actor = null) {
   const id = String(matchId || '').trim();
   if (!id) return { ok: false, reason: 'no-id' };
 
   const prev = localMatches.get(id) || { id, score_a: 0, score_b: 0 };
+  if (actor && !canUserScoreMatch(prev, actor)) {
+    return { ok: false, reason: 'forbidden' };
+  }
   const next = normalizeMatch({
     ...prev,
     score_a:
@@ -469,8 +508,9 @@ export async function updateMatchScore(matchId, scores = {}) {
  * Soft-fails when DB columns are missing; peers still get score_sync broadcast.
  * @param {string} matchId
  * @param {object} patch
+ * @param {object|null} [actor] — when provided, rejects non-host / non-admin
  */
-export async function updateMatchCricket(matchId, patch = {}) {
+export async function updateMatchCricket(matchId, patch = {}, actor = null) {
   const id = String(matchId || '').trim();
   if (!id) return { ok: false, reason: 'no-id' };
 
@@ -486,6 +526,9 @@ export async function updateMatchCricket(matchId, patch = {}) {
     score_a: 0,
     score_b: 0,
   };
+  if (actor && !canUserScoreMatch(prev, actor)) {
+    return { ok: false, reason: 'forbidden' };
+  }
 
   const battingTeam = normalizeBattingTeam(
     patch.batting_team != null ? patch.batting_team : prev.batting_team

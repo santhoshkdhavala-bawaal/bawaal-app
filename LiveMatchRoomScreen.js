@@ -45,6 +45,7 @@ import {
   pushBanterCapped,
   formatCricketOvers,
   isCricketSport,
+  canUserScoreMatch,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import {
@@ -646,12 +647,10 @@ function LiveMatchRoomScreen({ navigation, route }) {
   );
   const userId = String(user?.id || user?.userId || '').trim();
 
-  // Host/scorer only — never show +1 skull controls to remote viewers
+  // Host = telecast starter (camera). Scorer role alone does not grant host camera.
   const roleParam = String(route?.params?.role || '').toLowerCase();
   const isHostParam =
-    roleParam === 'host' ||
-    route?.params?.isHost === true ||
-    route?.params?.isScorer === true;
+    roleParam === 'host' || route?.params?.isHost === true;
 
   const [match, setMatch] = useState(initialMatch);
   const [watching, setWatching] = useState(1);
@@ -667,6 +666,18 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const reactionBusyRef = useRef(false);
   const cricketUndoRef = useRef([]);
   const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
+
+  const scoreActor = useMemo(
+    () => ({
+      id: userId,
+      userId,
+      handle,
+      username: user?.username,
+      displayName: user?.displayName,
+      name: user?.name,
+    }),
+    [userId, handle, user?.username, user?.displayName, user?.name]
+  );
 
   const spawnReactionBurst = useCallback((data) => {
     const key = String(data?.emojiKey || 'skull_fire').trim();
@@ -708,9 +719,12 @@ function LiveMatchRoomScreen({ navigation, route }) {
     (!!userId &&
       !!match?.host_id &&
       String(match.host_id) === userId);
+  const isDesignatedAdmin = Boolean(
+    match && !isHost && canUserScoreMatch(match, scoreActor)
+  );
   const role = isHost ? 'host' : 'viewer';
-  /** Score controls only for host/admin when scoreboard is enabled. */
-  const canPunchScore = isHost && hasScoreboard;
+  /** Only telecast host or designated admin may punch scores — never audience. */
+  const canScore = Boolean(isHost || isDesignatedAdmin);
 
   useEffect(() => {
     let alive = true;
@@ -789,7 +803,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const bumpScore = useCallback(
     async (side, delta) => {
-      if (!canPunchScore || !matchId || cricketMode) return;
+      if (!canScore || !hasScoreboard || !matchId || cricketMode) return;
       const nextA = side === 'A' ? Math.max(0, scoreA + delta) : scoreA;
       const nextB = side === 'B' ? Math.max(0, scoreB + delta) : scoreB;
       setMatch((prev) => ({
@@ -797,9 +811,21 @@ function LiveMatchRoomScreen({ navigation, route }) {
         score_a: nextA,
         score_b: nextB,
       }));
-      await updateMatchScore(matchId, { score_a: nextA, score_b: nextB });
+      await updateMatchScore(
+        matchId,
+        { score_a: nextA, score_b: nextB },
+        scoreActor
+      );
     },
-    [canPunchScore, matchId, scoreA, scoreB, cricketMode]
+    [
+      canScore,
+      hasScoreboard,
+      matchId,
+      scoreA,
+      scoreB,
+      cricketMode,
+      scoreActor,
+    ]
   );
 
   const pushCricketUndo = useCallback((snap) => {
@@ -809,7 +835,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
 
   const commitCricket = useCallback(
     async (nextSnap, { pushUndo = true } = {}) => {
-      if (!canPunchScore || !matchId || !cricketMode) return;
+      if (!canScore || !hasScoreboard || !matchId || !cricketMode) return;
       if (pushUndo) pushCricketUndo(snapshotCricket(match));
       const patch = {
         ...nextSnap,
@@ -817,14 +843,22 @@ function LiveMatchRoomScreen({ navigation, route }) {
         score_b: nextSnap.cricket_runs_b,
       };
       setMatch((prev) => ({ ...(prev || {}), ...patch }));
-      await updateMatchCricket(matchId, patch);
+      await updateMatchCricket(matchId, patch, scoreActor);
     },
-    [canPunchScore, matchId, cricketMode, match, pushCricketUndo]
+    [
+      canScore,
+      hasScoreboard,
+      matchId,
+      cricketMode,
+      match,
+      pushCricketUndo,
+      scoreActor,
+    ]
   );
 
   const applyCricketBall = useCallback(
     async ({ runs = 0, wicket = false } = {}) => {
-      if (!canPunchScore || !matchId || !cricketMode) return;
+      if (!canScore || !hasScoreboard || !matchId || !cricketMode) return;
       const bat = battingTeam === 'B' ? 'B' : 'A';
       const snap = snapshotCricket(match);
       if (bat === 'A') {
@@ -842,24 +876,32 @@ function LiveMatchRoomScreen({ navigation, route }) {
       }
       await commitCricket(snap);
     },
-    [canPunchScore, matchId, cricketMode, battingTeam, match, commitCricket]
+    [
+      canScore,
+      hasScoreboard,
+      matchId,
+      cricketMode,
+      battingTeam,
+      match,
+      commitCricket,
+    ]
   );
 
   const swapBatting = useCallback(async () => {
-    if (!canPunchScore || !matchId || !cricketMode) return;
+    if (!canScore || !hasScoreboard || !matchId || !cricketMode) return;
     const snap = snapshotCricket(match);
     snap.batting_team = snap.batting_team === 'B' ? 'A' : 'B';
     await commitCricket(snap);
-  }, [canPunchScore, matchId, cricketMode, match, commitCricket]);
+  }, [canScore, hasScoreboard, matchId, cricketMode, match, commitCricket]);
 
   const undoCricket = useCallback(async () => {
-    if (!canPunchScore || !matchId || !cricketMode) return;
+    if (!canScore || !hasScoreboard || !matchId || !cricketMode) return;
     const prev = cricketUndoRef.current.pop();
     setCricketUndoDepth(cricketUndoRef.current.length);
     if (!prev) return;
     setMatch((m) => ({ ...(m || {}), ...prev }));
-    await updateMatchCricket(matchId, prev);
-  }, [canPunchScore, matchId, cricketMode]);
+    await updateMatchCricket(matchId, prev, scoreActor);
+  }, [canScore, hasScoreboard, matchId, cricketMode, scoreActor]);
 
   const handleEnd = useCallback(async () => {
     setEndConfirm(false);
@@ -960,7 +1002,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
                   runsB={cricketRunsB}
                   wicketsB={cricketWicketsB}
                   ballsB={cricketBallsB}
-                  canSwap={canPunchScore}
+                  canSwap={canScore}
                   onSwapBatting={swapBatting}
                 />
               ) : (
@@ -1054,7 +1096,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
             { paddingBottom: Math.max(insets.bottom, 10) + 8 },
           ]}
         >
-          {canPunchScore && cricketMode ? (
+          {canScore && hasScoreboard && cricketMode ? (
             <CricketScorerPad
               onRuns={(n) => applyCricketBall({ runs: n })}
               onDot={() => applyCricketBall({ runs: 0 })}
@@ -1062,7 +1104,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
               onUndo={undoCricket}
               canUndo={cricketUndoDepth > 0}
             />
-          ) : canPunchScore ? (
+          ) : null}
+          {canScore && hasScoreboard && !cricketMode ? (
             <View style={styles.hostScoreRow}>
               <View style={styles.hostScoreCol}>
                 <HornedSkullScoreButton
@@ -1094,7 +1137,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : hasScoreboard ? (
+          ) : null}
+          {!canScore && hasScoreboard ? (
             <VoteTugBar
               votesA={votesA}
               votesB={votesB}
