@@ -46,6 +46,7 @@ import {
   broadcastVotePulse,
   pushBanterCapped,
   LIVE_MATCH_REACTION_PILLS,
+  LIVE_MATCH_BANTER_EMOJIS,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 
@@ -153,7 +154,8 @@ function Scoreboard({ teamA, teamB, scoreA, scoreB, compact }) {
 }
 
 /**
- * Host +1 control — tappable horned skull with snappy scale/glow.
+ * Host +1 control — compact horned skull only (no wide +1 TEAM bars).
+ * Left = red Team A, right = blue Team B. Team names live on the scoreboard cards.
  */
 function HornedSkullScoreButton({ side, teamName, onPress }) {
   const isA = side === 'A';
@@ -161,32 +163,32 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
   const glow = isA ? TEAM_A_GLOW : TEAM_B_GLOW;
   const name = displayTeamName(teamName, isA ? 'TEAM A' : 'TEAM B');
   const [scale] = useState(() => new Animated.Value(1));
-  const [glowOp] = useState(() => new Animated.Value(0.35));
+  const [glowOp] = useState(() => new Animated.Value(0.3));
 
   const handlePress = useCallback(() => {
     Animated.parallel([
       Animated.sequence([
         Animated.timing(scale, {
-          toValue: 1.14,
-          duration: 90,
+          toValue: 1.16,
+          duration: 85,
           useNativeDriver: true,
         }),
         Animated.spring(scale, {
           toValue: 1,
           friction: 4,
-          tension: 160,
+          tension: 170,
           useNativeDriver: true,
         }),
       ]),
       Animated.sequence([
         Animated.timing(glowOp, {
           toValue: 0.95,
-          duration: 90,
+          duration: 85,
           useNativeDriver: true,
         }),
         Animated.timing(glowOp, {
-          toValue: 0.35,
-          duration: 220,
+          toValue: 0.3,
+          duration: 240,
           useNativeDriver: true,
         }),
       ]),
@@ -203,6 +205,7 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
       style={styles.skullBtnHit}
     >
       <Animated.View
+        pointerEvents="none"
         style={[
           styles.skullBtnGlow,
           {
@@ -212,17 +215,11 @@ function HornedSkullScoreButton({ side, teamName, onPress }) {
           },
         ]}
       />
-      <Animated.View style={{ transform: [{ scale }], alignItems: 'center' }}>
-        <Image
-          source={skull}
-          style={styles.skullBtnImage}
-          resizeMode="contain"
-        />
-        <Text style={[styles.skullBtnName, { color: glow }]} numberOfLines={2}>
-          {name}
-        </Text>
-        <Text style={styles.skullBtnPlus}>+1</Text>
-      </Animated.View>
+      <Animated.Image
+        source={skull}
+        style={[styles.skullBtnImage, { transform: [{ scale }] }]}
+        resizeMode="contain"
+      />
     </TouchableOpacity>
   );
 }
@@ -636,6 +633,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
                   <Text style={styles.undoText}>−1</Text>
                 </TouchableOpacity>
               </View>
+              <View style={styles.hostScoreSpacer} />
               <View style={styles.hostScoreCol}>
                 <HornedSkullScoreButton
                   side="B"
@@ -662,7 +660,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
             />
           )}
 
-          {/* FIRE · ROAST · BEAST · WEAK · HYPE — vault skulls only */}
+          {/* FIRE · ROAST · BEAST · WEAK · HYPE — above banter */}
           <View style={styles.pillRow}>
             {LIVE_MATCH_REACTION_PILLS.map((pill) => (
               <TouchableOpacity
@@ -673,30 +671,53 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 accessibilityRole="button"
                 accessibilityLabel={`${pill.label} reaction`}
               >
-                <BawaalEmoji name={pill.emojiKey} size={28} />
+                <BawaalEmoji name={pill.emojiKey} size={22} />
                 <Text style={styles.hypePillLabel}>{pill.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <View style={styles.banterBar}>
-            <TextInput
-              style={styles.banterInput}
-              value={banterDraft}
-              onChangeText={setBanterDraft}
-              placeholder="Banter…"
-              placeholderTextColor={MUTED}
-              maxLength={160}
-              returnKeyType="send"
-              onSubmitEditing={sendBanter}
-            />
-            <TouchableOpacity
-              style={styles.sendBtn}
-              onPress={sendBanter}
-              accessibilityLabel="Send banter"
-            >
-              <Ionicons name="send" size={15} color={WHITE} />
-            </TouchableOpacity>
+          {/* Compact banter bar + vault fire/devil/skull tray (🔥😈💀☠️💥 equivalents) */}
+          <View style={styles.banterRow}>
+            <View style={styles.emojiTray}>
+              {LIVE_MATCH_BANTER_EMOJIS.map((emo) => (
+                <TouchableOpacity
+                  key={emo.id}
+                  style={styles.emojiTrayBtn}
+                  onPress={() =>
+                    fireReactionPill({
+                      id: emo.id,
+                      label: emo.id.toUpperCase(),
+                      emojiKey: emo.emojiKey,
+                    })
+                  }
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${emo.id} reaction`}
+                >
+                  <BawaalEmoji name={emo.emojiKey} size={26} />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.banterBar}>
+              <TextInput
+                style={styles.banterInput}
+                value={banterDraft}
+                onChangeText={setBanterDraft}
+                placeholder="Banter…"
+                placeholderTextColor={MUTED}
+                maxLength={160}
+                returnKeyType="send"
+                onSubmitEditing={sendBanter}
+              />
+              <TouchableOpacity
+                style={styles.sendBtn}
+                onPress={sendBanter}
+                accessibilityLabel="Send banter"
+              >
+                <Ionicons name="send" size={15} color={WHITE} />
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -955,7 +976,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 210,
+    bottom: 236,
     gap: 4,
     zIndex: 15,
   },
@@ -985,57 +1006,49 @@ const styles = StyleSheet.create({
   },
   hostScoreRow: {
     flexDirection: 'row',
-    gap: 14,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
   },
   hostScoreCol: {
-    flex: 1,
+    width: 96,
     alignItems: 'center',
     gap: 6,
   },
+  hostScoreSpacer: {
+    flex: 1,
+  },
   skullBtnHit: {
-    width: '100%',
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 4,
     position: 'relative',
   },
   skullBtnGlow: {
     position: 'absolute',
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    top: 4,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
   },
   skullBtnImage: {
-    width: 78,
-    height: 78,
+    width: 84,
+    height: 84,
   },
-  skullBtnName: {
-    marginTop: 2,
-    fontSize: 11,
-    fontWeight: '900',
-    textAlign: 'center',
-    maxWidth: 140,
+  undoBtn: {
+    minWidth: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
   },
-  skullBtnPlus: {
-    marginTop: 2,
+  undoText: {
     color: WHITE,
     fontSize: 13,
     fontWeight: '900',
-    letterSpacing: 0.6,
-  },
-  undoBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: PANEL,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-  },
-  undoText: {
-    color: MUTED,
-    fontSize: 12,
-    fontWeight: '800',
   },
   voteBlock: {
     gap: 8,
@@ -1100,47 +1113,64 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 6,
+    gap: 5,
   },
   hypePill: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: PANEL,
+    gap: 1,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,18,15,0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(255,90,31,0.35)',
+    borderColor: 'rgba(255,90,31,0.55)',
   },
   hypePillLabel: {
     color: ORANGE,
     fontSize: 8,
     fontWeight: '900',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+  },
+  banterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  emojiTray: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  emojiTrayBtn: {
+    width: 30,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   banterBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: PANEL,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    paddingLeft: 14,
+    paddingLeft: 12,
     paddingRight: 4,
-    minHeight: 42,
+    minHeight: 40,
   },
   banterInput: {
     flex: 1,
     color: WHITE,
     fontSize: 13,
-    paddingVertical: Platform.OS === 'web' ? 9 : 8,
+    paddingVertical: Platform.OS === 'web' ? 8 : 7,
     outlineStyle: 'none',
   },
   sendBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: CRIMSON,

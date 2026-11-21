@@ -21,7 +21,7 @@ const BANTER_CAP = 40;
 const VOTE_FLUSH_MS = 8000;
 
 /**
- * High-octane quick pills above banter (vault skull keys only — no unicode).
+ * High-octane labeled pills above banter (vault skull keys only — no unicode).
  * FIRE · ROAST · BEAST · WEAK · HYPE
  */
 export const LIVE_MATCH_REACTION_PILLS = Object.freeze([
@@ -30,6 +30,18 @@ export const LIVE_MATCH_REACTION_PILLS = Object.freeze([
   { id: 'beast', label: 'BEAST', emojiKey: 'skull_rage' },
   { id: 'weak', label: 'WEAK', emojiKey: 'skull_dead_xx' },
   { id: 'hype', label: 'HYPE', emojiKey: 'skull_hyped' },
+]);
+
+/**
+ * Compact banter-tray icons (fire / devil / skull / flame-skull / blast).
+ * Vault equivalents of 🔥 😈 💀 ☠️ 💥 — never unicode on live reactions.
+ */
+export const LIVE_MATCH_BANTER_EMOJIS = Object.freeze([
+  { id: 'flame', emojiKey: 'skull_fire' },
+  { id: 'devil', emojiKey: 'skull_devil' },
+  { id: 'skull', emojiKey: 'skull_dead_xx' },
+  { id: 'flame_skull', emojiKey: 'skull_burning' },
+  { id: 'blast', emojiKey: 'skull_exploding_head' },
 ]);
 
 /** @type {Map<string, object>} */
