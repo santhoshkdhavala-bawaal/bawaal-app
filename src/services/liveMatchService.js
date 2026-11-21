@@ -1203,17 +1203,19 @@ export async function searchLiveInviteAthletes(query = '') {
   return filtered.slice(0, 30);
 }
 
-function buildInvitePayload(match, host, recipient) {
+function buildInvitePayload(match, sender, recipient) {
   const at = Date.now();
+  const senderHandle = String(
+    sender?.handle || sender?.username || match?.host_handle || 'fan'
+  ).replace(/^@/, '');
   return {
     inviteId: `inv-${at}-${Math.random().toString(36).slice(2, 8)}`,
     matchId: String(match?.id || ''),
     inviteCode: getLiveMatchInviteCode(match),
-    hostId: String(host?.id || host?.userId || match?.host_id || ''),
-    hostHandle: String(host?.handle || match?.host_handle || 'host').replace(
-      /^@/,
-      ''
-    ),
+    // Match host id stays on the room; banner uses inviter handle
+    hostId: String(match?.host_id || sender?.id || sender?.userId || ''),
+    hostHandle: senderHandle,
+    inviterHandle: senderHandle,
     recipientId: String(recipient?.id || ''),
     recipientHandle: normalizeInviteHandle(recipient?.handle),
     sport: String(match?.sport || 'LIVE').toUpperCase(),
@@ -1227,12 +1229,15 @@ function buildInvitePayload(match, host, recipient) {
 
 /**
  * Targeted invites only — per-recipient Realtime channel (never global fanout).
+ * `host` / `sender` = whoever is inviting (host or viewer); scoring stays canScore-gated.
  */
 export async function sendLiveMatchInvites({
   match,
   host,
+  sender,
   recipients = [],
 } = {}) {
+  const inviter = sender || host;
   const list = (Array.isArray(recipients) ? recipients : []).filter(
     (r) => r && (r.id || r.handle)
   );
@@ -1241,7 +1246,7 @@ export async function sendLiveMatchInvites({
   }
 
   const payloads = list.map((recipient) =>
-    buildInvitePayload(match, host, recipient)
+    buildInvitePayload(match, inviter, recipient)
   );
 
   // Soft DB insert (best-effort; never blocks broadcast)
@@ -1250,7 +1255,7 @@ export async function sendLiveMatchInvites({
       const rows = payloads.map((p) => ({
         match_id: p.matchId,
         host_id: p.hostId,
-        host_handle: p.hostHandle,
+        host_handle: p.inviterHandle || p.hostHandle,
         recipient_id: p.recipientId || null,
         recipient_handle: p.recipientHandle || null,
         sport: p.sport,

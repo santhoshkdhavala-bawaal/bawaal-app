@@ -1038,16 +1038,16 @@ function LiveMatchRoomScreen({ navigation, route }) {
             </View>
           )}
           <View style={styles.topRight}>
+            <TouchableOpacity
+              style={styles.inviteBtn}
+              onPress={() => setInviteOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Invite friends"
+            >
+              <Text style={styles.inviteBtnText}>INVITE</Text>
+            </TouchableOpacity>
             {role === 'host' ? (
               <>
-                <TouchableOpacity
-                  style={styles.inviteBtn}
-                  onPress={() => setInviteOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="Invite friends"
-                >
-                  <Text style={styles.inviteBtnText}>INVITE</Text>
-                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.iconBtn}
                   onPress={() =>
@@ -1226,7 +1226,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
       </View>
 
       <LiveMatchInviteModal
-        visible={inviteOpen && role === 'host'}
+        visible={inviteOpen}
         match={match}
         onClose={() => setInviteOpen(false)}
       />

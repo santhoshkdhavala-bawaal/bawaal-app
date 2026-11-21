@@ -102,10 +102,11 @@ function LiveMatchInviteModal({ visible, match, onClose }) {
     setSending(true);
     setStatus('');
     try {
-      const host = getActiveUser();
+      const sender = getActiveUser();
       const result = await sendLiveMatchInvites({
         match,
-        host,
+        sender,
+        host: sender,
         recipients: selectedList,
       });
       setStatus(

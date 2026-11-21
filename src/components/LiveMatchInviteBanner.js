@@ -30,7 +30,9 @@ function LiveMatchInviteBanner({ invite, onWatch, onDismiss }) {
 
   if (!invite) return null;
 
-  const host = String(invite.hostHandle || 'host').replace(/^@/, '');
+  const inviter = String(
+    invite.inviterHandle || invite.hostHandle || 'fan'
+  ).replace(/^@/, '');
   const sport = String(invite.sport || 'LIVE').toUpperCase();
   const line =
     invite.hasScoreboard === false
@@ -45,7 +47,7 @@ function LiveMatchInviteBanner({ invite, onWatch, onDismiss }) {
       <View style={styles.banner}>
         <View style={styles.copy}>
           <Text style={styles.title} numberOfLines={2}>
-            @{host} invited you to LIVE {sport}: {line}
+            @{inviter} invited you to LIVE {sport}: {line}
           </Text>
         </View>
         <TouchableOpacity
