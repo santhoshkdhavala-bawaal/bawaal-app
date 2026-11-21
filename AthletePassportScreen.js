@@ -23,7 +23,7 @@ import ProfileMediaTabs from './src/components/ProfileMediaTabs';
 import BackLink from './src/components/BackLink';
 import DMChatSheet from './DMChatSheet';
 import { supabase } from './src/services/supabase';
-import { clearRegisteredSession } from './sessionStore';
+import { logoutRegisteredSession } from './sessionStore';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -53,10 +53,11 @@ export default function AthletePassportScreen({ route, navigation }) {
       } catch (err) {
         console.warn('[Passport] supabase.auth.signOut:', err?.message || err);
       }
-      await clearRegisteredSession();
+      // Keep hasRegisteredPreviously + profile; clear isLoggedIn only
+      await logoutRegisteredSession();
       navigation?.reset?.({
         index: 0,
-        routes: [{ name: 'Entry' }],
+        routes: [{ name: 'Entry', params: { loginOnly: true } }],
       });
     } catch (err) {
       console.warn('[Passport] log out failed:', err?.message || err);

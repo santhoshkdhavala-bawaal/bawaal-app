@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from './src/services/supabase';
-import { clearRegisteredSession } from './sessionStore';
+import { logoutRegisteredSession } from './sessionStore';
 
 const BG = '#000000';
 const CARD = '#121212';
@@ -59,6 +59,7 @@ export default function ProfileGatewayModal({
 
   useEffect(() => {
     if (!visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset sheet on close
       setEditing(false);
       setLoggingOut(false);
       return;
@@ -94,7 +95,8 @@ export default function ProfileGatewayModal({
       } catch (err) {
         console.warn('[ProfileGateway] signOut:', err?.message || err);
       }
-      await clearRegisteredSession();
+      // Keep hasRegisteredPreviously + profile; clear isLoggedIn only
+      await logoutRegisteredSession();
       onClose?.();
       if (onLogOut) {
         await onLogOut();
@@ -186,7 +188,7 @@ export default function ProfileGatewayModal({
                     {!!profile.username && (
                       <Text style={styles.username}>{profile.username}</Text>
                     )}
-                    <Text style={styles.handle}>{profile.handle}</Text>
+                    <Text style={styles.handleText}>{profile.handle}</Text>
                     <Text style={styles.email}>{profile.email}</Text>
                     {!!profile.phone && (
                       <Text style={styles.email}>{profile.phone}</Text>
@@ -352,7 +354,7 @@ const styles = StyleSheet.create({
   meta: { flex: 1 },
   displayName: { color: WHITE, fontSize: 20, fontWeight: '900' },
   username: { color: MUTED, fontSize: 13, fontWeight: '700', marginTop: 2 },
-  handle: { color: ACCENT, fontSize: 14, fontWeight: '700', marginTop: 2 },
+  handleText: { color: ACCENT, fontSize: 14, fontWeight: '700', marginTop: 2 },
   email: { color: MUTED, fontSize: 12, marginTop: 4 },
   tagRow: {
     flexDirection: 'row',

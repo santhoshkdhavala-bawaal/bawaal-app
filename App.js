@@ -21,16 +21,15 @@ import SportHubMapScreen from './SportHubMapScreen';
 import LiveMatchRoomScreen from './LiveMatchRoomScreen';
 import { COLORS } from './theme';
 import {
-  getRegisteredSession,
   setRegisteredSession,
-  hasRegisteredUserFlag,
+  getAuthLaunchState,
 } from './sessionStore';
 import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
 import LiveMatchInviteHost from './src/components/LiveMatchInviteHost';
-import { getSupabase, hasSupabaseEnv } from './src/services/supabase';
+import { hasSupabaseEnv } from './src/services/supabase';
 import { logStartup } from './NativeLogger';
 import {
   hideSplashSafe,
@@ -44,8 +43,8 @@ const ROOT_BG = '#000000';
 const BOOT_BG = '#08120F';
 
 /**
- * When true, always open Entry (onboarding / OTP landing) and ignore saved session.
- * Keep false in production so registered users land on Arena after reload / relaunch.
+ * When true, always open Entry and ignore saved session (dev only).
+ * Keep false so launch defaults to Arena (or OTP-only after Logout).
  */
 const FORCE_ONBOARDING_ENTRY = false;
 
@@ -120,10 +119,12 @@ export class RootErrorBoundary extends Component {
   }
 }
 
-function EntryScreen({ navigation }) {
+function EntryScreen({ navigation, route }) {
+  const loginOnly = Boolean(route?.params?.loginOnly);
   return (
     <View style={styles.root}>
       <AthleteRegistrationScreen
+        loginOnly={loginOnly}
         onCompleteRegistration={async (userData) => {
           try {
             applyRegisteredProfile(userData || {});
@@ -142,47 +143,42 @@ function EntryScreen({ navigation }) {
   );
 }
 
-/** Resolve Entry vs Main from local session flag and/or live Supabase auth. */
+/**
+ * Launch routing:
+ *   - Logged-in registered → Main (ARENA)
+ *   - Logged-out but hasRegisteredPreviously → Entry (Phone + OTP only)
+ *   - Fresh / guest → Main (ARENA) — never force a registration wall
+ */
 async function resolveLaunchRoute() {
-  if (FORCE_ONBOARDING_ENTRY) return 'Entry';
+  if (FORCE_ONBOARDING_ENTRY) {
+    return { route: 'Entry', loginOnly: false };
+  }
 
   try {
-    const session = await getRegisteredSession();
-    if (session?.registered) {
+    const state = await getAuthLaunchState();
+    if (state.loginOnly) {
+      return { route: 'Entry', loginOnly: true, session: state.session };
+    }
+    if (state.isLoggedIn && state.session) {
       try {
-        applyRegisteredProfile(session);
+        applyRegisteredProfile(state.session);
       } catch (_) {
         /* soft-fail profile apply */
       }
-      return 'Main';
     }
+    return { route: 'Main', loginOnly: false, session: state.session };
   } catch (_) {
-    /* continue to flag / auth checks */
+    return { route: 'Main', loginOnly: false };
   }
-
-  try {
-    if (await hasRegisteredUserFlag()) return 'Main';
-  } catch (_) {
-    /* ignore */
-  }
-
-  try {
-    if (hasSupabaseEnv()) {
-      const { data } = await getSupabase().auth.getSession();
-      if (data?.session?.user) return 'Main';
-    }
-  } catch (_) {
-    /* soft-fail auth restore */
-  }
-
-  return 'Entry';
 }
 
 function AppBoot() {
   // Wait for AsyncStorage session restore before choosing Entry vs Main
   const [showSplash, setShowSplash] = useState(true);
   const [bootReady, setBootReady] = useState(false);
-  const [initialRoute, setInitialRoute] = useState('Entry');
+  /** Default ARENA — never block first paint with a registration wall. */
+  const [initialRoute, setInitialRoute] = useState('Main');
+  const [entryLoginOnly, setEntryLoginOnly] = useState(false);
   const [bootError, setBootError] = useState(null);
   const navRef = useRef(navigationRef);
 
@@ -239,29 +235,37 @@ function AppBoot() {
 
     (async () => {
       try {
-        // AsyncStorage + flag + auth restore — short race so Expo Go never hangs
+        // AsyncStorage + flags — short race so Expo Go never hangs
         const bootTimeoutMs = isExpoGo ? 900 : 3500;
-        let route = 'Entry';
+        let resolved = { route: 'Main', loginOnly: false };
         try {
-          route = await Promise.race([
+          resolved = await Promise.race([
             resolveLaunchRoute(),
             new Promise((resolve) =>
-              setTimeout(() => resolve('Entry'), bootTimeoutMs)
+              setTimeout(
+                () => resolve({ route: 'Main', loginOnly: false }),
+                bootTimeoutMs
+              )
             ),
           ]);
         } catch (sessionErr) {
           console.warn(
-            'Session hydrate failed — defaulting to Entry:',
+            'Session hydrate failed — defaulting to Arena:',
             sessionErr?.message || sessionErr
           );
-          route = 'Entry';
+          resolved = { route: 'Main', loginOnly: false };
         }
-        if (!cancelled) setInitialRoute(route === 'Main' ? 'Main' : 'Entry');
+        if (!cancelled) {
+          const route = resolved?.route === 'Entry' ? 'Entry' : 'Main';
+          setInitialRoute(route);
+          setEntryLoginOnly(Boolean(resolved?.loginOnly));
+        }
       } catch (err) {
         console.warn('Session boot check failed:', err?.message || err);
-        // Soft-fail — never crash the UI thread; land on Entry with empty state
+        // Soft-fail — never crash; open Arena (Landing)
         if (!cancelled) {
-          setInitialRoute('Entry');
+          setInitialRoute('Main');
+          setEntryLoginOnly(false);
           setBootError(null);
         }
       } finally {
@@ -295,7 +299,8 @@ function AppBoot() {
           style={styles.errorRetry}
           onPress={() => {
             setBootError(null);
-            setInitialRoute('Entry');
+            setInitialRoute('Main');
+            setEntryLoginOnly(false);
             setBootReady(true);
             setShowSplash(false);
             void safeHideSplash('boot-error-retry');
@@ -339,7 +344,11 @@ function AppBoot() {
                 freezeOnBlur: true,
               }}
             >
-              <Stack.Screen name="Entry" component={EntryScreen} />
+              <Stack.Screen
+                name="Entry"
+                component={EntryScreen}
+                initialParams={{ loginOnly: entryLoginOnly }}
+              />
               <Stack.Screen name="Main" component={MainTabs} />
               {/* Central "+" create → camera + VideoPublishModal host (SPARKS / JOSH / …) */}
               <Stack.Screen

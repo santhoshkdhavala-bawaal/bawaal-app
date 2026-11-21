@@ -4,7 +4,7 @@
  * OTP / profiles / authOtp contract unchanged. Categories: `BAWAAL_SPORTS` (ALL first).
  * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -33,6 +33,7 @@ import {
 } from './src/services/authOtp';
 import { upsertRegisteredProfile } from './src/services/profilesService';
 import { BAWAAL_SPORTS } from './src/constants/sports';
+import { getRegisteredSession } from './sessionStore';
 
 const ROLES = [
   { key: 'fan', label: 'Fan' },
@@ -223,12 +224,16 @@ function OptionPickerModal({ visible, title, options, selectedKey, onSelect, onC
   );
 }
 
-export default function RoleSelection({ onCompleteRegistration }) {
+export default function RoleSelection({
+  onCompleteRegistration,
+  loginOnly = false,
+}) {
   const insets = useSafeAreaInsets();
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [notice, setNotice] = useState(null);
   const [picker, setPicker] = useState(null); // 'gender' | 'category' | 'role'
+  const savedProfileRef = useRef(null);
 
   const [handle, setHandle] = useState('');
   const [realName, setRealName] = useState('');
@@ -248,6 +253,41 @@ export default function RoleSelection({ onCompleteRegistration }) {
 
   const [otpDigits, setOtpDigits] = useState(emptyOtpDigits);
   const [otpBusy, setOtpBusy] = useState(false);
+
+  // Returning user (post-Logout): hydrate phone + profile for OTP-only login
+  useEffect(() => {
+    if (!loginOnly) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const saved = await getRegisteredSession({ allowLoggedOut: true });
+        if (!alive || !saved) return;
+        savedProfileRef.current = saved;
+        if (saved.phone) setPhone(String(saved.phone));
+        if (saved.handle || saved.username) {
+          setHandle(String(saved.handle || saved.username || '').replace(/^@/, ''));
+        }
+        if (saved.realName || saved.name) {
+          setRealName(String(saved.realName || saved.name || ''));
+        }
+        if (saved.email) setEmail(String(saved.email));
+        if (saved.location) setLocation(String(saved.location));
+        if (saved.gender) setGender(saved.gender);
+        if (saved.age != null) setAge(String(saved.age));
+        if (saved.role) setRole(saved.role);
+        if (saved.sportInterest || saved.sport || saved.category) {
+          setSportInterest(
+            saved.sportInterest || saved.sport || saved.category
+          );
+        }
+      } catch (_) {
+        /* soft-fail hydrate */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [loginOnly]);
 
   const locationMeta = useMemo(
     () => resolveLocationFlag(location),
@@ -302,33 +342,40 @@ export default function RoleSelection({ onCompleteRegistration }) {
   };
 
   const handleSendOtpTrigger = async () => {
-    if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
-      showNotice('Missing Fields', 'Please complete all required fields before continuing.');
-      return;
-    }
-    if (!gender) {
-      showNotice('Gender', 'Select Male, Female, or Other to continue.');
-      return;
-    }
-    const ageNum = Number(String(age).trim());
-    if (!String(age).trim() || !Number.isFinite(ageNum) || ageNum < 13 || ageNum > 120) {
-      showNotice('Age', 'Enter a valid age (13+) to continue.');
-      return;
-    }
-    if (!role) {
-      showNotice('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
-      return;
-    }
-    if (!sportInterest) {
-      showNotice('Category', 'Pick a sport category for your feed.');
-      return;
-    }
-    if (!agreedToTerms) {
-      showNotice(
-        'Terms Required',
-        'Please review and accept the Terms and Conditions.'
-      );
-      return;
+    if (loginOnly) {
+      if (!String(phone || '').trim()) {
+        showNotice('Phone Required', 'Enter your registered phone number to continue.');
+        return;
+      }
+    } else {
+      if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
+        showNotice('Missing Fields', 'Please complete all required fields before continuing.');
+        return;
+      }
+      if (!gender) {
+        showNotice('Gender', 'Select Male, Female, or Other to continue.');
+        return;
+      }
+      const ageNum = Number(String(age).trim());
+      if (!String(age).trim() || !Number.isFinite(ageNum) || ageNum < 13 || ageNum > 120) {
+        showNotice('Age', 'Enter a valid age (13+) to continue.');
+        return;
+      }
+      if (!role) {
+        showNotice('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
+        return;
+      }
+      if (!sportInterest) {
+        showNotice('Category', 'Pick a sport category for your feed.');
+        return;
+      }
+      if (!agreedToTerms) {
+        showNotice(
+          'Terms Required',
+          'Please review and accept the Terms and Conditions.'
+        );
+        return;
+      }
     }
 
     setOtpBusy(true);
@@ -371,12 +418,36 @@ export default function RoleSelection({ onCompleteRegistration }) {
         return;
       }
 
-      const userData = {
-        ...buildRegistrationPayload(),
-        authMode: result.mode,
-        authPhone: result.phone,
-        sport_interests: [sportInterest].filter(Boolean),
-      };
+      const saved = savedProfileRef.current || {};
+      const formPayload = buildRegistrationPayload();
+      const userData = loginOnly
+        ? {
+            ...saved,
+            ...formPayload,
+            // Prefer freshly verified phone; restore prior profile fields
+            phone: result.phone || phone.trim() || saved.phone,
+            handle: saved.handle || formPayload.handle,
+            username:
+              saved.username || saved.handle || formPayload.username,
+            realName:
+              saved.realName || saved.name || formPayload.realName,
+            displayName:
+              saved.displayName || saved.handle || formPayload.displayName,
+            authMode: result.mode,
+            authPhone: result.phone,
+            isRegistered: true,
+            hasRegisteredPreviously: true,
+            isLoggedIn: true,
+            sport_interests: [
+              saved.sportInterest || saved.sport || sportInterest,
+            ].filter(Boolean),
+          }
+        : {
+            ...formPayload,
+            authMode: result.mode,
+            authPhone: result.phone,
+            sport_interests: [sportInterest].filter(Boolean),
+          };
 
       // Prefer verifyOtp user; session.user is the auth.users row for profiles.id
       const authUser = result.user || result.session?.user || null;
@@ -434,121 +505,140 @@ export default function RoleSelection({ onCompleteRegistration }) {
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
               />
-              <Text style={styles.title}>Create Your Account</Text>
+              <Text style={styles.title}>
+                {loginOnly ? 'Welcome Back' : 'Create Your Account'}
+              </Text>
               <Text style={styles.subtitle}>
-                Join BAWAAL to follow sports. It only takes a minute.
+                {loginOnly
+                  ? 'Verify your phone with OTP to return to the Arena.'
+                  : 'Join BAWAAL to follow sports. It only takes a minute.'}
               </Text>
             </View>
 
             <View style={styles.form}>
-              <InputCard
-                value={handle}
-                onChangeText={setHandle}
-                placeholder="Enter your user name"
-                autoCapitalize="words"
-                focused={focusedField === 'handle'}
-                onFocus={() => setFocusedField('handle')}
-                onBlur={() => setFocusedField(null)}
-                style={styles.fieldGap}
-              />
-
-              <InputCard
-                value={realName}
-                onChangeText={setRealName}
-                placeholder="Enter your real name"
-                autoCapitalize="words"
-                focused={focusedField === 'realName'}
-                onFocus={() => setFocusedField('realName')}
-                onBlur={() => setFocusedField(null)}
-                style={styles.fieldGap}
-              />
-
-              <View style={styles.twoColRow}>
+              {loginOnly ? (
                 <InputCard
-                  value={age}
-                  onChangeText={(text) =>
-                    setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
-                  }
-                  placeholder="Enter your age"
-                  keyboardType="number-pad"
-                  focused={focusedField === 'age'}
-                  onFocus={() => setFocusedField('age')}
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="+1 (555) 000-0000"
+                  keyboardType="phone-pad"
+                  focused={focusedField === 'phone'}
+                  onFocus={() => setFocusedField('phone')}
                   onBlur={() => setFocusedField(null)}
-                  style={[styles.colHalf, styles.fieldGap]}
+                  style={styles.fieldGap}
                 />
-                <SelectCard
-                  valueLabel={genderLabel}
-                  placeholder="Select your gender"
-                  onPress={() => setPicker('gender')}
-                  style={[styles.colHalf, styles.fieldGap]}
-                />
-              </View>
+              ) : (
+                <>
+                  <InputCard
+                    value={handle}
+                    onChangeText={setHandle}
+                    placeholder="Enter your user name"
+                    autoCapitalize="words"
+                    focused={focusedField === 'handle'}
+                    onFocus={() => setFocusedField('handle')}
+                    onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
 
-              <InputCard
-                value={email}
-                onChangeText={setEmail}
-                placeholder="Enter your email"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                focused={focusedField === 'email'}
-                onFocus={() => setFocusedField('email')}
-                onBlur={() => setFocusedField(null)}
-                style={styles.fieldGap}
-              />
+                  <InputCard
+                    value={realName}
+                    onChangeText={setRealName}
+                    placeholder="Enter your real name"
+                    autoCapitalize="words"
+                    focused={focusedField === 'realName'}
+                    onFocus={() => setFocusedField('realName')}
+                    onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
 
-              <InputCard
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+1 (555) 000-0000"
-                keyboardType="phone-pad"
-                focused={focusedField === 'phone'}
-                onFocus={() => setFocusedField('phone')}
-                onBlur={() => setFocusedField(null)}
-                style={styles.fieldGap}
-              />
-
-              <InputCard
-                value={location}
-                onChangeText={setLocation}
-                placeholder="City, Country"
-                autoCapitalize="words"
-                focused={focusedField === 'location'}
-                onFocus={() => setFocusedField('location')}
-                onBlur={() => setFocusedField(null)}
-                trailing={
-                  locationMeta.iso ||
-                  (locationFlag && locationFlag !== '🌐') ? (
-                    <LocationFlagBadge
-                      flag={locationFlag}
-                      country={locationMeta.country}
-                      iso={locationMeta.iso}
+                  <View style={styles.twoColRow}>
+                    <InputCard
+                      value={age}
+                      onChangeText={(text) =>
+                        setAge(String(text || '').replace(/[^\d]/g, '').slice(0, 3))
+                      }
+                      placeholder="Enter your age"
+                      keyboardType="number-pad"
+                      focused={focusedField === 'age'}
+                      onFocus={() => setFocusedField('age')}
+                      onBlur={() => setFocusedField(null)}
+                      style={[styles.colHalf, styles.fieldGap]}
                     />
-                  ) : null
-                }
-                style={styles.fieldGap}
-              />
-              {locationMeta.country ? (
-                <Text style={styles.locationHelper}>
-                  {locationMeta.country}
-                  {' · regional matchmaking'}
-                </Text>
-              ) : null}
+                    <SelectCard
+                      valueLabel={genderLabel}
+                      placeholder="Select your gender"
+                      onPress={() => setPicker('gender')}
+                      style={[styles.colHalf, styles.fieldGap]}
+                    />
+                  </View>
 
-              <View style={styles.twoColRow}>
-                <SelectCard
-                  valueLabel={categoryLabel}
-                  placeholder="Select category"
-                  onPress={() => setPicker('category')}
-                  style={[styles.colHalf, styles.fieldGap]}
-                />
-                <SelectCard
-                  valueLabel={roleLabel}
-                  placeholder="Select your role"
-                  onPress={() => setPicker('role')}
-                  style={[styles.colHalf, styles.fieldGap]}
-                />
-              </View>
+                  <InputCard
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Enter your email"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    focused={focusedField === 'email'}
+                    onFocus={() => setFocusedField('email')}
+                    onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
+
+                  <InputCard
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="+1 (555) 000-0000"
+                    keyboardType="phone-pad"
+                    focused={focusedField === 'phone'}
+                    onFocus={() => setFocusedField('phone')}
+                    onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
+
+                  <InputCard
+                    value={location}
+                    onChangeText={setLocation}
+                    placeholder="City, Country"
+                    autoCapitalize="words"
+                    focused={focusedField === 'location'}
+                    onFocus={() => setFocusedField('location')}
+                    onBlur={() => setFocusedField(null)}
+                    trailing={
+                      locationMeta.iso ||
+                      (locationFlag && locationFlag !== '🌐') ? (
+                        <LocationFlagBadge
+                          flag={locationFlag}
+                          country={locationMeta.country}
+                          iso={locationMeta.iso}
+                        />
+                      ) : null
+                    }
+                    style={styles.fieldGap}
+                  />
+                  {locationMeta.country ? (
+                    <Text style={styles.locationHelper}>
+                      {locationMeta.country}
+                      {' · regional matchmaking'}
+                    </Text>
+                  ) : null}
+
+                  <View style={styles.twoColRow}>
+                    <SelectCard
+                      valueLabel={categoryLabel}
+                      placeholder="Select category"
+                      onPress={() => setPicker('category')}
+                      style={[styles.colHalf, styles.fieldGap]}
+                    />
+                    <SelectCard
+                      valueLabel={roleLabel}
+                      placeholder="Select your role"
+                      onPress={() => setPicker('role')}
+                      style={[styles.colHalf, styles.fieldGap]}
+                    />
+                  </View>
+                </>
+              )}
             </View>
           </View>
         </ScrollView>
@@ -559,40 +649,47 @@ export default function RoleSelection({ onCompleteRegistration }) {
             { paddingBottom: Math.max(insets.bottom, 12) },
           ]}
         >
-          <TouchableOpacity
-            style={styles.termsRow}
-            onPress={onTermsRowPress}
-            activeOpacity={0.85}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: agreedToTerms }}
-          >
-            <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-              {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
-            </View>
-            <Text style={styles.termsText}>
-              I agree to{' '}
-              <Text
-                style={styles.termsLink}
-                onPress={() => setTermsModalVisible(true)}
-              >
-                Terms and Conditions
+          {loginOnly ? null : (
+            <TouchableOpacity
+              style={styles.termsRow}
+              onPress={onTermsRowPress}
+              activeOpacity={0.85}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: agreedToTerms }}
+            >
+              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
+                {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
+              </View>
+              <Text style={styles.termsText}>
+                I agree to{' '}
+                <Text
+                  style={styles.termsLink}
+                  onPress={() => setTermsModalVisible(true)}
+                >
+                  Terms and Conditions
+                </Text>
               </Text>
-            </Text>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[
               styles.continueBtn,
-              (!agreedToTerms || otpBusy) && styles.continueBtnDisabled,
+              ((!loginOnly && !agreedToTerms) || otpBusy) &&
+                styles.continueBtnDisabled,
             ]}
             onPress={handleSendOtpTrigger}
             activeOpacity={0.88}
-            disabled={otpBusy}
+            disabled={otpBusy || (!loginOnly && !agreedToTerms)}
             accessibilityRole="button"
-            accessibilityLabel="Continue"
+            accessibilityLabel={loginOnly ? 'Send OTP' : 'Continue'}
           >
             <Text style={styles.continueBtnText}>
-              {otpBusy && !otpModalVisible ? 'Sending…' : 'Continue'}
+              {otpBusy && !otpModalVisible
+                ? 'Sending…'
+                : loginOnly
+                  ? 'Send OTP'
+                  : 'Continue'}
             </Text>
           </TouchableOpacity>
         </View>

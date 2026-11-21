@@ -436,7 +436,7 @@ export default function MainTabs({ navigation, route }) {
           onLogOut={() => {
             navigation?.reset?.({
               index: 0,
-              routes: [{ name: 'Entry' }],
+              routes: [{ name: 'Entry', params: { loginOnly: true } }],
             });
           }}
         />
