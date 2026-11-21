@@ -101,6 +101,7 @@ function ReelActionSheet({
   useEffect(() => {
     let alive = true;
     if (!visible || !targetKey) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear follow when sheet closes
       setFollowing(false);
       return undefined;
     }
@@ -114,10 +115,12 @@ function ReelActionSheet({
 
   useEffect(() => {
     if (!visible) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate counts when sheet opens
     setLikeCount(Number(reel?.likeCount) || 0);
     setCommentCount(Number(reel?.commentCount) || 0);
     setLikedByMe(!!reel?.likedByMe);
   }, [visible, reel?.id, reel?.likeCount, reel?.commentCount, reel?.likedByMe]);
+
 
   const actions = useMemo(() => {
     const byId = Object.fromEntries(

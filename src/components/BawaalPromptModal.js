@@ -94,11 +94,13 @@ export default function BawaalPromptModal({
       submittingRef.current = false;
       return;
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset fields when sheet opens
     setValue(defaultValue || '');
     setBriefTitle(defaultValue || 'Matchday Lineup & Strategy');
     setSportTag(SQUAD_BRIEF_SPORTS[0]);
     setIntel('');
   }, [visible, defaultValue]);
+
 
   const scrollFieldIntoView = (key) => {
     requestAnimationFrame(() => {

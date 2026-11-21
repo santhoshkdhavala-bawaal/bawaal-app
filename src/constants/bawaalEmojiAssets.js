@@ -1,4 +1,4 @@
-/* eslint-disable global-require */
+ 
 /**
  * BAWAAL custom skeleton emoji asset map.
  * Keys are clean short names (no `skel_` prefix). Use via `BawaalEmoji` or `getBawaalEmojiSource`.
@@ -229,12 +229,10 @@ export const ALL_SKELETON_KEYS = Object.freeze(
 );
 
 if (!ALL_SKELETON_KEYS.includes('love') || !BAWAAL_EMOJI_ASSETS.love) {
-  // eslint-disable-next-line no-console
   console.warn('[bawaalEmojiAssets] Vault missing love / skel_love.png');
 }
 
 if (SKULL_EMOJI_KEYS.some((key) => !BAWAAL_EMOJI_ASSETS[key])) {
-  // eslint-disable-next-line no-console
   console.warn('[bawaalEmojiAssets] Vault missing one or more skull_*.png assets');
 }
 

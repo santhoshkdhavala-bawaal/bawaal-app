@@ -10,8 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import UserHandle from './src/components/UserHandle';
 import RoleBadge from './src/components/RoleBadge';
-import { isHandleVerified } from './src/data/athleteSocial';
-import { STAT_ACCENTS } from './src/data/athleteSocial';
+import { isHandleVerified , STAT_ACCENTS } from './src/data/athleteSocial';
 import DMChatSheet from './DMChatSheet';
 
 const BG = '#0A0A0A';

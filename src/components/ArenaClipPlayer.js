@@ -96,10 +96,13 @@ function ExpoVideoClipPlayer({
   }, [resolved]);
 
   useEffect(() => {
+    // Reset player chrome when the active URI / autoplay intent changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional URI reset
     setFailed(false);
     setLoading(!!videoSource);
     setPaused(!autoPlay);
   }, [autoPlay, resolved, videoSource]);
+
 
   useEffect(() => {
     const node = videoRef.current;

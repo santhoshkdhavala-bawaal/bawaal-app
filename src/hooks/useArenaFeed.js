@@ -37,9 +37,11 @@ export function useArenaFeed(opts = {}) {
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- idle when feed disabled
       setLoading(false);
       return undefined;
     }
+
 
     let cancelled = false;
     setLoading(true);

@@ -30,9 +30,11 @@ export function useBattles(opts = {}) {
 
   useEffect(() => {
     if (!enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- idle when battles disabled
       setLoading(false);
       return undefined;
     }
+
 
     let cancelled = false;
     setLoading(true);

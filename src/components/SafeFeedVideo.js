@@ -80,7 +80,6 @@ let NativeFeedVideoComponent = null;
 function getNativeFeedVideo() {
   if (NativeFeedVideoComponent) return NativeFeedVideoComponent;
   try {
-    // eslint-disable-next-line global-require
     NativeFeedVideoComponent = require('./NativeFeedVideo').default;
   } catch (err) {
     console.warn('[SafeFeedVideo] native player unavailable:', err?.message || err);
@@ -88,6 +87,10 @@ function getNativeFeedVideo() {
   }
   return NativeFeedVideoComponent;
 }
+
+// Resolve once at module load so render never "creates" a component.
+getNativeFeedVideo();
+
 
 function SafeFeedVideo({
   uri: uriProp,
@@ -137,8 +140,10 @@ function SafeFeedVideo({
     );
   }
 
-  const NativeFeedVideo = getNativeFeedVideo();
-  if (!NativeFeedVideo) {
+  if (!NativeFeedVideoComponent) {
+    getNativeFeedVideo();
+  }
+  if (!NativeFeedVideoComponent) {
     return (
       <ExpoGoFeedPlaceholder
         style={style}
@@ -150,7 +155,7 @@ function SafeFeedVideo({
   }
 
   return (
-    <NativeFeedVideo
+    <NativeFeedVideoComponent
       resolved={resolved}
       style={style}
       muted={muted}

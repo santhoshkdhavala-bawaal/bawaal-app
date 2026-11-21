@@ -1,0 +1,104 @@
+---
+description: Master lock — BAWAAL LIVE, GAME ON / NEAR ME, ArenaReelViewer, registration persistence, and sibling production locks
+alwaysApply: true
+---
+
+# BAWAAL App Master Lock (LOCKED)
+
+Production-final umbrella for all stabilized work through **BAWAAL LIVE** (2026-11-21) and earlier locked surfaces. Do **not** restyle, reorder, rewire, weaken permission gates, or regress soft-fail contracts unless the user **explicitly unlocks** this rule (`bawaal-app-master-locked.mdc`) **and** the matching feature lock below.
+
+Detail contracts live in the sibling rules — this file is the **index + hard stop**. Prefer the feature lock for specifics; never treat silence here as permission to edit a locked surface.
+
+## 1. BAWAAL LIVE (today — HARD LOCK)
+
+Authoritative detail: `bawaal-live-locked.mdc`
+
+| Surface | Must keep |
+|---|---|
+| Hub (`LiveArenaModal`) | `+ GO LIVE NOW`; `JOIN WITH INVITE CODE` + `WATCH`; active telecast list; **no** multi-row sport chip grid |
+| GO LIVE setup | Sport dropdown; Scoreboard **OFF** by default; ON expands Team A / Team B / Title / Admin |
+| Room HUD | Compact read-only top score when `has_scoreboard` — **no** skulls in top bar; center banter; slim bottom strip |
+| Reactions | One left skull → 5 vibes (`fire`, `devil`, `winning`/`skull_champion`, `crying`/`SAD`, `screaming`); **bounded** burst per tap (no infinite loops) |
+| Scoring | Point sports + cricket (`Runs/Wickets (O.B)`, `SWAP BATTING`, `+1/+2/+4/+6`, `DOT`, `WICKET`, `UNDO`) |
+| `canScore` | `isHost \|\| isDesignatedAdmin` only — viewers never get score UI or mutation handlers |
+| Invites | Unique **6-char** uppercase codes (no `0/O/1/I`); high-contrast `INVITE` for host **and** viewers; Share + clipboard; **targeted** banners only |
+
+**Locked files:** `LiveMatchRoomScreen.js`, `src/services/liveMatchService.js`, `src/components/LiveArenaModal.js`, `src/components/LiveMatchInviteModal.js`, `src/components/LiveMatchInviteBanner.js`, `src/components/LiveMatchInviteHost.js`, `src/constants/liveMatchFlamingSkulls.js`, `src/constants/liveMatchTeamSkulls.js`, `src/constants/liveMatchSports.js`, related `supabase/migrations/20261121_live_matches*.sql` / invite migrations; App/Arena LIVE entry wiring.
+
+## 2. GAME ON + NEAR ME map (HARD LOCK)
+
+Authoritative detail: `bawaal-gameon-map-locked.mdc` (+ native style tokens in `bawaal-sport-hub-map-locked.mdc`)
+
+| Surface | Must keep |
+|---|---|
+| GAME ON sports | Exact **8** pills: All → Ball Sports → Combat Sports → Racing & Speed → Water & Surf → Extreme & Adventure → Strength & Fitness → Others — single row, **no** sub-sport grids |
+| Battle chips | `ARENA_FEED_TIERS` in drawer (not under Arena header) |
+| `SportHubMapScreen` | Live GPS + `PROVIDER_GOOGLE` (native); dark OSM Leaflet (`tile.openstreetmap.org`, **never** CARTO); city hubs + Overpass soft-fail |
+
+**Locked files:** `src/components/GameOnHub.js`, `src/constants/gameOnSports.js`, `SportHubMapScreen.js`, `src/components/WebOsmMap.js`, `src/utils/userLocation.js`, `src/services/nearbySportsVenuesService.js`, `src/data/citySportsVenueFallbacks.js`
+
+## 3. Arena reel viewer / playback (HARD LOCK)
+
+Authoritative detail: `bawaal-arena-video-playback-locked.mdc` (+ reel chrome in `bawaal-v2-arena-ui-locked.mdc`)
+
+| Surface | Must keep |
+|---|---|
+| `ArenaReelViewer.js` | `SafeFeedVideo` / declarative `expo-video` path; no `expo-av`; no sync bundled-mp4 feed fallback |
+| Feed shells | Explicit dimensions; black underlay; try/catch load handlers; metrics behind **⋮** only |
+
+**Locked files:** `ArenaReelViewer.js`, `src/components/SafeFeedVideo.js`, `src/components/BawaalExpoVideo.js`, `src/components/ArenaClipPlayer.js`, `src/components/NativeFeedVideo.js`, Arena feed shell wiring in `ArenaFeed.js`
+
+## 4. Registration / profile persistence (HARD LOCK)
+
+Authoritative detail: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locked.mdc`, `bawaal-stability-checkpoint-locked.mdc`
+
+| Surface | Must keep |
+|---|---|
+| Auth | `signInWithOtp` → manual OTP SUBMIT → `verifyOtp` → `upsertRegisteredProfile` |
+| Profiles | UUID → remote upsert; non-UUID / circuit → local success; `PROFILE_SAFE_WRITE_COLUMNS` only; soft-strip missing columns |
+| UI | V1 field order, Terms, 4-digit OTP (no auto-verify) |
+
+**Locked files:** `RoleSelection.js`, `AthleteRegistrationScreen.js`, `OTPInput.js`, `OTPModal.js`, `TermsModal.js`, `src/services/authOtp.js`, `src/services/profilesService.js`, `src/types/profile.js`, `src/services/supabase.js` / `lib/supabase.js`, related ENSURE/migrations SQL
+
+## 5. Other production locks (do not regress)
+
+Treat as locked unless the user unlocks the named rule:
+
+| Domain | Rule |
+|---|---|
+| Core brand / Hub / vault | `bawaal-core-system-locked.mdc`, `bawaal-emoji-locked.mdc`, `bawaal-warcry-vault-hub-locked.mdc` |
+| Arena V2 chrome / UI baseline | `bawaal-v2-arena-ui-locked.mdc`, `bawaal-ui-baseline.mdc` |
+| Camera | `bawaal-challengecam-locked.mdc` |
+| Sport taxonomy (`BAWAAL_SPORTS`) | `bawaal-sport-taxonomy-locked.mdc` |
+| Data / soft-fail | `bawaal-data-integration-locked.mdc`, `bawaal-stability-checkpoint-locked.mdc` |
+| Passport / Locker / Clinic / Back | `bawaal-passport-locked.mdc`, `bawaal-locker-clinic-locked.mdc`, `bawaal-backlink-locked.mdc` |
+| Challenge architecture | `bawaal-arena-challenge-architecture.mdc` |
+
+## 6. Mobile resilience (applies to all locked surfaces)
+
+- Safe-area insets on full-screen / sheet HUDs  
+- `KeyboardAvoidingView` on banter / invite / registration inputs  
+- Generous `hitSlop` on primary CTAs  
+- Static Metro `require(.../assets/...)` for vault / LIVE skulls  
+- Soft-fail when camera permission denied or optional Supabase tables/columns missing — never crash Arena UX  
+
+## Never re-add (master denylist)
+
+- LIVE hub sport category chip grids  
+- Audience score punch UI or ungated `updateMatchScore` / cricket writes  
+- Global LIVE invite broadcast spam  
+- GAME ON multi-row sub-sport grids; Virar-primary NEAR ME; CARTO tiles  
+- `expo-av` on Arena reel path; unicode reaction trays on LIVE / Arena vault bursts  
+- Registration auto-verify on 4th OTP digit; hard-throw profiles upsert on schema miss  
+
+## Unlock
+
+Do **not** modify locked modules above unless the user explicitly asks to unlock `bawaal-app-master-locked.mdc` **and** the relevant feature rule (e.g. `bawaal-live-locked.mdc`).
+
+## Related
+
+- LIVE detail: `bawaal-live-locked.mdc`  
+- GAME ON / map: `bawaal-gameon-map-locked.mdc`  
+- Playback: `bawaal-arena-video-playback-locked.mdc`  
+- Onboarding: `bawaal-v1-fullstack-locked.mdc`  
+---

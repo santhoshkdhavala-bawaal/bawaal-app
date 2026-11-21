@@ -50,8 +50,8 @@ class LazyApp extends Component {
 
   componentDidMount() {
     try {
-      // eslint-disable-next-line global-require
       const mod = require('./App');
+
       const App = mod?.default || mod;
       if (typeof App !== 'function' && typeof App !== 'object') {
         throw new Error('App module did not export a React component');

@@ -79,8 +79,10 @@ function ExpoVideoPreview({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show spinner on URI change
     setLoading(true);
   }, [uri]);
+
 
   // Keep native player in sync for play/pause + rate
   useEffect(() => {
@@ -223,6 +225,7 @@ export default function VideoPublishModal({
 
   useEffect(() => {
     if (!visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset draft when modal closes
       setCaption('');
       setUploading(false);
       setIsPlaying(true);
@@ -235,6 +238,7 @@ export default function VideoPublishModal({
       setPlaybackRate(1.0);
     }
   }, [visible]);
+
 
   const togglePlayPause = async () => {
     const node = videoRef.current;

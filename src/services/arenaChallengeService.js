@@ -199,7 +199,7 @@ export async function fetchArenaChallenges(opts = {}) {
   }
 
   try {
-    let { data, error, status, statusText } = await supabase
+    let { data, error } = await supabase
       .from(TABLE)
       .select(ARENA_CHALLENGES_FEED_SELECT)
       .order('created_at', { ascending: false })
@@ -223,8 +223,6 @@ export async function fetchArenaChallenges(opts = {}) {
         .limit(limit);
       data = lean.data;
       error = lean.error;
-      status = lean.status;
-      statusText = lean.statusText;
     }
 
     if (error) {
@@ -250,7 +248,7 @@ export async function fetchArenaChallenges(opts = {}) {
           0;
         return tb - ta;
       });
-  } catch (err) {
+  } catch (_err) {
     softFailWarn('arena_challenges:fetch-crash', '[arena_challenges] FETCH crashed — returning []');
     return [];
   }
@@ -434,8 +432,6 @@ export async function publishArenaChallenge({
   try {
     let data = null;
     let error = null;
-    let status = null;
-    let statusText = null;
 
     try {
       // Final scrub — never send "user-santhosh" / empty / non-UUID to uuid column
@@ -447,8 +443,6 @@ export async function publishArenaChallenge({
         .single();
       data = insertResult.data;
       error = insertResult.error;
-      status = insertResult.status;
-      statusText = insertResult.statusText;
     } catch (insertThrown) {
       softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', insertThrown);
       reportInsertError(insertThrown);
@@ -485,8 +479,6 @@ export async function publishArenaChallenge({
             .single();
           data = retry.data;
           error = retry.error;
-          status = retry.status;
-          statusText = retry.statusText;
         } catch (retryThrown) {
           softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', retryThrown);
           reportInsertError(retryThrown);
@@ -530,8 +522,6 @@ export async function publishArenaChallenge({
           .single();
         data = retry.data;
         error = retry.error;
-        status = retry.status;
-        statusText = retry.statusText;
       } catch (legacyThrown) {
         softFailWarn('arena_challenges:insert', '[arena_challenges] insert soft-fail', legacyThrown);
         reportInsertError(legacyThrown);

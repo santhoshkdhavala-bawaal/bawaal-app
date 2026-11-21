@@ -5,11 +5,11 @@ const LOG_FILE_NAME = 'bawaal_native_crash.txt';
 function getFileSystem() {
   try {
     // Lazy require — a missing native module must not kill cold start.
-    // eslint-disable-next-line global-require
+     
     return require('expo-file-system/legacy');
   } catch (_) {
     try {
-      // eslint-disable-next-line global-require
+       
       return require('expo-file-system');
     } catch (__) {
       return null;

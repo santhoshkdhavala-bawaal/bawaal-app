@@ -4,7 +4,7 @@
  */
 export async function configureGlobalAudioSession() {
   try {
-    // eslint-disable-next-line global-require
+     
     const audio = require('expo-audio');
     const setAudioModeAsync = audio?.setAudioModeAsync;
     if (typeof setAudioModeAsync !== 'function') return false;

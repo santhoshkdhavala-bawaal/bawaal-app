@@ -191,7 +191,7 @@ export default function CustomMatchupViewer({
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [roster, setRoster] = useState<MatchupAthlete[]>(initialResponses);
-  const [allVotes, setAllVotes] = useState<Array<Record<string, unknown>>>([]);
+  const [allVotes, setAllVotes] = useState<Record<string, unknown>[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('roster');
   const [voting, setVoting] = useState(false);
@@ -199,7 +199,9 @@ export default function CustomMatchupViewer({
   const [error, setError] = useState<string | null>(null);
 
   const seedRef = React.useRef(initialResponses);
-  seedRef.current = initialResponses;
+  useEffect(() => {
+    seedRef.current = initialResponses;
+  }, [initialResponses]);
 
   const loadRoster = useCallback(async () => {
     if (!challengeId) {
@@ -218,7 +220,7 @@ export default function CustomMatchupViewer({
       } else {
         setRoster([]);
       }
-      setAllVotes((result.votes || []) as Array<Record<string, unknown>>);
+      setAllVotes((result.votes || []) as Record<string, unknown>[]);
       if (!result.ok && !seed.length) {
         setError('Could not load challenge responses. Pull to retry.');
       }
@@ -231,8 +233,10 @@ export default function CustomMatchupViewer({
   }, [challengeId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async roster hydrate on mount/id change
     void loadRoster();
   }, [loadRoster]);
+
 
   const fighter1 = useMemo(
     () => roster.find((r) => r.id === selectedIds[0]) || null,
@@ -287,7 +291,6 @@ export default function CustomMatchupViewer({
       setAllVotes((prev) => [
         ...prev.filter((v) => {
           // drop prior optimistic/local same-pair entries without voter uniqueness client-side
-          const forId = String(v.voted_for_id || '');
           const a = String(v.fighter_a_id || '');
           const b = String(v.fighter_b_id || '');
           const same =
@@ -325,7 +328,7 @@ export default function CustomMatchupViewer({
           const refreshed = await fetchChallengeMatchupRoster(challengeId);
           if (refreshed.ok) {
             setAllVotes(
-              (refreshed.votes || []) as Array<Record<string, unknown>>
+              (refreshed.votes || []) as Record<string, unknown>[]
             );
             if (refreshed.responses?.length) {
               setRoster(refreshed.responses as MatchupAthlete[]);

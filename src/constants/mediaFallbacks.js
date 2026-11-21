@@ -3,7 +3,7 @@
  * Keeps Image from fetching null/empty/"null" URIs (avoids 404 spam).
  * Session cache of failed URLs skips repeat network hits after the first 404.
  */
-/* eslint-disable global-require */
+ 
 
 /** Default athlete / profile avatar mark. */
 export const DEFAULT_AVATAR_ASSET = require('../../assets/BAWAAL_B_solo.png');
