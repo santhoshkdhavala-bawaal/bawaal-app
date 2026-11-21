@@ -3,8 +3,9 @@
  * Option A: Host = real CameraView preview; Viewer = HOST IS LIVE stage
  * with // PHASE 2: LIVE_VIDEO_STREAM_SLOT for LiveKit/Agora later.
  *
- * High-octane HUD: horned team skulls (A red / B blue), FIRE·ROAST·BEAST·WEAK·HYPE
- * vault pills, compact banter bar. Theme: #08120F / #FF5A1F / #E53935
+ * Clean HUD: compact top score pill (no top skulls), host side score skulls,
+ * slim banter bar + single flaming-skull tray trigger.
+ * Theme: #08120F / #FF5A1F / #E53935
  */
 import React, {
   memo,
@@ -30,7 +31,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { BawaalEmoji } from './components/BawaalEmoji';
 import {
   FloatingEmojiBurstLayer,
   appendBurstParticles,
@@ -45,14 +45,16 @@ import {
   broadcastReaction,
   broadcastVotePulse,
   pushBanterCapped,
-  LIVE_MATCH_REACTION_PILLS,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import {
   SKULL_TEAM_A,
   SKULL_TEAM_B,
 } from './src/constants/liveMatchTeamSkulls';
-import { LIVE_MATCH_FLAMING_SKULLS } from './src/constants/liveMatchFlamingSkulls';
+import {
+  LIVE_MATCH_FLAMING_SKULLS,
+  SKULL_SILVER,
+} from './src/constants/liveMatchFlamingSkulls';
 
 const BG = '#08120F';
 const ORANGE = '#FF5A1F';
@@ -102,63 +104,35 @@ function PulsingLiveChip({ label = 'LIVE' }) {
 }
 
 /**
- * Team score card — horned skull + team name directly below + score.
+ * Compact top score pill — names + scores only (no skulls / large cards).
  */
-function TeamScoreCard({ side, teamName, score, compact }) {
-  const isA = side === 'A';
-  const skull = isA ? SKULL_TEAM_A : SKULL_TEAM_B;
-  const accent = isA ? TEAM_A_GLOW : TEAM_B_GLOW;
-  const name = displayTeamName(teamName, isA ? 'TEAM A' : 'TEAM B');
+function CompactScorePill({ teamA, teamB, scoreA, scoreB }) {
+  const nameA = displayTeamName(teamA, 'TEAM A');
+  const nameB = displayTeamName(teamB, 'TEAM B');
   return (
-    <View
-      style={[
-        styles.teamCard,
-        compact && styles.teamCardCompact,
-        { borderColor: `${accent}66` },
-      ]}
-    >
-      <Image
-        source={skull}
-        style={compact ? styles.teamCardSkullSm : styles.teamCardSkull}
-        resizeMode="contain"
-        accessibilityLabel={isA ? 'Team A skull' : 'Team B skull'}
-      />
+    <View style={styles.scorePill} accessibilityRole="text">
       <Text
-        style={[styles.teamCardName, { color: accent }]}
-        numberOfLines={2}
+        style={[styles.scorePillName, { color: TEAM_A_GLOW }]}
+        numberOfLines={1}
       >
-        {name}
+        {nameA}
       </Text>
-      <Text style={styles.teamCardScore} numberOfLines={1}>
-        {score}
+      <Text style={styles.scorePillNums} numberOfLines={1}>
+        {scoreA} — {scoreB}
       </Text>
-    </View>
-  );
-}
-
-function Scoreboard({ teamA, teamB, scoreA, scoreB, compact }) {
-  return (
-    <View style={[styles.scoreboard, compact && styles.scoreboardCompact]}>
-      <TeamScoreCard
-        side="A"
-        teamName={teamA}
-        score={scoreA}
-        compact={compact}
-      />
-      <Text style={styles.scoreVs}>VS</Text>
-      <TeamScoreCard
-        side="B"
-        teamName={teamB}
-        score={scoreB}
-        compact={compact}
-      />
+      <Text
+        style={[styles.scorePillName, { color: TEAM_B_GLOW }]}
+        numberOfLines={1}
+      >
+        {nameB}
+      </Text>
     </View>
   );
 }
 
 /**
  * Host/scorer +1 control — static Image skull (Metro-bundled), never wide text bars.
- * Left = red Team A · Right = blue Team B. Team names live on scoreboard cards only.
+ * Left = red Team A · Right = blue Team B. Score names live on the top pill only.
  */
 function HornedSkullScoreButton({ side, teamName, onPress }) {
   const isA = side === 'A';
@@ -406,6 +380,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const [endConfirm, setEndConfirm] = useState(false);
   const [banter, setBanter] = useState([]);
   const [banterDraft, setBanterDraft] = useState('');
+  const [skullTrayOpen, setSkullTrayOpen] = useState(false);
   const [burstParticles, setBurstParticles] = useState([]);
   const [votesA, setVotesA] = useState(Number(initialMatch?.votes_a) || 0);
   const [votesB, setVotesB] = useState(Number(initialMatch?.votes_b) || 0);
@@ -520,18 +495,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
     await broadcastBanter(matchId, { handle, message: text });
   }, [banterDraft, matchId, handle]);
 
-  const fireReactionPill = useCallback(
-    async (pill) => {
-      if (!matchId || !pill?.emojiKey) return;
-      const shortcode = `:${pill.emojiKey}:`;
-      setBanterDraft((prev) => {
-        const base = String(prev || '').trimEnd();
-        return base ? `${base} ${shortcode}` : shortcode;
-      });
+  const fireFlamingSkull = useCallback(
+    async (skull) => {
+      if (!matchId || !skull?.emojiKey) return;
+      setSkullTrayOpen(false);
       await broadcastReaction(matchId, {
-        emojiKey: pill.emojiKey,
+        emojiKey: skull.emojiKey,
         handle,
-        label: pill.label,
+        label: skull.id,
       });
     },
     [matchId, handle]
@@ -595,12 +566,11 @@ function LiveMatchRoomScreen({ navigation, route }) {
           </View>
           {hasScoreboard ? (
             <View style={styles.scoreboardHud}>
-              <Scoreboard
+              <CompactScorePill
                 teamA={teamA}
                 teamB={teamB}
                 scoreA={scoreA}
                 scoreB={scoreB}
-                compact
               />
               {adminLabel ? (
                 <Text style={styles.adminChip} numberOfLines={1}>
@@ -726,48 +696,46 @@ function LiveMatchRoomScreen({ navigation, route }) {
             />
           ) : null}
 
-          {/* FIRE · ROAST · BEAST · WEAK · HYPE — above banter */}
-          <View style={styles.pillRow}>
-            {LIVE_MATCH_REACTION_PILLS.map((pill) => (
-              <TouchableOpacity
-                key={pill.id}
-                style={styles.hypePill}
-                onPress={() => fireReactionPill(pill)}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={`${pill.label} reaction`}
-              >
-                <BawaalEmoji name={pill.emojiKey} size={22} />
-                <Text style={styles.hypePillLabel}>{pill.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* 5 flaming skulls — silver/black/bronze/purple/yellow + compact banter */}
+          {/* Slim banter strip + single skull tray trigger */}
           <View style={styles.banterRow}>
-            <View style={styles.emojiTray}>
-              {LIVE_MATCH_FLAMING_SKULLS.map((skull) => (
-                <TouchableOpacity
-                  key={skull.id}
-                  style={styles.emojiTrayBtn}
-                  onPress={() =>
-                    fireReactionPill({
-                      id: skull.id,
-                      label: skull.id.toUpperCase(),
-                      emojiKey: skull.emojiKey,
-                    })
-                  }
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${skull.id} flaming skull reaction`}
-                >
-                  <Image
-                    source={skull.source}
-                    style={styles.flamingSkullIcon}
-                    resizeMode="contain"
-                  />
-                </TouchableOpacity>
-              ))}
+            <View style={styles.skullTriggerWrap}>
+              {skullTrayOpen ? (
+                <View style={styles.skullPopupTray}>
+                  {LIVE_MATCH_FLAMING_SKULLS.map((skull) => (
+                    <TouchableOpacity
+                      key={skull.id}
+                      style={styles.skullPopupBtn}
+                      onPress={() => fireFlamingSkull(skull)}
+                      activeOpacity={0.85}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${skull.id} flaming skull reaction`}
+                    >
+                      <Image
+                        source={skull.source}
+                        style={styles.skullPopupIcon}
+                        resizeMode="contain"
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={[
+                  styles.skullTriggerBtn,
+                  skullTrayOpen && styles.skullTriggerBtnOpen,
+                ]}
+                onPress={() => setSkullTrayOpen((v) => !v)}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: skullTrayOpen }}
+                accessibilityLabel="Open flaming skull reactions"
+              >
+                <Image
+                  source={SKULL_SILVER}
+                  style={styles.skullTriggerIcon}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
             </View>
             <View style={styles.banterBar}>
               <TextInput
@@ -779,13 +747,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 maxLength={160}
                 returnKeyType="send"
                 onSubmitEditing={sendBanter}
+                onFocus={() => setSkullTrayOpen(false)}
               />
               <TouchableOpacity
                 style={styles.sendBtn}
                 onPress={sendBanter}
                 accessibilityLabel="Send banter"
               >
-                <Ionicons name="send" size={15} color={WHITE} />
+                <Ionicons name="send" size={14} color={WHITE} />
               </TouchableOpacity>
             </View>
           </View>
@@ -932,7 +901,36 @@ const styles = StyleSheet.create({
   scoreboardHud: {
     flex: 1,
     alignItems: 'center',
-    maxWidth: 280,
+    justifyContent: 'flex-start',
+    maxWidth: 300,
+    minWidth: 0,
+    paddingHorizontal: 4,
+  },
+  scorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    maxWidth: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,18,15,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.35)',
+  },
+  scorePillName: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    maxWidth: 88,
+  },
+  scorePillNums: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.6,
   },
   adminChip: {
     marginTop: 4,
@@ -998,63 +996,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  scoreboard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    justifyContent: 'center',
-    gap: 6,
-    maxWidth: 260,
-  },
-  scoreboardCompact: {
-    maxWidth: 260,
-  },
-  scoreVs: {
-    alignSelf: 'center',
-    color: MUTED,
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  teamCard: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: PANEL,
-    borderRadius: 12,
-    paddingHorizontal: 6,
-    paddingTop: 6,
-    paddingBottom: 8,
-    borderWidth: 1,
-    minWidth: 0,
-  },
-  teamCardCompact: {
-    paddingTop: 4,
-    paddingBottom: 6,
-  },
-  teamCardSkull: {
-    width: 48,
-    height: 48,
-  },
-  teamCardSkullSm: {
-    width: 40,
-    height: 40,
-  },
-  teamCardName: {
-    marginTop: 3,
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-    textAlign: 'center',
-    maxWidth: '100%',
-    paddingHorizontal: 2,
-  },
-  teamCardScore: {
-    marginTop: 2,
-    color: WHITE,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
   iconBtn: {
     width: 36,
     height: 36,
@@ -1080,7 +1021,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 236,
+    bottom: 118,
     gap: 4,
     zIndex: 15,
   },
@@ -1105,7 +1046,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     paddingHorizontal: 12,
-    gap: 8,
+    gap: 10,
     zIndex: 25,
   },
   hostScoreRow: {
@@ -1226,48 +1167,55 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  pillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 5,
-  },
-  hypePill: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 1,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: 'rgba(8,18,15,0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,90,31,0.55)',
-  },
-  hypePillLabel: {
-    color: ORANGE,
-    fontSize: 8,
-    fontWeight: '900',
-    letterSpacing: 0.6,
-  },
   banterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  emojiTray: {
+  skullTriggerWrap: {
+    position: 'relative',
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 30,
+  },
+  skullTriggerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,18,15,0.72)',
+  },
+  skullTriggerBtnOpen: {
+    backgroundColor: 'rgba(255,90,31,0.22)',
+  },
+  skullTriggerIcon: {
+    width: 28,
+    height: 28,
+  },
+  skullPopupTray: {
+    position: 'absolute',
+    left: 0,
+    bottom: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(8,18,15,0.55)',
   },
-  emojiTrayBtn: {
-    width: 32,
-    height: 32,
+  skullPopupBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  flamingSkullIcon: {
-    width: 28,
-    height: 28,
+  skullPopupIcon: {
+    width: 34,
+    height: 34,
   },
   banterBar: {
     flex: 1,
@@ -1276,22 +1224,24 @@ const styles = StyleSheet.create({
     backgroundColor: PANEL,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.12)',
     paddingLeft: 12,
-    paddingRight: 4,
-    minHeight: 40,
+    paddingRight: 3,
+    minHeight: 36,
+    maxHeight: 36,
   },
   banterInput: {
     flex: 1,
     color: WHITE,
     fontSize: 13,
-    paddingVertical: Platform.OS === 'web' ? 8 : 7,
+    paddingVertical: 0,
+    height: 34,
     outlineStyle: 'none',
   },
   sendBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: CRIMSON,
