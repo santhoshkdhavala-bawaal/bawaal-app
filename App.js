@@ -14,6 +14,7 @@ import AthleteDashboard from './AthleteDashboard';
 import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
 import SportHubMapScreen from './SportHubMapScreen';
+import LiveMatchRoomScreen from './LiveMatchRoomScreen';
 import { COLORS } from './theme';
 import {
   getRegisteredSession,
@@ -404,6 +405,14 @@ function AppBoot() {
                 name="SportHubMap"
                 component={SportHubMapScreen}
                 options={{ animation: 'slide_from_right' }}
+              />
+              <Stack.Screen
+                name="LiveMatchRoom"
+                component={LiveMatchRoomScreen}
+                options={{
+                  animation: 'slide_from_bottom',
+                  presentation: 'fullScreenModal',
+                }}
               />
               {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
               <Stack.Screen

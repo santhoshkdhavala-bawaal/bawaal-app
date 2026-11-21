@@ -1,5 +1,5 @@
 /**
- * Live Arena Hub — list live matches + GO LIVE NOW entry.
+ * Live Arena Hub — list live matches + 5-second GO LIVE setup.
  * Theme: #08120F / #FF5A1F / #E53935
  */
 import React, { memo, useCallback, useEffect, useState } from 'react';
@@ -12,13 +12,22 @@ import {
   FlatList,
   ActivityIndicator,
   Platform,
+  TextInput,
+  ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   listLiveMatches,
   subscribeLiveMatchList,
+  createLiveMatch,
 } from '../services/liveMatchService';
+import {
+  LIVE_MATCH_SPORTS,
+  DEFAULT_LIVE_MATCH_SPORT,
+} from '../constants/liveMatchSports';
+import { getActiveUser } from '../services/activeUserProfile';
 
 const BG = '#08120F';
 const CARD = '#0F1A16';
@@ -26,6 +35,7 @@ const ORANGE = '#FF5A1F';
 const CRIMSON = '#E53935';
 const WHITE = '#FFFFFF';
 const MUTED = '#94A3B8';
+const INPUT = '#12201B';
 
 function MatchCard({ item, onPress }) {
   const watching = Math.max(0, Number(item.watching) || 0);
@@ -69,24 +79,157 @@ function MatchCard({ item, onPress }) {
   );
 }
 
+function GoLiveSetup({ onBack, onStarted }) {
+  const [sport, setSport] = useState(DEFAULT_LIVE_MATCH_SPORT);
+  const [teamA, setTeamA] = useState('TEAM A');
+  const [teamB, setTeamB] = useState('TEAM B');
+  const [title, setTitle] = useState('');
+  const [starting, setStarting] = useState(false);
+
+  const handleStart = useCallback(async () => {
+    if (starting) return;
+    setStarting(true);
+    try {
+      const user = getActiveUser();
+      const result = await createLiveMatch({
+        hostId: String(user?.id || user?.userId || `local:${Date.now()}`),
+        hostHandle: String(user?.handle || user?.username || 'athlete').replace(
+          /^@/,
+          ''
+        ),
+        sport,
+        title,
+        teamAName: teamA,
+        teamBName: teamB,
+      });
+      if (result?.match) {
+        onStarted?.(result.match);
+        return;
+      }
+    } finally {
+      setStarting(false);
+    }
+  }, [starting, sport, title, teamA, teamB, onStarted]);
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.setupWrap}
+    >
+      <View style={styles.setupHeader}>
+        <TouchableOpacity
+          onPress={onBack}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Back to live list"
+        >
+          <Text style={styles.backLink}>← BACK</Text>
+        </TouchableOpacity>
+        <Text style={styles.setupTitle}>GO LIVE</Text>
+        <View style={{ width: 48 }} />
+      </View>
+
+      <Text style={styles.fieldLabel}>SPORT</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.sportRow}
+      >
+        {LIVE_MATCH_SPORTS.map((s) => {
+          const active = s === sport;
+          return (
+            <TouchableOpacity
+              key={s}
+              style={[styles.sportPill, active && styles.sportPillActive]}
+              onPress={() => setSport(s)}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[styles.sportPillText, active && styles.sportPillTextActive]}
+              >
+                {s}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      <Text style={styles.fieldLabel}>TEAM A</Text>
+      <TextInput
+        style={styles.input}
+        value={teamA}
+        onChangeText={setTeamA}
+        placeholder="TEAM A"
+        placeholderTextColor={MUTED}
+        maxLength={32}
+        autoCapitalize="characters"
+      />
+
+      <Text style={styles.fieldLabel}>TEAM B</Text>
+      <TextInput
+        style={styles.input}
+        value={teamB}
+        onChangeText={setTeamB}
+        placeholder="TEAM B"
+        placeholderTextColor={MUTED}
+        maxLength={32}
+        autoCapitalize="characters"
+      />
+
+      <Text style={styles.fieldLabel}>TITLE (OPTIONAL)</Text>
+      <TextInput
+        style={styles.input}
+        value={title}
+        onChangeText={setTitle}
+        placeholder="Friendly School Match"
+        placeholderTextColor={MUTED}
+        maxLength={80}
+      />
+
+      <TouchableOpacity
+        style={[styles.startBtn, starting && styles.startBtnDisabled]}
+        onPress={handleStart}
+        activeOpacity={0.9}
+        disabled={!!starting}
+        accessibilityRole="button"
+        accessibilityLabel="Start live telecast"
+      >
+        {starting ? (
+          <ActivityIndicator color={WHITE} />
+        ) : (
+          <Text style={styles.startBtnText}>START LIVE TELECAST</Text>
+        )}
+      </TouchableOpacity>
+    </KeyboardAvoidingView>
+  );
+}
+
 function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
   const insets = useSafeAreaInsets();
   const [matches, setMatches] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState('hub'); // hub | setup
+
+  // When closed, always present hub (mode reset happens on close / back presses)
+  const sheetVisible = !!visible;
+  const effectiveMode = sheetVisible ? mode : 'hub';
 
   useEffect(() => {
-    if (!visible) return undefined;
-    setLoading(true);
+    if (!sheetVisible) return undefined;
     let alive = true;
-    listLiveMatches()
+    void listLiveMatches()
       .then((list) => {
-        if (alive) setMatches(Array.isArray(list) ? list : []);
+        if (!alive) return;
+        setMatches(Array.isArray(list) ? list : []);
+        setLoading(false);
       })
-      .finally(() => {
+      .catch(() => {
         if (alive) setLoading(false);
       });
     const unsub = subscribeLiveMatchList((list) => {
-      if (alive) setMatches(Array.isArray(list) ? list : []);
+      if (!alive) return;
+      setMatches(Array.isArray(list) ? list : []);
+      setLoading(false);
     });
     return () => {
       alive = false;
@@ -96,12 +239,23 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
         /* ignore */
       }
     };
-  }, [visible]);
+  }, [sheetVisible]);
 
-  const handleGoLive = useCallback(() => {
-    onClose?.();
-    onGoLive?.();
-  }, [onClose, onGoLive]);
+  const openSetup = useCallback(() => {
+    setMode('setup');
+  }, []);
+
+  const closeSetup = useCallback(() => {
+    setMode('hub');
+  }, []);
+
+  const handleStarted = useCallback(
+    (match) => {
+      onClose?.();
+      onGoLive?.(match);
+    },
+    [onClose, onGoLive]
+  );
 
   const handleWatch = useCallback(
     (match) => {
@@ -130,55 +284,68 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
             styles.sheet,
             {
               paddingBottom: Math.max(insets.bottom, 16) + 12,
-              maxHeight: '88%',
+              maxHeight: '92%',
             },
           ]}
         >
           <View style={styles.handle} />
-          <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>LIVE ARENA</Text>
-            <TouchableOpacity
-              onPress={onClose}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <Ionicons name="close" size={22} color={WHITE} />
-            </TouchableOpacity>
-          </View>
 
-          <TouchableOpacity
-            style={styles.goLiveBtn}
-            onPress={handleGoLive}
-            activeOpacity={0.9}
-            accessibilityRole="button"
-            accessibilityLabel="Go live now"
-          >
-            <Text style={styles.goLiveText}>+ GO LIVE NOW</Text>
-          </TouchableOpacity>
-
-          <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
-
-          {loading && matches.length === 0 ? (
-            <ActivityIndicator color={ORANGE} style={{ marginTop: 24 }} />
-          ) : (
-            <FlatList
-              data={matches}
-              keyExtractor={(item) => String(item.id)}
-              renderItem={({ item }) => (
-                <MatchCard item={item} onPress={handleWatch} />
-              )}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>
-                  No live matches yet. Be the first — GO LIVE NOW.
-                </Text>
-              }
-              windowSize={5}
-              maxToRenderPerBatch={8}
-              initialNumToRender={6}
+          {effectiveMode === 'setup' ? (
+            <GoLiveSetup
+              onBack={closeSetup}
+              onStarted={handleStarted}
             />
+          ) : (
+            <>
+              <View style={styles.headerRow}>
+                <Text style={styles.headerTitle}>LIVE ARENA</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setMode('hub');
+                    onClose?.();
+                  }}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Ionicons name="close" size={22} color={WHITE} />
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity
+                style={styles.goLiveBtn}
+                onPress={openSetup}
+                activeOpacity={0.9}
+                accessibilityRole="button"
+                accessibilityLabel="Go live now"
+              >
+                <Text style={styles.goLiveText}>+ GO LIVE NOW</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
+
+              {loading && matches.length === 0 ? (
+                <ActivityIndicator color={ORANGE} style={{ marginTop: 24 }} />
+              ) : (
+                <FlatList
+                  data={matches}
+                  keyExtractor={(item) => String(item.id)}
+                  renderItem={({ item }) => (
+                    <MatchCard item={item} onPress={handleWatch} />
+                  )}
+                  contentContainerStyle={styles.listContent}
+                  showsVerticalScrollIndicator={false}
+                  ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                      No live matches yet. Be the first — GO LIVE NOW.
+                    </Text>
+                  }
+                  windowSize={5}
+                  maxToRenderPerBatch={8}
+                  initialNumToRender={6}
+                />
+              )}
+            </>
           )}
         </View>
       </View>
@@ -339,6 +506,90 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 12,
     fontWeight: '700',
+  },
+  setupWrap: {
+    paddingBottom: 8,
+  },
+  setupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  backLink: {
+    color: ORANGE,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    width: 48,
+  },
+  setupTitle: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  fieldLabel: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+    marginBottom: 8,
+    marginTop: 10,
+  },
+  sportRow: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  sportPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: INPUT,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  sportPillActive: {
+    backgroundColor: CRIMSON,
+    borderColor: ORANGE,
+  },
+  sportPillText: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  sportPillTextActive: {
+    color: WHITE,
+  },
+  input: {
+    backgroundColor: INPUT,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.28)',
+    color: WHITE,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 12 : 11,
+    fontSize: 14,
+    fontWeight: '700',
+    outlineStyle: 'none',
+  },
+  startBtn: {
+    marginTop: 22,
+    backgroundColor: CRIMSON,
+    borderRadius: 999,
+    paddingVertical: 15,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: ORANGE,
+  },
+  startBtnDisabled: {
+    opacity: 0.65,
+  },
+  startBtnText: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.9,
   },
 });
 

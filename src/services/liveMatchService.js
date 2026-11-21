@@ -92,7 +92,12 @@ function getLocalLiveList() {
     );
 }
 
-function useLocalOnly() {
+/** Live match count for Arena header badge (local cache; hydrate via listLiveMatches). */
+export function getLiveMatchCount() {
+  return getLocalLiveList().length;
+}
+
+function shouldUseLocalOnly() {
   return !isSupabaseConfigured() || isTableDisabled(TABLE);
 }
 
@@ -100,7 +105,7 @@ function useLocalOnly() {
  * @returns {Promise<object[]>}
  */
 export async function listLiveMatches() {
-  if (useLocalOnly()) {
+  if (shouldUseLocalOnly()) {
     return getLocalLiveList();
   }
   try {
@@ -161,7 +166,7 @@ export async function createLiveMatch({
   localMatches.set(id, row);
   emitListListeners();
 
-  if (useLocalOnly()) {
+  if (shouldUseLocalOnly()) {
     return { ok: true, local: true, match: row };
   }
 
@@ -232,7 +237,7 @@ export async function updateMatchScore(matchId, scores = {}) {
   emitListListeners();
   emitRoomHandlers(id, { type: 'score', match: localMatches.get(id) });
 
-  if (useLocalOnly()) {
+  if (shouldUseLocalOnly()) {
     return { ok: true, local: true, match: localMatches.get(id) };
   }
 
@@ -284,7 +289,7 @@ export async function endLiveMatch(matchId) {
   emitListListeners();
   emitRoomHandlers(id, { type: 'status', match: ended });
 
-  if (useLocalOnly()) {
+  if (shouldUseLocalOnly()) {
     return { ok: true, local: true, match: ended };
   }
 
@@ -322,7 +327,7 @@ export async function fetchLiveMatch(matchId) {
   const id = String(matchId || '').trim();
   if (!id) return null;
   if (localMatches.has(id)) return localMatches.get(id);
-  if (useLocalOnly()) return null;
+  if (shouldUseLocalOnly()) return null;
   try {
     const { data, error } = await supabase
       .from(TABLE)
@@ -652,7 +657,7 @@ function queueVoteFlush(matchId, team) {
   buf.timer = setTimeout(() => {
     const pending = voteBuffers.get(id);
     voteBuffers.delete(id);
-    if (!pending || useLocalOnly()) return;
+    if (!pending || shouldUseLocalOnly()) return;
     const cur = localMatches.get(id);
     if (!cur) return;
     supabase

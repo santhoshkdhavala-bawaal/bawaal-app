@@ -59,6 +59,11 @@ import CommunityChallengesShelf from './src/components/CommunityChallengesShelf'
 import ArenaV2Header from './src/components/ArenaV2Header';
 import GameOnHub from './src/components/GameOnHub';
 import NotificationsDrawer from './src/components/NotificationsDrawer';
+import LiveArenaModal from './src/components/LiveArenaModal';
+import {
+  listLiveMatches,
+  subscribeLiveMatchList,
+} from './src/services/liveMatchService';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
 import { useBattles } from './src/hooks/useBattles';
@@ -1876,6 +1881,8 @@ export default function ArenaFeed({ navigation, route }) {
   const { openProfileGateway, openBattlesCallout } = useMainTabs();
   const [gameOnOpen, setGameOnOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [liveArenaOpen, setLiveArenaOpen] = useState(false);
+  const [liveMatchCount, setLiveMatchCount] = useState(0);
   const initialFilters = getArenaFilters();
   const [selectedFeedTier, setSelectedFeedTier] = useState(
     initialFilters.tierId || ARENA_FEED_TIER_ALL
@@ -2513,6 +2520,39 @@ export default function ArenaFeed({ navigation, route }) {
     rivalScore: 0,
     spectatorCount: 0,
   });
+
+  // Live Match Telecast hub badge (status=live count)
+  useEffect(() => {
+    let alive = true;
+    listLiveMatches()
+      .then((list) => {
+        if (alive) setLiveMatchCount(Array.isArray(list) ? list.length : 0);
+      })
+      .catch(() => {});
+    const unsub = subscribeLiveMatchList((list) => {
+      if (alive) setLiveMatchCount(Array.isArray(list) ? list.length : 0);
+    });
+    return () => {
+      alive = false;
+      try {
+        unsub?.();
+      } catch (_) {
+        /* ignore */
+      }
+    };
+  }, []);
+
+  const openLiveMatchRoom = useCallback(
+    (match, role) => {
+      if (!match?.id) return;
+      navigation?.navigate?.('LiveMatchRoom', {
+        matchId: match.id,
+        match,
+        role: role === 'host' ? 'host' : 'viewer',
+      });
+    },
+    [navigation]
+  );
 
   const onSelectDashboardCategory = useCallback((label) => {
     setDashboardCategory(label || 'All');
@@ -3192,6 +3232,8 @@ export default function ArenaFeed({ navigation, route }) {
       <View style={styles.headerBar}>
         <ArenaV2Header
           onBrandPress={openProfileGateway}
+          onLivePress={() => setLiveArenaOpen(true)}
+          liveCount={liveMatchCount}
           onGameOnPress={() => setGameOnOpen(true)}
           onNotificationsPress={() => setNotificationsOpen(true)}
         />
@@ -3393,6 +3435,12 @@ export default function ArenaFeed({ navigation, route }) {
         selectedSportFilter={selectedSportFilter}
         onSelectSportFilter={onSelectSportFilter}
         onOpenSportHubMap={() => navigation?.navigate?.('SportHubMap')}
+      />
+      <LiveArenaModal
+        visible={liveArenaOpen}
+        onClose={() => setLiveArenaOpen(false)}
+        onGoLive={(match) => openLiveMatchRoom(match, 'host')}
+        onWatchMatch={(match) => openLiveMatchRoom(match, 'viewer')}
       />
       <NotificationsDrawer
         visible={notificationsOpen}
