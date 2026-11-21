@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
   Platform,
   TextInput,
-  ScrollView,
   KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -79,6 +78,104 @@ function MatchCard({ item, onPress }) {
   );
 }
 
+/**
+ * Stealth sport dropdown — web + Android (Modal + FlatList, no native Picker).
+ */
+function SportDropdown({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = value || DEFAULT_LIVE_MATCH_SPORT;
+
+  const handleSelect = useCallback(
+    (sport) => {
+      onChange?.(sport);
+      setOpen(false);
+    },
+    [onChange]
+  );
+
+  return (
+    <View>
+      <TouchableOpacity
+        style={styles.dropdownTrigger}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={`Sport ${selected}. Open sport list`}
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={styles.dropdownTriggerText} numberOfLines={1}>
+          {selected}
+        </Text>
+        <Text style={styles.dropdownChevron}>▾</Text>
+      </TouchableOpacity>
+
+      <Modal
+        visible={open}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOpen(false)}
+      >
+        <View style={styles.dropdownScrim}>
+          <TouchableOpacity
+            style={styles.dropdownScrimHit}
+            activeOpacity={1}
+            onPress={() => setOpen(false)}
+            accessibilityLabel="Close sport list"
+          />
+          <View style={styles.dropdownSheet}>
+            <View style={styles.dropdownSheetHeader}>
+              <Text style={styles.dropdownSheetTitle}>SELECT SPORT</Text>
+              <TouchableOpacity
+                onPress={() => setOpen(false)}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={20} color={WHITE} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={options}
+              keyExtractor={(item) => item}
+              showsVerticalScrollIndicator={false}
+              style={styles.dropdownList}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const active = item === selected;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.dropdownOption,
+                      active && styles.dropdownOptionActive,
+                    ]}
+                    onPress={() => handleSelect(item)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    accessibilityLabel={item}
+                  >
+                    <Text
+                      style={[
+                        styles.dropdownOptionText,
+                        active && styles.dropdownOptionTextActive,
+                      ]}
+                    >
+                      {item}
+                    </Text>
+                    {active ? (
+                      <Ionicons name="checkmark" size={18} color={ORANGE} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
 function GoLiveSetup({ onBack, onStarted }) {
   const [sport, setSport] = useState(DEFAULT_LIVE_MATCH_SPORT);
   const [teamA, setTeamA] = useState('TEAM A');
@@ -130,29 +227,11 @@ function GoLiveSetup({ onBack, onStarted }) {
       </View>
 
       <Text style={styles.fieldLabel}>SPORT</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.sportRow}
-      >
-        {LIVE_MATCH_SPORTS.map((s) => {
-          const active = s === sport;
-          return (
-            <TouchableOpacity
-              key={s}
-              style={[styles.sportPill, active && styles.sportPillActive]}
-              onPress={() => setSport(s)}
-              activeOpacity={0.85}
-            >
-              <Text
-                style={[styles.sportPillText, active && styles.sportPillTextActive]}
-              >
-                {s}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      <SportDropdown
+        value={sport}
+        options={LIVE_MATCH_SPORTS}
+        onChange={setSport}
+      />
 
       <Text style={styles.fieldLabel}>TEAM A</Text>
       <TextInput
@@ -537,29 +616,89 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 10,
   },
-  sportRow: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  sportPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: INPUT,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,90,31,0.45)',
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'web' ? 13 : 12,
   },
-  sportPillActive: {
-    backgroundColor: CRIMSON,
-    borderColor: ORANGE,
-  },
-  sportPillText: {
-    color: MUTED,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  sportPillTextActive: {
+  dropdownTriggerText: {
+    flex: 1,
     color: WHITE,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  dropdownChevron: {
+    color: ORANGE,
+    fontSize: 16,
+    fontWeight: '900',
+    marginLeft: 10,
+  },
+  dropdownScrim: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  dropdownScrimHit: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  dropdownSheet: {
+    backgroundColor: BG,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.35)',
+    maxHeight: '70%',
+    overflow: 'hidden',
+    ...Platform.select({
+      web: { maxWidth: 420, alignSelf: 'center', width: '100%' },
+      default: { width: '100%' },
+    }),
+  },
+  dropdownSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  dropdownSheetTitle: {
+    color: WHITE,
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+  },
+  dropdownList: {
+    maxHeight: 360,
+  },
+  dropdownOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+  },
+  dropdownOptionActive: {
+    backgroundColor: 'rgba(255,90,31,0.16)',
+  },
+  dropdownOptionText: {
+    color: MUTED,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  dropdownOptionTextActive: {
+    color: ORANGE,
   },
   input: {
     backgroundColor: INPUT,
