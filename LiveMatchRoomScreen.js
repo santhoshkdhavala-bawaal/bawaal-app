@@ -56,6 +56,7 @@ import {
   LIVE_MATCH_FLAMING_SKULLS,
   SKULL_FIRE,
 } from './src/constants/liveMatchFlamingSkulls';
+import LiveMatchInviteModal from './src/components/LiveMatchInviteModal';
 
 const BG = '#08120F';
 const ORANGE = '#FF5A1F';
@@ -666,6 +667,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const reactionBusyRef = useRef(false);
   const cricketUndoRef = useRef([]);
   const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const scoreActor = useMemo(
     () => ({
@@ -1039,6 +1041,14 @@ function LiveMatchRoomScreen({ navigation, route }) {
             {role === 'host' ? (
               <>
                 <TouchableOpacity
+                  style={styles.inviteBtn}
+                  onPress={() => setInviteOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Invite friends"
+                >
+                  <Text style={styles.inviteBtnText}>INVITE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.iconBtn}
                   onPress={() =>
                     setFacing((f) => (f === 'back' ? 'front' : 'back'))
@@ -1214,6 +1224,12 @@ function LiveMatchRoomScreen({ navigation, route }) {
           </View>
         </KeyboardAvoidingView>
       </View>
+
+      <LiveMatchInviteModal
+        visible={inviteOpen && role === 'host'}
+        match={match}
+        onClose={() => setInviteOpen(false)}
+      />
 
       <Modal visible={endConfirm} transparent animationType="fade">
         <View style={styles.confirmScrim}>
@@ -1552,6 +1568,20 @@ const styles = StyleSheet.create({
     color: WHITE,
     fontSize: 11,
     fontWeight: '900',
+  },
+  inviteBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,90,31,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.55)',
+  },
+  inviteBtnText: {
+    color: ORANGE,
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
   },
   banterTicker: {
     position: 'absolute',

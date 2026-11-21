@@ -17,8 +17,33 @@ import {
 import { DEFAULT_LIVE_MATCH_SPORT } from '../constants/liveMatchSports';
 
 const TABLE = 'live_matches';
+const INVITES_TABLE = 'live_match_invites';
 const BANTER_CAP = 40;
 const VOTE_FLUSH_MS = 8000;
+const INVITE_TTL_MS = 5 * 60 * 1000;
+
+function newInviteCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < 6; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+function normalizeInviteHandle(value) {
+  return String(value || '')
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase();
+}
+
+function userInviteChannelName(userId, handle) {
+  const id = String(userId || '').trim();
+  if (id) return `live-user-invites-${id}`;
+  const h = normalizeInviteHandle(handle);
+  return h ? `live-user-invites-h-${h}` : '';
+}
 
 /**
  * High-octane labeled pills above banter (vault skull keys only — no unicode).
@@ -201,6 +226,9 @@ function normalizeMatch(row) {
       Math.min(10, Number(row.cricket_wickets_b) || 0)
     ),
     cricket_balls_b: Math.max(0, Math.floor(Number(row.cricket_balls_b) || 0)),
+    invite_code: row.invite_code
+      ? String(row.invite_code).trim().toUpperCase()
+      : '',
     // Convenience aliases for batting side (UI / docs)
     runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
     wickets:
@@ -295,6 +323,7 @@ export async function createLiveMatch({
   scorerName = '',
 } = {}) {
   const id = newMatchId();
+  const inviteCode = newInviteCode();
   const scoreboardOn = !!hasScoreboard;
   const adminLabel = String(adminName || scorerName || hostHandle || '')
     .trim()
@@ -331,6 +360,7 @@ export async function createLiveMatch({
     cricket_runs_b: 0,
     cricket_wickets_b: 0,
     cricket_balls_b: 0,
+    invite_code: inviteCode,
   });
 
   localMatches.set(id, row);
@@ -367,6 +397,7 @@ export async function createLiveMatch({
     cricket_runs_b: row.cricket_runs_b,
     cricket_wickets_b: row.cricket_wickets_b,
     cricket_balls_b: row.cricket_balls_b,
+    invite_code: row.invite_code || null,
   };
 
   try {
@@ -1068,4 +1099,359 @@ export function pushBanterCapped(list, item, cap = BANTER_CAP) {
   return next.slice(next.length - cap);
 }
 
-export { BANTER_CAP, channelName as liveMatchChannelName };
+export function getLiveMatchInviteCode(match) {
+  const code = String(match?.invite_code || '').trim().toUpperCase();
+  if (code) return code;
+  const id = String(match?.id || '').replace(/-/g, '').slice(0, 6).toUpperCase();
+  return id || newInviteCode();
+}
+
+export function buildLiveMatchInviteLink(match) {
+  const id = String(match?.id || '').trim();
+  const code = getLiveMatchInviteCode(match);
+  if (!id) return `bawaal://live?code=${encodeURIComponent(code)}`;
+  return `bawaal://live/${id}?code=${encodeURIComponent(code)}`;
+}
+
+/**
+ * Soft athlete picker for invites — profiles search + local FOLLOWING/SUGGESTED.
+ */
+export async function searchLiveInviteAthletes(query = '') {
+  const q = String(query || '').trim().toLowerCase();
+  let remote = [];
+  if (isSupabaseConfigured() && !isTableDisabled('profiles')) {
+    try {
+      let req = supabase
+        .from('profiles')
+        .select('id, username, real_name, category')
+        .limit(24);
+      if (q) {
+        req = req.or(
+          `username.ilike.%${q}%,real_name.ilike.%${q}%`
+        );
+      }
+      const { data, error } = await req;
+      if (error) {
+        if (isMissingRelationError(error)) {
+          markTableMissing('profiles', 'liveInvite', error.message || error);
+        }
+      } else {
+        remote = (Array.isArray(data) ? data : []).map((row) => ({
+          id: String(row.id || ''),
+          handle: String(row.username || '')
+            .replace(/^@/, '')
+            .trim(),
+          displayName: String(row.real_name || row.username || 'Athlete'),
+          sport: String(row.category || '').toUpperCase(),
+          source: 'profiles',
+        }));
+      }
+    } catch (err) {
+      softFailWarn(
+        'liveInvite:search',
+        '[liveInvite] profile search soft-fail',
+        err?.message
+      );
+    }
+  }
+
+  let local = [];
+  try {
+    const { FOLLOWING, SUGGESTED } = require('../data/athleteSocial');
+    local = [...(FOLLOWING || []), ...(SUGGESTED || [])].map((a) => ({
+      id: String(a.id || ''),
+      handle: String(a.handle || '')
+        .replace(/^@/, '')
+        .trim(),
+      displayName: String(a.displayName || a.handle || 'Athlete'),
+      sport: String(a.sport || '').toUpperCase(),
+      source: 'local',
+    }));
+  } catch (_) {
+    local = [];
+  }
+
+  const merged = [...remote, ...local];
+  const seen = new Set();
+  const filtered = merged.filter((a) => {
+    const key = `${a.id}|${normalizeInviteHandle(a.handle)}`;
+    if (!a.handle || seen.has(key)) return false;
+    seen.add(key);
+    if (!q) return true;
+    return (
+      normalizeInviteHandle(a.handle).includes(q) ||
+      String(a.displayName || '')
+        .toLowerCase()
+        .includes(q) ||
+      String(a.sport || '')
+        .toLowerCase()
+        .includes(q)
+    );
+  });
+  return filtered.slice(0, 30);
+}
+
+function buildInvitePayload(match, host, recipient) {
+  const at = Date.now();
+  return {
+    inviteId: `inv-${at}-${Math.random().toString(36).slice(2, 8)}`,
+    matchId: String(match?.id || ''),
+    inviteCode: getLiveMatchInviteCode(match),
+    hostId: String(host?.id || host?.userId || match?.host_id || ''),
+    hostHandle: String(host?.handle || match?.host_handle || 'host').replace(
+      /^@/,
+      ''
+    ),
+    recipientId: String(recipient?.id || ''),
+    recipientHandle: normalizeInviteHandle(recipient?.handle),
+    sport: String(match?.sport || 'LIVE').toUpperCase(),
+    teamA: String(match?.team_a_name || 'TEAM A'),
+    teamB: String(match?.team_b_name || 'TEAM B'),
+    hasScoreboard: match?.has_scoreboard !== false,
+    at,
+    expiresAt: at + INVITE_TTL_MS,
+  };
+}
+
+/**
+ * Targeted invites only — per-recipient Realtime channel (never global fanout).
+ */
+export async function sendLiveMatchInvites({
+  match,
+  host,
+  recipients = [],
+} = {}) {
+  const list = (Array.isArray(recipients) ? recipients : []).filter(
+    (r) => r && (r.id || r.handle)
+  );
+  if (!match?.id || list.length === 0) {
+    return { ok: false, reason: 'no-recipients', sent: 0 };
+  }
+
+  const payloads = list.map((recipient) =>
+    buildInvitePayload(match, host, recipient)
+  );
+
+  // Soft DB insert (best-effort; never blocks broadcast)
+  if (isSupabaseConfigured() && !isTableDisabled(INVITES_TABLE)) {
+    try {
+      const rows = payloads.map((p) => ({
+        match_id: p.matchId,
+        host_id: p.hostId,
+        host_handle: p.hostHandle,
+        recipient_id: p.recipientId || null,
+        recipient_handle: p.recipientHandle || null,
+        sport: p.sport,
+        team_a_name: p.teamA,
+        team_b_name: p.teamB,
+        expires_at: new Date(p.expiresAt).toISOString(),
+      }));
+      const { error } = await supabase.from(INVITES_TABLE).insert(rows);
+      if (error) {
+        if (isMissingRelationError(error)) {
+          markTableMissing(INVITES_TABLE, 'liveInvite', error.message || error);
+        } else {
+          softFailWarn(
+            'liveInvite:insert',
+            '[liveInvite] insert soft-fail',
+            error
+          );
+        }
+      }
+    } catch (err) {
+      softFailWarn(
+        'liveInvite:insertEx',
+        '[liveInvite] insert exception',
+        err?.message
+      );
+    }
+  }
+
+  let sent = 0;
+  for (const payload of payloads) {
+    const channelName = userInviteChannelName(
+      payload.recipientId,
+      payload.recipientHandle
+    );
+    if (!channelName) continue;
+
+    // Local same-runtime delivery (filtered per subscribed user — never global spam)
+    deliverLocalInvite(payload);
+
+    if (isSupabaseConfigured()) {
+      try {
+        const channel = supabase.channel(channelName, {
+          config: { broadcast: { self: true } },
+        });
+        await new Promise((resolve) => {
+          channel.subscribe((status) => {
+            if (
+              status === 'SUBSCRIBED' ||
+              status === 'CHANNEL_ERROR' ||
+              status === 'TIMED_OUT'
+            ) {
+              resolve(status);
+            }
+          });
+        });
+        await channel.send({
+          type: 'broadcast',
+          event: 'live_invite',
+          payload,
+        });
+        try {
+          supabase.removeChannel(channel);
+        } catch (_) {
+          /* ignore */
+        }
+        sent += 1;
+      } catch (err) {
+        softFailWarn(
+          'liveInvite:send',
+          '[liveInvite] targeted send soft-fail',
+          err?.message
+        );
+        sent += 1; // local listeners still notified
+      }
+    } else {
+      sent += 1;
+    }
+  }
+
+  return { ok: true, sent, invites: payloads };
+}
+
+/** @type {Set<{ user: object, onInvite: Function }>} */
+const inviteListeners = new Set();
+
+function inviteIsForUser(payload, user) {
+  if (!payload?.matchId || !user) return false;
+  const now = Date.now();
+  if (payload.expiresAt && now > Number(payload.expiresAt)) return false;
+  const toId = String(payload.recipientId || '').trim();
+  const toHandle = normalizeInviteHandle(payload.recipientHandle);
+  const myId = String(user?.id || user?.userId || '').trim();
+  const myHandle = normalizeInviteHandle(user?.handle || user?.username);
+  return (
+    (toId && myId && toId === myId) ||
+    (toHandle && myHandle && toHandle === myHandle)
+  );
+}
+
+function deliverLocalInvite(payload) {
+  inviteListeners.forEach((entry) => {
+    if (!inviteIsForUser(payload, entry.user)) return;
+    try {
+      entry.onInvite?.(payload);
+    } catch (_) {
+      /* ignore */
+    }
+  });
+}
+
+/**
+ * Subscribe to invites addressed to the current user only.
+ * @returns {() => void}
+ */
+export function subscribeLiveMatchInvites(user, onInvite) {
+  const entry = {
+    user: user || {},
+    onInvite: typeof onInvite === 'function' ? onInvite : () => {},
+  };
+  inviteListeners.add(entry);
+
+  const channels = [];
+  const id = String(user?.id || user?.userId || '').trim();
+  const handle = normalizeInviteHandle(user?.handle || user?.username);
+  const names = [
+    userInviteChannelName(id, ''),
+    userInviteChannelName('', handle),
+  ].filter(Boolean);
+
+  if (isSupabaseConfigured()) {
+    names.forEach((name) => {
+      try {
+        const channel = supabase.channel(name, {
+          config: { broadcast: { self: true } },
+        });
+        channel.on('broadcast', { event: 'live_invite' }, (msg) => {
+          const payload = msg?.payload || {};
+          if (!inviteIsForUser(payload, user)) return;
+          try {
+            onInvite?.(payload);
+          } catch (_) {
+            /* ignore */
+          }
+        });
+        channel.subscribe();
+        channels.push(channel);
+      } catch (err) {
+        softFailWarn(
+          'liveInvite:sub',
+          '[liveInvite] subscribe soft-fail',
+          err?.message
+        );
+      }
+    });
+  }
+
+  return () => {
+    inviteListeners.delete(entry);
+    channels.forEach((ch) => {
+      try {
+        supabase.removeChannel(ch);
+      } catch (_) {
+        /* ignore */
+      }
+    });
+  };
+}
+
+export async function fetchLiveMatchByInviteCode(code) {
+  const raw = String(code || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^BAWAAL-?LIVE-?/i, '');
+  if (!raw) return null;
+
+  const localHit = getLocalLiveList().find(
+    (m) =>
+      String(m.invite_code || '').toUpperCase() === raw ||
+      String(m.id || '').replace(/-/g, '').toUpperCase().startsWith(raw) ||
+      String(m.id || '').toUpperCase() === raw
+  );
+  if (localHit) return localHit;
+
+  if (shouldUseLocalOnly()) return null;
+
+  try {
+    let query = supabase.from(TABLE).select('*').eq('status', 'live').limit(1);
+    if (raw.length <= 8) {
+      query = query.eq('invite_code', raw);
+    } else {
+      query = query.eq('id', raw);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) {
+      if (isMissingRelationError(error) || isMissingColumnError(error)) {
+        // Fallback: list and match locally
+        const list = await listLiveMatches();
+        return (
+          list.find(
+            (m) =>
+              String(m.invite_code || '').toUpperCase() === raw ||
+              String(m.id || '').toUpperCase() === raw
+          ) || null
+        );
+      }
+      return null;
+    }
+    const m = normalizeMatch(data);
+    if (m) localMatches.set(m.id, m);
+    return m;
+  } catch (_) {
+    return null;
+  }
+}
+
+export { BANTER_CAP, channelName as liveMatchChannelName, INVITE_TTL_MS };

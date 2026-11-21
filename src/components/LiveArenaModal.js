@@ -2,7 +2,7 @@
  * BAWAAL LIVE hub — list live matches + 5-second GO LIVE setup.
  * Theme: #08120F / #FF5A1F / #E53935
  */
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -21,6 +21,7 @@ import {
   listLiveMatches,
   subscribeLiveMatchList,
   createLiveMatch,
+  fetchLiveMatchByInviteCode,
 } from '../services/liveMatchService';
 import {
   LIVE_MATCH_SPORTS,
@@ -380,10 +381,21 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState('hub'); // hub | setup
+  const [inviteCode, setInviteCode] = useState('');
+  const [joiningCode, setJoiningCode] = useState(false);
+  const [sportFilter, setSportFilter] = useState('ALL');
 
   // When closed, always present hub (mode reset happens on close / back presses)
   const sheetVisible = !!visible;
   const effectiveMode = sheetVisible ? mode : 'hub';
+
+  const filteredMatches = useMemo(() => {
+    const list = Array.isArray(matches) ? matches : [];
+    if (!sportFilter || sportFilter === 'ALL') return list;
+    return list.filter(
+      (m) => String(m.sport || '').toUpperCase() === sportFilter
+    );
+  }, [matches, sportFilter]);
 
   useEffect(() => {
     if (!sheetVisible) return undefined;
@@ -435,6 +447,22 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
     },
     [onClose, onWatchMatch]
   );
+
+  const handleJoinCode = useCallback(async () => {
+    const code = String(inviteCode || '').trim();
+    if (!code || joiningCode) return;
+    setJoiningCode(true);
+    try {
+      const match = await fetchLiveMatchByInviteCode(code);
+      if (match?.id) {
+        setInviteCode('');
+        onClose?.();
+        onWatchMatch?.(match);
+      }
+    } finally {
+      setJoiningCode(false);
+    }
+  }, [inviteCode, joiningCode, onClose, onWatchMatch]);
 
   return (
     <Modal
@@ -493,13 +521,70 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                 <Text style={styles.goLiveText}>+ GO LIVE NOW</Text>
               </TouchableOpacity>
 
-              <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
+              <Text style={styles.sectionLabel}>JOIN WITH INVITE CODE</Text>
+              <View style={styles.codeJoinRow}>
+                <TextInput
+                  style={styles.codeJoinInput}
+                  value={inviteCode}
+                  onChangeText={setInviteCode}
+                  placeholder="Enter code"
+                  placeholderTextColor={MUTED}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={36}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.codeJoinBtn,
+                    (!inviteCode.trim() || joiningCode) &&
+                      styles.codeJoinBtnDisabled,
+                  ]}
+                  onPress={handleJoinCode}
+                  disabled={!inviteCode.trim() || joiningCode}
+                  activeOpacity={0.9}
+                >
+                  {joiningCode ? (
+                    <ActivityIndicator color={WHITE} size="small" />
+                  ) : (
+                    <Text style={styles.codeJoinBtnText}>WATCH</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
 
-              {loading && matches.length === 0 ? (
+              <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
+              <View style={styles.sportFilterRow}>
+                {['ALL', ...LIVE_MATCH_SPORTS.filter((s) => s !== 'ALL')].map(
+                  (sport) => {
+                    const on = sportFilter === sport;
+                    return (
+                      <TouchableOpacity
+                        key={sport}
+                        style={[
+                          styles.sportFilterChip,
+                          on && styles.sportFilterChipOn,
+                        ]}
+                        onPress={() => setSportFilter(sport)}
+                        activeOpacity={0.88}
+                      >
+                        <Text
+                          style={[
+                            styles.sportFilterText,
+                            on && styles.sportFilterTextOn,
+                          ]}
+                        >
+                          {sport}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
+              </View>
+
+              {loading && filteredMatches.length === 0 ? (
                 <ActivityIndicator color={ORANGE} style={{ marginTop: 24 }} />
               ) : (
                 <FlatList
-                  data={matches}
+                  data={filteredMatches}
                   keyExtractor={(item) => String(item.id)}
                   renderItem={({ item }) => (
                     <MatchCard item={item} onPress={handleWatch} />
@@ -587,6 +672,70 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1.6,
     marginBottom: 10,
+  },
+  codeJoinRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  codeJoinInput: {
+    flex: 1,
+    backgroundColor: INPUT,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.28)',
+    color: WHITE,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'web' ? 11 : 10,
+    fontSize: 13,
+    fontWeight: '700',
+    outlineStyle: 'none',
+  },
+  codeJoinBtn: {
+    backgroundColor: CRIMSON,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: ORANGE,
+    minWidth: 76,
+    alignItems: 'center',
+  },
+  codeJoinBtnDisabled: {
+    opacity: 0.5,
+  },
+  codeJoinBtnText: {
+    color: WHITE,
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+  },
+  sportFilterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 12,
+  },
+  sportFilterChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  sportFilterChipOn: {
+    borderColor: ORANGE,
+    backgroundColor: 'rgba(255,90,31,0.16)',
+  },
+  sportFilterText: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  sportFilterTextOn: {
+    color: ORANGE,
   },
   listContent: {
     paddingBottom: 8,

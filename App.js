@@ -1,6 +1,10 @@
-import React, { Component, useEffect, useState } from 'react';
+import React, { Component, useEffect, useRef, useState } from 'react';
 import { View, Text, Image, StyleSheet, StatusBar, ScrollView } from 'react-native';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DarkTheme,
+  createNavigationContainerRef,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { enableScreens } from 'react-native-screens';
@@ -25,12 +29,15 @@ import { applyRegisteredProfile } from './src/services/activeUserProfile';
 import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
+import LiveMatchInviteHost from './src/components/LiveMatchInviteHost';
 import { getSupabase, hasSupabaseEnv } from './src/services/supabase';
 import { logStartup } from './NativeLogger';
 import {
   hideSplashSafe,
   preventAutoHideSafe,
 } from './src/boot/safeSplash';
+
+export const navigationRef = createNavigationContainerRef();
 
 const ROOT_BG = '#000000';
 /** Brief boot / session-restore surface while deciding Entry vs Arena. */
@@ -177,6 +184,7 @@ function AppBoot() {
   const [bootReady, setBootReady] = useState(false);
   const [initialRoute, setInitialRoute] = useState('Entry');
   const [bootError, setBootError] = useState(null);
+  const navRef = useRef(navigationRef);
 
   // Post-mount only — no heavy sync init at App.js module top-level
   useEffect(() => {
@@ -321,7 +329,7 @@ function AppBoot() {
       <StatusBar barStyle="light-content" backgroundColor={ROOT_BG} />
       <SafeAreaProvider style={styles.root}>
         <BawaalAlertProvider>
-          <NavigationContainer theme={navTheme}>
+          <NavigationContainer theme={navTheme} ref={navigationRef}>
             <Stack.Navigator
               initialRouteName={initialRoute}
               screenOptions={{
@@ -427,6 +435,9 @@ function AppBoot() {
               />
             </Stack.Navigator>
           </NavigationContainer>
+          {bootReady ? (
+            <LiveMatchInviteHost navigationRef={navRef} />
+          ) : null}
         </BawaalAlertProvider>
       </SafeAreaProvider>
     </View>
