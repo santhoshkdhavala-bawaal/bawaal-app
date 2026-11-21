@@ -66,6 +66,10 @@ Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOT
 
 GAME ON **SPORTS CATEGORIES** = exact 8 pills (`All` → `Others`); no sub-sport grids. NEAR ME `SportHubMapScreen` = live GPS + `PROVIDER_GOOGLE` (native), dark OSM Leaflet web (`tile.openstreetmap.org`, never CARTO), city hubs + Overpass. See `.cursor/rules/bawaal-gameon-map-locked.mdc`. Native dark map style tokens: `bawaal-sport-hub-map-locked.mdc`.
 
+## BAWAAL LIVE telecast (locked)
+
+Hub (`LiveArenaModal`: GO LIVE, invite-code join, active telecasts — no sport chip grid), optional scoreboard setup, live room (`canScore` host/admin only; viewers get read-only score + banter + 5 skulls + INVITE), cricket pad, 6-char targeted invites. See `.cursor/rules/bawaal-live-locked.mdc`.
+
 ## Arena challenge architecture (locked)
 
 Hubs: **ARENA** (cinematic feed; V2 GAME ON drawer filters; shelf at index 2+), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Form taxonomy: `src/constants/sports.js`. Arena tiers: `arenaFeedTiers.js` (in GAME ON). **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc`, `bawaal-v2-arena-ui-locked.mdc`, and `bawaal-sport-taxonomy-locked.mdc`.

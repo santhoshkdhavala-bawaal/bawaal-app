@@ -1043,6 +1043,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
               onPress={() => setInviteOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="Invite friends"
+              hitSlop={8}
+              activeOpacity={0.9}
             >
               <Text style={styles.inviteBtnText}>INVITE</Text>
             </TouchableOpacity>

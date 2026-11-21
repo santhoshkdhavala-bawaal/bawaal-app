@@ -1,0 +1,110 @@
+---
+description: Lock BAWAAL LIVE telecast hub, room HUD, canScore gates, cricket scoring, and targeted invites
+alwaysApply: true
+---
+
+# BAWAAL LIVE · Telecast · Room · Invites (LOCKED)
+
+Production-final lock for **BAWAAL LIVE** (hub + GO LIVE setup + live room + invites). Do **not** restyle, reorder, rewire, or weaken permission / invite / reaction contracts unless the user explicitly unlocks this rule (`bawaal-live-locked.mdc`).
+
+Theme: stealth `#08120F` / accent `#FF5A1F` / live crimson `#E53935`.
+
+## 1. BAWAAL LIVE hub (`LiveArenaModal.js`)
+
+| Surface | Locked contract |
+|---|---|
+| Entry CTA | `+ GO LIVE NOW` → GO LIVE setup |
+| Invite join | `JOIN WITH INVITE CODE` + 6-char input + `WATCH` (user-visible error if code misses) |
+| Active list | Live telecasts from `listLiveMatches` / `subscribeLiveMatchList` |
+| Filters | **No** multi-row sport category chip grid on this hub |
+
+## 2. GO LIVE setup (`GoLiveSetup` in `LiveArenaModal.js`)
+
+| Token | Contract |
+|---|---|
+| Sport | Full `LIVE_MATCH_SPORTS` dropdown |
+| Scoreboard | Toggle **OFF** by default → pure telecast (banter + skulls only) |
+| Scoreboard ON | Expand **Team A**, **Team B**, **Title (optional)**, **Admin** (editable scorer) |
+| Create | `createLiveMatch({ hasScoreboard, adminName, … })` |
+
+## 3. Live room HUD (`LiveMatchRoomScreen.js`)
+
+| Surface | Locked contract |
+|---|---|
+| Top score | Compact read-only pill when `has_scoreboard` — **no** skulls in the top bar |
+| Cricket top | Batting `RUNS/WICKETS (O.B)` + vs bowling name; `SWAP BATTING` only if `canScore` |
+| Banter | Centered mid-screen stream; slim bottom input strip |
+| Reactions | **One** left skull trigger → tray of 5 vibes: `fire`, `devil`, `winning` (`skull_champion`), `crying`/`SAD`, `screaming`/`SCREAM` |
+| Burst | Single bounded burst per tap (1–3 particles, ~1.2–1.8s); reactionId dedupe; **no** infinite spawn loops |
+| INVITE | High-contrast button for **host and viewers** (`opacity: 1`, solid orange + white type) |
+| Host chrome | Camera flip + `END` for telecast host only |
+
+## 4. Scoring & `canScore` (LOCKED)
+
+```text
+canScore = Boolean(isHost || isDesignatedAdmin)
+```
+
+- **Host:** match starter (`host_id` / host route) — camera + score when scoreboard ON  
+- **Designated admin:** matches `admin_name` / `scorer_name` (handle / name) — score pad without host camera  
+- **Audience:** read-only scoreboard (if ON), center banter, 5 skulls, INVITE — **never** score controls  
+
+| Mode | Host/admin controls (when `canScore && hasScoreboard`) |
+|---|---|
+| Point sports | Horned skull +1 / −1 (bottom) |
+| `CRICKET` | `+1` `+2` `+4` `+6` · `DOT / +1 BALL` · `WICKET` · `UNDO` · `SWAP BATTING` |
+
+Service guards: `canUserScoreMatch` + `updateMatchScore` / `updateMatchCricket` reject `forbidden` when actor cannot score. Do **not** expose score mutation UI or handlers when `!canScore`.
+
+## 5. Invites (LOCKED)
+
+| Token | Contract |
+|---|---|
+| Code | Unique **6-character** uppercase alphanumeric; alphabet excludes ambiguous `0` `O` `1` `I` |
+| Store | `invite_code` on match (soft-fail if column missing; local row keeps code) |
+| Share | One-tap Copy / Share (`Share.share` + web clipboard fallback) |
+| Delivery | Targeted Realtime per recipient (`live-user-invites-{id|handle}`) — **never** global popup spam |
+| Banner | `@inviter invited you to LIVE [SPORT]: …` + `WATCH` → viewer room (`canScore === false`) |
+| TTL | Auto-dismiss stale invites |
+
+## 6. Soft-fail & mobile readiness
+
+- Safe-area insets on room / hub sheet / invite banner  
+- `KeyboardAvoidingView` on banter strip + GO LIVE / invite forms  
+- Static Metro `require()` for team / flaming skull PNGs  
+- Missing tables/columns → local Map + `score_sync` broadcast; never crash Arena UX  
+- Camera permission denied → soft host fallback (do not hard-crash the room)
+
+## Locked files
+
+- `LiveMatchRoomScreen.js`
+- `src/services/liveMatchService.js`
+- `src/components/LiveArenaModal.js`
+- `src/components/LiveMatchInviteModal.js`
+- `src/components/LiveMatchInviteBanner.js`
+- `src/components/LiveMatchInviteHost.js`
+- `src/constants/liveMatchFlamingSkulls.js`
+- `src/constants/liveMatchTeamSkulls.js`
+- `src/constants/liveMatchSports.js`
+- Related migrations: `supabase/migrations/20261121_live_matches*.sql`, `20261121_live_match_invites.sql`
+- App wiring: `LiveMatchRoom` route + `LiveMatchInviteHost` in `App.js`; Arena LIVE pill → `LiveArenaModal` in `ArenaFeed.js` (do not break entry without unlock)
+
+## Never re-add
+
+- Sport category filter chip grids on the BAWAAL LIVE hub  
+- Unicode / non-vault reaction trays on the live room  
+- Top-bar team skull score cards  
+- FIRE/ROAST/BEAST/WEAK/HYPE pill row above banter  
+- Score punch UI or unguarded score writes for audience  
+- Global invite broadcast popups to all users  
+
+## Unlock
+
+Do **not** modify the locked files or contracts above unless the user explicitly asks to unlock `bawaal-live-locked.mdc`.
+
+## Related
+
+- Arena V2 LIVE pill chrome: `bawaal-v2-arena-ui-locked.mdc`  
+- Emoji vault: `bawaal-emoji-locked.mdc`  
+- Soft-fail hygiene: `bawaal-stability-checkpoint-locked.mdc`  
+---

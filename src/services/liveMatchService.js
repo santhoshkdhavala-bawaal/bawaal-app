@@ -427,11 +427,20 @@ export async function createLiveMatch({
         .select('*')
         .maybeSingle());
       if (!error) {
+        // Keep extended fields locally when DB strip-retry drops them
         const saved = normalizeMatch({
           ...(data || {}),
           has_scoreboard: row.has_scoreboard,
           admin_name: row.admin_name,
           scorer_name: row.scorer_name,
+          invite_code: row.invite_code,
+          batting_team: row.batting_team,
+          cricket_runs_a: row.cricket_runs_a,
+          cricket_wickets_a: row.cricket_wickets_a,
+          cricket_balls_a: row.cricket_balls_a,
+          cricket_runs_b: row.cricket_runs_b,
+          cricket_wickets_b: row.cricket_wickets_b,
+          cricket_balls_b: row.cricket_balls_b,
         }) || row;
         localMatches.set(saved.id, saved);
         emitListListeners();

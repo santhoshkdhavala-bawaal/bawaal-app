@@ -383,6 +383,7 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
   const [mode, setMode] = useState('hub'); // hub | setup
   const [inviteCode, setInviteCode] = useState('');
   const [joiningCode, setJoiningCode] = useState(false);
+  const [joinStatus, setJoinStatus] = useState('');
 
   // When closed, always present hub (mode reset happens on close / back presses)
   const sheetVisible = !!visible;
@@ -443,13 +444,19 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
     const code = String(inviteCode || '').trim();
     if (!code || joiningCode) return;
     setJoiningCode(true);
+    setJoinStatus('');
     try {
       const match = await fetchLiveMatchByInviteCode(code);
       if (match?.id) {
         setInviteCode('');
+        setJoinStatus('');
         onClose?.();
         onWatchMatch?.(match);
+        return;
       }
+      setJoinStatus('No live match found for that code');
+    } catch (_) {
+      setJoinStatus('Could not join — try again');
     } finally {
       setJoiningCode(false);
     }
@@ -517,7 +524,10 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                 <TextInput
                   style={styles.codeJoinInput}
                   value={inviteCode}
-                  onChangeText={setInviteCode}
+                  onChangeText={(t) => {
+                    setInviteCode(t);
+                    if (joinStatus) setJoinStatus('');
+                  }}
                   placeholder="6-letter code"
                   placeholderTextColor={MUTED}
                   autoCapitalize="characters"
@@ -533,6 +543,7 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                   onPress={handleJoinCode}
                   disabled={!inviteCode.trim() || joiningCode}
                   activeOpacity={0.9}
+                  hitSlop={8}
                 >
                   {joiningCode ? (
                     <ActivityIndicator color={WHITE} size="small" />
@@ -541,6 +552,9 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                   )}
                 </TouchableOpacity>
               </View>
+              {joinStatus ? (
+                <Text style={styles.joinStatusText}>{joinStatus}</Text>
+              ) : null}
 
               <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
 
@@ -674,6 +688,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.7,
+  },
+  joinStatusText: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: -8,
+    marginBottom: 12,
   },
   listContent: {
     paddingBottom: 8,
