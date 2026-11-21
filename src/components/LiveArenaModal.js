@@ -2,7 +2,7 @@
  * BAWAAL LIVE hub — list live matches + 5-second GO LIVE setup.
  * Theme: #08120F / #FF5A1F / #E53935
  */
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -383,19 +383,10 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
   const [mode, setMode] = useState('hub'); // hub | setup
   const [inviteCode, setInviteCode] = useState('');
   const [joiningCode, setJoiningCode] = useState(false);
-  const [sportFilter, setSportFilter] = useState('ALL');
 
   // When closed, always present hub (mode reset happens on close / back presses)
   const sheetVisible = !!visible;
   const effectiveMode = sheetVisible ? mode : 'hub';
-
-  const filteredMatches = useMemo(() => {
-    const list = Array.isArray(matches) ? matches : [];
-    if (!sportFilter || sportFilter === 'ALL') return list;
-    return list.filter(
-      (m) => String(m.sport || '').toUpperCase() === sportFilter
-    );
-  }, [matches, sportFilter]);
 
   useEffect(() => {
     if (!sheetVisible) return undefined;
@@ -527,11 +518,11 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                   style={styles.codeJoinInput}
                   value={inviteCode}
                   onChangeText={setInviteCode}
-                  placeholder="Enter code"
+                  placeholder="6-letter code"
                   placeholderTextColor={MUTED}
                   autoCapitalize="characters"
                   autoCorrect={false}
-                  maxLength={36}
+                  maxLength={6}
                 />
                 <TouchableOpacity
                   style={[
@@ -552,39 +543,12 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
               </View>
 
               <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
-              <View style={styles.sportFilterRow}>
-                {['ALL', ...LIVE_MATCH_SPORTS.filter((s) => s !== 'ALL')].map(
-                  (sport) => {
-                    const on = sportFilter === sport;
-                    return (
-                      <TouchableOpacity
-                        key={sport}
-                        style={[
-                          styles.sportFilterChip,
-                          on && styles.sportFilterChipOn,
-                        ]}
-                        onPress={() => setSportFilter(sport)}
-                        activeOpacity={0.88}
-                      >
-                        <Text
-                          style={[
-                            styles.sportFilterText,
-                            on && styles.sportFilterTextOn,
-                          ]}
-                        >
-                          {sport}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }
-                )}
-              </View>
 
-              {loading && filteredMatches.length === 0 ? (
+              {loading && matches.length === 0 ? (
                 <ActivityIndicator color={ORANGE} style={{ marginTop: 24 }} />
               ) : (
                 <FlatList
-                  data={filteredMatches}
+                  data={matches}
                   keyExtractor={(item) => String(item.id)}
                   renderItem={({ item }) => (
                     <MatchCard item={item} onPress={handleWatch} />
@@ -710,32 +674,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 0.7,
-  },
-  sportFilterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  sportFilterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  sportFilterChipOn: {
-    borderColor: ORANGE,
-    backgroundColor: 'rgba(255,90,31,0.16)',
-  },
-  sportFilterText: {
-    color: MUTED,
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  sportFilterTextOn: {
-    color: ORANGE,
   },
   listContent: {
     paddingBottom: 8,

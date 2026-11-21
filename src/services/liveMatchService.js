@@ -22,13 +22,22 @@ const BANTER_CAP = 40;
 const VOTE_FLUSH_MS = 8000;
 const INVITE_TTL_MS = 5 * 60 * 1000;
 
+/** 6-char uppercase code — no ambiguous 0/O/1/I. */
 function newInviteCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let out = '';
   for (let i = 0; i < 6; i += 1) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
   }
   return out;
+}
+
+function sanitizeInviteCode(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
 }
 
 function normalizeInviteHandle(value) {
@@ -226,9 +235,7 @@ function normalizeMatch(row) {
       Math.min(10, Number(row.cricket_wickets_b) || 0)
     ),
     cricket_balls_b: Math.max(0, Math.floor(Number(row.cricket_balls_b) || 0)),
-    invite_code: row.invite_code
-      ? String(row.invite_code).trim().toUpperCase()
-      : '',
+    invite_code: sanitizeInviteCode(row.invite_code) || '',
     // Convenience aliases for batting side (UI / docs)
     runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
     wickets:
@@ -1100,10 +1107,15 @@ export function pushBanterCapped(list, item, cap = BANTER_CAP) {
 }
 
 export function getLiveMatchInviteCode(match) {
-  const code = String(match?.invite_code || '').trim().toUpperCase();
-  if (code) return code;
-  const id = String(match?.id || '').replace(/-/g, '').slice(0, 6).toUpperCase();
-  return id || newInviteCode();
+  const existing = sanitizeInviteCode(match?.invite_code);
+  if (existing.length === 6) return existing;
+  // Persist a clean code on the in-memory match when missing (legacy rows)
+  const generated = newInviteCode();
+  if (match?.id && localMatches.has(String(match.id))) {
+    const prev = localMatches.get(String(match.id));
+    localMatches.set(String(match.id), { ...prev, invite_code: generated });
+  }
+  return generated;
 }
 
 export function buildLiveMatchInviteLink(match) {
@@ -1408,40 +1420,31 @@ export function subscribeLiveMatchInvites(user, onInvite) {
 }
 
 export async function fetchLiveMatchByInviteCode(code) {
-  const raw = String(code || '')
-    .trim()
-    .toUpperCase()
-    .replace(/^BAWAAL-?LIVE-?/i, '');
-  if (!raw) return null;
+  const raw = sanitizeInviteCode(
+    String(code || '').replace(/^BAWAAL-?LIVE-?/i, '')
+  );
+  if (raw.length !== 6) return null;
 
   const localHit = getLocalLiveList().find(
-    (m) =>
-      String(m.invite_code || '').toUpperCase() === raw ||
-      String(m.id || '').replace(/-/g, '').toUpperCase().startsWith(raw) ||
-      String(m.id || '').toUpperCase() === raw
+    (m) => sanitizeInviteCode(m.invite_code) === raw
   );
   if (localHit) return localHit;
 
   if (shouldUseLocalOnly()) return null;
 
   try {
-    let query = supabase.from(TABLE).select('*').eq('status', 'live').limit(1);
-    if (raw.length <= 8) {
-      query = query.eq('invite_code', raw);
-    } else {
-      query = query.eq('id', raw);
-    }
-    const { data, error } = await query.maybeSingle();
+    const { data, error } = await supabase
+      .from(TABLE)
+      .select('*')
+      .eq('status', 'live')
+      .eq('invite_code', raw)
+      .limit(1)
+      .maybeSingle();
     if (error) {
       if (isMissingRelationError(error) || isMissingColumnError(error)) {
-        // Fallback: list and match locally
         const list = await listLiveMatches();
         return (
-          list.find(
-            (m) =>
-              String(m.invite_code || '').toUpperCase() === raw ||
-              String(m.id || '').toUpperCase() === raw
-          ) || null
+          list.find((m) => sanitizeInviteCode(m.invite_code) === raw) || null
         );
       }
       return null;

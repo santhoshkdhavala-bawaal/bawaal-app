@@ -237,27 +237,25 @@ function LiveMatchInviteModal({ visible, match, onClose }) {
             SHARE MATCH CODE / LINK
           </Text>
           <View style={styles.codeCard}>
-            <Text style={styles.codeLabel}>CODE</Text>
-            <Text style={styles.codeValue}>{code}</Text>
+            <Text style={styles.codeLabel}>6-CHARACTER CODE</Text>
+            <Text style={styles.codeValue} selectable>
+              {code}
+            </Text>
             <Text style={styles.linkValue} numberOfLines={2}>
               {link}
             </Text>
-            <View style={styles.shareRow}>
-              <TouchableOpacity
-                style={styles.shareBtn}
-                onPress={handleCopyCode}
-                activeOpacity={0.88}
-              >
-                <Text style={styles.shareBtnText}>COPY</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.shareBtn, styles.shareBtnPrimary]}
-                onPress={handleShare}
-                activeOpacity={0.88}
-              >
-                <Text style={styles.shareBtnText}>SHARE</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.copyShareBtn}
+              onPress={async () => {
+                await handleCopyCode();
+                await handleShare();
+              }}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+              accessibilityLabel="Copy and share invite code"
+            >
+              <Text style={styles.copyShareBtnText}>COPY / SHARE</Text>
+            </TouchableOpacity>
           </View>
 
           {status ? <Text style={styles.status}>{status}</Text> : null}
@@ -404,29 +402,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 6,
   },
-  shareRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  shareBtn: {
-    flex: 1,
+  copyShareBtn: {
+    marginTop: 14,
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(8,18,15,0.9)',
+    borderWidth: 1.5,
+    borderColor: WHITE,
+    backgroundColor: ORANGE,
   },
-  shareBtnPrimary: {
-    borderColor: ORANGE,
-    backgroundColor: 'rgba(255,90,31,0.2)',
-  },
-  shareBtnText: {
+  copyShareBtnText: {
     color: WHITE,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
   },
   status: {
     color: ORANGE,
