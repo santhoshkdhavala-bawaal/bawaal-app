@@ -13,8 +13,10 @@ Production-final V2 frontend chrome. Do **not** restyle, reorder, or rewire unle
 |---|---|
 | Combined logo | `assets/BAWAAL_logo_combined.png` only — `resizeMode="contain"`, fixed height (~38) |
 | Brand stack | Column `alignItems: 'flex-start'`; `ARENA` under **BAWAAL** wordmark (`marginLeft: 72`, `fontSize: 12`, bold) |
-| Right chrome | `▶ GAME ON` glow pill + notification bell only |
-| Theme | `#0A0A0A` / `#FF5A00` |
+| Right chrome | Pulsing `● LIVE` pill (Live Match Telecast hub) **left of** `▶ GAME ON` glow pill + notification bell |
+| Theme | `#0A0A0A` / `#FF5A00` (LIVE accents `#FF5A1F` / `#E53935`) |
+
+**LIVE pill contract:** `onLivePress` + `liveCount` badge when ≥1 `live_matches` row is live. Opens `LiveArenaModal` — do not change GAME ON / bell behavior.
 
 **Never re-add:** split `B_solo` + `BAWAAL_text` header pair, header `⋮` / three-dots, tier pills under the header, `BrandHeader` on Arena.
 
