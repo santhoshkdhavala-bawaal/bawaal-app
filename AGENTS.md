@@ -1,106 +1,82 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+# BAWAAL Mobile — Agent Instructions (Cross-IDE)
 
-## Expo has changed — do not trust your training data
+Read this on every new session. Full blueprint: **`HANDOFF.md`**. Production locks: **`.cursor/rules/*.mdc`**. Do not restyle or rewire locked surfaces unless the user explicitly unlocks `bawaal-app-master-locked.mdc` **and** the matching feature rule.
 
-Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
+## Stack (exact pins in `package.json`)
 
-1. Read the major version of the `expo` package in `package.json`.
-2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
-3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
+- **Expo SDK 58** (`expo ~58.0.26`) · **React 19.3.0** · **RN 0.88.1**
+- Navigation: **React Navigation** native stack (`App.js` + `MainTabs.js`) — **not** Expo Router / not `src/app/`
+- Backend: Supabase (`@supabase/supabase-js ^2.118`) + AsyncStorage sessions
+- Video: **`expo-video` only** on Arena reels — **never** `expo-av`
+- Maps: `expo-location` + `react-native-maps` (native) / `WebOsmMap` (web OSM — never CARTO)
+- Live 1v1 RTC: Agora via native/dev client (autolink excluded for Expo Go)
+
+Before using Expo APIs: check the `expo` major in `package.json`, then `https://docs.expo.dev/versions/v58.0.0/` and `https://docs.expo.dev/llms.txt`. Do not trust training-memory Expo APIs.
 
 ## Commands
 
-Use `bunx` instead of `npx` if the project uses bun (`bun.lock` present).
-
 ```bash
-npx expo install <package>  # ALWAYS use instead of npm/yarn/pnpm/bun add — resolves SDK-compatible versions
-npx expo start              # start the dev server
-npx expo lint               # lint
-npx tsc --noEmit            # typecheck
-npx expo-doctor             # diagnose dependency and config issues
-npx expo install --fix      # fix incompatible package versions
+npm install
+npx expo start                 # or: npm start
+npx expo start --tunnel
+npm run lint                   # expo lint
+npm run build:android:preview  # EAS APK (eas.json profile: preview)
 ```
 
-Run lint and typecheck before declaring any task done.
+Use `npx expo install <pkg>` for SDK-compatible adds. Emulator: `adb install -r <apk>` then `adb logcat`.
 
-## Navigation & Routing
+## Boot / auth (non-negotiable)
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+| State | Route |
+|---|---|
+| Fresh / guest | **Arena** (`Main`) — no registration wall |
+| Logged in | Stay in Arena across restarts |
+| After logout | `isLoggedIn: false`, keep `hasRegisteredPreviously: true` → **Phone + OTP only** → Arena |
 
-## Building with EAS
+OTP: **manual SUBMIT only** (never auto-verify on 4th digit). Profiles: soft-fail / circuit-breaker — never hard-throw registration.
 
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
+## Locked UI contracts (obey first)
 
-## Core system (locked)
+1. **Arena header** — exact order `● LIVE` → `NEAR ME` → Bell. NEAR ME → `SportHubMap` **directly**. Never reopen GAME ON from this header. (`ArenaV2Header.js`, `bawaal-gameon-map-locked.mdc`)
+2. **BAWAAL LIVE** — scoreboard OFF by default; `canScore = host || designated admin` only; cricket pad; center banter; one skull → 5 vibes (`fire`, `devil`, `winning`, `crying`, `screaming`) with **bounded** bursts; 6-char invites (no `0/O/1/I`); targeted WATCH banners only. (`bawaal-live-locked.mdc`)
+3. **Reels** — mute `top:16`/`right:16`; metrics **only** behind ⋮; declarative `expo-video`; vault skulls only. (`ArenaReelViewer.js`, `bawaal-arena-video-playback-locked.mdc`)
+4. **Hub cards** — SPARKS · JOSH · BAWAAL BATTLE · FACEOFF · WAR CRY (+ Gallery). **No** Dark Arena Hub card. (`UniversalCamera.tsx`, `bawaal-warcry-vault-hub-locked.mdc`)
+5. **Camera viewfinder** — Close/Flip/shutter + one `MODE • DETAILS` HUD only; speed/slow-mo on preview only. (`bawaal-challengecam-locked.mdc`)
+6. **Emoji** — proprietary `skel_*` / `skull_*` via `BawaalEmoji` only; never unicode reaction trays. (`bawaal-emoji-locked.mdc`)
+7. **Sports** — forms use `BAWAAL_SPORTS` (11); map footer uses exact **8** GAME ON categories. No local sport arrays. (`bawaal-sport-taxonomy-locked.mdc`)
+8. **Passport / Locker / Clinic / BackLink** — production-final; do not restyle. Matching `*-locked.mdc` files.
 
-Underground-arena brand: `#000000` / `#FF5500` / white type; zero-clutter feeds; video metrics only behind **⋮**; BAWAAL Hub six modes (SPARKS · JOSH · BAWAAL BATTLE · DARK ARENA · FACEOFF · WAR CRY) with a single centered camera broadcast HUD (`MODE • DETAILS`); proprietary 121+ skeleton/skull Vault only. See `.cursor/rules/bawaal-core-system-locked.mdc`.
+## NEVER (hard denylist)
 
-## UI baseline (locked)
+- Metric counters / share counts on primary Arena canvas  
+- Arena-header `▶ GAME ON` or GameOnHub gate before the map  
+- Multi-row map sub-sport grids; Virar-primary NEAR ME; CARTO tiles  
+- Audience score UI or ungated `updateMatchScore` / cricket writes  
+- Global LIVE invite broadcast spam; infinite reaction spawn loops  
+- Unicode trays on Arena / LIVE / banter / DMs  
+- `expo-av` on Arena feed; sync bundled-mp4 feed fallbacks  
+- Auto-verify OTP on 4th digit; hard-fail profiles on schema miss  
+- Hot-path `console.log` on soft-fail paths  
+- Parallel `vaultAssets.js` diverging from `skullEmojiRegistry.js`  
+- Editing locked files without an explicit unlock  
 
-Camera (minimal shutter/cancel/flip + pinch zoom), clean feed surfaces (no sport category pills on clips), and the spaced bottom tab bar are **finalized**. Arena V2 header (`● LIVE` → `NEAR ME` → Bell; NEAR ME opens map directly) and reel chrome (top-right orange mute `top:16`/`right:16`, bottom-right `⋮` + on-video action stack; **no** like/share counters on the primary overlay) are locked — see `.cursor/rules/bawaal-v2-arena-ui-locked.mdc`, `src/constants/arenaReelOverlay.js`, and `.cursor/rules/bawaal-ui-baseline.mdc`.
+## Env (names only)
 
+`EXPO_PUBLIC_SUPABASE_URL` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_AGORA_APP_ID` · `EXPO_PUBLIC_AGORA_TOKEN` · `EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY`  
+See `.env.example`. Never commit `.env` or paste real keys into docs.
 
-## ChallengeCam / UniversalCamera (locked)
+## Soft-fail law
 
-Live viewfinder is **untouchable** — Close/Cancel, Flip, spinning dotted red shutter, BAWAAL Hub FAB, and **one** centered broadcast mode pill only; **no** floating speed/flash/zoom chrome on the lens and **no** duplicate timer/mode badges. Speed / slow-mo stay on `PreviewScreen.tsx` (ChallengeCam) or post-record ClipPreviewModal (UniversalCamera). See `.cursor/rules/bawaal-challengecam-locked.mdc` and `bawaal-core-system-locked.mdc`.
+Missing Supabase tables/columns → empty arrays / local mocks / schema strip. Arena UX must never crash. Prefer `softFailWarn` once per key.
 
-## Onboarding stack (locked)
+## Verify before done
 
-**V1 full-stack lock** (UI + Supabase): `#000` / `#FF6600` / `#1E1E22` cards (`borderRadius: 12`), registration User Name → Real Name → Age|Gender → Email → Phone → City+flag → Category|Role, sticky orange pill **Continue**, Terms scrollbar + 4-digit OTP (`#1E1E22` / orange focus, manual SUBMIT), `signInWithOtp` → `verifyOtp` → `upsertRegisteredProfile` (`profiles` uuid → `auth.users`, RLS on). See `.cursor/rules/bawaal-v1-fullstack-locked.mdc` and `bawaal-onboarding-locked.mdc`.
+1. `npm run lint`  
+2. Confirm header LIVE → NEAR ME → Bell and NEAR ME → map  
+3. Confirm logout → OTP-only boot  
+4. If touching LIVE: viewers cannot score; invites targeted; bursts bounded  
+5. If touching reels: no on-canvas metrics; `expo-video` only  
 
-## Locker Room & Clinic (locked)
+## Native folders
 
-`LockerRoomScreen.js` and `ClinicScreen.js` are **production-final and untouchable** — Clinic mint (`#4ADE80`), ACTIVE HUBS blue (`#3B82F6`), Create yellow (`#FACC15`), Post Brief purple (`#A855F7`), pinned-brief crimson (`#EF4444`), opaque B-logo modals, and tab safe-area padding as shipped. Do not restyle or rebuild parallel locker/clinic UIs. See `.cursor/rules/bawaal-locker-clinic-locked.mdc`.
-
-## Passport / Profile (locked)
-
-`ProfileScreen.js` (Passport tab) is **production-final and untouchable** — profile card, social + locker stats, Connected Squads, FOLLOWING (`#3B82F6`), SUGGESTED ATHLETES (`#FF3366`), as shipped. Profile gateway keeps compact red-bordered **LOG OUT** under **OPEN FULL PASSPORT** (`supabase.auth.signOut()` → Entry). See `.cursor/rules/bawaal-passport-locked.mdc`.
-
-## Sport taxonomy (locked)
-
-Canonical `BAWAAL_SPORTS` in `src/constants/sports.js`: ALL → CRICKET → FOOTBALL → GYM → KABADDI → COMBAT → THROTTLE → WAVE & BLADE → COURT KINGS → SKY & SUMMIT → OTHERS. Single-line horizontal pills; no local sport arrays. See `.cursor/rules/bawaal-sport-taxonomy-locked.mdc`.
-
-## Arena NEAR ME + map (locked)
-
-Arena header right chrome = **`● LIVE` → `NEAR ME` → Bell**. `NEAR ME` opens `SportHubMapScreen` **directly** (no GAME ON drawer). Map category pills = exact 8 (`All` → `Others`). Map = live GPS + `PROVIDER_GOOGLE` (native), dark OSM Leaflet web (`tile.openstreetmap.org`, never CARTO), city hubs + Overpass; default city if GPS denied. See `.cursor/rules/bawaal-gameon-map-locked.mdc` and `bawaal-v2-arena-ui-locked.mdc`.
-
-## BAWAAL LIVE telecast (locked)
-
-Hub (`LiveArenaModal`: GO LIVE, invite-code join, active telecasts — no sport chip grid), optional scoreboard setup, live room (`canScore` host/admin only; viewers get read-only score + banter + 5 skulls + INVITE), cricket pad, 6-char targeted invites. See `.cursor/rules/bawaal-live-locked.mdc`.
-
-## Master app lock (umbrella)
-
-Production snapshot through BAWAAL LIVE + stabilized GAME ON / NEAR ME / `ArenaReelViewer` / registration persistence. Do not alter locked layouts, `canScore`, invite mechanics, or reaction physics without an explicit unlock. Index: `.cursor/rules/bawaal-app-master-locked.mdc`.
-
-## Arena challenge architecture (locked)
-
-Hubs: **ARENA** (cinematic feed; V2 GAME ON drawer filters; shelf at index 2+), **BATTLES** (OPEN CHALLENGES | TIPS & BREAKDOWNS). Form taxonomy: `src/constants/sports.js`. Arena tiers: `arenaFeedTiers.js` (in GAME ON). **1-tap** challenge camera + **200ms** teardown. See `.cursor/rules/bawaal-arena-challenge-architecture.mdc`, `bawaal-v2-arena-ui-locked.mdc`, and `bawaal-sport-taxonomy-locked.mdc`.
-
-## Arena video playback & hydrate (locked)
-
-Feed players (`BawaalExpoVideo` / `ArenaClipPlayer` / `NativeFeedVideo` / `ArenaFeed` shells) use **declarative** `expo-video` URI sources + `shouldPlay` only — no `expo-av`, no render-path status loops, no sync bundled-mp4 feed fallback. Shells keep `width: '100%'`, `height: 450`, `position: 'relative'`. Load/error handlers are try/catch-wrapped. Cloud rows use `.upsert(..., { onConflict: 'id' })`; `arenaFeedStore` hydrate/warmup never throw. See `.cursor/rules/bawaal-arena-video-playback-locked.mdc` and `BAWAAL_MASTER_BLUEPRINT.md` §7.
-
-## Data integration & app logic (locked)
-
-Supabase profiles + OTP, `arena_challenges` / `bawaalvideos` streaming, GAME ON tier+sport filters (`arenaFilterStore`), and reel ⋮ social soft-sync (`reelSocialService` + `ENSURE_REEL_SOCIAL.sql`) are production-final. Soft-fail offline/schema noise. See `.cursor/rules/bawaal-data-integration-locked.mdc`.
-
-## Stability checkpoint (locked)
-
-Profiles: UUID upsert vs non-UUID local success + session circuit; sanitized `PROFILE_SAFE_WRITE_COLUMNS` (no `list_bucket` junk). Social: `reel_likes` / `reel_banter` / challenges soft-fail to `[]` or local mock. Media: `SafeAvatar` / `SafeRemoteImage` + failed-URI cache → local `require(...)`. Logging: `softFailWarn` once per key — no hot-path `console.log`. See `.cursor/rules/bawaal-stability-checkpoint-locked.mdc`.
-
-## Back controls (locked)
-
-Stealth-black Back affordances use `src/components/BackLink.js` (electric blue `#3B82F6` chip, bold `←` label). See `.cursor/rules/bawaal-backlink-locked.mdc`.
-
-## Custom emoji / reactions (locked — exclusive)
-
-The **121+** proprietary assets (`assets/skel_*.png` + `assets/skull_*.png`) via `BawaalEmoji` + `bawaalEmojiAssets.js` (`SKULL_EMOJI_KEYS`) are the **only** emoji/reaction system for chat, banter, DMs, comments, and full-screen Arena reactions. Never use unicode system emoji (🔥 💀 🏆 …) or generic icons on those surfaces. Vault: `FullEmojiPickerDrawer` — `ALL_SKELETON_KEYS` must include `'love'` (`skel_love.png`) and all `skull_*` keys (e.g. `:skull_fire:`, `:skull_burning:`). Mixed text+emoji: one flex row at ~36px; emoji-only stickers ~56–64px. Performance: fixed Image width/height, memoized shortcode parse, Banter FlatList `windowSize={5}` / `maxToRenderPerBatch={10}` / `removeClippedSubviews`. See `.cursor/rules/bawaal-emoji-locked.mdc` and `bawaal-core-system-locked.mdc`.
-
-## Rules
-
-- If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `npx expo run:ios|android` locally, or `eas build --profile development`.
-- Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
+`ios/` / `android/` are CNG-generated — configure via `app.json` / `app.config.js` / plugins, not hand-edits. Agora / maps / camera need a **development build or APK**, not plain Expo Go for full native features.
