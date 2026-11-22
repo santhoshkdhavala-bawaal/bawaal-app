@@ -49,6 +49,9 @@
     "build:android:dev": "eas build --platform android --profile development",
     "build:android:apk": "eas build --platform android --profile preview",
     "build:android:preview": "eas build --platform android --profile preview",
+    "build:ios:preview": "eas build --platform ios --profile preview",
+    "build:ios:simulator": "eas build --platform ios --profile ios-simulator",
+    "build:ios:production": "eas build --platform ios --profile production",
     "lint": "expo lint"
   },
   "private": true,
