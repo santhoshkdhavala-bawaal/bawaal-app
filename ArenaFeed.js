@@ -96,6 +96,7 @@ import {
   subscribeArenaFilters,
 } from './src/stores/arenaFilterStore';
 import { dispatchReelSocialAction } from './src/services/reelSocialService';
+import { handleModerationAction } from './src/utils/moderationAlerts';
 import { FullEmojiPickerDrawer } from './components/FullEmojiPickerDrawer';
 import {
   FloatingEmojiBurstLayer,
@@ -1037,6 +1038,9 @@ const GeneralReelCard = memo(function GeneralReelCard({
         setDmShareOpen(true);
         return;
       }
+      if (handleModerationAction(actionId, reelSnapshot || item)) {
+        return;
+      }
       void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(
         (err) => {
           console.warn('[ArenaFeed] reel social:', err?.message || err);
@@ -1621,6 +1625,9 @@ const ChallengeFeedCard = memo(function ChallengeFeedCard({
       }
       if (actionId === 'dm' || actionId === 'send') {
         setDmShareOpen(true);
+        return;
+      }
+      if (handleModerationAction(actionId, reelSnapshot || item)) {
         return;
       }
       void dispatchReelSocialAction(actionId, reelSnapshot || item).catch(

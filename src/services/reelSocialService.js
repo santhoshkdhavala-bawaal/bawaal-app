@@ -236,6 +236,23 @@ export async function dispatchReelSocialAction(actionId, reel, extras = {}) {
       return { ok: true, fromCloud: false, reason: 'client-share' };
     case 'save':
       return { ok: true, fromCloud: false, reason: 'local-only' };
+    case 'report': {
+      const { reportContent } = await import('./moderationService');
+      return reportContent({
+        targetType: 'video',
+        targetId: String(target.reelId || reel?.id || ''),
+        targetOwnerId: target.ownerId || target.handle || '',
+        reason: extras.reason || 'inappropriate',
+        details: extras.message || '',
+      });
+    }
+    case 'block': {
+      const { blockUser } = await import('./moderationService');
+      return blockUser({
+        blockedId: String(target.ownerId || target.handle || ''),
+        reason: extras.reason || extras.message || '',
+      });
+    }
     default:
       return { ok: true, fromCloud: false, reason: 'noop' };
   }

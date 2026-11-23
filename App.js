@@ -19,6 +19,7 @@ import AthletePassportScreen from './AthletePassportScreen';
 import ClinicScreen from './ClinicScreen';
 import SportHubMapScreen from './SportHubMapScreen';
 import LiveMatchRoomScreen from './LiveMatchRoomScreen';
+import LiveRoomErrorBoundary from './src/components/LiveRoomErrorBoundary';
 import { COLORS } from './theme';
 import {
   setRegisteredSession,
@@ -426,12 +427,19 @@ function AppBoot() {
               />
               <Stack.Screen
                 name="LiveMatchRoom"
-                component={LiveMatchRoomScreen}
                 options={{
                   animation: 'slide_from_bottom',
                   presentation: 'fullScreenModal',
                 }}
-              />
+              >
+                {(props) => (
+                  <LiveRoomErrorBoundary
+                    onExit={() => props.navigation?.goBack?.()}
+                  >
+                    <LiveMatchRoomScreen {...props} />
+                  </LiveRoomErrorBoundary>
+                )}
+              </Stack.Screen>
               {/* Legacy route names → Main tabs (deep-link / older navigate calls) */}
               <Stack.Screen
                 name="Arena"

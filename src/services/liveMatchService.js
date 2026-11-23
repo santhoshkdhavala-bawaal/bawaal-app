@@ -1653,6 +1653,16 @@ export async function fetchLiveKitToken({
   if (!isSupabaseConfigured()) return null;
 
   try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token || null;
+    if (!accessToken) {
+      softFailWarn(
+        'liveMatch:livekitTokenAuth',
+        '[liveMatch] livekit-token skipped — no auth session'
+      );
+      return null;
+    }
+
     const { data, error } = await supabase.functions.invoke('livekit-token', {
       body: {
         roomName: id,
@@ -1662,6 +1672,7 @@ export async function fetchLiveKitToken({
         role: host ? 'host' : 'viewer',
         ...(code ? { inviteCode: code } : null),
       },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (error) {
       softFailWarn(

@@ -5,6 +5,7 @@
 --   supabase functions deploy delete-account --project-ref petjdnyrjhgruvhzavmu
 --
 -- Idempotent. Safe to paste into Supabase SQL Editor.
+-- Prefer full lockdown: supabase/LOCK_PRODUCTION_RLS.sql
 
 do $$
 begin
@@ -36,6 +37,8 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  uid text := p_user_id::text;
 begin
   if p_user_id is null then
     return;
@@ -44,24 +47,52 @@ begin
   begin
     update public.live_matches
       set status = 'ended', ended_at = coalesce(ended_at, now())
-    where host_id = p_user_id::text
-      and status = 'live';
-  exception when undefined_table then null;
-            when others then null;
+    where host_id = uid and status = 'live';
+  exception when undefined_table then null; when others then null;
   end;
 
   begin
     delete from public.live_match_invites
-    where host_id = p_user_id::text
-       or recipient_id = p_user_id::text;
-  exception when undefined_table then null;
-            when others then null;
+    where host_id = uid or recipient_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.content_reports where reporter_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.user_blocks
+    where blocker_id = uid or blocked_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.likes where user_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.comments where user_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.follows
+    where follower_id = uid or following_id = uid;
+  exception when undefined_table then null; when others then null;
+  end;
+
+  begin
+    delete from public.direct_messages
+    where sender_id = uid or receiver_id = uid;
+  exception when undefined_table then null; when others then null;
   end;
 
   begin
     delete from public.profiles where id = p_user_id;
-  exception when undefined_table then null;
-            when others then null;
+  exception when undefined_table then null; when others then null;
   end;
 end;
 $$;

@@ -1,7 +1,8 @@
 /**
  * LOCKED — Instagram / TikTok-style floating vertical action stack on the video canvas.
- * (DM / Like / Follow·Unfollow / Share / Save / Banter / Comment / Send).
+ * (DM / Like / Follow·Unfollow / Share / Save / Banter / Comment / Send + Report / Block).
  * Follow lives only here — never as a canvas overlay CTA.
+ * Report / Block required for App Store / Play UGC compliance (persist via moderationService).
  * Renders inline (no Modal) so the reel keeps playing underneath.
  * Geometry from `src/constants/arenaReelOverlay.js` — clears top-right mute.
  */
@@ -36,11 +37,14 @@ const BASE_ACTIONS = [
   { id: 'banter', label: 'Banter', icon: require('../../assets/bawaal_banter.png') },
   { id: 'comment', label: 'Comment', icon: require('../../assets/bawaal_comment.png') },
   { id: 'send', label: 'Send', icon: require('../../assets/bawaal_send.png') },
+  // Glyph-only (no new PNG) — App Store / Play UGC safety
+  { id: 'report', label: 'Report', glyph: 'R' },
+  { id: 'block', label: 'Block', glyph: 'B' },
 ];
 
 /**
  * Secondary social actions — live inside the ⋮ popup only.
- * Order: Like → Banter → Share → DM → Comment (DM fully included).
+ * Order: Like → Banter → Share → DM → Comment → Report → Block.
  */
 export const REEL_SECONDARY_ACTION_IDS = Object.freeze([
   'like',
@@ -48,6 +52,8 @@ export const REEL_SECONDARY_ACTION_IDS = Object.freeze([
   'share',
   'dm',
   'comment',
+  'report',
+  'block',
 ]);
 
 /** Slim rail essentials (above vault skull / ⋮). */
@@ -231,15 +237,27 @@ function ReelActionSheet({
             accessibilityRole="button"
             accessibilityLabel={action.label}
           >
-            <Image
-              source={action.icon}
-              style={[
-                styles.icon,
-                !showLabels && styles.iconSolo,
-                compact && styles.iconCompact,
-              ]}
-              resizeMode="contain"
-            />
+            {action.icon ? (
+              <Image
+                source={action.icon}
+                style={[
+                  styles.icon,
+                  !showLabels && styles.iconSolo,
+                  compact && styles.iconCompact,
+                ]}
+                resizeMode="contain"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.glyphBadge,
+                  !showLabels && styles.iconSolo,
+                  compact && styles.iconCompact,
+                ]}
+              >
+                <Text style={styles.glyphText}>{action.glyph || '?'}</Text>
+              </View>
+            )}
             {showLabels ? (
               <Text
                 style={[styles.label, compact && styles.labelCompact]}
@@ -313,6 +331,20 @@ const styles = StyleSheet.create({
   iconCompact: {
     width: 24,
     height: 24,
+  },
+  glyphBadge: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    borderRadius: ICON_SIZE / 2,
+    borderWidth: 1.5,
+    borderColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  glyphText: {
+    color: ACCENT,
+    fontWeight: '900',
+    fontSize: 12,
   },
   label: {
     marginTop: 4,

@@ -30,6 +30,7 @@ import {
   prefetchReelPoster,
   resolvePosterSource,
 } from './src/utils/reelMediaFallback';
+import { handleModerationAction } from './src/utils/moderationAlerts';
 import { BawaalEmoji, hasBawaalEmoji } from './components/BawaalEmoji';
 import { ALL_SKELETON_KEYS } from './src/constants/bawaalEmojiAssets';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
@@ -1247,9 +1248,20 @@ export default function ArenaReelViewer({
       }
       if (actionId === 'dm' || actionId === 'send') {
         openDmSheet();
+        return;
+      }
+      if (handleModerationAction(actionId, activeReel)) {
+        return;
       }
     },
-    [dropGif, openBanterFeed, openDmSheet, openReactions, openShareSheet]
+    [
+      activeReel,
+      dropGif,
+      openBanterFeed,
+      openDmSheet,
+      openReactions,
+      openShareSheet,
+    ]
   );
 
   // Keep tree warm when closed (visible=false) so the same URI resumes instantly

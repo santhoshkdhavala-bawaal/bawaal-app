@@ -26,9 +26,13 @@ export async function deleteCurrentAccount() {
       return { ok: true, mode: 'local', error: null };
     }
 
+    const accessToken = sessionData?.session?.access_token || null;
     const { data, error } = await supabase.functions.invoke('delete-account', {
       method: 'POST',
       body: {},
+      headers: accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : undefined,
     });
 
     if (error) {
@@ -36,10 +40,14 @@ export async function deleteCurrentAccount() {
         '[deleteAccount] invoke failed:',
         error?.message || error
       );
-      return { ok: false, mode: 'supabase', error };
+      const msg = String(error?.message || error || '');
+      const friendly = /not found|404|Failed to send/i.test(msg)
+        ? 'Delete Account is not available yet. Deploy the delete-account Edge Function and try again.'
+        : msg || 'Could not delete account. Check your connection and try again.';
+      return { ok: false, mode: 'supabase', error: new Error(friendly) };
     }
 
-    if (data && data.ok === false) {
+    if (data && (data.ok === false || data.error)) {
       return {
         ok: false,
         mode: 'supabase',
