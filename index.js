@@ -15,6 +15,10 @@ import {
   preventAutoHideSafe,
 } from './src/boot/safeSplash';
 import { injectWebScrollbarStyles } from './src/styles/injectWebScrollbar';
+import { registerLiveKitGlobalsSafe } from './src/boot/registerLiveKitGlobals';
+
+// LiveKit WebRTC globals (native only — web stub is a no-op)
+registerLiveKitGlobalsSafe();
 
 // Web-only: replace default light grey scrollbars with BAWAAL orange/black chrome
 injectWebScrollbarStyles();
