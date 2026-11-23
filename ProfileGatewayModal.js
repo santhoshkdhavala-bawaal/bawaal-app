@@ -12,7 +12,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from './src/services/supabase';
-import { logoutRegisteredSession } from './sessionStore';
+import { deleteCurrentAccount } from './src/services/deleteAccountService';
+import DeleteAccountConfirmModal from './src/components/DeleteAccountConfirmModal';
+import {
+  clearRegisteredSession,
+  logoutRegisteredSession,
+} from './sessionStore';
 
 const BG = '#000000';
 const CARD = '#121212';
@@ -44,11 +49,15 @@ export default function ProfileGatewayModal({
   onClose,
   onOpenPassport,
   onLogOut,
+  onAccountDeleted,
   user = DEFAULT_USER,
 }) {
   const insets = useSafeAreaInsets();
   const [editing, setEditing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
   const [profile, setProfile] = useState(user);
   const [form, setForm] = useState({
     fullName: user.displayName || '',
@@ -62,6 +71,9 @@ export default function ProfileGatewayModal({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reset sheet on close
       setEditing(false);
       setLoggingOut(false);
+      setDeleteOpen(false);
+      setDeleting(false);
+      setDeleteError(null);
       return;
     }
     setProfile(user);
@@ -87,7 +99,7 @@ export default function ProfileGatewayModal({
   };
 
   const handleLogOut = useCallback(async () => {
-    if (loggingOut) return;
+    if (loggingOut || deleting) return;
     setLoggingOut(true);
     try {
       try {
@@ -105,9 +117,39 @@ export default function ProfileGatewayModal({
       console.warn('[ProfileGateway] log out failed:', err?.message || err);
       setLoggingOut(false);
     }
-  }, [loggingOut, onClose, onLogOut]);
+  }, [loggingOut, deleting, onClose, onLogOut]);
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleting || loggingOut) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await deleteCurrentAccount();
+      if (!result.ok) {
+        setDeleteError(
+          result.error?.message ||
+            'Could not delete account. Deploy delete-account Edge Function and try again.'
+        );
+        setDeleting(false);
+        return;
+      }
+      await clearRegisteredSession();
+      setDeleteOpen(false);
+      onClose?.();
+      if (onAccountDeleted) {
+        await onAccountDeleted();
+      } else if (onLogOut) {
+        await onLogOut();
+      }
+    } catch (err) {
+      console.warn('[ProfileGateway] delete account:', err?.message || err);
+      setDeleteError(err?.message || 'Could not delete account.');
+      setDeleting(false);
+    }
+  }, [deleting, loggingOut, onClose, onAccountDeleted, onLogOut]);
 
   return (
+    <>
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <Pressable style={styles.backdrop} onPress={onClose} />
@@ -249,7 +291,7 @@ export default function ProfileGatewayModal({
                   style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
                   onPress={handleLogOut}
                   activeOpacity={0.85}
-                  disabled={loggingOut}
+                  disabled={loggingOut || deleting}
                   accessibilityRole="button"
                   accessibilityLabel="Log out"
                 >
@@ -259,12 +301,41 @@ export default function ProfileGatewayModal({
                     <Text style={styles.logOutBtnText}>LOG OUT</Text>
                   )}
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteAccountBtn}
+                  onPress={() => {
+                    setDeleteError(null);
+                    setDeleteOpen(true);
+                  }}
+                  activeOpacity={0.85}
+                  disabled={loggingOut || deleting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete account"
+                >
+                  <Text style={styles.deleteAccountBtnText}>DELETE ACCOUNT</Text>
+                </TouchableOpacity>
+                {deleteError ? (
+                  <Text style={styles.deleteErrorText}>{deleteError}</Text>
+                ) : null}
               </>
             )}
           </ScrollView>
         </View>
       </View>
     </Modal>
+
+    <DeleteAccountConfirmModal
+      visible={deleteOpen}
+      busy={deleting}
+      onCancel={() => {
+        if (deleting) return;
+        setDeleteOpen(false);
+        setDeleteError(null);
+      }}
+      onConfirm={handleDeleteAccount}
+    />
+    </>
   );
 }
 
@@ -462,6 +533,28 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.0,
+  },
+  deleteAccountBtn: {
+    alignSelf: 'center',
+    marginTop: 4,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  deleteAccountBtnText: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.0,
+    textDecorationLine: 'underline',
+  },
+  deleteErrorText: {
+    color: LOGOUT_RED_MUTED,
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
+    marginBottom: 8,
+    paddingHorizontal: 8,
   },
   passportBtn: {
     marginTop: 16,

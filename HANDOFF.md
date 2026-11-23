@@ -348,7 +348,7 @@ supabase functions deploy livekit-token
 
 Client also needs `EXPO_PUBLIC_LIVEKIT_URL=wss://…` in `.env` (see `.env.example`).
 
-### 4.3 Auth, persistence & logout
+### 4.3 Auth, persistence, logout & delete account
 
 | Flag | Behavior |
 |---|---|
@@ -356,9 +356,25 @@ Client also needs `EXPO_PUBLIC_LIVEKIT_URL=wss://…` in `.env` (see `.env.examp
 | Logged-in restart | Supabase session + AsyncStorage → stay in Arena |
 | Logout | `supabase.auth.signOut()` + `logoutRegisteredSession()` → `isLoggedIn: false`, **`hasRegisteredPreviously: true` preserved** |
 | Re-open after logout | `Entry` with **Email + Password Sign In** (`loginOnly`) → Arena |
+| Delete Account | Confirm type `DELETE` → Edge Function `delete-account` → `clearRegisteredSession()` → `Entry` (`loginOnly: false`) |
 | Keys | `@bawaal/athlete_session_v1`, `bawaal_has_registered_previously`, `bawaal_is_logged_in` |
 
 Auth: **Email ID + Phone + Create Password** via `authPassword.js` (`signUp` / `signInWithPassword` / `resetPasswordForEmail` / `PASSWORD_RECOVERY` → Set New Password). Phone stays in `user_metadata` + `profiles` for invites/lookup. Session persists via Supabase AsyncStorage + local `sessionStore`.
+
+**Delete Account (App Store / Play):**
+
+| Piece | Role |
+|---|---|
+| Edge Function | `supabase/functions/delete-account` — verifies JWT, then `auth.admin.deleteUser` with `SUPABASE_SERVICE_ROLE_KEY` |
+| Client | `deleteCurrentAccount()` in `src/services/deleteAccountService.js` |
+| UI | Subtle **DELETE ACCOUNT** under LOG OUT (`ProfileGatewayModal`, self Passport) + `DeleteAccountConfirmModal` (type `DELETE`) |
+| SQL | `supabase/ENSURE_DELETE_ACCOUNT.sql` + `migrations/20261123_delete_account_cascade.sql` (profiles FK cascade) |
+
+```bash
+# Apply cascade ensure (optional if profiles already FKs to auth.users):
+# paste ENSURE_DELETE_ACCOUNT.sql in Supabase SQL editor, or migrate
+supabase functions deploy delete-account
+```
 
 ### 4.4 Sparks & Josh / Arena reels (`ArenaReelViewer.js`)
 
@@ -507,6 +523,7 @@ adb logcat | findstr /i "bawaal Error Exception"
 
 - [ ] Cold start opens **Arena** (guest) or stays logged in  
 - [ ] Logout → Email + Password Sign In → Arena  
+- [ ] Delete Account (type DELETE) → Edge Function → Entry Create Account  
 - [ ] Header order LIVE → NEAR ME → Bell; NEAR ME opens map  
 - [ ] LIVE: scoreboard OFF default; cricket pad; viewers cannot score; invite WATCH banner targeted  
 - [ ] Reel mute top-right; metrics only behind ⋮; vault skulls only  

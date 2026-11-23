@@ -439,6 +439,12 @@ export default function MainTabs({ navigation, route }) {
               routes: [{ name: 'Entry', params: { loginOnly: true } }],
             });
           }}
+          onAccountDeleted={() => {
+            navigation?.reset?.({
+              index: 0,
+              routes: [{ name: 'Entry', params: { loginOnly: false } }],
+            });
+          }}
         />
         <ChallengeAlertModal
           visible={challengeModalOpen}

@@ -23,7 +23,12 @@ import ProfileMediaTabs from './src/components/ProfileMediaTabs';
 import BackLink from './src/components/BackLink';
 import DMChatSheet from './DMChatSheet';
 import { supabase } from './src/services/supabase';
-import { logoutRegisteredSession } from './sessionStore';
+import { deleteCurrentAccount } from './src/services/deleteAccountService';
+import DeleteAccountConfirmModal from './src/components/DeleteAccountConfirmModal';
+import {
+  clearRegisteredSession,
+  logoutRegisteredSession,
+} from './sessionStore';
 
 const BG = '#000000';
 const SURFACE = '#0A0A0A';
@@ -37,6 +42,8 @@ export default function AthletePassportScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
   const [dmOpen, setDmOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const athlete = useMemo(() => {
     const fromParams = route?.params?.athlete;
     if (fromParams?.id) return fromParams;
@@ -45,7 +52,7 @@ export default function AthletePassportScreen({ route, navigation }) {
   const isSelf = athlete?.id === 'me';
 
   const handleLogOut = useCallback(async () => {
-    if (loggingOut) return;
+    if (loggingOut || deleting) return;
     setLoggingOut(true);
     try {
       try {
@@ -63,7 +70,32 @@ export default function AthletePassportScreen({ route, navigation }) {
       console.warn('[Passport] log out failed:', err?.message || err);
       setLoggingOut(false);
     }
-  }, [loggingOut, navigation]);
+  }, [loggingOut, deleting, navigation]);
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleting || loggingOut) return;
+    setDeleting(true);
+    try {
+      const result = await deleteCurrentAccount();
+      if (!result.ok) {
+        console.warn(
+          '[Passport] delete account:',
+          result.error?.message || result.error
+        );
+        setDeleting(false);
+        return;
+      }
+      await clearRegisteredSession();
+      setDeleteOpen(false);
+      navigation?.reset?.({
+        index: 0,
+        routes: [{ name: 'Entry', params: { loginOnly: false } }],
+      });
+    } catch (err) {
+      console.warn('[Passport] delete account failed:', err?.message || err);
+      setDeleting(false);
+    }
+  }, [deleting, loggingOut, navigation]);
 
   const initials = String(athlete.displayName || '?')
     .split(/\s+/)
@@ -82,7 +114,7 @@ export default function AthletePassportScreen({ route, navigation }) {
           style={[styles.logOutBtn, loggingOut && styles.logOutBtnBusy]}
           onPress={handleLogOut}
           activeOpacity={0.85}
-          disabled={loggingOut}
+          disabled={loggingOut || deleting}
           accessibilityRole="button"
           accessibilityLabel="Log out"
         >
@@ -92,6 +124,18 @@ export default function AthletePassportScreen({ route, navigation }) {
             <Text style={styles.logOutBtnText}>LOG OUT</Text>
           )}
         </TouchableOpacity>
+        {isSelf ? (
+          <TouchableOpacity
+            style={styles.deleteAccountBtn}
+            onPress={() => setDeleteOpen(true)}
+            activeOpacity={0.85}
+            disabled={loggingOut || deleting}
+            accessibilityRole="button"
+            accessibilityLabel="Delete account"
+          >
+            <Text style={styles.deleteAccountBtnText}>DELETE ACCOUNT</Text>
+          </TouchableOpacity>
+        ) : null}
         <View style={styles.topBar}>
           <BackLink
             label="Back"
@@ -223,6 +267,16 @@ export default function AthletePassportScreen({ route, navigation }) {
         peer={athlete}
         onClose={() => setDmOpen(false)}
       />
+
+      <DeleteAccountConfirmModal
+        visible={deleteOpen}
+        busy={deleting}
+        onCancel={() => {
+          if (deleting) return;
+          setDeleteOpen(false);
+        }}
+        onConfirm={handleDeleteAccount}
+      />
     </View>
   );
 }
@@ -283,6 +337,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.2,
+  },
+  deleteAccountBtn: {
+    alignSelf: 'flex-start',
+    marginTop: -4,
+    marginBottom: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  deleteAccountBtnText: {
+    color: MUTED,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.0,
+    textDecorationLine: 'underline',
   },
   topBar: {
     flexDirection: 'row',

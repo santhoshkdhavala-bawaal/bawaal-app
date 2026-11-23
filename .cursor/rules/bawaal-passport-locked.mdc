@@ -32,6 +32,12 @@ The Passport tab hub (`ProfileScreen.js`) is **production-final**. Do **not** re
 - On press: `await supabase.auth.signOut()` then return to Entry / onboarding (`onLogOut` → Entry)
 - Do not enlarge into a full-width danger banner or move above OPEN FULL PASSPORT
 
+## DELETE ACCOUNT (LOCKED — App Store / Play)
+
+- Subtle muted **DELETE ACCOUNT** text control sits **below** LOG OUT (gateway + self Passport)
+- Confirm modal requires typing `DELETE`; calls Edge Function `delete-account` → `clearRegisteredSession()` → Entry Create Account
+- Do not restyle into a primary CTA or move above LOG OUT / OPEN FULL PASSPORT
+
 ## App wiring
 
 - Main tab **Passport** mounts `ProfileScreen`

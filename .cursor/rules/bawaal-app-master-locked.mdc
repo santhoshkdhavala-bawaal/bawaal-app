@@ -67,6 +67,19 @@ Authoritative detail: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locke
 
 **Locked files:** `RoleSelection.js`, `AthleteRegistrationScreen.js`, `TermsModal.js`, `src/components/PasswordRecoveryHost.js`, `src/services/authPassword.js`, `src/services/authOtp.js` (phone normalize re-export), `src/services/profilesService.js`, `src/types/profile.js`, `src/services/supabase.js` / `lib/supabase.js`, related ENSURE/migrations SQL
 
+### Delete Account (App Store / Play — HARD LOCK)
+
+| Surface | Must keep |
+|---|---|
+| Edge Function | `supabase/functions/delete-account` — JWT verify → `auth.admin.deleteUser` (service role) |
+| Client | `src/services/deleteAccountService.js` → `deleteCurrentAccount()` |
+| UI | Subtle **DELETE ACCOUNT** below LOG OUT; confirm by typing `DELETE`; then `clearRegisteredSession()` → Entry Create Account |
+| SQL | `ENSURE_DELETE_ACCOUNT.sql` / `migrations/20261123_delete_account_cascade.sql` |
+
+**Deploy:** `supabase functions deploy delete-account`
+
+**Locked files:** `src/components/DeleteAccountConfirmModal.js`, `src/services/deleteAccountService.js`, `supabase/functions/delete-account/index.ts`, delete wiring in `ProfileGatewayModal.js` / `AthletePassportScreen.js` / `MainTabs.js`
+
 ## 5. Other production locks (do not regress)
 
 Treat as locked unless the user unlocks the named rule:
