@@ -2,7 +2,7 @@
  * BAWAAL LIVE hub — list live matches + 5-second GO LIVE setup.
  * Theme: #08120F / #FF5A1F / #E53935
  */
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -14,6 +14,8 @@ import {
   Platform,
   TextInput,
   KeyboardAvoidingView,
+  ScrollView,
+  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -309,199 +311,218 @@ function GoLiveSetup({ onBack, onStarted }) {
         <View style={{ width: 48 }} />
       </View>
 
-      <Text style={styles.fieldLabel}>SPORT</Text>
-      <SportDropdown
-        value={sport}
-        options={LIVE_MATCH_SPORTS}
-        onChange={setSport}
-      />
-
-      <TouchableOpacity
-        style={[
-          styles.scoreboardToggleRow,
-          scoreboardOn && styles.scoreboardToggleRowOn,
-        ]}
-        onPress={() => setScoreboardOn((v) => !v)}
-        activeOpacity={0.88}
-        accessibilityRole="switch"
-        accessibilityState={{ checked: scoreboardOn }}
-        accessibilityLabel={`Scoreboard ${scoreboardOn ? 'on' : 'off'}`}
+      <ScrollView
+        style={styles.setupScroll}
+        contentContainerStyle={styles.setupScrollContent}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
+        bounces
       >
-        <View style={styles.scoreboardToggleCopy}>
-          <Text style={styles.scoreboardToggleTitle}>SCOREBOARD</Text>
-          <Text style={styles.scoreboardToggleHint}>
-            {scoreboardOn
-              ? 'Teams, title & admin scorer enabled'
-              : 'Pure telecast — banter & reactions only'}
-          </Text>
-        </View>
-        <View
+        <Text style={styles.fieldLabel}>SPORT</Text>
+        <SportDropdown
+          value={sport}
+          options={LIVE_MATCH_SPORTS}
+          onChange={setSport}
+        />
+
+        <TouchableOpacity
           style={[
-            styles.scoreboardSwitch,
-            scoreboardOn && styles.scoreboardSwitchOn,
+            styles.scoreboardToggleRow,
+            scoreboardOn && styles.scoreboardToggleRowOn,
           ]}
+          onPress={() => setScoreboardOn((v) => !v)}
+          activeOpacity={0.88}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: scoreboardOn }}
+          accessibilityLabel={`Scoreboard ${scoreboardOn ? 'on' : 'off'}`}
         >
-          <Text
+          <View style={styles.scoreboardToggleCopy}>
+            <Text style={styles.scoreboardToggleTitle}>SCOREBOARD</Text>
+            <Text style={styles.scoreboardToggleHint}>
+              {scoreboardOn
+                ? 'Teams, title & admin scorer enabled'
+                : 'Pure telecast — banter & reactions only'}
+            </Text>
+          </View>
+          <View
             style={[
-              styles.scoreboardSwitchText,
-              scoreboardOn && styles.scoreboardSwitchTextOn,
+              styles.scoreboardSwitch,
+              scoreboardOn && styles.scoreboardSwitchOn,
             ]}
           >
-            {scoreboardOn ? 'ON' : 'OFF'}
-          </Text>
+            <Text
+              style={[
+                styles.scoreboardSwitchText,
+                scoreboardOn && styles.scoreboardSwitchTextOn,
+              ]}
+            >
+              {scoreboardOn ? 'ON' : 'OFF'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {scoreboardOn ? (
+          <View style={styles.scoreboardDrawer}>
+            <View style={styles.teamRow}>
+              <View style={styles.teamCol}>
+                <Text style={[styles.fieldLabel, styles.teamFieldLabel]}>
+                  TEAM A
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={teamA}
+                  onChangeText={setTeamA}
+                  placeholder="TEAM A"
+                  placeholderTextColor={MUTED}
+                  maxLength={32}
+                  autoCapitalize="characters"
+                />
+              </View>
+              <View style={styles.teamCol}>
+                <Text style={[styles.fieldLabel, styles.teamFieldLabel]}>
+                  TEAM B
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={teamB}
+                  onChangeText={setTeamB}
+                  placeholder="TEAM B"
+                  placeholderTextColor={MUTED}
+                  maxLength={32}
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.fieldLabel}>TITLE (OPTIONAL)</Text>
+            <TextInput
+              style={styles.input}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Friendly School Match"
+              placeholderTextColor={MUTED}
+              maxLength={80}
+            />
+
+            <Text style={styles.fieldLabel}>ADMIN</Text>
+            <TextInput
+              style={styles.input}
+              value={adminName}
+              onChangeText={setAdminName}
+              placeholder="Scorer handle or name"
+              placeholderTextColor={MUTED}
+              maxLength={40}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Text style={styles.adminHint}>
+              Who punches the score — you or a friend/umpire
+            </Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.fieldLabel}>VISIBILITY</Text>
+        <View style={styles.visibilityRow}>
+          <TouchableOpacity
+            style={[
+              styles.visibilityPill,
+              isPublic && styles.visibilityPillOn,
+            ]}
+            onPress={() => setVisibility('public')}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityState={{ selected: isPublic }}
+            accessibilityLabel="Public — list on global roster"
+          >
+            <Text
+              style={[
+                styles.visibilityPillText,
+                isPublic && styles.visibilityPillTextOn,
+              ]}
+            >
+              PUBLIC
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.visibilityPill,
+              !isPublic && styles.visibilityPillOn,
+            ]}
+            onPress={() => setVisibility('private')}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityState={{ selected: !isPublic }}
+            accessibilityLabel="Private — invite or code only"
+          >
+            <Text
+              style={[
+                styles.visibilityPillText,
+                !isPublic && styles.visibilityPillTextOn,
+              ]}
+            >
+              PRIVATE
+            </Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+        <Text style={styles.visibilityHint}>
+          {isPublic
+            ? 'Listed on LIVE AROUND THE WORLD — anyone can WATCH. Invites still work.'
+            : 'Hidden from the global roster — invite code or direct invite only.'}
+        </Text>
 
-      {scoreboardOn ? (
-        <View style={styles.scoreboardDrawer}>
-          <Text style={styles.fieldLabel}>TEAM A</Text>
+        <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
+        <View style={styles.locationInputRow}>
           <TextInput
-            style={styles.input}
-            value={teamA}
-            onChangeText={setTeamA}
-            placeholder="TEAM A"
-            placeholderTextColor={MUTED}
-            maxLength={32}
-            autoCapitalize="characters"
-          />
-
-          <Text style={styles.fieldLabel}>TEAM B</Text>
-          <TextInput
-            style={styles.input}
-            value={teamB}
-            onChangeText={setTeamB}
-            placeholder="TEAM B"
-            placeholderTextColor={MUTED}
-            maxLength={32}
-            autoCapitalize="characters"
-          />
-
-          <Text style={styles.fieldLabel}>TITLE (OPTIONAL)</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="Friendly School Match"
+            style={[styles.input, styles.locationInput]}
+            value={locationLabel}
+            onChangeText={setLocationLabel}
+            placeholder="City, Country"
             placeholderTextColor={MUTED}
             maxLength={80}
-          />
-
-          <Text style={styles.fieldLabel}>ADMIN</Text>
-          <TextInput
-            style={styles.input}
-            value={adminName}
-            onChangeText={setAdminName}
-            placeholder="Scorer handle or name"
-            placeholderTextColor={MUTED}
-            maxLength={40}
-            autoCapitalize="none"
+            autoCapitalize="words"
             autoCorrect={false}
           />
-          <Text style={styles.adminHint}>
-            Who punches the score — you or a friend/umpire
-          </Text>
+          <View
+            style={[
+              styles.locationFlagPreview,
+              !locationFlagPreview && styles.locationFlagPreviewEmpty,
+            ]}
+            accessibilityLabel={
+              locationFlagPreview
+                ? `Matched flag ${locationFlagPreview.countryName}`
+                : 'No country flag matched'
+            }
+          >
+            {locationFlagPreview ? (
+              <LiveCountryFlagBadge
+                isoCode={locationFlagPreview.isoCode}
+                flagEmoji={locationFlagPreview.flagEmoji}
+                countryName={locationFlagPreview.countryName}
+                size="lg"
+              />
+            ) : (
+              <Text style={styles.locationFlagPreviewText}>—</Text>
+            )}
+          </View>
         </View>
-      ) : null}
+      </ScrollView>
 
-      <Text style={styles.fieldLabel}>VISIBILITY</Text>
-      <View style={styles.visibilityRow}>
+      <View style={styles.setupFooter}>
         <TouchableOpacity
-          style={[
-            styles.visibilityPill,
-            isPublic && styles.visibilityPillOn,
-          ]}
-          onPress={() => setVisibility('public')}
-          activeOpacity={0.88}
+          style={[styles.startBtn, starting && styles.startBtnDisabled]}
+          onPress={handleStart}
+          activeOpacity={0.9}
+          disabled={!!starting}
           accessibilityRole="button"
-          accessibilityState={{ selected: isPublic }}
-          accessibilityLabel="Public — list on global roster"
+          accessibilityLabel="Start live telecast"
         >
-          <Text
-            style={[
-              styles.visibilityPillText,
-              isPublic && styles.visibilityPillTextOn,
-            ]}
-          >
-            PUBLIC
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.visibilityPill,
-            !isPublic && styles.visibilityPillOn,
-          ]}
-          onPress={() => setVisibility('private')}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityState={{ selected: !isPublic }}
-          accessibilityLabel="Private — invite or code only"
-        >
-          <Text
-            style={[
-              styles.visibilityPillText,
-              !isPublic && styles.visibilityPillTextOn,
-            ]}
-          >
-            PRIVATE
-          </Text>
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.visibilityHint}>
-        {isPublic
-          ? 'Listed on LIVE AROUND THE WORLD — anyone can WATCH. Invites still work.'
-          : 'Hidden from the global roster — invite code or direct invite only.'}
-      </Text>
-
-      <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
-      <View style={styles.locationInputRow}>
-        <TextInput
-          style={[styles.input, styles.locationInput]}
-          value={locationLabel}
-          onChangeText={setLocationLabel}
-          placeholder="City, Country"
-          placeholderTextColor={MUTED}
-          maxLength={80}
-          autoCapitalize="words"
-          autoCorrect={false}
-        />
-        <View
-          style={[
-            styles.locationFlagPreview,
-            !locationFlagPreview && styles.locationFlagPreviewEmpty,
-          ]}
-          accessibilityLabel={
-            locationFlagPreview
-              ? `Matched flag ${locationFlagPreview.countryName}`
-              : 'No country flag matched'
-          }
-        >
-          {locationFlagPreview ? (
-            <LiveCountryFlagBadge
-              isoCode={locationFlagPreview.isoCode}
-              flagEmoji={locationFlagPreview.flagEmoji}
-              countryName={locationFlagPreview.countryName}
-              size="lg"
-            />
+          {starting ? (
+            <ActivityIndicator color={WHITE} />
           ) : (
-            <Text style={styles.locationFlagPreviewText}>—</Text>
+            <Text style={styles.startBtnText}>START LIVE TELECAST</Text>
           )}
-        </View>
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={[styles.startBtn, starting && styles.startBtnDisabled]}
-        onPress={handleStart}
-        activeOpacity={0.9}
-        disabled={!!starting}
-        accessibilityRole="button"
-        accessibilityLabel="Start live telecast"
-      >
-        {starting ? (
-          <ActivityIndicator color={WHITE} />
-        ) : (
-          <Text style={styles.startBtnText}>START LIVE TELECAST</Text>
-        )}
-      </TouchableOpacity>
     </KeyboardAvoidingView>
   );
 }
@@ -518,6 +539,11 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
   // When closed, always present hub (mode reset happens on close / back presses)
   const sheetVisible = !!visible;
   const effectiveMode = sheetVisible ? mode : 'hub';
+  const isSetupMode = effectiveMode === 'setup';
+  const setupSheetMaxHeight = useMemo(() => {
+    if (Platform.OS === 'web') return '90vh';
+    return Dimensions.get('window').height * 0.9;
+  }, []);
 
   useEffect(() => {
     if (!sheetVisible) return undefined;
@@ -609,15 +635,23 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
         <View
           style={[
             styles.sheet,
+            isSetupMode && styles.sheetSetup,
             {
-              paddingBottom: Math.max(insets.bottom, 16) + 12,
-              maxHeight: '92%',
+              paddingBottom: Math.max(insets.bottom, 16) + (isSetupMode ? 0 : 12),
+              maxHeight: isSetupMode ? setupSheetMaxHeight : '92%',
+              ...(isSetupMode
+                ? {
+                    height: setupSheetMaxHeight,
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                  }
+                : null),
             },
           ]}
         >
           <View style={styles.handle} />
 
-          {effectiveMode === 'setup' ? (
+          {isSetupMode ? (
             <GoLiveSetup
               onBack={closeSetup}
               onStarted={handleStarted}
@@ -744,6 +778,10 @@ const styles = StyleSheet.create({
       web: { maxWidth: 480, alignSelf: 'center', width: '100%' },
       default: {},
     }),
+  },
+  sheetSetup: {
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   handle: {
     alignSelf: 'center',
@@ -1042,13 +1080,43 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   setupWrap: {
-    paddingBottom: 8,
+    flex: 1,
+    minHeight: 0,
+    flexDirection: 'column',
+    overflow: 'hidden',
   },
   setupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 12,
+    flexShrink: 0,
+  },
+  setupScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  setupScrollContent: {
+    paddingBottom: 12,
+  },
+  setupFooter: {
+    flexShrink: 0,
+    paddingTop: 12,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#262626',
+  },
+  teamRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  teamCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  teamFieldLabel: {
+    marginTop: 6,
   },
   backLink: {
     color: ORANGE,
@@ -1237,7 +1305,6 @@ const styles = StyleSheet.create({
     outlineStyle: 'none',
   },
   startBtn: {
-    marginTop: 22,
     backgroundColor: CRIMSON,
     borderRadius: 999,
     paddingVertical: 15,
