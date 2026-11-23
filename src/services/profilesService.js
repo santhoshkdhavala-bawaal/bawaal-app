@@ -6,7 +6,7 @@
  */
 import { isSupabaseConfigured, supabase } from './supabase';
 import { CURRENT_USER, FOLLOWING, SUGGESTED } from '../data/athleteSocial';
-import { normalizePhoneE164 } from './authOtp';
+import { normalizePhoneE164 } from './authPassword';
 import { normalizeRemoteImageUri } from '../constants/mediaFallbacks';
 import {
   PROFILE_BASE_WRITE_COLUMNS,
@@ -442,10 +442,10 @@ async function persistWithSchemaStrip(initialPayload) {
 }
 
 /**
- * OTP SUBMIT / registration → `public.profiles` save.
+ * Sign-up / Sign-in / registration → `public.profiles` save.
  *
  * @param {object} userData — registration payload from RoleSelection
- * @param {{ id?: string } | null} [authUser] — supabase.auth user after verifyOtp
+ * @param {{ id?: string } | null} [authUser] — supabase.auth user after signUp / signInWithPassword
  */
 export async function upsertRegisteredProfile(userData = {}, authUser = null) {
   const { id, v1, soft } = buildRegistrationProfilePayload(userData, authUser);

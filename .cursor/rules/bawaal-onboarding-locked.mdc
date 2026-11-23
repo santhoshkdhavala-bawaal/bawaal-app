@@ -1,5 +1,5 @@
 ---
-description: Locked BAWAAL V1 landing/onboarding — UI + Supabase phone OTP + profiles upsert (see also bawaal-v1-fullstack-locked)
+description: Locked BAWAAL V1 landing/onboarding — Email+Password auth + profiles upsert (see also bawaal-v1-fullstack-locked)
 alwaysApply: true
 ---
 
@@ -7,23 +7,27 @@ alwaysApply: true
 
 Authoritative summary: `.cursor/rules/bawaal-v1-fullstack-locked.mdc`.
 
-The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **production-final**. Do **not** modify, restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+The **landing / onboarding / Email+Password / legal / location-flag / profiles** flow is **production-final**. Do **not** modify, restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+
+**Auth unlock (2026-11-23):** SMS Phone+OTP replaced by **Email ID + Phone Number + Create Password** with **Sign In** and **Forgot Password**.
 
 ## Locked files (do not edit)
 
 - `AthleteRegistrationScreen.js` — canonical Entry mount (re-exports RoleSelection)
-- `RoleSelection.js` — Create Account form, sticky Continue, OTP modal, Terms
-- `OTPInput.js` — 4-digit boxes only; no auto-submit
-- `OTPModal.js` — OTP shell; verify only via explicit SUBMIT / VERIFY
+- `RoleSelection.js` — Create Account form, Sign In (`loginOnly`), Forgot Password modal, Terms
+- `src/components/PasswordRecoveryHost.js` — Set New Password on `PASSWORD_RECOVERY`
 - `TermsModal.js` — standalone Terms surface (logo + orange accept + web scrollbar)
 - `src/styles/injectWebScrollbar.js` — web orange/black scrollbar chrome
 - `src/services/supabase.js` / `lib/supabase.js` — Expo env + AsyncStorage sessions
-- `src/services/authOtp.js` — `signInWithOtp` / `verifyOtp` + dev phone bypass
+- `src/services/authPassword.js` — `signUp` / `signInWithPassword` / `resetPasswordForEmail` / `updateUser`
+- `src/services/authOtp.js` — phone normalize re-export only (OTP path retired)
 - `src/services/profilesService.js` — `upsertRegisteredProfile` → `public.profiles`
 - `src/types/profile.js` — V1 column contract
 - `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` — profiles + RLS ensure
 - `src/utils/locationFlag.js` — location → country flag resolution
 - `src/data/worldCountries.js` — worldwide country/territory flag registry
+
+Legacy unused (do not re-enable as primary auth): `OTPInput.js`, `OTPModal.js`
 
 ## Core theme (LOCKED)
 
@@ -38,7 +42,7 @@ The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **
 
 ## Brand assets (LOCKED)
 
-- Centered full BAWAAL shattering logo (`BAWAAL_white_full.png`) on registration, Terms, and OTP — no duplicate wordmark / faded B watermark under or behind the hero.
+- Centered full BAWAAL shattering logo (`BAWAAL_white_full.png`) on registration, Terms, Forgot / Set New Password — no duplicate wordmark / faded B watermark under or behind the hero.
 - Do not reintroduce legacy / small white text icons on these surfaces.
 
 ## Registration field order (LOCKED)
@@ -46,11 +50,19 @@ The **landing / onboarding / OTP / legal / location-flag / profiles** flow is **
 1. **User Name** — full width — `"Enter your user name"`
 2. **Real Name** — full width — `"Enter your real name"`
 3. **Row** — Age (`"Enter your age"`) | Gender dropdown (`"Select your gender"` + ▼)
-4. **Email** — full width — `"Enter your email"`
-5. **Phone** — full width — `"+1 (555) 000-0000"`
-6. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
-7. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS`, **ALL** first) | Role dropdown (`"Select your role"`)
-8. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Continue"`) — **no** login / sign-in redirect links
+4. **Email ID** — full width — `"Enter your email ID"`
+5. **Phone** — full width — `"+1 (555) 000-0000"` (→ `user_metadata.phone` + profiles)
+6. **Create Password** — full width — `"Create password (6+ characters)"` + SHOW/HIDE
+7. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
+8. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS`, **ALL** first) | Role dropdown (`"Select your role"`)
+9. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Create Account"`)
+
+### Sign In (`loginOnly`)
+
+1. Email ID
+2. Password (SHOW/HIDE)
+3. **Forgot Password?** → reset email modal
+4. **Sign In** CTA
 
 Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky footer. Max width ~440 centered on web.
 
@@ -60,11 +72,10 @@ Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky
 - Pitch-black background; custom web scrollbar (track `#0A0A0C` / `#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, `borderRadius: 4`)
 - Central logo + tagline; full-width orange acceptance pill
 
-### OTP
+### Forgot / Set New Password
 - Pitch-black; central logo + tagline
-- Exactly **4** boxes: fill `#1E1E22`, focus border `#FF6600`, white digits
-- **Manual SUBMIT / VERIFY only** — never auto-verify on 4th digit
-- Dev bypass: phone `+917993992315` + OTP `1234` → instant session (`authOtp.js`)
+- Forgot → `sendPasswordResetEmail` → clear confirmation notice
+- Set New Password (`PasswordRecoveryHost`) when `PASSWORD_RECOVERY` fires → `updatePassword`
 
 ## Backend — Supabase (LOCKED — V1)
 
@@ -77,15 +88,20 @@ Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky
 - `username`, `real_name`, `age`, `gender`, `email`, `phone`, `country`, `category`, `role`, `created_at`
 
 ### Auth & persistence flow
-- Continue → `sendPhoneOtp` → `supabase.auth.signInWithOtp({ phone })`
-- OTP **SUBMIT** → `verifyPhoneOtp` → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })`
+- Create Account → `signUpWithEmailPassword` → `supabase.auth.signUp({ email, password, options: { data: { phone } } })`
+- Sign In → `signInWithEmailPassword` → `supabase.auth.signInWithPassword({ email, password })`
+- Forgot → `sendPasswordResetEmail` → `supabase.auth.resetPasswordForEmail(email)`
+- Set new → `updatePassword` → `supabase.auth.updateUser({ password })`
 - Then `upsertRegisteredProfile` with V1 form fields keyed by auth user id
 - Soft-fail if offline / schema mismatch — still complete local registration / enter Arena
+- **Never re-add** SMS OTP as the primary auth path
 
 ## App wiring
 
 - Entry mounts `AthleteRegistrationScreen` from `App.js` (not a parallel LandingScreen).
-- Do not strip `flag` / `country` / `location` / `gender` / `age` / `username` / `category` from the session payload.
+- Logout → `loginOnly: true` Email + Password Sign In screen.
+- `PasswordRecoveryHost` mounted in `App.js` beside invite host.
+- Do not strip `flag` / `country` / `location` / `gender` / `age` / `username` / `category` / `phone` / `email` from the session payload.
 
 ## Allowed elsewhere
 

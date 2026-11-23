@@ -23,8 +23,8 @@
 
 - Arena V2 header: **`● LIVE` → `NEAR ME` → Bell`** (NEAR ME → `SportHubMap` directly)
 - BAWAAL LIVE telecast hub + room (optional scoreboard, cricket pad, `canScore`, 6-char invites, 5 skull reactions)
-- V1 registration / OTP / profiles soft-fail persistence
-- Session boot: fresh launch → **Arena**; logout → Phone+OTP only (`hasRegisteredPreviously`)
+- V1 registration / Email+Password auth / profiles soft-fail persistence
+- Session boot: fresh launch → **Arena**; logout → Email+Password Sign In (`hasRegisteredPreviously`)
 - Arena reel playback (`expo-video` declarative path), reel ⋮ actions, vault emoji bursts
 - Passport / Locker / Clinic visual contracts
 - Sport taxonomy (`BAWAAL_SPORTS`) + 8 GAME ON map categories
@@ -42,7 +42,7 @@
 ### Recent stabilizing commits (context)
 
 1. `10077eb` — Arena GAME ON → NEAR ME opens sports map directly  
-2. `b1f8f5f` — Persist login flags; launch Arena; logout → phone OTP only  
+2. `b1f8f5f` — Persist login flags; launch Arena; logout → auth Entry (`loginOnly`)
 3. `8566eb2` — Harden LIVE host camera for emulator APK + preview APK scripts  
 4. `1ef5855` — Master app lock + lint clear for stabilized surfaces  
 5. `771c7e8` — Lock BAWAAL LIVE for mobile (invites, soft-fail persistence)
@@ -135,7 +135,7 @@ Source: `package.json` (Expo SDK **58** family).
 | Sports orange | `#FF5500` / `#FF5A00` | Core accent / header ACCENT |
 | LIVE / NEAR ME accent | `#FF5A1F` | Header pills, LIVE chrome |
 | Onboarding accent | `#FF6600` | V1 forms |
-| Input fill | `#1E1E22` | Registration / OTP |
+| Input fill | `#1E1E22` | Registration / Sign In |
 
 ---
 
@@ -154,7 +154,7 @@ bawaal-mobile/
 ├── ArenaReelViewer.js        # Full-screen Sparks/Josh reel viewer
 ├── LiveMatchRoomScreen.js    # BAWAAL LIVE room HUD (LOCKED)
 ├── SportHubMapScreen.js      # NEAR ME map (LOCKED)
-├── RoleSelection.js          # V1 registration / OTP (LOCKED)
+├── RoleSelection.js          # V1 registration / Email+Password (LOCKED)
 ├── HANDOFF.md                # This document
 ├── AGENTS.md                 # Cross-model AI instructions
 ├── app.json / app.config.js  # Expo config (+ Maps key inject)
@@ -201,7 +201,7 @@ bawaal-mobile/
 | State | Route |
 |---|---|
 | `isLoggedIn` + session | `Main` (Arena) |
-| `hasRegisteredPreviously && !isLoggedIn` | `Entry` with `loginOnly: true` (Phone + OTP only) |
+| `hasRegisteredPreviously && !isLoggedIn` | `Entry` with `loginOnly: true` (Email + Password Sign In) |
 | Fresh guest / errors | `Main` (Arena — **no** registration wall) |
 | Missing Supabase env | `MissingSupabaseEnvScreen` |
 
@@ -218,7 +218,7 @@ bawaal-mobile/
 | `BattlesScreen.js` | Battles list + `OpenCalloutsPanel` |
 | `ProfileScreen.js` | Passport hub (LOCKED) |
 | `LockerRoomScreen.js` / `ClinicScreen.js` | Locker + Clinic (LOCKED) |
-| `RoleSelection.js` | Registration form or OTP-only when `loginOnly` |
+| `RoleSelection.js` | Create Account or Email+Password Sign In when `loginOnly` |
 | `UniversalCamera.tsx` | Hub modes + record; single centered `MODE • DETAILS` HUD |
 | `Live1v1BattleScreen.js` | War Cry dual panes + vault bursts |
 | `ProfileGatewayModal.js` | OPEN FULL PASSPORT + LOG OUT |
@@ -228,7 +228,7 @@ bawaal-mobile/
 | Service | Exports / role |
 |---|---|
 | `liveMatchService.js` | LIVE CRUD, scoring, cricket, invites, Realtime channels, `canUserScoreMatch` |
-| `authOtp.js` | `sendPhoneOtp` / `verifyPhoneOtp` + dev bypass |
+| `authPassword.js` | `signUp` / `signInWithPassword` / reset + update password |
 | `profilesService.js` | `upsertRegisteredProfile` + circuit breaker / schema strip |
 | `uploadService.js` | Upload to `bawaalvideos` bucket |
 | `arenaPostsService.js` | `videos` upsert onConflict `id` |
@@ -355,10 +355,10 @@ Client also needs `EXPO_PUBLIC_LIVEKIT_URL=wss://…` in `.env` (see `.env.examp
 | Fresh launch | Opens **Arena** (`Main`) — no registration wall |
 | Logged-in restart | Supabase session + AsyncStorage → stay in Arena |
 | Logout | `supabase.auth.signOut()` + `logoutRegisteredSession()` → `isLoggedIn: false`, **`hasRegisteredPreviously: true` preserved** |
-| Re-open after logout | `Entry` with **Phone + OTP only** (`loginOnly`) → Arena |
+| Re-open after logout | `Entry` with **Email + Password Sign In** (`loginOnly`) → Arena |
 | Keys | `@bawaal/athlete_session_v1`, `bawaal_has_registered_previously`, `bawaal_is_logged_in` |
 
-OTP: **manual SUBMIT only** (never auto-verify on 4th digit). Dev bypass phone documented in `authOtp.js` (do not hardcode secrets into new docs beyond existing code).
+Auth: **Email ID + Phone + Create Password** via `authPassword.js` (`signUp` / `signInWithPassword` / `resetPasswordForEmail` / `PASSWORD_RECOVERY` → Set New Password). Phone stays in `user_metadata` + `profiles` for invites/lookup. Session persists via Supabase AsyncStorage + local `sessionStore`.
 
 ### 4.4 Sparks & Josh / Arena reels (`ArenaReelViewer.js`)
 
@@ -381,7 +381,7 @@ Canonical Hub cards: **SPARKS · JOSH · BAWAAL BATTLE · FACEOFF · WAR CRY** (
 - Audience score punches / ungated score writes  
 - Global LIVE invite spam  
 - Arena-header GAME ON gate before map; multi-row map category grids; Virar-primary NEAR ME; CARTO tiles  
-- Registration auto-verify on 4th OTP digit  
+- SMS OTP as primary auth (`signInWithOtp` / `verifyOtp`)  
 - Hard-throw profiles upsert on schema miss  
 - Parallel `vaultAssets.js` diverging from `skullEmojiRegistry.js`  
 - Hot-path `console.log` on soft-fail paths  
@@ -506,7 +506,7 @@ adb logcat | findstr /i "bawaal Error Exception"
 ### 6.6 Verification checklist
 
 - [ ] Cold start opens **Arena** (guest) or stays logged in  
-- [ ] Logout → Phone + OTP only → Arena  
+- [ ] Logout → Email + Password Sign In → Arena  
 - [ ] Header order LIVE → NEAR ME → Bell; NEAR ME opens map  
 - [ ] LIVE: scoreboard OFF default; cricket pad; viewers cannot score; invite WATCH banner targeted  
 - [ ] Reel mute top-right; metrics only behind ⋮; vault skulls only  

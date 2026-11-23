@@ -31,9 +31,9 @@ Use `npx expo install <pkg>` for SDK-compatible adds. Emulator: `adb install -r 
 |---|---|
 | Fresh / guest | **Arena** (`Main`) — no registration wall |
 | Logged in | Stay in Arena across restarts |
-| After logout | `isLoggedIn: false`, keep `hasRegisteredPreviously: true` → **Phone + OTP only** → Arena |
+| After logout | `isLoggedIn: false`, keep `hasRegisteredPreviously: true` → **Email + Password Sign In** → Arena |
 
-OTP: **manual SUBMIT only** (never auto-verify on 4th digit). Profiles: soft-fail / circuit-breaker — never hard-throw registration.
+Auth: **Email ID + Phone + Create Password** (`signUp` / `signInWithPassword` / `resetPasswordForEmail` / `PASSWORD_RECOVERY` update). Profiles: soft-fail / circuit-breaker — never hard-throw registration.
 
 ## Locked UI contracts (obey first)
 
@@ -55,7 +55,7 @@ OTP: **manual SUBMIT only** (never auto-verify on 4th digit). Profiles: soft-fai
 - Global LIVE invite broadcast spam; infinite reaction spawn loops  
 - Unicode trays on Arena / LIVE / banter / DMs  
 - `expo-av` on Arena feed; sync bundled-mp4 feed fallbacks  
-- Auto-verify OTP on 4th digit; hard-fail profiles on schema miss  
+- SMS OTP as primary auth; hard-fail profiles on schema miss 
 - Hot-path `console.log` on soft-fail paths  
 - Parallel `vaultAssets.js` diverging from `skullEmojiRegistry.js`  
 - Editing locked files without an explicit unlock  
@@ -73,7 +73,7 @@ Missing Supabase tables/columns → empty arrays / local mocks / schema strip. A
 
 1. `npm run lint`  
 2. Confirm header LIVE → NEAR ME → Bell and NEAR ME → map  
-3. Confirm logout → OTP-only boot  
+3. Confirm logout → Email + Password Sign In boot 
 4. If touching LIVE: viewers cannot score; invites targeted; bursts bounded  
 5. If touching reels: no on-canvas metrics; `expo-video` only  
 

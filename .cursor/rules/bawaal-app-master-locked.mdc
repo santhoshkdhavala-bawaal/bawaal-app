@@ -57,13 +57,15 @@ Authoritative detail: `bawaal-arena-video-playback-locked.mdc` (+ reel chrome in
 
 Authoritative detail: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locked.mdc`, `bawaal-stability-checkpoint-locked.mdc`
 
+**Auth unlock (2026-11-23):** SMS Phone+OTP replaced by **Email ID + Phone Number + Create Password** (Sign In + Forgot Password). That is now the locked auth contract.
+
 | Surface | Must keep |
 |---|---|
-| Auth | `signInWithOtp` → manual OTP SUBMIT → `verifyOtp` → `upsertRegisteredProfile` |
-| Profiles | UUID → remote upsert; non-UUID / circuit → local success; `PROFILE_SAFE_WRITE_COLUMNS` only; soft-strip missing columns |
-| UI | V1 field order, Terms, 4-digit OTP (no auto-verify) |
+| Auth | `signUp({ email, password, options.data.phone })` / `signInWithPassword` / `resetPasswordForEmail` / `updateUser({ password })` on `PASSWORD_RECOVERY` → `upsertRegisteredProfile` |
+| Profiles | UUID → remote upsert; non-UUID / circuit → local success; `PROFILE_SAFE_WRITE_COLUMNS` only; soft-strip missing columns; phone on profile + `user_metadata` for invites/lookup |
+| UI | V1 field order + Create Password (6+, show/hide); Sign In + Forgot Password; Terms; Set New Password host |
 
-**Locked files:** `RoleSelection.js`, `AthleteRegistrationScreen.js`, `OTPInput.js`, `OTPModal.js`, `TermsModal.js`, `src/services/authOtp.js`, `src/services/profilesService.js`, `src/types/profile.js`, `src/services/supabase.js` / `lib/supabase.js`, related ENSURE/migrations SQL
+**Locked files:** `RoleSelection.js`, `AthleteRegistrationScreen.js`, `TermsModal.js`, `src/components/PasswordRecoveryHost.js`, `src/services/authPassword.js`, `src/services/authOtp.js` (phone normalize re-export), `src/services/profilesService.js`, `src/types/profile.js`, `src/services/supabase.js` / `lib/supabase.js`, related ENSURE/migrations SQL
 
 ## 5. Other production locks (do not regress)
 
@@ -96,7 +98,7 @@ Treat as locked unless the user unlocks the named rule:
 - Arena-header `▶ GAME ON` pill / GameOnHub gate before the map; multi-row map category grids; Virar-primary NEAR ME; CARTO tiles
   
 - `expo-av` on Arena reel path; unicode reaction trays on LIVE / Arena vault bursts  
-- Registration auto-verify on 4th OTP digit; hard-throw profiles upsert on schema miss  
+- SMS OTP as primary auth (`signInWithOtp` / `verifyOtp`); hard-throw profiles upsert on schema miss 
 
 ## Unlock
 

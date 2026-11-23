@@ -18,7 +18,7 @@ Production-final resilience contract for registration, social feed soft-fail, an
 | Schema miss | Soft-strip missing columns (bounded); fall back to `PROFILE_BASE_WRITE_COLUMNS`, then local success |
 | SQL | `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql` + `migrations/008_ensure_profiles_registration_columns.sql` |
 
-Locked files: `src/services/profilesService.js`, `src/types/profile.js`, registration OTP wiring in `authOtp.js` / `RoleSelection.js` (UI lock still applies).
+Locked files: `src/services/profilesService.js`, `src/types/profile.js`, registration Email+Password wiring in `authPassword.js` / `RoleSelection.js` (UI lock still applies).
 
 ## 2. Social feed & table fallbacks
 

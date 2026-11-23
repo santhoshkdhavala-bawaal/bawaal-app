@@ -52,11 +52,11 @@ Also locked on this surface:
 
 **Never re-add:** mute backdrop patches, bottom-sheet action modal, canvas Follow button, shifting mute off `top:16`/`right:16`, on-canvas metric counters.
 
-## 4. Onboarding polish (Registration / Terms / OTP)
+## 4. Onboarding polish (Registration / Terms / Email+Password)
 
-- Single hero logo — no duplicate wordmark / faded B watermark on Terms Required / OTP
+- Single hero logo — no duplicate wordmark / faded B watermark on Terms Required / Forgot / Set New Password
 - Category dropdown includes **ALL** first (`BAWAAL_SPORTS`)
-- Auth/OTP/profiles contract otherwise unchanged (V1 full-stack lock)
+- Auth = Email ID + Phone + Password (Sign In / Forgot Password); profiles contract in V1 full-stack lock
 
 ## Locked files
 

@@ -13,7 +13,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 const ASYNC_KEY = '@bawaal/athlete_session_v1';
 /** Legacy + current: device has a registered account record (may be logged out). */
 export const REGISTERED_USER_FLAG_KEY = 'bawaal_registered_user';
-/** Explicit prior-registration marker for logout → OTP-only routing. */
+/** Explicit prior-registration marker for logout → Email+Password Sign In routing. */
 export const HAS_REGISTERED_PREVIOUSLY_KEY = 'bawaal_has_registered_previously';
 /** Fast boot logged-in marker (`1` / `0`). */
 export const IS_LOGGED_IN_KEY = 'bawaal_is_logged_in';
@@ -177,7 +177,7 @@ export async function getAuthLaunchState() {
     session,
     hasRegisteredPreviously,
     isLoggedIn: loggedIn,
-    /** Returning user who logged out → Phone + OTP only */
+    /** Returning user who logged out → Email + Password Sign In */
     loginOnly: Boolean(hasRegisteredPreviously && !loggedIn),
   };
 }
@@ -216,7 +216,7 @@ async function ensureRegisteredFlags(payload) {
 
 /**
  * @param {{ allowLoggedOut?: boolean }} [opts]
- *   allowLoggedOut — return saved profile even when isLoggedIn is false (OTP restore).
+ *   allowLoggedOut — return saved profile even when isLoggedIn is false (Sign In restore).
  */
 export async function getRegisteredSession(opts = {}) {
   const allowLoggedOut = Boolean(opts.allowLoggedOut);
@@ -252,7 +252,7 @@ export async function getRegisteredSession(opts = {}) {
   return null;
 }
 
-/** Persist a completed registration / successful OTP login (logged in). */
+/** Persist a completed registration / successful email+password login (logged in). */
 export async function setRegisteredSession(userData = {}) {
   const payload = normalizePayload({
     savedAt: Date.now(),
@@ -271,7 +271,7 @@ export async function setRegisteredSession(userData = {}) {
 
 /**
  * Explicit Logout — keep account record + hasRegisteredPreviously;
- * clear active login so boot routes to Phone + OTP only.
+ * clear active login so boot routes to Email + Password Sign In.
  */
 export async function logoutRegisteredSession() {
   const existing =

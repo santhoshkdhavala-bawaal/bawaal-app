@@ -1,8 +1,8 @@
 /**
- * BAWAAL Landing / Onboarding — V1 Master Frontend Lock.
+ * BAWAAL Landing / Onboarding — Email + Phone + Password auth (LOCKED).
  * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
- * OTP / profiles / authOtp contract unchanged. Categories: `BAWAAL_SPORTS` (ALL first).
- * See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+ * Auth: signUp / signInWithPassword / resetPasswordForEmail / updateUser (no SMS OTP).
+ * Categories: `BAWAAL_SPORTS` (ALL first). See `.cursor/rules/bawaal-onboarding-locked.mdc`.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -24,13 +24,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { resolveLocationFlag } from './src/utils/locationFlag';
 import { flagFromIso } from './src/data/worldCountries';
 import BawaalPromptModal from './src/components/BawaalPromptModal';
-import OTPInput, { OTP_LENGTH, emptyOtpDigits } from './OTPInput';
 import {
-  DEV_OTP,
-  isDevOtpPhone,
-  sendPhoneOtp,
-  verifyPhoneOtp,
-} from './src/services/authOtp';
+  MIN_PASSWORD_LENGTH,
+  isValidEmail,
+  isValidPassword,
+  normalizePhoneE164,
+  sendPasswordResetEmail,
+  signInWithEmailPassword,
+  signUpWithEmailPassword,
+} from './src/services/authPassword';
 import { upsertRegisteredProfile } from './src/services/profilesService';
 import { BAWAAL_SPORTS } from './src/constants/sports';
 import { getRegisteredSession } from './sessionStore';
@@ -72,6 +74,11 @@ function InputCard({
   autoCorrect,
   leading,
   trailing,
+  trailingPressable = false,
+  onTrailingPress,
+  secureTextEntry = false,
+  textContentType,
+  autoComplete,
   style,
   inputStyle,
 }) {
@@ -104,15 +111,30 @@ function InputCard({
         keyboardType={keyboardType}
         autoCapitalize={autoCapitalize}
         autoCorrect={autoCorrect}
+        secureTextEntry={secureTextEntry}
+        textContentType={textContentType}
+        autoComplete={autoComplete}
         onFocus={onFocus}
         onBlur={onBlur}
         underlineColorAndroid="transparent"
         selectionColor={ORANGE}
       />
       {hasTrailing ? (
-        <View style={styles.inputTrailing} pointerEvents="none">
-          {trailing}
-        </View>
+        trailingPressable ? (
+          <TouchableOpacity
+            style={styles.inputTrailingPressable}
+            onPress={onTrailingPress}
+            activeOpacity={0.75}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+          >
+            {trailing}
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.inputTrailing} pointerEvents="none">
+            {trailing}
+          </View>
+        )
       ) : null}
     </View>
   );
@@ -230,7 +252,7 @@ export default function RoleSelection({
 }) {
   const insets = useSafeAreaInsets();
   const [termsModalVisible, setTermsModalVisible] = useState(false);
-  const [otpModalVisible, setOtpModalVisible] = useState(false);
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
   const [notice, setNotice] = useState(null);
   const [picker, setPicker] = useState(null); // 'gender' | 'category' | 'role'
   const savedProfileRef = useRef(null);
@@ -239,6 +261,9 @@ export default function RoleSelection({
   const [realName, setRealName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
   const [location, setLocation] = useState('');
   const [gender, setGender] = useState(null);
   const [age, setAge] = useState('');
@@ -251,10 +276,9 @@ export default function RoleSelection({
 
   const showNotice = (title, message) => setNotice({ title, message });
 
-  const [otpDigits, setOtpDigits] = useState(emptyOtpDigits);
-  const [otpBusy, setOtpBusy] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
 
-  // Returning user (post-Logout): hydrate phone + profile for OTP-only login
+  // Returning user (post-Logout): hydrate email + profile for Sign In
   useEffect(() => {
     if (!loginOnly) return undefined;
     let alive = true;
@@ -270,7 +294,10 @@ export default function RoleSelection({
         if (saved.realName || saved.name) {
           setRealName(String(saved.realName || saved.name || ''));
         }
-        if (saved.email) setEmail(String(saved.email));
+        if (saved.email) {
+          setEmail(String(saved.email));
+          setForgotEmail(String(saved.email));
+        }
         if (saved.location) setLocation(String(saved.location));
         if (saved.gender) setGender(saved.gender);
         if (saved.age != null) setAge(String(saved.age));
@@ -310,12 +337,14 @@ export default function RoleSelection({
   };
 
   /** Form values mapped to V1 `public.profiles` (+ local session extras). */
-  const buildRegistrationPayload = () => {
+  const buildRegistrationPayload = (overridePhone) => {
     const resolved = resolveLocationFlag(location);
     const ageNum = Number(String(age).trim());
     const username = String(handle || '')
       .trim()
       .replace(/^@+/, '');
+    const normalizedPhone =
+      normalizePhoneE164(overridePhone || phone) || String(phone || '').trim();
     return {
       // V1 profiles columns
       username,
@@ -323,8 +352,10 @@ export default function RoleSelection({
       realName: realName.trim(),
       age: Number.isFinite(ageNum) && ageNum > 0 ? ageNum : null,
       gender,
-      email: email.trim(),
-      phone: phone.trim(),
+      email: String(email || '')
+        .trim()
+        .toLowerCase(),
+      phone: normalizedPhone,
       country: resolved.country || location.trim() || null,
       category: sportInterest,
       role,
@@ -341,134 +372,225 @@ export default function RoleSelection({
     };
   };
 
-  const handleSendOtpTrigger = async () => {
-    if (loginOnly) {
-      if (!String(phone || '').trim()) {
-        showNotice('Phone Required', 'Enter your registered phone number to continue.');
-        return;
-      }
-    } else {
-      if (!handle.trim() || !realName.trim() || !phone.trim() || !email.trim() || !location.trim()) {
-        showNotice('Missing Fields', 'Please complete all required fields before continuing.');
-        return;
-      }
-      if (!gender) {
-        showNotice('Gender', 'Select Male, Female, or Other to continue.');
-        return;
-      }
-      const ageNum = Number(String(age).trim());
-      if (!String(age).trim() || !Number.isFinite(ageNum) || ageNum < 13 || ageNum > 120) {
-        showNotice('Age', 'Enter a valid age (13+) to continue.');
-        return;
-      }
-      if (!role) {
-        showNotice('Select a Role', 'Choose Fan, Athlete, or Scout to enter the arena.');
-        return;
-      }
-      if (!sportInterest) {
-        showNotice('Category', 'Pick a sport category for your feed.');
-        return;
-      }
-      if (!agreedToTerms) {
-        showNotice(
-          'Terms Required',
-          'Please review and accept the Terms and Conditions.'
-        );
-        return;
-      }
+  const finishAuthSession = async (result, { isSignIn = false } = {}) => {
+    const saved = savedProfileRef.current || {};
+    const formPayload = buildRegistrationPayload(result.phone);
+    const metaPhone =
+      result.phone ||
+      result.user?.user_metadata?.phone ||
+      phone.trim() ||
+      saved.phone ||
+      null;
+
+    const userData = isSignIn
+      ? {
+          ...saved,
+          ...formPayload,
+          email: result.email || formPayload.email || saved.email,
+          phone: metaPhone || formPayload.phone || saved.phone,
+          handle: saved.handle || formPayload.handle,
+          username: saved.username || saved.handle || formPayload.username,
+          realName: saved.realName || saved.name || formPayload.realName,
+          displayName:
+            saved.displayName || saved.handle || formPayload.displayName,
+          authMode: result.mode,
+          authEmail: result.email || formPayload.email,
+          authPhone: metaPhone,
+          isRegistered: true,
+          hasRegisteredPreviously: true,
+          isLoggedIn: true,
+          sport_interests: [
+            saved.sportInterest || saved.sport || sportInterest,
+          ].filter(Boolean),
+        }
+      : {
+          ...formPayload,
+          phone: metaPhone || formPayload.phone,
+          authMode: result.mode,
+          authEmail: result.email || formPayload.email,
+          authPhone: metaPhone,
+          sport_interests: [sportInterest].filter(Boolean),
+        };
+
+    const authUser = result.user || result.session?.user || null;
+    const synced = await upsertRegisteredProfile(userData, authUser);
+    userData.profileId = synced.id || null;
+    userData.profileSynced = Boolean(synced.ok);
+    if (!synced.ok && synced.error) {
+      console.warn(
+        '[AthleteRegistration] profiles upsert:',
+        synced.error?.message || synced.error
+      );
     }
 
-    setOtpBusy(true);
-    try {
-      const sent = await sendPhoneOtp(phone);
-      if (!sent.ok && sent.mode === 'supabase') {
-        showNotice(
-          'OTP Send Failed',
-          sent.error?.message || 'Could not send OTP. Check phone format and try again.'
-        );
-        return;
-      }
-      setOtpDigits(emptyOtpDigits());
-      setOtpModalVisible(true);
-    } finally {
-      setOtpBusy(false);
+    if (onCompleteRegistration) {
+      await onCompleteRegistration(userData);
     }
   };
 
-  /** Manual verify only — never call from OTPInput digit handlers. */
-  const handleEnterArena = async () => {
-    if (otpBusy) return;
-    const fullOtp = otpDigits.join('');
-    if (fullOtp.length < OTP_LENGTH) {
+  const handleSignIn = async () => {
+    if (authBusy) return;
+    if (!String(email || '').trim()) {
+      showNotice('Email Required', 'Enter your email ID to sign in.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showNotice('Invalid Email', 'Enter a valid email address.');
+      return;
+    }
+    if (!String(password || '')) {
+      showNotice('Password Required', 'Enter your password to sign in.');
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      const result = await signInWithEmailPassword({ email, password });
+      if (!result.ok) {
+        showNotice(
+          'Sign In Failed',
+          result.error?.message || 'Invalid email or password. Try again.'
+        );
+        return;
+      }
+      await finishAuthSession(result, { isSignIn: true });
+    } catch (err) {
+      showNotice('Sign In Failed', err?.message || 'Could not sign in.');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    if (authBusy) return;
+
+    if (
+      !handle.trim() ||
+      !realName.trim() ||
+      !phone.trim() ||
+      !email.trim() ||
+      !location.trim()
+    ) {
       showNotice(
-        'Invalid OTP',
-        `Please enter the complete ${OTP_LENGTH}-digit verification code.`
+        'Missing Fields',
+        'Please complete all required fields before continuing.'
+      );
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showNotice('Invalid Email', 'Enter a valid email address.');
+      return;
+    }
+    if (!normalizePhoneE164(phone)) {
+      showNotice('Phone Required', 'Enter a valid phone number.');
+      return;
+    }
+    if (!isValidPassword(password)) {
+      showNotice(
+        'Create Password',
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+      );
+      return;
+    }
+    if (!gender) {
+      showNotice('Gender', 'Select Male, Female, or Other to continue.');
+      return;
+    }
+    const ageNum = Number(String(age).trim());
+    if (
+      !String(age).trim() ||
+      !Number.isFinite(ageNum) ||
+      ageNum < 13 ||
+      ageNum > 120
+    ) {
+      showNotice('Age', 'Enter a valid age (13+) to continue.');
+      return;
+    }
+    if (!role) {
+      showNotice(
+        'Select a Role',
+        'Choose Fan, Athlete, or Scout to enter the arena.'
+      );
+      return;
+    }
+    if (!sportInterest) {
+      showNotice('Category', 'Pick a sport category for your feed.');
+      return;
+    }
+    if (!agreedToTerms) {
+      showNotice(
+        'Terms Required',
+        'Please review and accept the Terms and Conditions.'
       );
       return;
     }
 
-    setOtpBusy(true);
+    setAuthBusy(true);
     try {
-      const result = await verifyPhoneOtp({ phone, token: fullOtp });
+      const result = await signUpWithEmailPassword({
+        email,
+        password,
+        phone,
+      });
       if (!result.ok) {
         showNotice(
-          'Verification Failed',
-          result.error?.message || 'Invalid OTP. Please try again.'
+          'Sign Up Failed',
+          result.error?.message || 'Could not create your account. Try again.'
         );
         return;
       }
-
-      const saved = savedProfileRef.current || {};
-      const formPayload = buildRegistrationPayload();
-      const userData = loginOnly
-        ? {
-            ...saved,
-            ...formPayload,
-            // Prefer freshly verified phone; restore prior profile fields
-            phone: result.phone || phone.trim() || saved.phone,
-            handle: saved.handle || formPayload.handle,
-            username:
-              saved.username || saved.handle || formPayload.username,
-            realName:
-              saved.realName || saved.name || formPayload.realName,
-            displayName:
-              saved.displayName || saved.handle || formPayload.displayName,
-            authMode: result.mode,
-            authPhone: result.phone,
-            isRegistered: true,
-            hasRegisteredPreviously: true,
-            isLoggedIn: true,
-            sport_interests: [
-              saved.sportInterest || saved.sport || sportInterest,
-            ].filter(Boolean),
-          }
-        : {
-            ...formPayload,
-            authMode: result.mode,
-            authPhone: result.phone,
-            sport_interests: [sportInterest].filter(Boolean),
-          };
-
-      // Prefer verifyOtp user; session.user is the auth.users row for profiles.id
-      const authUser = result.user || result.session?.user || null;
-      const synced = await upsertRegisteredProfile(userData, authUser);
-      userData.profileId = synced.id || null;
-      userData.profileSynced = Boolean(synced.ok);
-      if (!synced.ok && synced.error) {
-        console.warn(
-          '[AthleteRegistration] profiles upsert:',
-          synced.error?.message || synced.error
+      if (result.needsEmailConfirmation) {
+        showNotice(
+          'Confirm Your Email',
+          'Account created. Check your inbox to confirm your email, then Sign In with your password.'
         );
+        return;
       }
-
-      setOtpModalVisible(false);
-      if (onCompleteRegistration) {
-        await onCompleteRegistration(userData);
-      }
+      await finishAuthSession(result, { isSignIn: false });
     } catch (err) {
-      showNotice('Verification Failed', err?.message || 'Could not verify OTP.');
+      showNotice('Sign Up Failed', err?.message || 'Could not create account.');
     } finally {
-      setOtpBusy(false);
+      setAuthBusy(false);
+    }
+  };
+
+  const handlePrimaryAuth = () => {
+    if (loginOnly) return handleSignIn();
+    return handleCreateAccount();
+  };
+
+  const handleForgotPassword = async () => {
+    if (authBusy) return;
+    const target = String(forgotEmail || email || '').trim();
+    if (!target) {
+      showNotice('Email Required', 'Enter your email ID to reset your password.');
+      return;
+    }
+    if (!isValidEmail(target)) {
+      showNotice('Invalid Email', 'Enter a valid email address.');
+      return;
+    }
+
+    setAuthBusy(true);
+    try {
+      const result = await sendPasswordResetEmail(target);
+      if (!result.ok) {
+        showNotice(
+          'Reset Failed',
+          result.error?.message || 'Could not send reset email. Try again.'
+        );
+        return;
+      }
+      setForgotModalVisible(false);
+      showNotice(
+        'Check Your Email',
+        result.message ||
+          'If an account exists for that email, a reset link has been sent.'
+      );
+    } catch (err) {
+      showNotice('Reset Failed', err?.message || 'Could not send reset email.');
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -510,23 +632,63 @@ export default function RoleSelection({
               </Text>
               <Text style={styles.subtitle}>
                 {loginOnly
-                  ? 'Verify your phone with OTP to return to the Arena.'
-                  : 'Join BAWAAL to follow sports. It only takes a minute.'}
+                  ? 'Sign in with your Email ID and password to return to the Arena.'
+                  : 'Join BAWAAL with Email, Phone, and a password. It only takes a minute.'}
               </Text>
             </View>
 
             <View style={styles.form}>
               {loginOnly ? (
-                <InputCard
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="+1 (555) 000-0000"
-                  keyboardType="phone-pad"
-                  focused={focusedField === 'phone'}
-                  onFocus={() => setFocusedField('phone')}
-                  onBlur={() => setFocusedField(null)}
-                  style={styles.fieldGap}
-                />
+                <>
+                  <InputCard
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Enter your email ID"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    textContentType="emailAddress"
+                    autoComplete="email"
+                    focused={focusedField === 'email'}
+                    onFocus={() => setFocusedField('email')}
+                    onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
+                  <InputCard
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter your password"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry={!showPassword}
+                    textContentType="password"
+                    autoComplete="password"
+                    focused={focusedField === 'password'}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    trailing={
+                      <Text style={styles.showHideText}>
+                        {showPassword ? 'HIDE' : 'SHOW'}
+                      </Text>
+                    }
+                    trailingPressable
+                    onTrailingPress={() => setShowPassword((v) => !v)}
+                    style={styles.fieldGap}
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setForgotEmail(email);
+                      setForgotModalVisible(true);
+                    }}
+                    activeOpacity={0.8}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Forgot Password"
+                    style={styles.forgotRow}
+                  >
+                    <Text style={styles.forgotLink}>Forgot Password?</Text>
+                  </TouchableOpacity>
+                </>
               ) : (
                 <>
                   <InputCard
@@ -575,10 +737,12 @@ export default function RoleSelection({
                   <InputCard
                     value={email}
                     onChangeText={setEmail}
-                    placeholder="Enter your email"
+                    placeholder="Enter your email ID"
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    textContentType="emailAddress"
+                    autoComplete="email"
                     focused={focusedField === 'email'}
                     onFocus={() => setFocusedField('email')}
                     onBlur={() => setFocusedField(null)}
@@ -590,9 +754,32 @@ export default function RoleSelection({
                     onChangeText={setPhone}
                     placeholder="+1 (555) 000-0000"
                     keyboardType="phone-pad"
+                    textContentType="telephoneNumber"
                     focused={focusedField === 'phone'}
                     onFocus={() => setFocusedField('phone')}
                     onBlur={() => setFocusedField(null)}
+                    style={styles.fieldGap}
+                  />
+
+                  <InputCard
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Create password (6+ characters)"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry={!showPassword}
+                    textContentType="newPassword"
+                    autoComplete="password-new"
+                    focused={focusedField === 'password'}
+                    onFocus={() => setFocusedField('password')}
+                    onBlur={() => setFocusedField(null)}
+                    trailing={
+                      <Text style={styles.showHideText}>
+                        {showPassword ? 'HIDE' : 'SHOW'}
+                      </Text>
+                    }
+                    trailingPressable
+                    onTrailingPress={() => setShowPassword((v) => !v)}
                     style={styles.fieldGap}
                   />
 
@@ -675,21 +862,23 @@ export default function RoleSelection({
           <TouchableOpacity
             style={[
               styles.continueBtn,
-              ((!loginOnly && !agreedToTerms) || otpBusy) &&
+              ((!loginOnly && !agreedToTerms) || authBusy) &&
                 styles.continueBtnDisabled,
             ]}
-            onPress={handleSendOtpTrigger}
+            onPress={handlePrimaryAuth}
             activeOpacity={0.88}
-            disabled={otpBusy || (!loginOnly && !agreedToTerms)}
+            disabled={authBusy || (!loginOnly && !agreedToTerms)}
             accessibilityRole="button"
-            accessibilityLabel={loginOnly ? 'Send OTP' : 'Continue'}
+            accessibilityLabel={loginOnly ? 'Sign In' : 'Create Account'}
           >
             <Text style={styles.continueBtnText}>
-              {otpBusy && !otpModalVisible
-                ? 'Sending…'
+              {authBusy
+                ? loginOnly
+                  ? 'Signing in…'
+                  : 'Creating…'
                 : loginOnly
-                  ? 'Send OTP'
-                  : 'Continue'}
+                  ? 'Sign In'
+                  : 'Create Account'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -811,7 +1000,7 @@ export default function RoleSelection({
         </View>
       </Modal>
 
-      <Modal visible={otpModalVisible} transparent animationType="fade">
+      <Modal visible={forgotModalVisible} transparent animationType="fade">
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
             style={[
@@ -822,42 +1011,56 @@ export default function RoleSelection({
           >
             <View
               style={[
-                styles.otpModalContent,
+                styles.authModalContent,
                 { paddingBottom: Math.max(48, insets.bottom + 36) },
               ]}
             >
               <Image
                 source={LOGO_FULL}
-                style={styles.otpLogo}
+                style={styles.authModalLogo}
                 resizeMode="contain"
                 accessibilityLabel="BAWAAL"
               />
-              <Text style={styles.otpTitle}>VERIFY MOBILE NUMBER</Text>
-              <Text style={styles.otpSubtitle}>
-                {isDevOtpPhone(phone)
-                  ? `Dev login — enter ${DEV_OTP} then tap SUBMIT / VERIFY`
-                  : `Enter the ${OTP_LENGTH}-digit code sent to ${phone || 'your phone'}`}
+              <Text style={styles.authModalTitle}>FORGOT PASSWORD</Text>
+              <Text style={styles.authModalSubtitle}>
+                Enter your Email ID and we will send a reset link.
               </Text>
 
-              <View style={styles.otpInputContainer}>
-                <OTPInput
-                  digits={otpDigits}
-                  onChangeDigits={setOtpDigits}
-                  editable={!otpBusy}
-                />
-              </View>
+              <InputCard
+                value={forgotEmail}
+                onChangeText={setForgotEmail}
+                placeholder="Enter your email ID"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="emailAddress"
+                autoComplete="email"
+                focused={focusedField === 'forgotEmail'}
+                onFocus={() => setFocusedField('forgotEmail')}
+                onBlur={() => setFocusedField(null)}
+                style={[styles.fieldGap, styles.authModalField]}
+              />
 
               <TouchableOpacity
-                style={[styles.otpCtaBtn, otpBusy && styles.continueBtnDisabled]}
-                onPress={handleEnterArena}
+                style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
+                onPress={handleForgotPassword}
                 activeOpacity={0.85}
-                disabled={otpBusy}
+                disabled={authBusy}
                 accessibilityRole="button"
-                accessibilityLabel="Submit verify OTP"
+                accessibilityLabel="Send reset link"
               >
-                <Text style={styles.otpCtaBtnText}>
-                  {otpBusy ? 'VERIFYING…' : 'SUBMIT / VERIFY'}
+                <Text style={styles.authModalCtaText}>
+                  {authBusy ? 'SENDING…' : 'SEND RESET LINK'}
                 </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setForgotModalVisible(false)}
+                activeOpacity={0.8}
+                style={styles.authModalCancel}
+                accessibilityRole="button"
+              >
+                <Text style={styles.authModalCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -1000,6 +1203,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 32,
     minWidth: 32,
+  },
+  inputTrailingPressable: {
+    marginLeft: 4,
+    marginRight: 6,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 48,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+  },
+  showHideText: {
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  forgotRow: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+    marginBottom: 8,
+    paddingVertical: 4,
+  },
+  forgotLink: {
+    color: ORANGE,
+    fontSize: 13,
+    fontWeight: '700',
   },
   selectValue: {
     flex: 1,
@@ -1244,7 +1474,7 @@ const styles = StyleSheet.create({
   acceptTermsBtnTextDisabled: {
     color: WHITE,
   },
-  otpModalContent: {
+  authModalContent: {
     backgroundColor: BG,
     borderRadius: 0,
     borderWidth: 0,
@@ -1255,29 +1485,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  otpLogo: {
+  authModalLogo: {
     width: 180,
     height: 56,
     marginBottom: 16,
   },
-  otpTitle: {
+  authModalTitle: {
     color: WHITE,
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 1.4,
     marginBottom: 6,
   },
-  otpSubtitle: {
+  authModalSubtitle: {
     color: MUTED,
     fontSize: 12,
     textAlign: 'center',
     marginBottom: 24,
   },
-  otpInputContainer: {
-    marginBottom: 28,
-    alignItems: 'center',
+  authModalField: {
+    width: '100%',
+    marginBottom: 20,
   },
-  otpCtaBtn: {
+  authModalCta: {
     width: '100%',
     height: 52,
     borderRadius: 999,
@@ -1285,10 +1515,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  otpCtaBtnText: {
+  authModalCtaText: {
     color: WHITE,
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 1.4,
+  },
+  authModalCancel: {
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+  authModalCancelText: {
+    color: PLACEHOLDER,
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

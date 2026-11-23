@@ -1,11 +1,13 @@
 ---
-description: BAWAAL V1 Master Full-Stack Lock — UI theme, registration, Terms/OTP, Supabase profiles + phone auth
+description: BAWAAL V1 Master Full-Stack Lock — UI theme, registration, Terms, Email+Password auth, Supabase profiles
 alwaysApply: true
 ---
 
 # BAWAAL V1 — Master Full-Stack Lock
 
 Production-final contract for onboarding UI + Supabase auth/profiles. Do **not** restyle, reorder, or rewire unless the user explicitly unlocks this rule.
+
+**Auth unlock (2026-11-23):** SMS Phone+OTP was replaced by **Email ID + Phone Number + Create Password** (Sign In + Forgot Password). This file is the locked contract for that system.
 
 ## 1. Frontend UI & design system
 
@@ -16,18 +18,24 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 | Input containers | Dark grey `#1E1E22`, `borderRadius: 12` |
 | Focus state | `1.5px` border `#FF6600`; web `outlineStyle: 'none'` |
 | Typography | Bold white body; orange accents for links / checkboxes |
-| Brand | Centered `BAWAAL_white_full.png` on entry, registration, Terms, OTP (no duplicate wordmark / watermark) |
+| Brand | Centered `BAWAAL_white_full.png` on entry, registration, Terms, Forgot / Set New Password (no duplicate wordmark / watermark) |
 
 ## 2. Registration layout (`RoleSelection.js`)
 
 1. Username (full width)
 2. Real Name (full width)
 3. Age \| Gender (2-column)
-4. Email (full width)
-5. Phone (full width)
-6. City, Country + far-right flag badge (**32×24**), regional helper when matched
-7. Category \| Role (2-column) — category from `BAWAAL_SPORTS` (**ALL** first)
-8. Footer: Terms checkbox (orange link) + full-width orange **pill** **Continue** — **no** login redirect links
+4. **Email ID** (full width)
+5. **Phone Number** (full width) — stored in `user_metadata.phone` + `profiles.phone`
+6. **Create Password** (full width, min 6+, show/hide toggle)
+7. City, Country + far-right flag badge (**32×24**), regional helper when matched
+8. Category \| Role (2-column) — category from `BAWAAL_SPORTS` (**ALL** first)
+9. Footer: Terms checkbox (orange link) + full-width orange **pill** **Create Account**
+
+### Sign In (`loginOnly`)
+
+- Email ID + Password + **Forgot Password?** + **Sign In** CTA
+- Logout → Entry with `loginOnly: true` (Email + Password auth screen)
 
 ## 3. Modal architecture
 
@@ -35,11 +43,10 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 - Pitch black; custom web scrollbar (track `#0A0A0C`/`#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, radius 4)
 - Central logo + tagline; full-width orange accept pill
 
-### OTP
+### Forgot Password / Set New Password
 - Pitch black; central logo + tagline
-- 4 boxes: fill `#1E1E22`, focus `#FF6600`, white digits
-- Manual **SUBMIT / VERIFY** only — never auto-verify on 4th digit
-- Dev bypass: `+917993992315` / `1234` (`authOtp.js`)
+- Forgot → `resetPasswordForEmail(email)` with confirmation notice
+- Set New Password (`PasswordRecoveryHost`) on `PASSWORD_RECOVERY` → `updateUser({ password })`
 
 ## 4. Backend (Supabase)
 
@@ -55,18 +62,23 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 - Types: `src/types/profile.js`
 
 ### Auth & persistence
-- Continue → `supabase.auth.signInWithOtp({ phone })` via `sendPhoneOtp`
-- SUBMIT → `supabase.auth.verifyOtp({ phone, token, type: 'sms' })` via `verifyPhoneOtp`
-- Then `upsertRegisteredProfile` with the V1 form fields keyed by auth user id
+- Create Account → `supabase.auth.signUp({ email, password, options: { data: { phone } } })` via `signUpWithEmailPassword`
+- Sign In → `supabase.auth.signInWithPassword({ email, password })` via `signInWithEmailPassword`
+- Forgot → `supabase.auth.resetPasswordForEmail(email)` via `sendPasswordResetEmail`
+- Set new → `supabase.auth.updateUser({ password })` via `updatePassword` (`PASSWORD_RECOVERY`)
+- Then `upsertRegisteredProfile` with the V1 form fields keyed by auth user id (phone on profile for invites/lookup)
 - Soft-fail offline / schema mismatch — still complete local registration
+- **Never re-add** SMS `signInWithOtp` / `verifyOtp` as the primary auth path
 
 ## Locked files
 
-- `RoleSelection.js`, `AthleteRegistrationScreen.js`, `OTPInput.js`, `OTPModal.js`, `TermsModal.js`
+- `RoleSelection.js`, `AthleteRegistrationScreen.js`, `TermsModal.js`
+- `src/components/PasswordRecoveryHost.js`
 - `src/styles/injectWebScrollbar.js`
-- `src/services/supabase.js`, `lib/supabase.js`, `src/services/authOtp.js`, `src/services/profilesService.js`
+- `src/services/supabase.js`, `lib/supabase.js`, `src/services/authPassword.js`, `src/services/authOtp.js` (phone normalize re-export only), `src/services/profilesService.js`
 - `src/types/profile.js`
 - `supabase/ENSURE_PROFILES_SPORTS_HUBS.sql`
+- Legacy unused: `OTPInput.js`, `OTPModal.js` (do not rewire as primary auth)
 
 ## Related
 

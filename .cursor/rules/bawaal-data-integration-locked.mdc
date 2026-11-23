@@ -11,8 +11,8 @@ Production contract for cloud sync, feed hydration, GAME ON filters, and reel so
 
 | Surface | Contract |
 |---|---|
-| Profiles | `public.profiles` uuid → `auth.users`; RLS on; `upsertRegisteredProfile` after OTP; `belt_tier` White→Gold + `avatar_url` (`profilesService.js`, `ENSURE_PROFILES_SPORTS_HUBS.sql`, `ENSURE_SOCIAL_GRAPH.sql`) |
-| Auth | Phone OTP `signInWithOtp` → `verifyOtp` (`authOtp.js`); session via AsyncStorage (`lib/supabase.js` / `src/lib/supabaseClient.js` / `sessionStore.js`) |
+| Profiles | `public.profiles` uuid → `auth.users`; RLS on; `upsertRegisteredProfile` after Email+Password auth; `belt_tier` White→Gold + `avatar_url` (`profilesService.js`, `ENSURE_PROFILES_SPORTS_HUBS.sql`, `ENSURE_SOCIAL_GRAPH.sql`) |
+| Auth | Email+Password `signUp` / `signInWithPassword` / reset (`authPassword.js`); session via AsyncStorage (`lib/supabase.js` / `src/lib/supabaseClient.js` / `sessionStore.js`) |
 | Arena challenges | `public.arena_challenges` — title, sport, video_url, user_id, created_at; RLS select/insert; realtime optional (`ENSURE_ARENA_CHALLENGES.sql`) |
 | Videos / reels | Storage bucket `bawaalvideos` → public HTTPS URLs (`uploadService.js`); rows upsert `public.videos` onConflict `id` (`arenaPostsService.js`); Arena feed via `useArenaFeed` / `fetchArenaFeed` |
 | DMs | `public.direct_messages` (`ENSURE_DIRECT_MESSAGES.sql`) |
@@ -35,7 +35,7 @@ Production contract for cloud sync, feed hydration, GAME ON filters, and reel so
 ## Locked files
 
 - `arenaFeedStore.js`, `sessionStore.js`, `src/stores/arenaFilterStore.js`
-- `src/services/{supabase,authOtp,profilesService,uploadService,arenaChallengeService,arenaPostsService,reelSocialService}.js`
+- `src/services/{supabase,authPassword,authOtp,profilesService,uploadService,arenaChallengeService,arenaPostsService,reelSocialService}.js`
 - `src/constants/arenaFeedTiers.js`, `src/utils/sportCategory.js`
 - `supabase/ENSURE_{PROFILES_SPORTS_HUBS,ARENA_CHALLENGES,DIRECT_MESSAGES,REEL_SOCIAL,SOCIAL_GRAPH}.sql`
 - `src/services/videoSocialService.js`, `src/lib/supabaseClient.js`

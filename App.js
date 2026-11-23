@@ -29,6 +29,7 @@ import { isExpoGo } from './src/utils/runtimeEnv';
 import { configureGlobalAudioSession } from './src/utils/configureGlobalAudio';
 import { BawaalAlertProvider } from './src/components/BawaalAlert';
 import LiveMatchInviteHost from './src/components/LiveMatchInviteHost';
+import PasswordRecoveryHost from './src/components/PasswordRecoveryHost';
 import { hasSupabaseEnv } from './src/services/supabase';
 import { logStartup } from './NativeLogger';
 import {
@@ -44,7 +45,7 @@ const BOOT_BG = '#08120F';
 
 /**
  * When true, always open Entry and ignore saved session (dev only).
- * Keep false so launch defaults to Arena (or OTP-only after Logout).
+ * Keep false so launch defaults to Arena (or Email+Password Sign In after Logout).
  */
 const FORCE_ONBOARDING_ENTRY = false;
 
@@ -146,7 +147,7 @@ function EntryScreen({ navigation, route }) {
 /**
  * Launch routing:
  *   - Logged-in registered → Main (ARENA)
- *   - Logged-out but hasRegisteredPreviously → Entry (Phone + OTP only)
+ *   - Logged-out but hasRegisteredPreviously → Entry (Email + Password Sign In)
  *   - Fresh / guest → Main (ARENA) — never force a registration wall
  */
 async function resolveLaunchRoute() {
@@ -445,7 +446,10 @@ function AppBoot() {
             </Stack.Navigator>
           </NavigationContainer>
           {bootReady ? (
-            <LiveMatchInviteHost navigationRef={navRef} />
+            <>
+              <LiveMatchInviteHost navigationRef={navRef} />
+              <PasswordRecoveryHost />
+            </>
           ) : null}
         </BawaalAlertProvider>
       </SafeAreaProvider>
