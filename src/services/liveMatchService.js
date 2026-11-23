@@ -185,6 +185,35 @@ function normalizeBattingTeam(value) {
   return String(value || '').toUpperCase() === 'B' ? 'B' : 'A';
 }
 
+/** @param {unknown} value */
+function normalizeVisibility(value) {
+  const raw = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (raw === 'private' || raw === 'invite' || raw === 'invite_only') {
+    return 'private';
+  }
+  // Legacy / missing column → public (global roster)
+  if (value === false || value === 0 || raw === 'false' || raw === '0') {
+    return 'private';
+  }
+  return 'public';
+}
+
+function normalizeLocationLabel(value) {
+  return String(value ?? '')
+    .trim()
+    .slice(0, 80);
+}
+
+/** True when match should appear on LIVE AROUND THE WORLD. */
+export function isPublicLiveMatch(match) {
+  if (!match || typeof match !== 'object') return false;
+  if (match.status === 'ended') return false;
+  if (typeof match.isPublic === 'boolean') return match.isPublic;
+  return normalizeVisibility(match.visibility) === 'public';
+}
+
 function normalizeMatch(row) {
   if (!row || typeof row !== 'object') return null;
   const adminRaw =
@@ -202,6 +231,12 @@ function normalizeMatch(row) {
   );
   const cricketRunsA = Math.max(0, Number(row.cricket_runs_a) || 0);
   const cricketRunsB = Math.max(0, Number(row.cricket_runs_b) || 0);
+  const visibility = normalizeVisibility(
+    row.visibility ?? row.isPublic ?? row.is_public
+  );
+  const locationLabel = normalizeLocationLabel(
+    row.location_label ?? row.locationLabel ?? row.location
+  );
   return {
     id: String(row.id || ''),
     host_id: String(row.host_id || ''),
@@ -236,6 +271,9 @@ function normalizeMatch(row) {
     ),
     cricket_balls_b: Math.max(0, Math.floor(Number(row.cricket_balls_b) || 0)),
     invite_code: sanitizeInviteCode(row.invite_code) || '',
+    visibility,
+    location_label: locationLabel,
+    isPublic: visibility === 'public',
     // Convenience aliases for batting side (UI / docs)
     runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
     wickets:
@@ -273,9 +311,22 @@ function getLocalLiveList() {
     );
 }
 
-/** Live match count for Arena header badge (local cache; hydrate via listLiveMatches). */
+function getLocalPublicLiveList() {
+  return getLocalLiveList().filter(isPublicLiveMatch);
+}
+
+/** Public live match count for Arena header badge (local cache). */
 export function getLiveMatchCount() {
-  return getLocalLiveList().length;
+  return getLocalPublicLiveList().length;
+}
+
+/**
+ * Public-only live roster for LIVE AROUND THE WORLD.
+ * @returns {Promise<object[]>}
+ */
+export async function listPublicLiveMatches() {
+  const list = await listLiveMatches();
+  return (Array.isArray(list) ? list : []).filter(isPublicLiveMatch);
 }
 
 function shouldUseLocalOnly() {
@@ -328,6 +379,8 @@ export async function createLiveMatch({
   hasScoreboard = false,
   adminName = '',
   scorerName = '',
+  visibility = 'public',
+  locationLabel = '',
 } = {}) {
   const id = newMatchId();
   const inviteCode = newInviteCode();
@@ -338,6 +391,8 @@ export async function createLiveMatch({
   const scorerLabel = String(scorerName || adminName || hostHandle || '')
     .trim()
     .replace(/^@/, '');
+  const visibilityNorm = normalizeVisibility(visibility);
+  const locationNorm = normalizeLocationLabel(locationLabel);
   const row = normalizeMatch({
     id,
     host_id: String(hostId || `local:${Date.now()}`),
@@ -368,6 +423,8 @@ export async function createLiveMatch({
     cricket_wickets_b: 0,
     cricket_balls_b: 0,
     invite_code: inviteCode,
+    visibility: visibilityNorm,
+    location_label: locationNorm,
   });
 
   localMatches.set(id, row);
@@ -405,6 +462,8 @@ export async function createLiveMatch({
     cricket_wickets_b: row.cricket_wickets_b,
     cricket_balls_b: row.cricket_balls_b,
     invite_code: row.invite_code || null,
+    visibility: row.visibility,
+    location_label: row.location_label || null,
   };
 
   try {
@@ -418,7 +477,7 @@ export async function createLiveMatch({
     if (error && isMissingColumnError(error)) {
       softFailWarn(
         'liveMatch:createCols',
-        '[liveMatch] scoreboard columns missing — retry base insert',
+        '[liveMatch] optional columns missing — retry base insert',
         error?.message || error
       );
       ({ data, error } = await supabase
@@ -441,6 +500,8 @@ export async function createLiveMatch({
           cricket_runs_b: row.cricket_runs_b,
           cricket_wickets_b: row.cricket_wickets_b,
           cricket_balls_b: row.cricket_balls_b,
+          visibility: row.visibility,
+          location_label: row.location_label,
         }) || row;
         localMatches.set(saved.id, saved);
         emitListListeners();

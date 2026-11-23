@@ -16,15 +16,16 @@ Authoritative detail: `bawaal-live-locked.mdc`
 
 | Surface | Must keep |
 |---|---|
-| Hub (`LiveArenaModal`) | `+ GO LIVE NOW`; `JOIN WITH INVITE CODE` + `WATCH`; active telecast list; **no** multi-row sport chip grid |
-| GO LIVE setup | Sport dropdown; Scoreboard **OFF** by default; ON expands Team A / Team B / Title / Admin |
+| Hub (`LiveArenaModal`) | `+ GO LIVE NOW`; `JOIN WITH INVITE CODE` + `WATCH`; **`LIVE AROUND THE WORLD`** public-only roster; **no** multi-row sport chip grid |
+| GO LIVE setup | Sport dropdown; Scoreboard **OFF** by default; ON expands Team A / Team B / Title / Admin; **`PUBLIC` / `PRIVATE`** visibility pills (default PUBLIC); optional `location_label` |
+| Global roster | Public matches only (`visibility === 'public'`); host handle + optional location + viewer count + **`WATCH`**; private hidden (invite/code only) |
 | Room HUD | Compact read-only top score when `has_scoreboard` — **no** skulls in top bar; center banter; slim bottom strip |
 | Reactions | One left skull → 5 vibes (`fire`, `devil`, `winning`/`skull_champion`, `crying`/`SAD`, `screaming`); **bounded** burst per tap (no infinite loops) |
 | Scoring | Point sports + cricket (`Runs/Wickets (O.B)`, `SWAP BATTING`, `+1/+2/+4/+6`, `DOT`, `WICKET`, `UNDO`) |
 | `canScore` | `isHost \|\| isDesignatedAdmin` only — viewers never get score UI or mutation handlers |
 | Invites | Unique **6-char** uppercase codes (no `0/O/1/I`); high-contrast `INVITE` for host **and** viewers; Share + clipboard; **targeted** banners only |
 
-**Locked files:** `LiveMatchRoomScreen.js`, `src/services/liveMatchService.js`, `src/components/LiveArenaModal.js`, `src/components/LiveMatchInviteModal.js`, `src/components/LiveMatchInviteBanner.js`, `src/components/LiveMatchInviteHost.js`, `src/constants/liveMatchFlamingSkulls.js`, `src/constants/liveMatchTeamSkulls.js`, `src/constants/liveMatchSports.js`, related `supabase/migrations/20261121_live_matches*.sql` / invite migrations; App/Arena LIVE entry wiring.
+**Locked files:** `LiveMatchRoomScreen.js`, `src/services/liveMatchService.js`, `src/components/LiveArenaModal.js`, `src/components/LiveMatchInviteModal.js`, `src/components/LiveMatchInviteBanner.js`, `src/components/LiveMatchInviteHost.js`, `src/constants/liveMatchFlamingSkulls.js`, `src/constants/liveMatchTeamSkulls.js`, `src/constants/liveMatchSports.js`, related `supabase/migrations/20261121_live_matches*.sql` / invite migrations / `20261123_live_matches_visibility.sql`; App/Arena LIVE entry wiring.
 
 ## 2. Arena NEAR ME + map (HARD LOCK)
 
@@ -87,6 +88,7 @@ Treat as locked unless the user unlocks the named rule:
 ## Never re-add (master denylist)
 
 - LIVE hub sport category chip grids  
+- Private matches on the **`LIVE AROUND THE WORLD`** global roster  
 - Audience score punch UI or ungated `updateMatchScore` / cricket writes  
 - Global LIVE invite broadcast spam  
 - Arena-header `▶ GAME ON` pill / GameOnHub gate before the map; multi-row map category grids; Virar-primary NEAR ME; CARTO tiles

@@ -308,7 +308,9 @@ bawaal-mobile/
 
 | Contract | Detail |
 |---|---|
-| Hub entry | `LiveArenaModal`: `+ GO LIVE NOW`, `JOIN WITH INVITE CODE` + `WATCH`, active list — **no** multi-row sport chips |
+| Hub entry | `LiveArenaModal`: `+ GO LIVE NOW`, `JOIN WITH INVITE CODE` + `WATCH`, **`LIVE AROUND THE WORLD`** public roster — **no** multi-row sport chips |
+| Visibility | GO LIVE pills: **`PUBLIC`** (default — listed on global roster) \| **`PRIVATE`** (invite code / targeted invite only) |
+| Location | Optional `location_label` on create (profile prefill); shown on public roster cards with host handle + **`WATCH`** |
 | Scoreboard | Toggle **OFF** by default (pure telecast). ON expands Team A / Team B / Title / Admin |
 | Point sports | Host/admin: horned skull +1 / −1 |
 | Cricket | Top: `RUNS/WICKETS (O.B)`; controls `+1/+2/+4/+6`, `DOT`, `WICKET`, `UNDO`, `SWAP BATTING` |
@@ -394,7 +396,7 @@ Recommended SQL order (from `.env.example` + migrations):
 3. `supabase/ENSURE_REEL_SOCIAL.sql`  
 4. `supabase/ENSURE_SOCIAL_GRAPH.sql`  
 5. Arena / battles / DMs / locker / dashboard ENSURE scripts as needed  
-6. LIVE: `migrations/20261121_live_matches*.sql` + `20261121_live_match_invites.sql`
+6. LIVE: `migrations/20261121_live_matches*.sql` + `20261121_live_match_invites.sql` + `20261123_live_matches_visibility.sql`
 
 | Table | Purpose |
 |---|---|

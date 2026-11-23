@@ -15,7 +15,9 @@ Theme: stealth `#08120F` / accent `#FF5A1F` / live crimson `#E53935`.
 |---|---|
 | Entry CTA | `+ GO LIVE NOW` → GO LIVE setup |
 | Invite join | `JOIN WITH INVITE CODE` + 6-char input + `WATCH` (user-visible error if code misses) |
-| Active list | Live telecasts from `listLiveMatches` / `subscribeLiveMatchList` |
+| Global roster | **`LIVE AROUND THE WORLD`** — public-only (`visibility === 'public'` / `isPublic`) from `listLiveMatches` / `subscribeLiveMatchList` (client filter); ended rows excluded via `status === 'live'` |
+| Roster card | Sport badge · title / Team A vs Team B + score when scoreboard ON · host `@handle` · optional location pin · viewer count · high-contrast **`WATCH`** → room as viewer |
+| Empty state | Clean empty card when no public matches are live |
 | Filters | **No** multi-row sport category chip grid on this hub |
 
 ## 2. GO LIVE setup (`GoLiveSetup` in `LiveArenaModal.js`)
@@ -25,7 +27,9 @@ Theme: stealth `#08120F` / accent `#FF5A1F` / live crimson `#E53935`.
 | Sport | Full `LIVE_MATCH_SPORTS` dropdown |
 | Scoreboard | Toggle **OFF** by default → pure telecast (banter + skulls only) |
 | Scoreboard ON | Expand **Team A**, **Team B**, **Title (optional)**, **Admin** (editable scorer) |
-| Create | `createLiveMatch({ hasScoreboard, adminName, … })` |
+| Visibility | Two-option pill: **`PUBLIC`** (default — global roster) \| **`PRIVATE`** (invite code / targeted invite only; hidden from roster) |
+| Location | Optional `location_label` input (e.g. `City, Country`); prefill from profile location when available; editable |
+| Create | `createLiveMatch({ hasScoreboard, adminName, visibility, locationLabel, … })` — soft-fail if columns missing (local Map keeps values) |
 
 ## 3. Live room HUD (`LiveMatchRoomScreen.js`)
 
@@ -86,12 +90,13 @@ Service guards: `canUserScoreMatch` + `updateMatchScore` / `updateMatchCricket` 
 - `src/constants/liveMatchFlamingSkulls.js`
 - `src/constants/liveMatchTeamSkulls.js`
 - `src/constants/liveMatchSports.js`
-- Related migrations: `supabase/migrations/20261121_live_matches*.sql`, `20261121_live_match_invites.sql`
+- Related migrations: `supabase/migrations/20261121_live_matches*.sql`, `20261121_live_match_invites.sql`, `20261123_live_matches_visibility.sql`
 - App wiring: `LiveMatchRoom` route + `LiveMatchInviteHost` in `App.js`; Arena LIVE pill → `LiveArenaModal` in `ArenaFeed.js` (do not break entry without unlock)
 
 ## Never re-add
 
 - Sport category filter chip grids on the BAWAAL LIVE hub  
+- Private matches on the **`LIVE AROUND THE WORLD`** global roster  
 - Unicode / non-vault reaction trays on the live room  
 - Top-bar team skull score cards  
 - FIRE/ROAST/BEAST/WEAK/HYPE pill row above banter  

@@ -62,6 +62,7 @@ import LiveArenaModal from './src/components/LiveArenaModal';
 import {
   listLiveMatches,
   subscribeLiveMatchList,
+  isPublicLiveMatch,
 } from './src/services/liveMatchService';
 import SafeRemoteImage from './src/components/SafeRemoteImage';
 import { useArenaFeed } from './src/hooks/useArenaFeed';
@@ -2519,16 +2520,18 @@ export default function ArenaFeed({ navigation, route }) {
     spectatorCount: 0,
   });
 
-  // Live Match Telecast hub badge (status=live count)
+  // Live Match Telecast hub badge (public live only — LIVE AROUND THE WORLD)
   useEffect(() => {
     let alive = true;
+    const countPublic = (list) =>
+      (Array.isArray(list) ? list : []).filter(isPublicLiveMatch).length;
     listLiveMatches()
       .then((list) => {
-        if (alive) setLiveMatchCount(Array.isArray(list) ? list.length : 0);
+        if (alive) setLiveMatchCount(countPublic(list));
       })
       .catch(() => {});
     const unsub = subscribeLiveMatchList((list) => {
-      if (alive) setLiveMatchCount(Array.isArray(list) ? list.length : 0);
+      if (alive) setLiveMatchCount(countPublic(list));
     });
     return () => {
       alive = false;

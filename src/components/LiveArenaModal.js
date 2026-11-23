@@ -22,6 +22,7 @@ import {
   subscribeLiveMatchList,
   createLiveMatch,
   fetchLiveMatchByInviteCode,
+  isPublicLiveMatch,
 } from '../services/liveMatchService';
 import {
   LIVE_MATCH_SPORTS,
@@ -39,20 +40,16 @@ const INPUT = '#12201B';
 
 function MatchCard({ item, onPress }) {
   const watching = Math.max(0, Number(item.watching) || 0);
-  const hasScoreboard = item?.has_scoreboard !== false;
+  const hasScoreboard = !!item?.has_scoreboard;
+  const hostHandle = String(item?.host_handle || 'athlete').replace(/^@/, '');
+  const locationLabel = String(item?.location_label || '').trim();
   const vsLabel = hasScoreboard
     ? `${item.team_a_name || 'TEAM A'} vs ${item.team_b_name || 'TEAM B'}`
     : item.title
       ? String(item.title)
       : `${item.sport || 'LIVE'} TELECAST`;
   return (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => onPress?.(item)}
-      activeOpacity={0.88}
-      accessibilityRole="button"
-      accessibilityLabel={`Watch ${vsLabel}`}
-    >
+    <View style={styles.card}>
       <View style={styles.cardTop}>
         <View style={styles.sportBadge}>
           <Text style={styles.sportBadgeText}>{item.sport || 'LIVE'}</Text>
@@ -70,20 +67,43 @@ function MatchCard({ item, onPress }) {
           {item.title}
         </Text>
       ) : null}
-      <View style={styles.cardBottom}>
-        <Text style={styles.scoreText}>
-          {hasScoreboard
-            ? `${item.score_a ?? 0} — ${item.score_b ?? 0}`
-            : 'TELECAST'}
-        </Text>
-        <View style={styles.watchRow}>
-          <Ionicons name="eye-outline" size={14} color={MUTED} />
-          <Text style={styles.watchText}>
-            {watching > 0 ? watching : 'LIVE'}
+      <Text style={styles.hostHandle} numberOfLines={1}>
+        @{hostHandle}
+      </Text>
+      {locationLabel ? (
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={13} color={ORANGE} />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {locationLabel}
           </Text>
         </View>
+      ) : null}
+      <View style={styles.cardBottom}>
+        <View style={styles.cardMetaCol}>
+          <Text style={styles.scoreText}>
+            {hasScoreboard
+              ? `${item.score_a ?? 0} — ${item.score_b ?? 0}`
+              : 'TELECAST'}
+          </Text>
+          <View style={styles.watchRow}>
+            <Ionicons name="eye-outline" size={14} color={MUTED} />
+            <Text style={styles.watchText}>
+              {watching > 0 ? watching : 'LIVE'}
+            </Text>
+          </View>
+        </View>
+        <TouchableOpacity
+          style={styles.watchBtn}
+          onPress={() => onPress?.(item)}
+          activeOpacity={0.9}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Watch ${vsLabel}`}
+        >
+          <Text style={styles.watchBtnText}>WATCH</Text>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -203,7 +223,12 @@ function GoLiveSetup({ onBack, onStarted }) {
   const [teamB, setTeamB] = useState('TEAM B');
   const [title, setTitle] = useState('');
   const [adminName, setAdminName] = useState(() => defaultAdminLabel(user));
+  const [visibility, setVisibility] = useState('public');
+  const [locationLabel, setLocationLabel] = useState(() =>
+    String(user?.location || user?.city || '').trim()
+  );
   const [starting, setStarting] = useState(false);
+  const isPublic = visibility === 'public';
 
   const handleStart = useCallback(async () => {
     if (starting) return;
@@ -227,6 +252,8 @@ function GoLiveSetup({ onBack, onStarted }) {
         scorerName: scoreboardOn
           ? String(adminName || hostHandle).trim()
           : '',
+        visibility,
+        locationLabel: String(locationLabel || '').trim(),
       });
       if (result?.match) {
         onStarted?.(result.match);
@@ -243,6 +270,8 @@ function GoLiveSetup({ onBack, onStarted }) {
     teamB,
     scoreboardOn,
     adminName,
+    visibility,
+    locationLabel,
     onStarted,
   ]);
 
@@ -357,6 +386,67 @@ function GoLiveSetup({ onBack, onStarted }) {
           </Text>
         </View>
       ) : null}
+
+      <Text style={styles.fieldLabel}>VISIBILITY</Text>
+      <View style={styles.visibilityRow}>
+        <TouchableOpacity
+          style={[
+            styles.visibilityPill,
+            isPublic && styles.visibilityPillOn,
+          ]}
+          onPress={() => setVisibility('public')}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityState={{ selected: isPublic }}
+          accessibilityLabel="Public — list on global roster"
+        >
+          <Text
+            style={[
+              styles.visibilityPillText,
+              isPublic && styles.visibilityPillTextOn,
+            ]}
+          >
+            PUBLIC
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.visibilityPill,
+            !isPublic && styles.visibilityPillOn,
+          ]}
+          onPress={() => setVisibility('private')}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !isPublic }}
+          accessibilityLabel="Private — invite or code only"
+        >
+          <Text
+            style={[
+              styles.visibilityPillText,
+              !isPublic && styles.visibilityPillTextOn,
+            ]}
+          >
+            PRIVATE
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.visibilityHint}>
+        {isPublic
+          ? 'Listed on LIVE AROUND THE WORLD — anyone can WATCH. Invites still work.'
+          : 'Hidden from the global roster — invite code or direct invite only.'}
+      </Text>
+
+      <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
+      <TextInput
+        style={styles.input}
+        value={locationLabel}
+        onChangeText={setLocationLabel}
+        placeholder="City, Country"
+        placeholderTextColor={MUTED}
+        maxLength={80}
+        autoCapitalize="words"
+        autoCorrect={false}
+      />
 
       <TouchableOpacity
         style={[styles.startBtn, starting && styles.startBtnDisabled]}
@@ -556,13 +646,13 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                 <Text style={styles.joinStatusText}>{joinStatus}</Text>
               ) : null}
 
-              <Text style={styles.sectionLabel}>ACTIVE TELECASTS</Text>
+              <Text style={styles.sectionLabel}>LIVE AROUND THE WORLD</Text>
 
               {loading && matches.length === 0 ? (
                 <ActivityIndicator color={ORANGE} style={{ marginTop: 24 }} />
               ) : (
                 <FlatList
-                  data={matches}
+                  data={matches.filter(isPublicLiveMatch)}
                   keyExtractor={(item) => String(item.id)}
                   renderItem={({ item }) => (
                     <MatchCard item={item} onPress={handleWatch} />
@@ -570,9 +660,15 @@ function LiveArenaModal({ visible, onClose, onGoLive, onWatchMatch }) {
                   contentContainerStyle={styles.listContent}
                   showsVerticalScrollIndicator={false}
                   ListEmptyComponent={
-                    <Text style={styles.emptyText}>
-                      No live matches yet. Be the first — GO LIVE NOW.
-                    </Text>
+                    <View style={styles.emptyCard}>
+                      <Text style={styles.emptyCardTitle}>
+                        No public matches live yet
+                      </Text>
+                      <Text style={styles.emptyText}>
+                        GO LIVE NOW as PUBLIC to appear here — or join with an
+                        invite code.
+                      </Text>
+                    </View>
                   }
                   windowSize={5}
                   maxToRenderPerBatch={8}
@@ -700,11 +796,29 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 10,
   },
+  emptyCard: {
+    backgroundColor: CARD,
+    borderRadius: 14,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.18)',
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  emptyCardTitle: {
+    color: WHITE,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
   emptyText: {
     color: MUTED,
     textAlign: 'center',
-    marginTop: 28,
-    marginBottom: 20,
+    marginTop: 0,
+    marginBottom: 0,
     fontSize: 13,
     lineHeight: 20,
   },
@@ -764,11 +878,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
+  hostHandle: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 5,
+  },
+  locationText: {
+    flex: 1,
+    color: ORANGE,
+    fontSize: 11,
+    fontWeight: '700',
+  },
   cardBottom: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 10,
+    marginTop: 12,
+    gap: 12,
+  },
+  cardMetaCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
   },
   scoreText: {
     color: WHITE,
@@ -785,6 +923,56 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 12,
     fontWeight: '700',
+  },
+  watchBtn: {
+    backgroundColor: ORANGE,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderWidth: 1,
+    borderColor: WHITE,
+    minWidth: 88,
+    alignItems: 'center',
+  },
+  watchBtnText: {
+    color: WHITE,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+  },
+  visibilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  visibilityPill: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  visibilityPillOn: {
+    backgroundColor: ORANGE,
+    borderColor: ORANGE,
+  },
+  visibilityPillText: {
+    color: MUTED,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  visibilityPillTextOn: {
+    color: WHITE,
+  },
+  visibilityHint: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 8,
+    lineHeight: 15,
   },
   setupWrap: {
     paddingBottom: 8,
