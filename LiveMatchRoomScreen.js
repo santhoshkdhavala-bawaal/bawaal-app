@@ -48,6 +48,7 @@ import {
   canUserScoreMatch,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
+import { resolveLiveMatchCountryFlag } from './src/utils/liveMatchLocationFlag';
 import {
   SKULL_TEAM_A,
   SKULL_TEAM_B,
@@ -743,6 +744,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
   )
     .replace(/^@/, '')
     .trim();
+  const locationLabel = String(match?.location_label || '').trim();
+  const countryFlag = resolveLiveMatchCountryFlag(match);
   const isHost =
     isHostParam ||
     (!!userId &&
@@ -1023,6 +1026,21 @@ function LiveMatchRoomScreen({ navigation, route }) {
               <Ionicons name="eye-outline" size={14} color={WHITE} />
               <Text style={styles.watchCount}>{watching}</Text>
             </View>
+            {locationLabel ? (
+              <View
+                style={styles.locationChip}
+                accessibilityLabel={`Location ${locationLabel}`}
+              >
+                {countryFlag ? (
+                  <Text style={styles.locationChipFlag}>{countryFlag}</Text>
+                ) : (
+                  <Ionicons name="location-outline" size={12} color={ORANGE} />
+                )}
+                <Text style={styles.locationChipText} numberOfLines={1}>
+                  {locationLabel}
+                </Text>
+              </View>
+            ) : null}
           </View>
           {hasScoreboard ? (
             <View style={styles.scoreboardHud}>
@@ -1581,6 +1599,28 @@ const styles = StyleSheet.create({
   watchCount: {
     color: WHITE,
     fontSize: 11,
+    fontWeight: '800',
+  },
+  locationChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: 148,
+    backgroundColor: PANEL,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.35)',
+  },
+  locationChipFlag: {
+    fontSize: 12,
+    lineHeight: 14,
+  },
+  locationChipText: {
+    flexShrink: 1,
+    color: ORANGE,
+    fontSize: 10,
     fontWeight: '800',
   },
   iconBtn: {

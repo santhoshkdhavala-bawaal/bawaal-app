@@ -15,6 +15,7 @@ import {
   markTableMissing,
 } from '../utils/supabaseSoftFail';
 import { DEFAULT_LIVE_MATCH_SPORT } from '../constants/liveMatchSports';
+import { getCountryFlagForLocation } from '../utils/liveMatchLocationFlag';
 
 const TABLE = 'live_matches';
 const INVITES_TABLE = 'live_match_invites';
@@ -237,6 +238,12 @@ function normalizeMatch(row) {
   const locationLabel = normalizeLocationLabel(
     row.location_label ?? row.locationLabel ?? row.location
   );
+  const storedFlag = String(
+    row.country_flag ?? row.countryFlag ?? ''
+  ).trim();
+  const derivedFlag = getCountryFlagForLocation(locationLabel);
+  const countryFlag =
+    storedFlag && storedFlag !== '🌐' ? storedFlag : derivedFlag || '';
   return {
     id: String(row.id || ''),
     host_id: String(row.host_id || ''),
@@ -273,6 +280,7 @@ function normalizeMatch(row) {
     invite_code: sanitizeInviteCode(row.invite_code) || '',
     visibility,
     location_label: locationLabel,
+    country_flag: countryFlag,
     isPublic: visibility === 'public',
     // Convenience aliases for batting side (UI / docs)
     runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
@@ -393,6 +401,7 @@ export async function createLiveMatch({
     .replace(/^@/, '');
   const visibilityNorm = normalizeVisibility(visibility);
   const locationNorm = normalizeLocationLabel(locationLabel);
+  const countryFlagNorm = getCountryFlagForLocation(locationNorm) || '';
   const row = normalizeMatch({
     id,
     host_id: String(hostId || `local:${Date.now()}`),
@@ -425,6 +434,7 @@ export async function createLiveMatch({
     invite_code: inviteCode,
     visibility: visibilityNorm,
     location_label: locationNorm,
+    country_flag: countryFlagNorm,
   });
 
   localMatches.set(id, row);
@@ -464,6 +474,7 @@ export async function createLiveMatch({
     invite_code: row.invite_code || null,
     visibility: row.visibility,
     location_label: row.location_label || null,
+    country_flag: row.country_flag || null,
   };
 
   try {
@@ -502,6 +513,7 @@ export async function createLiveMatch({
           cricket_balls_b: row.cricket_balls_b,
           visibility: row.visibility,
           location_label: row.location_label,
+          country_flag: row.country_flag,
         }) || row;
         localMatches.set(saved.id, saved);
         emitListListeners();

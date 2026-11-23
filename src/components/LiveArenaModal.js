@@ -29,6 +29,10 @@ import {
   DEFAULT_LIVE_MATCH_SPORT,
 } from '../constants/liveMatchSports';
 import { getActiveUser } from '../services/activeUserProfile';
+import {
+  getCountryFlagForLocation,
+  resolveLiveMatchCountryFlag,
+} from '../utils/liveMatchLocationFlag';
 
 const BG = '#08120F';
 const CARD = '#0F1A16';
@@ -43,6 +47,7 @@ function MatchCard({ item, onPress }) {
   const hasScoreboard = !!item?.has_scoreboard;
   const hostHandle = String(item?.host_handle || 'athlete').replace(/^@/, '');
   const locationLabel = String(item?.location_label || '').trim();
+  const countryFlag = resolveLiveMatchCountryFlag(item);
   const vsLabel = hasScoreboard
     ? `${item.team_a_name || 'TEAM A'} vs ${item.team_b_name || 'TEAM B'}`
     : item.title
@@ -72,7 +77,13 @@ function MatchCard({ item, onPress }) {
       </Text>
       {locationLabel ? (
         <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={13} color={ORANGE} />
+          {countryFlag ? (
+            <Text style={styles.locationFlag} accessibilityLabel="Country flag">
+              {countryFlag}
+            </Text>
+          ) : (
+            <Ionicons name="location-outline" size={13} color={ORANGE} />
+          )}
           <Text style={styles.locationText} numberOfLines={1}>
             {locationLabel}
           </Text>
@@ -229,6 +240,7 @@ function GoLiveSetup({ onBack, onStarted }) {
   );
   const [starting, setStarting] = useState(false);
   const isPublic = visibility === 'public';
+  const locationFlagPreview = getCountryFlagForLocation(locationLabel);
 
   const handleStart = useCallback(async () => {
     if (starting) return;
@@ -437,16 +449,33 @@ function GoLiveSetup({ onBack, onStarted }) {
       </Text>
 
       <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
-      <TextInput
-        style={styles.input}
-        value={locationLabel}
-        onChangeText={setLocationLabel}
-        placeholder="City, Country"
-        placeholderTextColor={MUTED}
-        maxLength={80}
-        autoCapitalize="words"
-        autoCorrect={false}
-      />
+      <View style={styles.locationInputRow}>
+        <TextInput
+          style={[styles.input, styles.locationInput]}
+          value={locationLabel}
+          onChangeText={setLocationLabel}
+          placeholder="City, Country"
+          placeholderTextColor={MUTED}
+          maxLength={80}
+          autoCapitalize="words"
+          autoCorrect={false}
+        />
+        <View
+          style={[
+            styles.locationFlagPreview,
+            !locationFlagPreview && styles.locationFlagPreviewEmpty,
+          ]}
+          accessibilityLabel={
+            locationFlagPreview
+              ? `Matched flag ${locationFlagPreview}`
+              : 'No country flag matched'
+          }
+        >
+          <Text style={styles.locationFlagPreviewText}>
+            {locationFlagPreview || '—'}
+          </Text>
+        </View>
+      </View>
 
       <TouchableOpacity
         style={[styles.startBtn, starting && styles.startBtnDisabled]}
@@ -890,11 +919,42 @@ const styles = StyleSheet.create({
     gap: 4,
     marginTop: 5,
   },
+  locationFlag: {
+    fontSize: 14,
+    lineHeight: 16,
+  },
   locationText: {
     flex: 1,
     color: ORANGE,
     fontSize: 11,
     fontWeight: '700',
+  },
+  locationInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  locationInput: {
+    flex: 1,
+    minWidth: 0,
+  },
+  locationFlagPreview: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: INPUT,
+    borderWidth: 1,
+    borderColor: 'rgba(255,90,31,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationFlagPreviewEmpty: {
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  locationFlagPreviewText: {
+    fontSize: 22,
+    lineHeight: 28,
+    color: MUTED,
   },
   cardBottom: {
     flexDirection: 'row',
