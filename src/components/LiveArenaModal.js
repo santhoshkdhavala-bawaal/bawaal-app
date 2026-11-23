@@ -403,23 +403,111 @@ function GoLiveSetup({ onBack, onStarted }) {
               placeholderTextColor={MUTED}
               maxLength={80}
             />
-
-            <Text style={styles.fieldLabel}>ADMIN</Text>
-            <TextInput
-              style={styles.input}
-              value={adminName}
-              onChangeText={setAdminName}
-              placeholder="Scorer handle or name"
-              placeholderTextColor={MUTED}
-              maxLength={40}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text style={styles.adminHint}>
-              Who punches the score — you or a friend/umpire
-            </Text>
           </View>
         ) : null}
+
+        {/* ADMIN | LOCATION above VISIBILITY when scoreboard ON; LOCATION alone when OFF. */}
+        {scoreboardOn ? (
+          <View style={styles.adminLocationRow}>
+            <View style={styles.adminLocationCol}>
+              <Text style={[styles.fieldLabel, styles.teamFieldLabel]}>
+                ADMIN
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={adminName}
+                onChangeText={setAdminName}
+                placeholder="Scorer handle or name"
+                placeholderTextColor={MUTED}
+                maxLength={40}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.adminHint} numberOfLines={2}>
+                Who punches the score — you or a friend/umpire
+              </Text>
+            </View>
+            <View style={styles.adminLocationCol}>
+              <Text style={[styles.fieldLabel, styles.teamFieldLabel]}>
+                LOCATION (OPTIONAL)
+              </Text>
+              <View style={styles.locationInputRow}>
+                <TextInput
+                  style={[styles.input, styles.locationInput]}
+                  value={locationLabel}
+                  onChangeText={setLocationLabel}
+                  placeholder="City, Country"
+                  placeholderTextColor={MUTED}
+                  maxLength={80}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+                <View
+                  style={[
+                    styles.locationFlagPreview,
+                    !locationFlagPreview && styles.locationFlagPreviewEmpty,
+                  ]}
+                  accessibilityLabel={
+                    locationFlagPreview
+                      ? `Matched flag ${locationFlagPreview.countryName}`
+                      : 'No country flag matched'
+                  }
+                >
+                  {locationFlagPreview ? (
+                    <LiveCountryFlagBadge
+                      isoCode={locationFlagPreview.isoCode}
+                      flagEmoji={locationFlagPreview.flagEmoji}
+                      countryName={locationFlagPreview.countryName}
+                      size="lg"
+                      fill
+                    />
+                  ) : (
+                    <Text style={styles.locationFlagPreviewText}>—</Text>
+                  )}
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
+            <View style={styles.locationInputRow}>
+              <TextInput
+                style={[styles.input, styles.locationInput]}
+                value={locationLabel}
+                onChangeText={setLocationLabel}
+                placeholder="City, Country"
+                placeholderTextColor={MUTED}
+                maxLength={80}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+              <View
+                style={[
+                  styles.locationFlagPreview,
+                  !locationFlagPreview && styles.locationFlagPreviewEmpty,
+                ]}
+                accessibilityLabel={
+                  locationFlagPreview
+                    ? `Matched flag ${locationFlagPreview.countryName}`
+                    : 'No country flag matched'
+                }
+              >
+                {locationFlagPreview ? (
+                  <LiveCountryFlagBadge
+                    isoCode={locationFlagPreview.isoCode}
+                    flagEmoji={locationFlagPreview.flagEmoji}
+                    countryName={locationFlagPreview.countryName}
+                    size="lg"
+                    fill
+                  />
+                ) : (
+                  <Text style={styles.locationFlagPreviewText}>—</Text>
+                )}
+              </View>
+            </View>
+          </>
+        )}
 
         <Text style={styles.fieldLabel}>VISIBILITY</Text>
         <View style={styles.visibilityRow}>
@@ -469,42 +557,6 @@ function GoLiveSetup({ onBack, onStarted }) {
             ? 'Listed on LIVE AROUND THE WORLD — anyone can WATCH. Invites still work.'
             : 'Hidden from the global roster — invite code or direct invite only.'}
         </Text>
-
-        <Text style={styles.fieldLabel}>LOCATION (OPTIONAL)</Text>
-        <View style={styles.locationInputRow}>
-          <TextInput
-            style={[styles.input, styles.locationInput]}
-            value={locationLabel}
-            onChangeText={setLocationLabel}
-            placeholder="City, Country"
-            placeholderTextColor={MUTED}
-            maxLength={80}
-            autoCapitalize="words"
-            autoCorrect={false}
-          />
-          <View
-            style={[
-              styles.locationFlagPreview,
-              !locationFlagPreview && styles.locationFlagPreviewEmpty,
-            ]}
-            accessibilityLabel={
-              locationFlagPreview
-                ? `Matched flag ${locationFlagPreview.countryName}`
-                : 'No country flag matched'
-            }
-          >
-            {locationFlagPreview ? (
-              <LiveCountryFlagBadge
-                isoCode={locationFlagPreview.isoCode}
-                flagEmoji={locationFlagPreview.flagEmoji}
-                countryName={locationFlagPreview.countryName}
-                size="lg"
-              />
-            ) : (
-              <Text style={styles.locationFlagPreviewText}>—</Text>
-            )}
-          </View>
-        </View>
       </ScrollView>
 
       <View style={styles.setupFooter}>
@@ -976,7 +1028,7 @@ const styles = StyleSheet.create({
   },
   locationInputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     gap: 8,
   },
   locationInput: {
@@ -984,14 +1036,16 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   locationFlagPreview: {
-    width: 48,
-    height: 48,
+    width: 52,
+    alignSelf: 'stretch',
+    minHeight: 48,
     borderRadius: 12,
     backgroundColor: INPUT,
     borderWidth: 1,
     borderColor: 'rgba(255,90,31,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   locationFlagPreviewEmpty: {
     borderColor: 'rgba(255,255,255,0.12)',
@@ -1000,6 +1054,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 28,
     color: MUTED,
+  },
+  adminLocationRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+    alignItems: 'flex-start',
+  },
+  adminLocationCol: {
+    flex: 1,
+    minWidth: 0,
   },
   cardBottom: {
     flexDirection: 'row',

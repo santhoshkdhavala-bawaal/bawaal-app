@@ -17,6 +17,8 @@ function LiveCountryFlagBadge({
   flagEmoji,
   countryName,
   size = 'md',
+  /** When true, badge + image fill the parent box (GO LIVE location preview). */
+  fill = false,
   style,
 }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -40,11 +42,13 @@ function LiveCountryFlagBadge({
     <View
       style={[
         styles.badge,
-        {
-          width: dims.box,
-          height: Math.max(dims.imgH + 4, dims.box * 0.7),
-          borderRadius: dims.radius,
-        },
+        fill
+          ? styles.badgeFill
+          : {
+              width: dims.box,
+              height: Math.max(dims.imgH + 4, dims.box * 0.7),
+              borderRadius: dims.radius,
+            },
         style,
       ]}
       accessibilityLabel={label}
@@ -52,18 +56,27 @@ function LiveCountryFlagBadge({
       {showImage ? (
         <Image
           source={{ uri }}
-          style={{
-            width: dims.imgW,
-            height: dims.imgH,
-            borderRadius: dims.radius,
-          }}
+          style={
+            fill
+              ? styles.imageFill
+              : {
+                  width: dims.imgW,
+                  height: dims.imgH,
+                  borderRadius: dims.radius,
+                }
+          }
           resizeMode="cover"
           accessibilityLabel={label}
           onError={() => setImageFailed(true)}
         />
       ) : emoji ? (
         <Text
-          style={[styles.emoji, { fontSize: dims.emoji, lineHeight: dims.emoji + 2 }]}
+          style={[
+            styles.emoji,
+            fill
+              ? styles.emojiFill
+              : { fontSize: dims.emoji, lineHeight: dims.emoji + 2 },
+          ]}
           allowFontScaling={false}
         >
           {emoji}
@@ -80,8 +93,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
+  badgeFill: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 0,
+  },
+  imageFill: {
+    width: '100%',
+    height: '100%',
+  },
   emoji: {
     textAlign: 'center',
+  },
+  emojiFill: {
+    fontSize: 28,
+    lineHeight: 32,
   },
 });
 
