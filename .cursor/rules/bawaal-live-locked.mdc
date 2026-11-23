@@ -29,8 +29,9 @@ Theme: stealth `#08120F` / accent `#FF5A1F` / live crimson `#E53935`.
 | Scoreboard ON | Expand **Team A**, **Team B**, **Title (optional)**, **Admin** (editable scorer) |
 | Visibility | Two-option pill: **`PUBLIC`** (default — global roster) \| **`PRIVATE`** (invite code / targeted invite only; hidden from roster) |
 | Location | Optional `location_label` input (e.g. `City, Country`); prefill from profile location when available; editable; live national-flag preview via `getCountryFlagForLocation` |
-| Flag | Resolver returns `{ isoCode, flagEmoji, countryName }`; `LiveCountryFlagBadge` renders flagcdn `w80/{iso}.png` with Unicode emoji onError/offline fallback; store `country_flag` + `country_iso` (soft-fail) |
+| Flag | Resolver returns `{ isoCode, flagEmoji, countryName }`; `LiveCountryFlagBadge` renders flagcdn `w80/{iso}.png` with Unicode emoji onError/offline fallback; store `country_flag` + **`country_iso`** (not `country_code`; soft-fail) |
 | Create | `createLiveMatch({ hasScoreboard, adminName, visibility, locationLabel, … })` — soft-fail if columns missing (local Map keeps values) |
+| RLS | `ENSURE_LIVE_MATCHES_VISIBILITY_RLS.sql` — public live SELECT roster; host-only UPDATE; private join via `get_live_match_by_invite_code` RPC |
 
 ## 3. Live room HUD (`LiveMatchRoomScreen.js`)
 
@@ -92,10 +93,10 @@ Service guards: `canUserScoreMatch` + `updateMatchScore` / `updateMatchCricket` 
 - `src/constants/liveMatchFlamingSkulls.js`
 - `src/constants/liveMatchTeamSkulls.js`
 - `src/constants/liveMatchSports.js`
-- Related migrations: `supabase/migrations/20261121_live_matches*.sql`, `20261121_live_match_invites.sql`, `20261123_live_matches_visibility.sql`, `20261123_live_matches_country_flag.sql`
+- Related migrations: `supabase/migrations/20261121_live_matches*.sql`, `20261121_live_match_invites.sql`, `20261123_live_matches_visibility.sql`, `20261123_live_matches_country_flag.sql`, `20261123_live_matches_country_iso.sql`, `20261123_live_matches_rls_harden.sql`
+- ENSURE paste: `supabase/ENSURE_LIVE_MATCHES_VISIBILITY_RLS.sql`
 - Flag helper: `src/utils/liveMatchLocationFlag.js` (`getCountryFlagForLocation` → `{ isoCode, flagEmoji, countryName }` or null)
 - Flag badge: `src/components/LiveCountryFlagBadge.js` (flagcdn PNG + emoji fallback)
-- Related migration: `20261123_live_matches_country_iso.sql`
 - App wiring: `LiveMatchRoom` route + `LiveMatchInviteHost` in `App.js`; Arena LIVE pill → `LiveArenaModal` in `ArenaFeed.js` (do not break entry without unlock)
 
 ## Never re-add

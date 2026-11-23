@@ -1526,6 +1526,21 @@ export function subscribeLiveMatchInvites(user, onInvite) {
   };
 }
 
+function isMissingRpcError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(
+    error.message || error.details || error.hint || error || ''
+  );
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    /Could not find the function|function .* does not exist|schema cache/i.test(
+      msg
+    )
+  );
+}
+
 export async function fetchLiveMatchByInviteCode(code) {
   const raw = sanitizeInviteCode(
     String(code || '').replace(/^BAWAAL-?LIVE-?/i, '')
@@ -1539,6 +1554,37 @@ export async function fetchLiveMatchByInviteCode(code) {
 
   if (shouldUseLocalOnly()) return null;
 
+  // Prefer SECURITY DEFINER RPC so private matches stay off the public SELECT list
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'get_live_match_by_invite_code',
+      { p_code: raw }
+    );
+    if (!rpcError) {
+      const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      const m = normalizeMatch(row);
+      if (m) {
+        localMatches.set(m.id, m);
+        return m;
+      }
+      return null;
+    }
+    if (!isMissingRpcError(rpcError)) {
+      softFailWarn(
+        'liveMatch:inviteRpc',
+        '[liveMatch] invite RPC soft-fail',
+        rpcError?.message || rpcError
+      );
+    }
+  } catch (err) {
+    softFailWarn(
+      'liveMatch:inviteRpcEx',
+      '[liveMatch] invite RPC exception',
+      err?.message
+    );
+  }
+
+  // Fallback: direct table lookup (pre-harden DBs) then local list scan
   try {
     const { data, error } = await supabase
       .from(TABLE)
