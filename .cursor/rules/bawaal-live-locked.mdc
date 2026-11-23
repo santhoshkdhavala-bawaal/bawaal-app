@@ -44,6 +44,7 @@ Theme: stealth `#08120F` / accent `#FF5A1F` / live crimson `#E53935`.
 | Burst | Single bounded burst per tap (1–3 particles, ~1.2–1.8s); reactionId dedupe; **no** infinite spawn loops |
 | INVITE | High-contrast button for **host and viewers** (`opacity: 1`, solid orange + white type) |
 | Location meta | Optional top-left location chip with national flag when `location_label` set (PUBLIC + PRIVATE) — does not replace INVITE |
+| LiveKit | Stream under HUD via `LiveMatchLiveKitStage` + `fetchLiveKitToken` (host publish / viewer subscribe); flip still uses top-right camera control; web/unconfigured keeps CameraView / HOST IS LIVE fallback |
 | Host chrome | Camera flip + `END` for telecast host only |
 
 ## 4. Scoring & `canScore` (LOCKED)
@@ -97,6 +98,7 @@ Service guards: `canUserScoreMatch` + `updateMatchScore` / `updateMatchCricket` 
 - ENSURE paste: `supabase/ENSURE_LIVE_MATCHES_VISIBILITY_RLS.sql`
 - Flag helper: `src/utils/liveMatchLocationFlag.js` (`getCountryFlagForLocation` → `{ isoCode, flagEmoji, countryName }` or null)
 - Flag badge: `src/components/LiveCountryFlagBadge.js` (flagcdn PNG + emoji fallback)
+- LiveKit stage: `src/components/LiveMatchLiveKitStage.js` (+ `.native.js`); token: `supabase/functions/livekit-token`
 - App wiring: `LiveMatchRoom` route + `LiveMatchInviteHost` in `App.js`; Arena LIVE pill → `LiveArenaModal` in `ArenaFeed.js` (do not break entry without unlock)
 
 ## Never re-add

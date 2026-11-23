@@ -1,7 +1,7 @@
 /**
- * BAWAAL Live Match Telecast — Phase 1 room (Host + Viewer).
- * Option A: Host = real CameraView preview; Viewer = HOST IS LIVE stage
- * with // PHASE 2: LIVE_VIDEO_STREAM_SLOT for LiveKit/Agora later.
+ * BAWAAL Live Match Telecast — Host + Viewer room.
+ * Native: LiveKit publishes/subscribes under locked HUD when token is available.
+ * Web / unconfigured: expo-camera (host) or HOST IS LIVE placeholder (viewer).
  *
  * Clean HUD: compact top score pill (no top skulls), host side score skulls,
  * slim banter bar + single flaming-skull tray trigger.
@@ -46,10 +46,12 @@ import {
   formatCricketOvers,
   isCricketSport,
   canUserScoreMatch,
+  fetchLiveKitToken,
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import { resolveLiveMatchCountryFlag } from './src/utils/liveMatchLocationFlag';
 import LiveCountryFlagBadge from './src/components/LiveCountryFlagBadge';
+import LiveMatchLiveKitStage from './src/components/LiveMatchLiveKitStage';
 import {
   SKULL_TEAM_A,
   SKULL_TEAM_B,
@@ -545,8 +547,7 @@ function VoteTugBar({ votesA, votesB, teamA, teamB, onVoteA, onVoteB }) {
 }
 
 /**
- * Viewer center stage — Option A placeholder.
- * PHASE 2: replace / fill LIVE_VIDEO_STREAM_SLOT with LiveKit / Agora player.
+ * Viewer center stage — fallback when LiveKit token / native stream unavailable.
  */
 function ViewerVideoStage({ sport, title }) {
   const [pulse] = useState(() => new Animated.Value(0));
@@ -575,10 +576,9 @@ function ViewerVideoStage({ sport, title }) {
 
   return (
     <View style={styles.viewerStage}>
-      {/* PHASE 2: LIVE_VIDEO_STREAM_SLOT — LiveKit / Agora remote stream mounts here */}
       <View
         style={styles.liveVideoStreamSlot}
-        accessibilityLabel="Live video stream slot phase 2"
+        accessibilityLabel="Live video waiting for host stream"
       >
         <Text style={styles.hostIsLive}>HOST IS LIVE</Text>
         <Animated.View style={[styles.signalRow, { opacity: signalOpacity }]}>
@@ -592,7 +592,7 @@ function ViewerVideoStage({ sport, title }) {
           </Text>
         ) : null}
         <Text style={styles.phase2Hint}>
-          Phase 2 stream slot ready · LiveKit / Agora
+          Connecting stream · LiveKit when configured
         </Text>
       </View>
     </View>
@@ -686,6 +686,8 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const cricketUndoRef = useRef([]);
   const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
+  /** @type {[{ token: string, wsUrl: string }|null, Function]} */
+  const [livekitCreds, setLivekitCreds] = useState(null);
 
   useEffect(
     () => () => {
@@ -758,6 +760,26 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const role = isHost ? 'host' : 'viewer';
   /** Only telecast host or designated admin may punch scores — never audience. */
   const canScore = Boolean(isHost || isDesignatedAdmin);
+
+  // LiveKit token — native only; soft-null when keys / Edge Function missing (web uses fallback).
+  useEffect(() => {
+    if (Platform.OS === 'web' || !matchId) {
+      setLivekitCreds(null);
+      return undefined;
+    }
+    let alive = true;
+    void fetchLiveKitToken({
+      matchId,
+      participantName: handle || 'athlete',
+      role: isHost ? 'host' : 'viewer',
+    }).then((creds) => {
+      if (!alive) return;
+      setLivekitCreds(creds && creds.token && creds.wsUrl ? creds : null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [matchId, handle, isHost]);
 
   useEffect(() => {
     let alive = true;
@@ -998,16 +1020,30 @@ function LiveMatchRoomScreen({ navigation, route }) {
     );
   }
 
+  const fallbackStage =
+    role === 'host' ? (
+      <HostCameraStage key={facing} facing={facing} />
+    ) : (
+      <ViewerVideoStage sport={match?.sport} title={match?.title} />
+    );
+  const streamStage =
+    livekitCreds?.token && livekitCreds?.wsUrl ? (
+      <LiveMatchLiveKitStage
+        token={livekitCreds.token}
+        serverUrl={livekitCreds.wsUrl}
+        isHost={isHost}
+        facing={facing}
+        fallback={fallbackStage}
+      />
+    ) : (
+      fallbackStage
+    );
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={BG} />
       <View style={styles.stage}>
-        {role === 'host' ? (
-          <HostCameraStage key={facing} facing={facing} />
-
-        ) : (
-          <ViewerVideoStage sport={match?.sport} title={match?.title} />
-        )}
+        {streamStage}
 
         <LiveReactionBurstLayer
           particles={burstParticles}

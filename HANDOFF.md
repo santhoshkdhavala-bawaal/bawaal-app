@@ -322,8 +322,31 @@ bawaal-mobile/
 | INVITE | High-contrast for host **and** viewers; 6-char codes from alphabet excluding `0/O/1/I` |
 | Delivery | Targeted Realtime `live-user-invites-{id\|handle}` + `WATCH` banner — **never** global spam |
 | Soft-fail | Missing columns → local Map + `score_sync` broadcast |
+| LiveKit A/V | Under locked HUD only — see §4.2.1 |
 
 **Channels:** `live-matches-hub` · `live-match-{id}` (banter / reaction / vote_pulse / score_sync) · invite channels above.
+
+#### 4.2.1 LiveKit architecture (stream under HUD)
+
+| Piece | Role |
+|---|---|
+| Client SDK | `@livekit/react-native` + `@livekit/react-native-webrtc` + `livekit-client` (Expo plugins in `app.json`) |
+| Boot | `registerLiveKitGlobalsSafe()` in `index.js` (native only; web stub no-op) |
+| Token | Edge Function `supabase/functions/livekit-token` — host `canPublish`, viewer subscribe-only |
+| Client helper | `fetchLiveKitToken({ matchId, participantName, role })` in `liveMatchService.js` — soft-null if unconfigured |
+| Room stage | `LiveMatchLiveKitStage.native.js` — `LiveKitRoom` + `useTracks` + `VideoTrack` (`objectFit="cover"`); host flip via `restartTrack({ facingMode })` |
+| Fallback | Web / missing `EXPO_PUBLIC_LIVEKIT_URL` / token fail → existing `HostCameraStage` (expo-camera) or `ViewerVideoStage` placeholder |
+| HUD lock | INVITE, scoreboard/`canScore`, banter, skull tray, LIVE/viewer chips — **unchanged** |
+
+**Deploy LiveKit token function:**
+
+```bash
+# Set secrets once (Dashboard → Edge Functions → Secrets, or CLI):
+#   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
+supabase functions deploy livekit-token
+```
+
+Client also needs `EXPO_PUBLIC_LIVEKIT_URL=wss://…` in `.env` (see `.env.example`).
 
 ### 4.3 Auth, persistence & logout
 
