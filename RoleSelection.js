@@ -17,7 +17,6 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
-  TouchableWithoutFeedback,
   Keyboard,
   Pressable,
 } from 'react-native';
@@ -82,6 +81,9 @@ function InputCard({
   autoComplete,
   style,
   inputStyle,
+  inputRef,
+  autoFocus = false,
+  editable = true,
 }) {
   const hasTrailing = !!trailing;
   return (
@@ -99,6 +101,7 @@ function InputCard({
         </View>
       ) : null}
       <TextInput
+        ref={inputRef}
         style={[
           styles.input,
           hasTrailing && styles.inputWithTrailingPad,
@@ -117,6 +120,8 @@ function InputCard({
         autoComplete={autoComplete}
         onFocus={onFocus}
         onBlur={onBlur}
+        editable={editable}
+        autoFocus={autoFocus}
         underlineColorAndroid="transparent"
         selectionColor={ORANGE}
       />
@@ -137,6 +142,51 @@ function InputCard({
           </View>
         )
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Auth modal shell: never wrap TextInputs in TouchableWithoutFeedback on web
+ * (it steals clicks / focus). Native uses a behind-card Pressable to dismiss
+ * the keyboard without covering the input hit area.
+ */
+function AuthModalShell({ children, overlayStyle, cardStyle, avoidingStyle }) {
+  const card = (
+    <View
+      style={cardStyle}
+      // Keep presses inside the card from bubbling to the dismiss layer.
+      onStartShouldSetResponder={() => true}
+    >
+      {children}
+    </View>
+  );
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={[styles.flex, overlayStyle]}>
+        <View style={[styles.flex, avoidingStyle, { justifyContent: 'center' }]}>
+          {card}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.flex, overlayStyle]}>
+      <Pressable
+        style={StyleSheet.absoluteFillObject}
+        onPress={Keyboard.dismiss}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss keyboard"
+      />
+      <KeyboardAvoidingView
+        style={[styles.flex, avoidingStyle]}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        pointerEvents="box-none"
+      >
+        {card}
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -260,6 +310,8 @@ export default function RoleSelection({
   const [notice, setNotice] = useState(null);
   const [picker, setPicker] = useState(null); // 'gender' | 'category' | 'role'
   const savedProfileRef = useRef(null);
+  const createPasswordInputRef = useRef(null);
+  const forgotEmailInputRef = useRef(null);
 
   const [handle, setHandle] = useState('');
   const [realName, setRealName] = useState('');
@@ -580,6 +632,31 @@ export default function RoleSelection({
     if (authBusy) return;
     setPasswordModalVisible(false);
   };
+
+  // Autofocus Create Password when the modal opens (web + native).
+  useEffect(() => {
+    if (!passwordModalVisible) return undefined;
+    const t = setTimeout(() => {
+      try {
+        createPasswordInputRef.current?.focus?.();
+      } catch (_) {
+        /* soft */
+      }
+    }, Platform.OS === 'web' ? 50 : 120);
+    return () => clearTimeout(t);
+  }, [passwordModalVisible]);
+
+  useEffect(() => {
+    if (!forgotModalVisible) return undefined;
+    const t = setTimeout(() => {
+      try {
+        forgotEmailInputRef.current?.focus?.();
+      } catch (_) {
+        /* soft */
+      }
+    }, Platform.OS === 'web' ? 50 : 120);
+    return () => clearTimeout(t);
+  }, [forgotModalVisible]);
 
   /** Step 2: Create Password modal → signUp → enter Arena. */
   const handleCompleteRegistration = async () => {
@@ -1075,70 +1152,67 @@ export default function RoleSelection({
       </Modal>
 
       <Modal visible={forgotModalVisible} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <KeyboardAvoidingView
-            style={[
-              styles.modalOverlay,
-              { paddingBottom: Math.max(48, insets.bottom + 40) },
-            ]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <AuthModalShell
+          overlayStyle={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(48, insets.bottom + 40) },
+          ]}
+          avoidingStyle={{ justifyContent: 'center' }}
+          cardStyle={[
+            styles.authModalContent,
+            { paddingBottom: Math.max(48, insets.bottom + 36) },
+          ]}
+        >
+          <Image
+            source={LOGO_FULL}
+            style={styles.authModalLogo}
+            resizeMode="contain"
+            accessibilityLabel="BAWAAL"
+          />
+          <Text style={styles.authModalTitle}>FORGOT PASSWORD</Text>
+          <Text style={styles.authModalSubtitle}>
+            Enter your Email ID and we will send a reset link.
+          </Text>
+
+          <InputCard
+            inputRef={forgotEmailInputRef}
+            value={forgotEmail}
+            onChangeText={setForgotEmail}
+            placeholder="Enter your email ID"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            textContentType="emailAddress"
+            autoComplete="email"
+            editable
+            focused={focusedField === 'forgotEmail'}
+            onFocus={() => setFocusedField('forgotEmail')}
+            onBlur={() => setFocusedField(null)}
+            style={[styles.fieldGap, styles.authModalField]}
+          />
+
+          <TouchableOpacity
+            style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
+            onPress={handleForgotPassword}
+            activeOpacity={0.85}
+            disabled={authBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Send reset link"
           >
-            <View
-              style={[
-                styles.authModalContent,
-                { paddingBottom: Math.max(48, insets.bottom + 36) },
-              ]}
-            >
-              <Image
-                source={LOGO_FULL}
-                style={styles.authModalLogo}
-                resizeMode="contain"
-                accessibilityLabel="BAWAAL"
-              />
-              <Text style={styles.authModalTitle}>FORGOT PASSWORD</Text>
-              <Text style={styles.authModalSubtitle}>
-                Enter your Email ID and we will send a reset link.
-              </Text>
+            <Text style={styles.authModalCtaText}>
+              {authBusy ? 'SENDING…' : 'SEND RESET LINK'}
+            </Text>
+          </TouchableOpacity>
 
-              <InputCard
-                value={forgotEmail}
-                onChangeText={setForgotEmail}
-                placeholder="Enter your email ID"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                textContentType="emailAddress"
-                autoComplete="email"
-                focused={focusedField === 'forgotEmail'}
-                onFocus={() => setFocusedField('forgotEmail')}
-                onBlur={() => setFocusedField(null)}
-                style={[styles.fieldGap, styles.authModalField]}
-              />
-
-              <TouchableOpacity
-                style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
-                onPress={handleForgotPassword}
-                activeOpacity={0.85}
-                disabled={authBusy}
-                accessibilityRole="button"
-                accessibilityLabel="Send reset link"
-              >
-                <Text style={styles.authModalCtaText}>
-                  {authBusy ? 'SENDING…' : 'SEND RESET LINK'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => setForgotModalVisible(false)}
-                activeOpacity={0.8}
-                style={styles.authModalCancel}
-                accessibilityRole="button"
-              >
-                <Text style={styles.authModalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+          <TouchableOpacity
+            onPress={() => setForgotModalVisible(false)}
+            activeOpacity={0.8}
+            style={styles.authModalCancel}
+            accessibilityRole="button"
+          >
+            <Text style={styles.authModalCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </AuthModalShell>
       </Modal>
 
       <Modal
@@ -1147,104 +1221,103 @@ export default function RoleSelection({
         animationType="fade"
         onRequestClose={closePasswordModal}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <KeyboardAvoidingView
-            style={[
-              styles.modalOverlay,
-              { paddingBottom: Math.max(48, insets.bottom + 40) },
-            ]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          >
-            <View
-              style={[
-                styles.authModalContent,
-                { paddingBottom: Math.max(48, insets.bottom + 36) },
-              ]}
-            >
-              <Image
-                source={LOGO_FULL}
-                style={styles.authModalLogo}
-                resizeMode="contain"
-                accessibilityLabel="BAWAAL"
-              />
-              <Text style={styles.authModalTitle}>CREATE PASSWORD</Text>
-              <Text style={styles.authModalSubtitle}>
-                Choose a password (at least {MIN_PASSWORD_LENGTH} characters),
-                then enter the Arena.
+        <AuthModalShell
+          overlayStyle={[
+            styles.modalOverlay,
+            { paddingBottom: Math.max(48, insets.bottom + 40) },
+          ]}
+          avoidingStyle={{ justifyContent: 'center' }}
+          cardStyle={[
+            styles.authModalContent,
+            { paddingBottom: Math.max(48, insets.bottom + 36) },
+          ]}
+        >
+          <Image
+            source={LOGO_FULL}
+            style={styles.authModalLogo}
+            resizeMode="contain"
+            accessibilityLabel="BAWAAL"
+          />
+          <Text style={styles.authModalTitle}>CREATE PASSWORD</Text>
+          <Text style={styles.authModalSubtitle}>
+            Choose a password (at least {MIN_PASSWORD_LENGTH} characters),
+            then enter the Arena.
+          </Text>
+
+          <InputCard
+            inputRef={createPasswordInputRef}
+            autoFocus
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Create password"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showPassword}
+            textContentType="newPassword"
+            autoComplete="password-new"
+            editable
+            focused={focusedField === 'createPassword'}
+            onFocus={() => setFocusedField('createPassword')}
+            onBlur={() => setFocusedField(null)}
+            trailing={
+              <Text style={styles.showHideText}>
+                {showPassword ? 'HIDE' : 'SHOW'}
               </Text>
+            }
+            trailingPressable
+            onTrailingPress={() => setShowPassword((v) => !v)}
+            style={[styles.fieldGap, styles.authModalField]}
+          />
 
-              <InputCard
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Create password"
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry={!showPassword}
-                textContentType="newPassword"
-                autoComplete="password-new"
-                focused={focusedField === 'createPassword'}
-                onFocus={() => setFocusedField('createPassword')}
-                onBlur={() => setFocusedField(null)}
-                trailing={
-                  <Text style={styles.showHideText}>
-                    {showPassword ? 'HIDE' : 'SHOW'}
-                  </Text>
-                }
-                trailingPressable
-                onTrailingPress={() => setShowPassword((v) => !v)}
-                style={[styles.fieldGap, styles.authModalField]}
-              />
+          <InputCard
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm password"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showConfirmPassword}
+            textContentType="newPassword"
+            autoComplete="password-new"
+            editable
+            focused={focusedField === 'confirmPassword'}
+            onFocus={() => setFocusedField('confirmPassword')}
+            onBlur={() => setFocusedField(null)}
+            trailing={
+              <Text style={styles.showHideText}>
+                {showConfirmPassword ? 'HIDE' : 'SHOW'}
+              </Text>
+            }
+            trailingPressable
+            onTrailingPress={() => setShowConfirmPassword((v) => !v)}
+            style={[styles.fieldGap, styles.authModalField]}
+          />
 
-              <InputCard
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm password"
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry={!showConfirmPassword}
-                textContentType="newPassword"
-                autoComplete="password-new"
-                focused={focusedField === 'confirmPassword'}
-                onFocus={() => setFocusedField('confirmPassword')}
-                onBlur={() => setFocusedField(null)}
-                trailing={
-                  <Text style={styles.showHideText}>
-                    {showConfirmPassword ? 'HIDE' : 'SHOW'}
-                  </Text>
-                }
-                trailingPressable
-                onTrailingPress={() => setShowConfirmPassword((v) => !v)}
-                style={[styles.fieldGap, styles.authModalField]}
-              />
+          <TouchableOpacity
+            style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
+            onPress={handleCompleteRegistration}
+            activeOpacity={0.85}
+            disabled={authBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Complete registration and enter Arena"
+          >
+            <Text style={styles.authModalCtaText}>
+              {authBusy ? 'CREATING…' : 'COMPLETE REGISTRATION / ENTER ARENA'}
+            </Text>
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
-                onPress={handleCompleteRegistration}
-                activeOpacity={0.85}
-                disabled={authBusy}
-                accessibilityRole="button"
-                accessibilityLabel="Complete registration and enter Arena"
-              >
-                <Text style={styles.authModalCtaText}>
-                  {authBusy ? 'CREATING…' : 'COMPLETE REGISTRATION / ENTER ARENA'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={closePasswordModal}
-                activeOpacity={0.8}
-                disabled={authBusy}
-                style={styles.authModalCancel}
-                accessibilityRole="button"
-                accessibilityLabel="Back to edit email or phone"
-              >
-                <Text style={styles.authModalCancelText}>
-                  ← Back — edit Email or Phone
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+          <TouchableOpacity
+            onPress={closePasswordModal}
+            activeOpacity={0.8}
+            disabled={authBusy}
+            style={styles.authModalCancel}
+            accessibilityRole="button"
+            accessibilityLabel="Back to edit email or phone"
+          >
+            <Text style={styles.authModalCancelText}>
+              ← Back — edit Email or Phone
+            </Text>
+          </TouchableOpacity>
+        </AuthModalShell>
       </Modal>
 
       <BawaalPromptModal
@@ -1321,6 +1394,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   inputCard: {
+    width: '100%',
     height: 50,
     backgroundColor: CARD,
     borderRadius: 12,
@@ -1329,7 +1403,7 @@ const styles = StyleSheet.create({
     paddingLeft: 14,
     paddingRight: 14,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     overflow: 'hidden',
   },
   inputCardWithTrailing: {
@@ -1342,17 +1416,22 @@ const styles = StyleSheet.create({
   },
   selectCard: {
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
+    alignSelf: 'stretch',
     minWidth: 0,
+    width: '100%',
     height: '100%',
+    minHeight: 48,
     color: WHITE,
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 0,
     paddingLeft: 4,
     paddingRight: 0,
+    margin: 0,
     backgroundColor: 'transparent',
     borderWidth: 0,
   },
@@ -1368,12 +1447,17 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
     outlineColor: 'transparent',
     boxShadow: 'none',
+    cursor: 'text',
+    // Full clickable height inside the row on React Native Web.
+    height: '100%',
+    minHeight: 48,
   },
   inputLeading: {
     marginRight: 10,
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
   },
   inputTrailing: {
     marginLeft: 8,
@@ -1381,6 +1465,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'center',
     width: 32,
     minWidth: 32,
   },
@@ -1390,9 +1475,9 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    alignSelf: 'stretch',
     minWidth: 48,
     paddingHorizontal: 6,
-    paddingVertical: 8,
   },
   showHideText: {
     color: ORANGE,

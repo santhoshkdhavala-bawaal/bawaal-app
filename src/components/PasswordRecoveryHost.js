@@ -2,17 +2,17 @@
  * Global Set New Password surface when Supabase fires PASSWORD_RECOVERY
  * (email reset deep link / web redirect). Mount once under AppBoot.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
   Image,
 } from 'react-native';
@@ -35,6 +35,7 @@ const LOGO_FULL = require('../../assets/BAWAAL_white_full.png');
 
 export default function PasswordRecoveryHost() {
   const insets = useSafeAreaInsets();
+  const inputRef = useRef(null);
   const [visible, setVisible] = useState(false);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -64,6 +65,18 @@ export default function PasswordRecoveryHost() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const t = setTimeout(() => {
+      try {
+        inputRef.current?.focus?.();
+      } catch (_) {
+        /* soft */
+      }
+    }, Platform.OS === 'web' ? 50 : 120);
+    return () => clearTimeout(t);
+  }, [visible]);
 
   const handleUpdate = async () => {
     if (busy) return;
@@ -102,84 +115,107 @@ export default function PasswordRecoveryHost() {
     }
   };
 
+  const card = (
+    <View
+      style={[
+        styles.card,
+        { paddingBottom: Math.max(48, insets.bottom + 36) },
+      ]}
+      onStartShouldSetResponder={() => true}
+    >
+      <Image
+        source={LOGO_FULL}
+        style={styles.logo}
+        resizeMode="contain"
+        accessibilityLabel="BAWAAL"
+      />
+      <Text style={styles.title}>SET NEW PASSWORD</Text>
+      <Text style={styles.subtitle}>
+        Choose a new password (at least {MIN_PASSWORD_LENGTH} characters).
+      </Text>
+
+      <View style={[styles.inputCard, focused && styles.inputCardFocused]}>
+        <TextInput
+          ref={inputRef}
+          style={[styles.input, Platform.OS === 'web' && styles.inputWeb]}
+          placeholder="New password"
+          placeholderTextColor={PLACEHOLDER}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="newPassword"
+          autoComplete="password-new"
+          editable
+          autoFocus
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          underlineColorAndroid="transparent"
+          selectionColor={ORANGE}
+        />
+        <TouchableOpacity
+          style={styles.showHideBtn}
+          onPress={() => setShowPassword((v) => !v)}
+          activeOpacity={0.75}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.showHide}>
+            {showPassword ? 'HIDE' : 'SHOW'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity
+        style={[styles.cta, busy && styles.ctaDisabled]}
+        onPress={handleUpdate}
+        activeOpacity={0.85}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel="Update password"
+      >
+        <Text style={styles.ctaText}>
+          {busy ? 'UPDATING…' : 'UPDATE PASSWORD'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <>
       <Modal visible={visible} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <KeyboardAvoidingView
+        {Platform.OS === 'web' ? (
+          <View
             style={[
               styles.overlay,
               { paddingBottom: Math.max(48, insets.bottom + 40) },
             ]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
-            <View
-              style={[
-                styles.card,
-                { paddingBottom: Math.max(48, insets.bottom + 36) },
-              ]}
+            {card}
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.overlay,
+              { paddingBottom: Math.max(48, insets.bottom + 40) },
+            ]}
+          >
+            <Pressable
+              style={StyleSheet.absoluteFillObject}
+              onPress={Keyboard.dismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss keyboard"
+            />
+            <KeyboardAvoidingView
+              style={styles.flex}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              pointerEvents="box-none"
             >
-              <Image
-                source={LOGO_FULL}
-                style={styles.logo}
-                resizeMode="contain"
-                accessibilityLabel="BAWAAL"
-              />
-              <Text style={styles.title}>SET NEW PASSWORD</Text>
-              <Text style={styles.subtitle}>
-                Choose a new password (at least {MIN_PASSWORD_LENGTH}{' '}
-                characters).
-              </Text>
-
-              <View
-                style={[styles.inputCard, focused && styles.inputCardFocused]}
-              >
-                <TextInput
-                  style={[
-                    styles.input,
-                    Platform.OS === 'web' && styles.inputWeb,
-                  ]}
-                  placeholder="New password"
-                  placeholderTextColor={PLACEHOLDER}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="newPassword"
-                  autoComplete="password-new"
-                  onFocus={() => setFocused(true)}
-                  onBlur={() => setFocused(false)}
-                  underlineColorAndroid="transparent"
-                  selectionColor={ORANGE}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((v) => !v)}
-                  activeOpacity={0.75}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.showHide}>
-                    {showPassword ? 'HIDE' : 'SHOW'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.cta, busy && styles.ctaDisabled]}
-                onPress={handleUpdate}
-                activeOpacity={0.85}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityLabel="Update password"
-              >
-                <Text style={styles.ctaText}>
-                  {busy ? 'UPDATING…' : 'UPDATE PASSWORD'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+              {card}
+            </KeyboardAvoidingView>
+          </View>
+        )}
       </Modal>
 
       <BawaalPromptModal
@@ -195,6 +231,7 @@ export default function PasswordRecoveryHost() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   overlay: {
     flex: 1,
     backgroundColor: BG,
@@ -236,22 +273,27 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.06)',
     paddingLeft: 14,
-    paddingRight: 10,
+    paddingRight: 4,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     marginBottom: 20,
+    overflow: 'hidden',
   },
   inputCardFocused: {
     borderColor: ORANGE,
   },
   input: {
     flex: 1,
+    alignSelf: 'stretch',
     minWidth: 0,
+    width: '100%',
     height: '100%',
+    minHeight: 48,
     color: WHITE,
     fontSize: 15,
     fontWeight: '600',
     paddingVertical: 0,
+    margin: 0,
     backgroundColor: 'transparent',
     borderWidth: 0,
   },
@@ -260,14 +302,23 @@ const styles = StyleSheet.create({
     outlineWidth: 0,
     outlineColor: 'transparent',
     boxShadow: 'none',
+    cursor: 'text',
+    height: '100%',
+    minHeight: 48,
+  },
+  showHideBtn: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    minWidth: 48,
+    paddingHorizontal: 6,
   },
   showHide: {
     color: ORANGE,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.6,
-    paddingHorizontal: 6,
-    paddingVertical: 8,
   },
   cta: {
     width: '100%',
