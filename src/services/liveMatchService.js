@@ -1610,4 +1610,62 @@ export async function fetchLiveMatchByInviteCode(code) {
   }
 }
 
+/**
+ * Mint a LiveKit access token via Supabase Edge Function `livekit-token`.
+ * Soft-fails (returns null) when EXPO_PUBLIC_LIVEKIT_URL / secrets / function
+ * are not configured yet — never throws into LIVE UX.
+ *
+ * @param {{ matchId: string, participantName: string, role: 'host'|'viewer' }} input
+ * @returns {Promise<{ token: string, wsUrl: string }|null>}
+ */
+export async function fetchLiveKitToken({
+  matchId,
+  participantName,
+  role,
+} = {}) {
+  const id = String(matchId || '').trim();
+  const name = String(participantName || '')
+    .trim()
+    .replace(/^@/, '')
+    .slice(0, 64);
+  const normalizedRole =
+    String(role || '').toLowerCase() === 'host' ? 'host' : 'viewer';
+  const publicWsUrl = String(
+    process.env.EXPO_PUBLIC_LIVEKIT_URL || ''
+  ).trim();
+
+  if (!id || !name) return null;
+  if (!publicWsUrl) return null;
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const { data, error } = await supabase.functions.invoke('livekit-token', {
+      body: {
+        matchId: id,
+        participantName: name,
+        role: normalizedRole,
+      },
+    });
+    if (error) {
+      softFailWarn(
+        'liveMatch:livekitToken',
+        '[liveMatch] livekit-token soft-fail',
+        error?.message || error
+      );
+      return null;
+    }
+    const token = String(data?.token || '').trim();
+    const wsUrl = String(data?.wsUrl || publicWsUrl).trim();
+    if (!token || !wsUrl) return null;
+    return { token, wsUrl };
+  } catch (err) {
+    softFailWarn(
+      'liveMatch:livekitTokenEx',
+      '[liveMatch] livekit-token exception',
+      err?.message || err
+    );
+    return null;
+  }
+}
+
 export { BANTER_CAP, channelName as liveMatchChannelName, INVITE_TTL_MS };
