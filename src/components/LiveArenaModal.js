@@ -33,6 +33,7 @@ import {
   getCountryFlagForLocation,
   resolveLiveMatchCountryFlag,
 } from '../utils/liveMatchLocationFlag';
+import LiveCountryFlagBadge from './LiveCountryFlagBadge';
 
 const BG = '#08120F';
 const CARD = '#0F1A16';
@@ -47,7 +48,7 @@ function MatchCard({ item, onPress }) {
   const hasScoreboard = !!item?.has_scoreboard;
   const hostHandle = String(item?.host_handle || 'athlete').replace(/^@/, '');
   const locationLabel = String(item?.location_label || '').trim();
-  const countryFlag = resolveLiveMatchCountryFlag(item);
+  const countryMeta = resolveLiveMatchCountryFlag(item);
   const vsLabel = hasScoreboard
     ? `${item.team_a_name || 'TEAM A'} vs ${item.team_b_name || 'TEAM B'}`
     : item.title
@@ -77,10 +78,13 @@ function MatchCard({ item, onPress }) {
       </Text>
       {locationLabel ? (
         <View style={styles.locationRow}>
-          {countryFlag ? (
-            <Text style={styles.locationFlag} accessibilityLabel="Country flag">
-              {countryFlag}
-            </Text>
+          {countryMeta ? (
+            <LiveCountryFlagBadge
+              isoCode={countryMeta.isoCode}
+              flagEmoji={countryMeta.flagEmoji}
+              countryName={countryMeta.countryName}
+              size="sm"
+            />
           ) : (
             <Ionicons name="location-outline" size={13} color={ORANGE} />
           )}
@@ -467,13 +471,20 @@ function GoLiveSetup({ onBack, onStarted }) {
           ]}
           accessibilityLabel={
             locationFlagPreview
-              ? `Matched flag ${locationFlagPreview}`
+              ? `Matched flag ${locationFlagPreview.countryName}`
               : 'No country flag matched'
           }
         >
-          <Text style={styles.locationFlagPreviewText}>
-            {locationFlagPreview || '—'}
-          </Text>
+          {locationFlagPreview ? (
+            <LiveCountryFlagBadge
+              isoCode={locationFlagPreview.isoCode}
+              flagEmoji={locationFlagPreview.flagEmoji}
+              countryName={locationFlagPreview.countryName}
+              size="lg"
+            />
+          ) : (
+            <Text style={styles.locationFlagPreviewText}>—</Text>
+          )}
         </View>
       </View>
 
@@ -918,10 +929,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 5,
-  },
-  locationFlag: {
-    fontSize: 14,
-    lineHeight: 16,
   },
   locationText: {
     flex: 1,

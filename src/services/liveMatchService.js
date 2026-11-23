@@ -238,12 +238,25 @@ function normalizeMatch(row) {
   const locationLabel = normalizeLocationLabel(
     row.location_label ?? row.locationLabel ?? row.location
   );
+  const derivedMeta = getCountryFlagForLocation(locationLabel);
+  const storedIso = String(row.country_iso ?? row.countryIso ?? '')
+    .trim()
+    .toUpperCase();
   const storedFlag = String(
     row.country_flag ?? row.countryFlag ?? ''
   ).trim();
-  const derivedFlag = getCountryFlagForLocation(locationLabel);
+  const countryIso =
+    (/^[A-Z]{2}$/.test(storedIso) ? storedIso : '') ||
+    derivedMeta?.isoCode ||
+    '';
   const countryFlag =
-    storedFlag && storedFlag !== '🌐' ? storedFlag : derivedFlag || '';
+    (storedFlag && storedFlag !== '🌐' ? storedFlag : '') ||
+    derivedMeta?.flagEmoji ||
+    '';
+  const countryName =
+    String(row.country_name ?? row.countryName ?? '').trim() ||
+    derivedMeta?.countryName ||
+    '';
   return {
     id: String(row.id || ''),
     host_id: String(row.host_id || ''),
@@ -281,6 +294,8 @@ function normalizeMatch(row) {
     visibility,
     location_label: locationLabel,
     country_flag: countryFlag,
+    country_iso: countryIso,
+    country_name: countryName,
     isPublic: visibility === 'public',
     // Convenience aliases for batting side (UI / docs)
     runs: battingTeam === 'B' ? cricketRunsB : cricketRunsA,
@@ -401,7 +416,7 @@ export async function createLiveMatch({
     .replace(/^@/, '');
   const visibilityNorm = normalizeVisibility(visibility);
   const locationNorm = normalizeLocationLabel(locationLabel);
-  const countryFlagNorm = getCountryFlagForLocation(locationNorm) || '';
+  const countryMeta = getCountryFlagForLocation(locationNorm);
   const row = normalizeMatch({
     id,
     host_id: String(hostId || `local:${Date.now()}`),
@@ -434,7 +449,9 @@ export async function createLiveMatch({
     invite_code: inviteCode,
     visibility: visibilityNorm,
     location_label: locationNorm,
-    country_flag: countryFlagNorm,
+    country_flag: countryMeta?.flagEmoji || '',
+    country_iso: countryMeta?.isoCode || '',
+    country_name: countryMeta?.countryName || '',
   });
 
   localMatches.set(id, row);
@@ -475,6 +492,7 @@ export async function createLiveMatch({
     visibility: row.visibility,
     location_label: row.location_label || null,
     country_flag: row.country_flag || null,
+    country_iso: row.country_iso || null,
   };
 
   try {
@@ -514,6 +532,8 @@ export async function createLiveMatch({
           visibility: row.visibility,
           location_label: row.location_label,
           country_flag: row.country_flag,
+          country_iso: row.country_iso,
+          country_name: row.country_name,
         }) || row;
         localMatches.set(saved.id, saved);
         emitListListeners();

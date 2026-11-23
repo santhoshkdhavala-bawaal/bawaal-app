@@ -19,14 +19,14 @@ Authoritative detail: `bawaal-live-locked.mdc`
 | Hub (`LiveArenaModal`) | `+ GO LIVE NOW`; `JOIN WITH INVITE CODE` + `WATCH`; **`LIVE AROUND THE WORLD`** public-only roster; **no** multi-row sport chip grid |
 | GO LIVE setup | Sport dropdown; Scoreboard **OFF** by default; ON expands Team A / Team B / Title / Admin; **`PUBLIC` / `PRIVATE`** visibility pills (default PUBLIC); optional `location_label` + live national-flag preview |
 | Global roster | Public matches only (`visibility === 'public'`); host handle + optional location + national flag + viewer count + **`WATCH`**; private hidden (invite/code only) |
-| Location flag | `getCountryFlagForLocation` / `country_flag` — null when unmatched; shown on GO LIVE preview, roster, and room meta (PUBLIC + PRIVATE) |
+| Location flag | `getCountryFlagForLocation` → `{ isoCode, flagEmoji, countryName }`; `LiveCountryFlagBadge` uses flagcdn PNG + emoji fallback on GO LIVE / roster / room (PUBLIC + PRIVATE) |
 | Room HUD | Compact read-only top score when `has_scoreboard` — **no** skulls in top bar; center banter; slim bottom strip |
 | Reactions | One left skull → 5 vibes (`fire`, `devil`, `winning`/`skull_champion`, `crying`/`SAD`, `screaming`); **bounded** burst per tap (no infinite loops) |
 | Scoring | Point sports + cricket (`Runs/Wickets (O.B)`, `SWAP BATTING`, `+1/+2/+4/+6`, `DOT`, `WICKET`, `UNDO`) |
 | `canScore` | `isHost \|\| isDesignatedAdmin` only — viewers never get score UI or mutation handlers |
 | Invites | Unique **6-char** uppercase codes (no `0/O/1/I`); high-contrast `INVITE` for host **and** viewers; Share + clipboard; **targeted** banners only |
 
-**Locked files:** `LiveMatchRoomScreen.js`, `src/services/liveMatchService.js`, `src/components/LiveArenaModal.js`, `src/components/LiveMatchInviteModal.js`, `src/components/LiveMatchInviteBanner.js`, `src/components/LiveMatchInviteHost.js`, `src/constants/liveMatchFlamingSkulls.js`, `src/constants/liveMatchTeamSkulls.js`, `src/constants/liveMatchSports.js`, `src/utils/liveMatchLocationFlag.js`, related `supabase/migrations/20261121_live_matches*.sql` / invite migrations / `20261123_live_matches_visibility.sql` / `20261123_live_matches_country_flag.sql`; App/Arena LIVE entry wiring.
+**Locked files:** `LiveMatchRoomScreen.js`, `src/services/liveMatchService.js`, `src/components/LiveArenaModal.js`, `src/components/LiveCountryFlagBadge.js`, `src/components/LiveMatchInviteModal.js`, `src/components/LiveMatchInviteBanner.js`, `src/components/LiveMatchInviteHost.js`, `src/constants/liveMatchFlamingSkulls.js`, `src/constants/liveMatchTeamSkulls.js`, `src/constants/liveMatchSports.js`, `src/utils/liveMatchLocationFlag.js`, related `supabase/migrations/20261121_live_matches*.sql` / invite migrations / `20261123_live_matches_visibility.sql` / `20261123_live_matches_country_flag.sql` / `20261123_live_matches_country_iso.sql`; App/Arena LIVE entry wiring.
 
 ## 2. Arena NEAR ME + map (HARD LOCK)
 

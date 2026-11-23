@@ -49,6 +49,7 @@ import {
 } from './src/services/liveMatchService';
 import { getActiveUser } from './src/services/activeUserProfile';
 import { resolveLiveMatchCountryFlag } from './src/utils/liveMatchLocationFlag';
+import LiveCountryFlagBadge from './src/components/LiveCountryFlagBadge';
 import {
   SKULL_TEAM_A,
   SKULL_TEAM_B,
@@ -745,7 +746,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
     .replace(/^@/, '')
     .trim();
   const locationLabel = String(match?.location_label || '').trim();
-  const countryFlag = resolveLiveMatchCountryFlag(match);
+  const countryMeta = resolveLiveMatchCountryFlag(match);
   const isHost =
     isHostParam ||
     (!!userId &&
@@ -1031,8 +1032,13 @@ function LiveMatchRoomScreen({ navigation, route }) {
                 style={styles.locationChip}
                 accessibilityLabel={`Location ${locationLabel}`}
               >
-                {countryFlag ? (
-                  <Text style={styles.locationChipFlag}>{countryFlag}</Text>
+                {countryMeta ? (
+                  <LiveCountryFlagBadge
+                    isoCode={countryMeta.isoCode}
+                    flagEmoji={countryMeta.flagEmoji}
+                    countryName={countryMeta.countryName}
+                    size="sm"
+                  />
                 ) : (
                   <Ionicons name="location-outline" size={12} color={ORANGE} />
                 )}
@@ -1612,10 +1618,6 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,90,31,0.35)',
-  },
-  locationChipFlag: {
-    fontSize: 12,
-    lineHeight: 14,
   },
   locationChipText: {
     flexShrink: 1,
