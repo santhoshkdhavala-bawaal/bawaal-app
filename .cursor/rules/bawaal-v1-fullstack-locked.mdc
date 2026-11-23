@@ -27,10 +27,9 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 3. Age \| Gender (2-column)
 4. **Email ID** (full width)
 5. **Phone Number** (full width) — stored in `user_metadata.phone` + `profiles.phone`
-6. **Create Password** (full width, min 6+, show/hide toggle)
-7. City, Country + far-right flag badge (**32×24**), regional helper when matched
-8. Category \| Role (2-column) — category from `BAWAAL_SPORTS` (**ALL** first)
-9. Footer: Terms checkbox (orange link) + full-width orange **pill** **Create Account**
+6. City, Country + far-right flag badge (**32×24**), regional helper when matched
+7. Category \| Role (2-column) — category from `BAWAAL_SPORTS` (**ALL** first)
+8. Footer: Terms checkbox (orange link) + full-width orange **pill** **Continue** — password lives in the Create Password modal (not on the form)
 
 ### Sign In (`loginOnly`)
 
@@ -42,6 +41,11 @@ Production-final contract for onboarding UI + Supabase auth/profiles. Do **not**
 ### Terms
 - Pitch black; custom web scrollbar (track `#0A0A0C`/`#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, radius 4)
 - Central logo + tagline; full-width orange accept pill
+
+### Create Password (former OTP modal slot)
+- Pitch black; **CREATE PASSWORD** + Create / Confirm inputs (min 6+, show/hide) + mismatch check
+- **COMPLETE REGISTRATION / ENTER ARENA** → `signUpWithEmailPassword` → Arena
+- Back closes modal to edit Email / Phone
 
 ### Forgot Password / Set New Password
 - Pitch black; central logo + tagline

@@ -52,10 +52,9 @@ Legacy unused (do not re-enable as primary auth): `OTPInput.js`, `OTPModal.js`
 3. **Row** — Age (`"Enter your age"`) | Gender dropdown (`"Select your gender"` + ▼)
 4. **Email ID** — full width — `"Enter your email ID"`
 5. **Phone** — full width — `"+1 (555) 000-0000"` (→ `user_metadata.phone` + profiles)
-6. **Create Password** — full width — `"Create password (6+ characters)"` + SHOW/HIDE
-7. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
-8. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS`, **ALL** first) | Role dropdown (`"Select your role"`)
-9. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Create Account"`)
+6. **City, Country** — full width — `"City, Country"` + far-right flag badge (**32×24**), text padding clear of chip, regional helper when matched
+7. **Row** — Category dropdown (`"Select category"` from `BAWAAL_SPORTS`, **ALL** first) | Role dropdown (`"Select your role"`)
+8. **Footer** — Terms checkbox (orange link) + full-width solid orange **pill** CTA (`"Continue"`) — **no** password fields on the main form
 
 ### Sign In (`loginOnly`)
 
@@ -71,6 +70,12 @@ Layout: `SafeAreaView` → `KeyboardAvoidingView` → `ScrollView` form + sticky
 ### Terms
 - Pitch-black background; custom web scrollbar (track `#0A0A0C` / `#000`, thumb `#FF6600`, hover `#FF8533`, 6–8px, `borderRadius: 4`)
 - Central logo + tagline; full-width orange acceptance pill
+
+### Create Password (replaces former OTP modal slot)
+- Pitch-black; central logo + **CREATE PASSWORD** title
+- Create Password + Confirm Password (min 6+, SHOW/HIDE each; mismatch validation)
+- Primary CTA: **COMPLETE REGISTRATION / ENTER ARENA** → `signUpWithEmailPassword`
+- Back / Close to edit Email or Phone on the main form
 
 ### Forgot / Set New Password
 - Pitch-black; central logo + tagline

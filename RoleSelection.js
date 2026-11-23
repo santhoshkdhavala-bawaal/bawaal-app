@@ -1,8 +1,8 @@
 /**
  * BAWAAL Landing / Onboarding — Email + Phone + Password auth (LOCKED).
  * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
- * Auth: signUp / signInWithPassword / resetPasswordForEmail / updateUser (no SMS OTP).
- * Categories: `BAWAAL_SPORTS` (ALL first). See `.cursor/rules/bawaal-onboarding-locked.mdc`.
+ * Create Account: form (email/phone) → CREATE PASSWORD modal → signUp.
+ * Sign In / Forgot Password unchanged. Categories: `BAWAAL_SPORTS` (ALL first).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -253,6 +253,7 @@ export default function RoleSelection({
   const insets = useSafeAreaInsets();
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [notice, setNotice] = useState(null);
   const [picker, setPicker] = useState(null); // 'gender' | 'category' | 'role'
   const savedProfileRef = useRef(null);
@@ -262,7 +263,9 @@ export default function RoleSelection({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [location, setLocation] = useState('');
   const [gender, setGender] = useState(null);
@@ -461,7 +464,8 @@ export default function RoleSelection({
     }
   };
 
-  const handleCreateAccount = async () => {
+  /** Step 1: validate profile + email/phone, then open Create Password modal. */
+  const handleContinueToPassword = () => {
     if (authBusy) return;
 
     if (
@@ -483,13 +487,6 @@ export default function RoleSelection({
     }
     if (!normalizePhoneE164(phone)) {
       showNotice('Phone Required', 'Enter a valid phone number.');
-      return;
-    }
-    if (!isValidPassword(password)) {
-      showNotice(
-        'Create Password',
-        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
-      );
       return;
     }
     if (!gender) {
@@ -525,6 +522,37 @@ export default function RoleSelection({
       return;
     }
 
+    setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setPasswordModalVisible(true);
+  };
+
+  const closePasswordModal = () => {
+    if (authBusy) return;
+    setPasswordModalVisible(false);
+  };
+
+  /** Step 2: Create Password modal → signUp → enter Arena. */
+  const handleCompleteRegistration = async () => {
+    if (authBusy) return;
+
+    if (!isValidPassword(password)) {
+      showNotice(
+        'Create Password',
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`
+      );
+      return;
+    }
+    if (String(password) !== String(confirmPassword)) {
+      showNotice(
+        'Password Mismatch',
+        'Create Password and Confirm Password must match.'
+      );
+      return;
+    }
+
     setAuthBusy(true);
     try {
       const result = await signUpWithEmailPassword({
@@ -540,12 +568,14 @@ export default function RoleSelection({
         return;
       }
       if (result.needsEmailConfirmation) {
+        setPasswordModalVisible(false);
         showNotice(
           'Confirm Your Email',
           'Account created. Check your inbox to confirm your email, then Sign In with your password.'
         );
         return;
       }
+      setPasswordModalVisible(false);
       await finishAuthSession(result, { isSignIn: false });
     } catch (err) {
       showNotice('Sign Up Failed', err?.message || 'Could not create account.');
@@ -556,7 +586,7 @@ export default function RoleSelection({
 
   const handlePrimaryAuth = () => {
     if (loginOnly) return handleSignIn();
-    return handleCreateAccount();
+    return handleContinueToPassword();
   };
 
   const handleForgotPassword = async () => {
@@ -633,7 +663,7 @@ export default function RoleSelection({
               <Text style={styles.subtitle}>
                 {loginOnly
                   ? 'Sign in with your Email ID and password to return to the Arena.'
-                  : 'Join BAWAAL with Email, Phone, and a password. It only takes a minute.'}
+                  : 'Join BAWAAL with Email ID and Phone Number. It only takes a minute.'}
               </Text>
             </View>
 
@@ -762,28 +792,6 @@ export default function RoleSelection({
                   />
 
                   <InputCard
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Create password (6+ characters)"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    secureTextEntry={!showPassword}
-                    textContentType="newPassword"
-                    autoComplete="password-new"
-                    focused={focusedField === 'password'}
-                    onFocus={() => setFocusedField('password')}
-                    onBlur={() => setFocusedField(null)}
-                    trailing={
-                      <Text style={styles.showHideText}>
-                        {showPassword ? 'HIDE' : 'SHOW'}
-                      </Text>
-                    }
-                    trailingPressable
-                    onTrailingPress={() => setShowPassword((v) => !v)}
-                    style={styles.fieldGap}
-                  />
-
-                  <InputCard
                     value={location}
                     onChangeText={setLocation}
                     placeholder="City, Country"
@@ -869,16 +877,14 @@ export default function RoleSelection({
             activeOpacity={0.88}
             disabled={authBusy || (!loginOnly && !agreedToTerms)}
             accessibilityRole="button"
-            accessibilityLabel={loginOnly ? 'Sign In' : 'Create Account'}
+            accessibilityLabel={loginOnly ? 'Sign In' : 'Continue'}
           >
             <Text style={styles.continueBtnText}>
-              {authBusy
-                ? loginOnly
-                  ? 'Signing in…'
-                  : 'Creating…'
+              {authBusy && loginOnly
+                ? 'Signing in…'
                 : loginOnly
                   ? 'Sign In'
-                  : 'Create Account'}
+                  : 'Continue'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1061,6 +1067,112 @@ export default function RoleSelection({
                 accessibilityRole="button"
               >
                 <Text style={styles.authModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <Modal
+        visible={passwordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closePasswordModal}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <KeyboardAvoidingView
+            style={[
+              styles.modalOverlay,
+              { paddingBottom: Math.max(48, insets.bottom + 40) },
+            ]}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <View
+              style={[
+                styles.authModalContent,
+                { paddingBottom: Math.max(48, insets.bottom + 36) },
+              ]}
+            >
+              <Image
+                source={LOGO_FULL}
+                style={styles.authModalLogo}
+                resizeMode="contain"
+                accessibilityLabel="BAWAAL"
+              />
+              <Text style={styles.authModalTitle}>CREATE PASSWORD</Text>
+              <Text style={styles.authModalSubtitle}>
+                Choose a password (at least {MIN_PASSWORD_LENGTH} characters),
+                then enter the Arena.
+              </Text>
+
+              <InputCard
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Create password"
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry={!showPassword}
+                textContentType="newPassword"
+                autoComplete="password-new"
+                focused={focusedField === 'createPassword'}
+                onFocus={() => setFocusedField('createPassword')}
+                onBlur={() => setFocusedField(null)}
+                trailing={
+                  <Text style={styles.showHideText}>
+                    {showPassword ? 'HIDE' : 'SHOW'}
+                  </Text>
+                }
+                trailingPressable
+                onTrailingPress={() => setShowPassword((v) => !v)}
+                style={[styles.fieldGap, styles.authModalField]}
+              />
+
+              <InputCard
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                placeholder="Confirm password"
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry={!showConfirmPassword}
+                textContentType="newPassword"
+                autoComplete="password-new"
+                focused={focusedField === 'confirmPassword'}
+                onFocus={() => setFocusedField('confirmPassword')}
+                onBlur={() => setFocusedField(null)}
+                trailing={
+                  <Text style={styles.showHideText}>
+                    {showConfirmPassword ? 'HIDE' : 'SHOW'}
+                  </Text>
+                }
+                trailingPressable
+                onTrailingPress={() => setShowConfirmPassword((v) => !v)}
+                style={[styles.fieldGap, styles.authModalField]}
+              />
+
+              <TouchableOpacity
+                style={[styles.authModalCta, authBusy && styles.continueBtnDisabled]}
+                onPress={handleCompleteRegistration}
+                activeOpacity={0.85}
+                disabled={authBusy}
+                accessibilityRole="button"
+                accessibilityLabel="Complete registration and enter Arena"
+              >
+                <Text style={styles.authModalCtaText}>
+                  {authBusy ? 'CREATING…' : 'COMPLETE REGISTRATION / ENTER ARENA'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={closePasswordModal}
+                activeOpacity={0.8}
+                disabled={authBusy}
+                style={styles.authModalCancel}
+                accessibilityRole="button"
+                accessibilityLabel="Back to edit email or phone"
+              >
+                <Text style={styles.authModalCancelText}>
+                  ← Back — edit Email or Phone
+                </Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>

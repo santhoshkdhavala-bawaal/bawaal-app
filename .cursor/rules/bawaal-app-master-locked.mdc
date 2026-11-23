@@ -63,7 +63,7 @@ Authoritative detail: `bawaal-v1-fullstack-locked.mdc`, `bawaal-onboarding-locke
 |---|---|
 | Auth | `signUp({ email, password, options.data.phone })` / `signInWithPassword` / `resetPasswordForEmail` / `updateUser({ password })` on `PASSWORD_RECOVERY` → `upsertRegisteredProfile` |
 | Profiles | UUID → remote upsert; non-UUID / circuit → local success; `PROFILE_SAFE_WRITE_COLUMNS` only; soft-strip missing columns; phone on profile + `user_metadata` for invites/lookup |
-| UI | V1 field order + Create Password (6+, show/hide); Sign In + Forgot Password; Terms; Set New Password host |
+| UI | V1 field order (email/phone on form); Create Password modal (confirm + signup CTA); Sign In + Forgot Password; Terms; Set New Password host |
 
 **Locked files:** `RoleSelection.js`, `AthleteRegistrationScreen.js`, `TermsModal.js`, `src/components/PasswordRecoveryHost.js`, `src/services/authPassword.js`, `src/services/authOtp.js` (phone normalize re-export), `src/services/profilesService.js`, `src/types/profile.js`, `src/services/supabase.js` / `lib/supabase.js`, related ENSURE/migrations SQL
 
