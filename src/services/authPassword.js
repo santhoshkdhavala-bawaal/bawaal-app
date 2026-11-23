@@ -79,7 +79,13 @@ export async function signUpWithEmailPassword({ email, password, phone }) {
     return { ok: false, mode: 'error', error: new Error('Email is required') };
   }
   if (!isValidEmail(normalizedEmail)) {
-    return { ok: false, mode: 'error', error: new Error('Enter a valid email address') };
+    return {
+      ok: false,
+      mode: 'error',
+      error: new Error(
+        'Please enter a valid email address (e.g., name@gmail.com).'
+      ),
+    };
   }
   if (!isValidPassword(pwd)) {
     return {
@@ -150,12 +156,20 @@ export async function signUpWithEmailPassword({ email, password, phone }) {
     };
   } catch (error) {
     console.warn('[authPassword] signUp:', error?.message || error);
+    const rawMsg = String(error?.message || '');
+    const friendlyError = /is invalid|invalid.*email|email.*invalid/i.test(
+      rawMsg
+    )
+      ? new Error(
+          'Please enter a valid email address (e.g., name@gmail.com).'
+        )
+      : error;
     return {
       ok: false,
       mode: 'supabase',
       email: normalizedEmail,
       phone: normalizedPhone,
-      error,
+      error: friendlyError,
     };
   }
 }
@@ -237,7 +251,13 @@ export async function sendPasswordResetEmail(email) {
     return { ok: false, mode: 'error', error: new Error('Email is required') };
   }
   if (!isValidEmail(normalizedEmail)) {
-    return { ok: false, mode: 'error', error: new Error('Enter a valid email address') };
+    return {
+      ok: false,
+      mode: 'error',
+      error: new Error(
+        'Please enter a valid email address (e.g., name@gmail.com).'
+      ),
+    };
   }
 
   if (!isSupabaseConfigured()) {

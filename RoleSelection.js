@@ -1,6 +1,7 @@
 /**
  * BAWAAL Landing / Onboarding — Email + Phone + Password auth (LOCKED).
- * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
+ * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns.
+ * Form + CTA + mode-switch share one centered stack (maxWidth 420).
  * Create Account: form (email/phone) → CREATE PASSWORD modal → signUp.
  * Sign In ↔ Create Account toggle links; Forgot Password unchanged.
  * Categories: `BAWAAL_SPORTS` (ALL first).
@@ -118,6 +119,9 @@ function InputCard({
         secureTextEntry={secureTextEntry}
         textContentType={textContentType}
         autoComplete={autoComplete}
+        importantForAutofill={
+          autoComplete === 'off' || textContentType === 'none' ? 'no' : 'auto'
+        }
         onFocus={onFocus}
         onBlur={onBlur}
         editable={editable}
@@ -526,7 +530,10 @@ export default function RoleSelection({
       return;
     }
     if (!isValidEmail(email)) {
-      showNotice('Invalid Email', 'Enter a valid email address.');
+      showNotice(
+        'Invalid Email',
+        'Please enter a valid email address (e.g., name@gmail.com).'
+      );
       return;
     }
     if (!String(password || '')) {
@@ -581,7 +588,10 @@ export default function RoleSelection({
       return;
     }
     if (!isValidEmail(email)) {
-      showNotice('Invalid Email', 'Enter a valid email address.');
+      showNotice(
+        'Invalid Email',
+        'Please enter a valid email address (e.g., name@gmail.com).'
+      );
       return;
     }
     if (!normalizePhoneE164(phone)) {
@@ -685,9 +695,15 @@ export default function RoleSelection({
         phone,
       });
       if (!result.ok) {
+        const rawMsg = String(result.error?.message || '');
+        const invalidEmail = /is invalid|invalid.*email|email.*invalid/i.test(
+          rawMsg
+        );
         showNotice(
           'Sign Up Failed',
-          result.error?.message || 'Could not create your account. Try again.'
+          invalidEmail
+            ? 'Please enter a valid email address (e.g., name@gmail.com).'
+            : rawMsg || 'Could not create your account. Try again.'
         );
         return;
       }
@@ -702,7 +718,16 @@ export default function RoleSelection({
       setPasswordModalVisible(false);
       await finishAuthSession(result, { isSignIn: false });
     } catch (err) {
-      showNotice('Sign Up Failed', err?.message || 'Could not create account.');
+      const rawMsg = String(err?.message || '');
+      const invalidEmail = /is invalid|invalid.*email|email.*invalid/i.test(
+        rawMsg
+      );
+      showNotice(
+        'Sign Up Failed',
+        invalidEmail
+          ? 'Please enter a valid email address (e.g., name@gmail.com).'
+          : rawMsg || 'Could not create account.'
+      );
     } finally {
       setAuthBusy(false);
     }
@@ -721,7 +746,10 @@ export default function RoleSelection({
       return;
     }
     if (!isValidEmail(target)) {
-      showNotice('Invalid Email', 'Enter a valid email address.');
+      showNotice(
+        'Invalid Email',
+        'Please enter a valid email address (e.g., name@gmail.com).'
+      );
       return;
     }
 
@@ -801,8 +829,8 @@ export default function RoleSelection({
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    textContentType="emailAddress"
-                    autoComplete="email"
+                    textContentType="none"
+                    autoComplete="off"
                     focused={focusedField === 'email'}
                     onFocus={() => setFocusedField('email')}
                     onBlur={() => setFocusedField(null)}
@@ -815,8 +843,8 @@ export default function RoleSelection({
                     autoCapitalize="none"
                     autoCorrect={false}
                     secureTextEntry={!showPassword}
-                    textContentType="password"
-                    autoComplete="password"
+                    textContentType="none"
+                    autoComplete="off"
                     focused={focusedField === 'password'}
                     onFocus={() => setFocusedField('password')}
                     onBlur={() => setFocusedField(null)}
@@ -895,8 +923,8 @@ export default function RoleSelection({
                     keyboardType="email-address"
                     autoCapitalize="none"
                     autoCorrect={false}
-                    textContentType="emailAddress"
-                    autoComplete="email"
+                    textContentType="none"
+                    autoComplete="off"
                     focused={focusedField === 'email'}
                     onFocus={() => setFocusedField('email')}
                     onBlur={() => setFocusedField(null)}
@@ -958,81 +986,88 @@ export default function RoleSelection({
                   </View>
                 </>
               )}
+
+              {/* CTA + mode switch sit in the same centered stack — no bottom spacer. */}
+              <View style={styles.formActions}>
+                {isLoginMode ? null : (
+                  <TouchableOpacity
+                    style={styles.termsRow}
+                    onPress={onTermsRowPress}
+                    activeOpacity={0.85}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: agreedToTerms }}
+                  >
+                    <View
+                      style={[
+                        styles.checkbox,
+                        agreedToTerms && styles.checkboxChecked,
+                      ]}
+                    >
+                      {agreedToTerms ? (
+                        <Text style={styles.checkmark}>✓</Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.termsText}>
+                      I agree to{' '}
+                      <Text
+                        style={styles.termsLink}
+                        onPress={() => setTermsModalVisible(true)}
+                      >
+                        Terms and Conditions
+                      </Text>
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.continueBtn,
+                    ((!isLoginMode && !agreedToTerms) || authBusy) &&
+                      styles.continueBtnDisabled,
+                  ]}
+                  onPress={handlePrimaryAuth}
+                  activeOpacity={0.88}
+                  disabled={authBusy || (!isLoginMode && !agreedToTerms)}
+                  accessibilityRole="button"
+                  accessibilityLabel={isLoginMode ? 'Sign In' : 'Continue'}
+                >
+                  <Text style={styles.continueBtnText}>
+                    {authBusy && isLoginMode
+                      ? 'Signing in…'
+                      : isLoginMode
+                        ? 'Sign In'
+                        : 'Continue'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.authSwitchRow}
+                  onPress={
+                    isLoginMode ? switchToCreateAccount : switchToSignIn
+                  }
+                  activeOpacity={0.85}
+                  disabled={authBusy}
+                  hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    isLoginMode
+                      ? 'New to Bawaal? Create Account'
+                      : 'Already have an account? Sign In'
+                  }
+                >
+                  <Text style={styles.authSwitchText}>
+                    {isLoginMode
+                      ? 'New to Bawaal? '
+                      : 'Already have an account? '}
+                    <Text style={styles.authSwitchLink}>
+                      {isLoginMode ? 'Create Account' : 'Sign In'}
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </ScrollView>
-
-        <View
-          style={[
-            styles.stickyFooter,
-            { paddingBottom: Math.max(insets.bottom, 12) },
-          ]}
-        >
-          {isLoginMode ? null : (
-            <TouchableOpacity
-              style={styles.termsRow}
-              onPress={onTermsRowPress}
-              activeOpacity={0.85}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: agreedToTerms }}
-            >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxChecked]}>
-                {agreedToTerms ? <Text style={styles.checkmark}>✓</Text> : null}
-              </View>
-              <Text style={styles.termsText}>
-                I agree to{' '}
-                <Text
-                  style={styles.termsLink}
-                  onPress={() => setTermsModalVisible(true)}
-                >
-                  Terms and Conditions
-                </Text>
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={[
-              styles.continueBtn,
-              ((!isLoginMode && !agreedToTerms) || authBusy) &&
-                styles.continueBtnDisabled,
-            ]}
-            onPress={handlePrimaryAuth}
-            activeOpacity={0.88}
-            disabled={authBusy || (!isLoginMode && !agreedToTerms)}
-            accessibilityRole="button"
-            accessibilityLabel={isLoginMode ? 'Sign In' : 'Continue'}
-          >
-            <Text style={styles.continueBtnText}>
-              {authBusy && isLoginMode
-                ? 'Signing in…'
-                : isLoginMode
-                  ? 'Sign In'
-                  : 'Continue'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.authSwitchRow}
-            onPress={isLoginMode ? switchToCreateAccount : switchToSignIn}
-            activeOpacity={0.85}
-            disabled={authBusy}
-            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              isLoginMode
-                ? 'New to Bawaal? Create Account'
-                : 'Already have an account? Sign In'
-            }
-          >
-            <Text style={styles.authSwitchText}>
-              {isLoginMode ? 'New to Bawaal? ' : 'Already have an account? '}
-              <Text style={styles.authSwitchLink}>
-                {isLoginMode ? 'Create Account' : 'Sign In'}
-              </Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
       </KeyboardAvoidingView>
 
       <OptionPickerModal
@@ -1182,8 +1217,8 @@ export default function RoleSelection({
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
-            textContentType="emailAddress"
-            autoComplete="email"
+            textContentType="none"
+            autoComplete="off"
             editable
             focused={focusedField === 'forgotEmail'}
             onFocus={() => setFocusedField('forgotEmail')}
@@ -1253,8 +1288,8 @@ export default function RoleSelection({
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry={!showPassword}
-            textContentType="newPassword"
-            autoComplete="password-new"
+            textContentType="none"
+            autoComplete="off"
             editable
             focused={focusedField === 'createPassword'}
             onFocus={() => setFocusedField('createPassword')}
@@ -1276,8 +1311,8 @@ export default function RoleSelection({
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry={!showConfirmPassword}
-            textContentType="newPassword"
-            autoComplete="password-new"
+            textContentType="none"
+            autoComplete="off"
             editable
             focused={focusedField === 'confirmPassword'}
             onFocus={() => setFocusedField('confirmPassword')}
@@ -1298,10 +1333,10 @@ export default function RoleSelection({
             activeOpacity={0.85}
             disabled={authBusy}
             accessibilityRole="button"
-            accessibilityLabel="Complete registration and enter Arena"
+            accessibilityLabel="Enter Arena"
           >
             <Text style={styles.authModalCtaText}>
-              {authBusy ? 'CREATING…' : 'COMPLETE REGISTRATION / ENTER ARENA'}
+              {authBusy ? 'CREATING…' : 'ENTER ARENA'}
             </Text>
           </TouchableOpacity>
 
@@ -1349,12 +1384,12 @@ const styles = StyleSheet.create({
   },
   formShell: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 420,
     alignSelf: 'center',
   },
   brandHeader: {
     alignItems: 'center',
-    marginBottom: 22,
+    marginBottom: 20,
     width: '100%',
   },
   logoImage: {
@@ -1382,7 +1417,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   fieldGap: {
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  formActions: {
+    width: '100%',
+    marginTop: 8,
+    gap: 16,
   },
   twoColRow: {
     flexDirection: 'row',
@@ -1547,21 +1587,10 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     paddingHorizontal: 4,
   },
-  stickyFooter: {
-    width: '100%',
-    maxWidth: 440,
-    alignSelf: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    backgroundColor: BG,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
   termsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
   },
   checkbox: {
     width: 20,
@@ -1611,8 +1640,7 @@ const styles = StyleSheet.create({
   },
   authSwitchRow: {
     alignSelf: 'center',
-    marginTop: 14,
-    paddingVertical: 6,
+    paddingVertical: 4,
   },
   authSwitchText: {
     color: OFF_WHITE,
