@@ -2,7 +2,8 @@
  * BAWAAL Landing / Onboarding — Email + Phone + Password auth (LOCKED).
  * Dark cards (#1E1E22), Age|Gender + Category|Role dropdowns, sticky orange Continue.
  * Create Account: form (email/phone) → CREATE PASSWORD modal → signUp.
- * Sign In / Forgot Password unchanged. Categories: `BAWAAL_SPORTS` (ALL first).
+ * Sign In ↔ Create Account toggle links; Forgot Password unchanged.
+ * Categories: `BAWAAL_SPORTS` (ALL first).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -251,6 +252,8 @@ export default function RoleSelection({
   loginOnly = false,
 }) {
   const insets = useSafeAreaInsets();
+  /** Local auth mode — can toggle Sign In ↔ Create Account without leaving Entry. */
+  const [isLoginMode, setIsLoginMode] = useState(Boolean(loginOnly));
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [forgotModalVisible, setForgotModalVisible] = useState(false);
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -281,9 +284,42 @@ export default function RoleSelection({
 
   const [authBusy, setAuthBusy] = useState(false);
 
+  // Keep local mode in sync when Entry route params change (e.g. logout → Sign In).
+  useEffect(() => {
+    setIsLoginMode(Boolean(loginOnly));
+  }, [loginOnly]);
+
+  const clearAuthSecretsAndModals = () => {
+    setPassword('');
+    setConfirmPassword('');
+    setShowPassword(false);
+    setShowConfirmPassword(false);
+    setPasswordModalVisible(false);
+    setForgotModalVisible(false);
+    setTermsModalVisible(false);
+    setPicker(null);
+    setNotice(null);
+    setAuthBusy(false);
+    setFocusedField(null);
+  };
+
+  const switchToCreateAccount = () => {
+    if (authBusy) return;
+    clearAuthSecretsAndModals();
+    setAgreedToTerms(false);
+    setHasScrolledToBottom(false);
+    setIsLoginMode(false);
+  };
+
+  const switchToSignIn = () => {
+    if (authBusy) return;
+    clearAuthSecretsAndModals();
+    setIsLoginMode(true);
+  };
+
   // Returning user (post-Logout): hydrate email + profile for Sign In
   useEffect(() => {
-    if (!loginOnly) return undefined;
+    if (!isLoginMode) return undefined;
     let alive = true;
     (async () => {
       try {
@@ -317,7 +353,7 @@ export default function RoleSelection({
     return () => {
       alive = false;
     };
-  }, [loginOnly]);
+  }, [isLoginMode]);
 
   const locationMeta = useMemo(
     () => resolveLocationFlag(location),
@@ -450,15 +486,26 @@ export default function RoleSelection({
     try {
       const result = await signInWithEmailPassword({ email, password });
       if (!result.ok) {
+        const rawMsg = String(result.error?.message || '');
+        const invalidCreds = /invalid login credentials/i.test(rawMsg);
         showNotice(
           'Sign In Failed',
-          result.error?.message || 'Invalid email or password. Try again.'
+          invalidCreds
+            ? "Invalid email or password. If you haven't created an account yet, tap Create Account below."
+            : rawMsg || 'Invalid email or password. Try again.'
         );
         return;
       }
       await finishAuthSession(result, { isSignIn: true });
     } catch (err) {
-      showNotice('Sign In Failed', err?.message || 'Could not sign in.');
+      const rawMsg = String(err?.message || '');
+      const invalidCreds = /invalid login credentials/i.test(rawMsg);
+      showNotice(
+        'Sign In Failed',
+        invalidCreds
+          ? "Invalid email or password. If you haven't created an account yet, tap Create Account below."
+          : rawMsg || 'Could not sign in.'
+      );
     } finally {
       setAuthBusy(false);
     }
@@ -585,7 +632,7 @@ export default function RoleSelection({
   };
 
   const handlePrimaryAuth = () => {
-    if (loginOnly) return handleSignIn();
+    if (isLoginMode) return handleSignIn();
     return handleContinueToPassword();
   };
 
@@ -658,17 +705,17 @@ export default function RoleSelection({
                 accessibilityLabel="BAWAAL"
               />
               <Text style={styles.title}>
-                {loginOnly ? 'Welcome Back' : 'Create Your Account'}
+                {isLoginMode ? 'Welcome Back' : 'Create Your Account'}
               </Text>
               <Text style={styles.subtitle}>
-                {loginOnly
+                {isLoginMode
                   ? 'Sign in with your Email ID and password to return to the Arena.'
                   : 'Join BAWAAL with Email ID and Phone Number. It only takes a minute.'}
               </Text>
             </View>
 
             <View style={styles.form}>
-              {loginOnly ? (
+              {isLoginMode ? (
                 <>
                   <InputCard
                     value={email}
@@ -844,7 +891,7 @@ export default function RoleSelection({
             { paddingBottom: Math.max(insets.bottom, 12) },
           ]}
         >
-          {loginOnly ? null : (
+          {isLoginMode ? null : (
             <TouchableOpacity
               style={styles.termsRow}
               onPress={onTermsRowPress}
@@ -870,21 +917,42 @@ export default function RoleSelection({
           <TouchableOpacity
             style={[
               styles.continueBtn,
-              ((!loginOnly && !agreedToTerms) || authBusy) &&
+              ((!isLoginMode && !agreedToTerms) || authBusy) &&
                 styles.continueBtnDisabled,
             ]}
             onPress={handlePrimaryAuth}
             activeOpacity={0.88}
-            disabled={authBusy || (!loginOnly && !agreedToTerms)}
+            disabled={authBusy || (!isLoginMode && !agreedToTerms)}
             accessibilityRole="button"
-            accessibilityLabel={loginOnly ? 'Sign In' : 'Continue'}
+            accessibilityLabel={isLoginMode ? 'Sign In' : 'Continue'}
           >
             <Text style={styles.continueBtnText}>
-              {authBusy && loginOnly
+              {authBusy && isLoginMode
                 ? 'Signing in…'
-                : loginOnly
+                : isLoginMode
                   ? 'Sign In'
                   : 'Continue'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.authSwitchRow}
+            onPress={isLoginMode ? switchToCreateAccount : switchToSignIn}
+            activeOpacity={0.85}
+            disabled={authBusy}
+            hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isLoginMode
+                ? 'New to Bawaal? Create Account'
+                : 'Already have an account? Sign In'
+            }
+          >
+            <Text style={styles.authSwitchText}>
+              {isLoginMode ? 'New to Bawaal? ' : 'Already have an account? '}
+              <Text style={styles.authSwitchLink}>
+                {isLoginMode ? 'Create Account' : 'Sign In'}
+              </Text>
             </Text>
           </TouchableOpacity>
         </View>
@@ -1455,6 +1523,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
+  },
+  authSwitchRow: {
+    alignSelf: 'center',
+    marginTop: 14,
+    paddingVertical: 6,
+  },
+  authSwitchText: {
+    color: OFF_WHITE,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  authSwitchLink: {
+    color: ORANGE,
+    fontWeight: '800',
   },
   pickerOverlay: {
     flex: 1,
