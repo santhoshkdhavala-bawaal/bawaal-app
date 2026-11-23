@@ -2546,10 +2546,12 @@ export default function ArenaFeed({ navigation, route }) {
   const openLiveMatchRoom = useCallback(
     (match, role) => {
       if (!match?.id) return;
+      const inviteCode = String(match?.invite_code || '').trim();
       navigation?.navigate?.('LiveMatchRoom', {
         matchId: match.id,
         match,
         role: role === 'host' ? 'host' : 'viewer',
+        ...(inviteCode ? { inviteCode } : null),
       });
     },
     [navigation]

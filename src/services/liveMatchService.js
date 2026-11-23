@@ -1615,21 +1615,35 @@ export async function fetchLiveMatchByInviteCode(code) {
  * Soft-fails (returns null) when EXPO_PUBLIC_LIVEKIT_URL / secrets / function
  * are not configured yet — never throws into LIVE UX.
  *
- * @param {{ matchId: string, participantName: string, role: 'host'|'viewer' }} input
- * @returns {Promise<{ token: string, wsUrl: string }|null>}
+ * @param {{
+ *   roomName?: string,
+ *   matchId?: string,
+ *   participantName: string,
+ *   isHost?: boolean,
+ *   role?: 'host'|'viewer',
+ *   inviteCode?: string,
+ * }} input
+ * @returns {Promise<{ token: string, url: string, wsUrl: string }|null>}
  */
 export async function fetchLiveKitToken({
+  roomName,
   matchId,
   participantName,
+  isHost,
   role,
+  inviteCode,
 } = {}) {
-  const id = String(matchId || '').trim();
+  const id = String(roomName || matchId || '').trim();
   const name = String(participantName || '')
     .trim()
     .replace(/^@/, '')
     .slice(0, 64);
-  const normalizedRole =
-    String(role || '').toLowerCase() === 'host' ? 'host' : 'viewer';
+  const host =
+    isHost === true || String(role || '').toLowerCase() === 'host';
+  const code = String(inviteCode || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
   const publicWsUrl = String(
     process.env.EXPO_PUBLIC_LIVEKIT_URL || ''
   ).trim();
@@ -1641,9 +1655,12 @@ export async function fetchLiveKitToken({
   try {
     const { data, error } = await supabase.functions.invoke('livekit-token', {
       body: {
+        roomName: id,
         matchId: id,
         participantName: name,
-        role: normalizedRole,
+        isHost: host,
+        role: host ? 'host' : 'viewer',
+        ...(code ? { inviteCode: code } : null),
       },
     });
     if (error) {
@@ -1655,9 +1672,9 @@ export async function fetchLiveKitToken({
       return null;
     }
     const token = String(data?.token || '').trim();
-    const wsUrl = String(data?.wsUrl || publicWsUrl).trim();
-    if (!token || !wsUrl) return null;
-    return { token, wsUrl };
+    const url = String(data?.url || data?.wsUrl || publicWsUrl).trim();
+    if (!token || !url) return null;
+    return { token, url, wsUrl: url };
   } catch (err) {
     softFailWarn(
       'liveMatch:livekitTokenEx',

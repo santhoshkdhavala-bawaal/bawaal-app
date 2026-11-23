@@ -686,7 +686,7 @@ function LiveMatchRoomScreen({ navigation, route }) {
   const cricketUndoRef = useRef([]);
   const [cricketUndoDepth, setCricketUndoDepth] = useState(0);
   const [inviteOpen, setInviteOpen] = useState(false);
-  /** @type {[{ token: string, wsUrl: string }|null, Function]} */
+  /** @type {[{ token: string, url?: string, wsUrl?: string }|null, Function]} */
   const [livekitCreds, setLivekitCreds] = useState(null);
 
   useEffect(
@@ -768,18 +768,30 @@ function LiveMatchRoomScreen({ navigation, route }) {
       return undefined;
     }
     let alive = true;
+    const inviteFromRoute = String(
+      route?.params?.inviteCode || route?.params?.invite_code || ''
+    ).trim();
+    const inviteFromMatch = String(match?.invite_code || '').trim();
     void fetchLiveKitToken({
+      roomName: matchId,
       matchId,
       participantName: handle || 'athlete',
+      isHost,
       role: isHost ? 'host' : 'viewer',
+      inviteCode: inviteFromRoute || inviteFromMatch || undefined,
     }).then((creds) => {
       if (!alive) return;
-      setLivekitCreds(creds && creds.token && creds.wsUrl ? creds : null);
+      const serverUrl = creds?.url || creds?.wsUrl;
+      setLivekitCreds(
+        creds && creds.token && serverUrl
+          ? { token: creds.token, url: serverUrl, wsUrl: serverUrl }
+          : null
+      );
     });
     return () => {
       alive = false;
     };
-  }, [matchId, handle, isHost]);
+  }, [matchId, handle, isHost, match?.invite_code, route?.params?.inviteCode, route?.params?.invite_code]);
 
   useEffect(() => {
     let alive = true;
@@ -1027,10 +1039,10 @@ function LiveMatchRoomScreen({ navigation, route }) {
       <ViewerVideoStage sport={match?.sport} title={match?.title} />
     );
   const streamStage =
-    livekitCreds?.token && livekitCreds?.wsUrl ? (
+    livekitCreds?.token && (livekitCreds?.url || livekitCreds?.wsUrl) ? (
       <LiveMatchLiveKitStage
         token={livekitCreds.token}
-        serverUrl={livekitCreds.wsUrl}
+        serverUrl={livekitCreds.url || livekitCreds.wsUrl}
         isHost={isHost}
         facing={facing}
         fallback={fallbackStage}

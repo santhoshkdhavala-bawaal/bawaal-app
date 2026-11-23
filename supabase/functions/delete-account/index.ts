@@ -1,15 +1,17 @@
 /**
  * BAWAAL — permanent account deletion (App Store / Play compliant).
  *
- * POST (authenticated): verifies the caller's JWT, then deletes the auth user
- * via the service role (`auth.admin.deleteUser`). `public.profiles` rows cascade
- * on `auth.users` delete when FK is configured (see ENSURE_PROFILES_SPORTS_HUBS).
+ * POST (authenticated): verifies the caller's JWT via anon client, runs
+ * `public.delete_account_cascade(user_id)` with the service role, then
+ * `auth.admin.deleteUser(user.id)`.
  *
  * Deploy:
- *   supabase functions deploy delete-account
+ *   supabase functions deploy delete-account --project-ref petjdnyrjhgruvhzavmu
  *
  * Runtime env (auto on hosted Edge Functions):
  *   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+ *
+ * SQL: supabase/ENSURE_DELETE_ACCOUNT.sql (defines delete_account_cascade)
  */
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -51,7 +53,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         error:
           'Supabase env not configured (SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY)',
       },
-      503
+      500
     );
   }
 
@@ -81,11 +83,29 @@ Deno.serve(async (req: Request): Promise<Response> => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // Best-effort profile wipe before auth delete (FK cascade also covers this).
+  // Prefer RPC cleanup; soft-fail to direct profile delete if RPC missing.
   try {
-    await admin.from('profiles').delete().eq('id', user.id);
-  } catch {
-    /* soft — cascade / missing table */
+    const { error: cascadeError } = await admin.rpc('delete_account_cascade', {
+      p_user_id: user.id,
+    });
+    if (cascadeError) {
+      console.warn(
+        '[delete-account] delete_account_cascade:',
+        cascadeError.message
+      );
+      try {
+        await admin.from('profiles').delete().eq('id', user.id);
+      } catch {
+        /* soft */
+      }
+    }
+  } catch (err) {
+    console.warn('[delete-account] cascade exception:', err);
+    try {
+      await admin.from('profiles').delete().eq('id', user.id);
+    } catch {
+      /* soft */
+    }
   }
 
   const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
